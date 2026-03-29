@@ -97,3 +97,19 @@ class TestTeamDistributions:
         )
         assert td.play_calling.team == "KC"
         assert td.kicking.xp_rate == pytest.approx(0.94)
+
+
+class TestGameResult:
+    def test_construction(self):
+        result = GameResult(
+            home_score=24,
+            away_score=17,
+            home_box=TeamBoxScore(),
+            away_box=TeamBoxScore(),
+            total_plays=140,
+            overtime=False,
+        )
+        assert result.home_score == 24
+        assert result.away_score == 17
+        assert result.total_plays == 140
+        assert not result.overtime

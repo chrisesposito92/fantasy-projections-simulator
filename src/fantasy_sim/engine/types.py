@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
