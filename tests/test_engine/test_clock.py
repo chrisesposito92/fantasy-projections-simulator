@@ -80,3 +80,9 @@ class TestCheckQuarterEnd:
         check_quarter_end(state, make_drive_start(), make_drive_start(), rng)
         assert state.quarter == 1
         assert state.clock == 100
+
+    def test_ot_end_sets_game_over(self):
+        state = make_state(quarter=5, clock=0, home_score=14, away_score=14)
+        rng = np.random.default_rng(42)
+        check_quarter_end(state, make_drive_start(), make_drive_start(), rng)
+        assert state.game_over
