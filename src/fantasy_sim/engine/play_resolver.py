@@ -22,7 +22,9 @@ def resolve_play(
 ) -> PlayResult:
     if play_type == "pass":
         return _resolve_pass(state, play_outcomes, turnover_rates, rng)
-    return _resolve_run(state, play_outcomes, turnover_rates, rng)
+    if play_type == "run":
+        return _resolve_run(state, play_outcomes, turnover_rates, rng)
+    raise ValueError(f"Unexpected play_type: {play_type!r}")
 
 
 def _resolve_pass(
@@ -37,6 +39,8 @@ def _resolve_pass(
         is_fumble = rng.random() < turnover_rates.sack_fumble_rate
         new_yl = state.yard_line - yards  # yards is negative, so this increases
         is_safety = new_yl >= 100
+        if is_safety:
+            yards = -(99 - state.yard_line)  # clamp to own end zone
         return PlayResult(
             play_type="pass", yards=yards, is_sack=True,
             is_fumble=is_fumble, is_safety=is_safety,

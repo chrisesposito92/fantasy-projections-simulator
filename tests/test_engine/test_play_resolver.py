@@ -3,7 +3,6 @@ import pytest
 from fantasy_sim.engine.play_resolver import resolve_play
 from fantasy_sim.engine.types import GameState, PlayResult
 from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates
-from fantasy_sim.models.game_state import GameStateBucket
 
 
 def make_state(**overrides) -> GameState:
