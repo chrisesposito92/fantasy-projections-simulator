@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
@@ -47,6 +47,33 @@ class GameState:
 
 
 @dataclass
+class PlayerBoxScore:
+    """Per-player stats for one game."""
+    player_id: str
+    name: str
+    position: str
+    team: str
+    # Passing
+    pass_attempts: int = 0
+    completions: int = 0
+    pass_yards: int = 0
+    pass_tds: int = 0
+    interceptions: int = 0
+    sacks: int = 0
+    # Rushing
+    rush_attempts: int = 0
+    rush_yards: int = 0
+    rush_tds: int = 0
+    # Receiving
+    targets: int = 0
+    receptions: int = 0
+    receiving_yards: int = 0
+    receiving_tds: int = 0
+    # Misc
+    fumbles_lost: int = 0
+
+
+@dataclass
 class PlayResult:
     """Outcome of a single play."""
     play_type: str          # "pass" | "run"
@@ -58,6 +85,10 @@ class PlayResult:
     is_touchdown: bool = False
     is_safety: bool = False
     clock_runoff: int = 0
+    # Player attribution (Phase 3)
+    passer_id: str | None = None
+    receiver_id: str | None = None
+    rusher_id: str | None = None
 
 
 @dataclass
@@ -97,3 +128,4 @@ class GameResult:
     away_box: TeamBoxScore
     total_plays: int
     overtime: bool
+    player_stats: dict[str, PlayerBoxScore] = field(default_factory=dict)
