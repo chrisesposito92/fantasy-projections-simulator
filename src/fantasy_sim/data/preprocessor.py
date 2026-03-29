@@ -2,7 +2,7 @@ import polars as pl
 import numpy as np
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 from fantasy_sim.models.distributions import (
-    PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel, PenaltyRates,
+    PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
 
 MIN_BUCKET_PLAYS = 10

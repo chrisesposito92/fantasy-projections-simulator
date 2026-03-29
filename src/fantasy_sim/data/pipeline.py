@@ -30,11 +30,12 @@ class DataPipeline:
             fg_data = pbp.filter(pl.col("play_type") == "field_goal")
         if kickoff_data is None:
             kickoff_data = pbp.filter(pl.col("play_type") == "kickoff")
+        xp_data = pbp.filter(pl.col("play_type") == "extra_point")
 
         return {
             "play_calling": self.preprocessor.compute_play_calling(pbp),
             "play_outcomes": self.preprocessor.compute_play_outcomes(pbp),
             "turnover_rates": self.preprocessor.compute_turnover_rates(pbp),
-            "kicking": self.preprocessor.compute_kicking_model(fg_data),
+            "kicking": self.preprocessor.compute_kicking_model(fg_data, xp_data=xp_data),
             "drive_start": self.preprocessor.compute_drive_start_model(kickoff_data),
         }

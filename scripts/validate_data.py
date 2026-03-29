@@ -6,6 +6,8 @@ Requires network access to download nflverse data on first run.
 import sys
 from pathlib import Path
 
+import polars as pl
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from fantasy_sim.data.loader import DataLoader
@@ -52,7 +54,7 @@ def main():
     print("  PASS: Turnover rates in expected ranges")
 
     print("\n--- Kicking Model ---")
-    fg_plays = pbp.filter(pbp["play_type"] == "field_goal")
+    fg_plays = pbp.filter(pl.col("play_type") == "field_goal")
     kicking = pre.compute_kicking_model(fg_plays)
     print(f"  FG make rate 0-39: {kicking.fg_make_rate['0_39']:.1%}")
     print(f"  FG make rate 40-49: {kicking.fg_make_rate['40_49']:.1%}")
@@ -61,7 +63,7 @@ def main():
     print("  PASS: FG rates decrease with distance")
 
     print("\n--- Drive Start Model ---")
-    ko_plays = pbp.filter(pbp["play_type"] == "kickoff")
+    ko_plays = pbp.filter(pl.col("play_type") == "kickoff")
     drive_start = pre.compute_drive_start_model(ko_plays)
     print(f"  Touchback rate: {drive_start.touchback_rate:.1%}")
     print(f"  Touchback yardline: own {100 - drive_start.touchback_yardline}")
