@@ -1,5 +1,5 @@
 # src/fantasy_sim/models/player.py
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 
 
