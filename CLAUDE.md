@@ -21,9 +21,15 @@ NFL fantasy football projections simulator. Simulates games play-by-play using h
 uv run pytest tests/ -v
 
 # Run specific test module
-uv run pytest tests/test_data/test_preprocessor.py -v
+uv run pytest tests/test_engine/test_game_sim.py -v
 
-# Run integration validation (requires network)
+# Run statistical validation tests only
+uv run pytest tests/ -v -m statistical
+
+# Run simulation validation script (5000 games)
+uv run python scripts/validate_sim.py
+
+# Run data validation (requires network)
 uv run python scripts/validate_data.py
 
 # Install dependencies
@@ -36,7 +42,7 @@ The project is organized as a pipeline:
 
 1. **Data Layer** (`data/loader.py`, `data/preprocessor.py`, `data/pipeline.py`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions
 2. **Models** (`models/game_state.py`, `models/distributions.py`) — Shared data types used by both preprocessing and simulation
-3. **Engine** (Phase 2) — Game simulation state machine
+3. **Engine** (`engine/types.py`, `engine/play_caller.py`, `engine/play_resolver.py`, `engine/game_flow.py`, `engine/clock.py`, `engine/game_sim.py`, `engine/monte_carlo.py`) — Play-by-play game simulation with Monte Carlo runner
 4. **Scoring** (Phase 4) — Config-driven fantasy point calculation
 5. **Output** (Phase 4) — CLI, terminal tables, CSV/JSON export
 
@@ -46,6 +52,11 @@ The project is organized as a pipeline:
 - **Distribution types**: `PlayCallingDist`, `PlayOutcomeDist`, `TurnoverRates`, `KickingModel`, `DriveStartModel` in `models/distributions.py`. The sim engine samples from these.
 - **Empirical distributions**: Play outcomes are stored as numpy arrays of historical values and sampled from directly (non-parametric).
 - **MIN_BUCKET_PLAYS = 10**: Buckets with fewer than 10 plays fall back to team/league defaults.
+- **GameState**: Mutable dataclass tracking game state (quarter, clock, possession, down, distance, yard_line, scores). `score_differential` is from possessing team's perspective.
+- **yardline_100 convention**: 99=own 1, 75=own 25 (touchback), 50=midfield, 20=red zone, 1=goal line. TD when `yard_line - yards <= 0`. Safety when `yard_line - yards >= 100`.
+- **Play resolution priority**: Sack check → interception check → normal pass outcome. Fumble cancels TD.
+- **simulate_game()**: Main loop: 4th down decision → select play → resolve play → update box scores → handle outcome (safety/TD/turnover/yards) → clock → quarter transitions.
+- **TeamDistributions**: Bundles all distribution types needed per team. Passed to `simulate_game()` for home and away.
 
 ## Testing
 
@@ -57,9 +68,9 @@ The project is organized as a pipeline:
 
 ## Current State
 
-- **Branch**: `phase1/data-pipeline`
-- **Phase 1 (Data Pipeline)**: Complete — 67 tests passing
-- **Phases 2-6**: Not started. See design spec for full roadmap.
+- **Phase 1 (Data Pipeline)**: Complete — 67 tests
+- **Phase 2 (Game State Machine)**: Complete — 80 tests (147 total)
+- **Phases 3-6**: Not started. See design spec for full roadmap.
 
 ## Style
 
