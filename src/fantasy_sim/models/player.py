@@ -55,7 +55,12 @@ class TeamRoster:
     def select_receiver(
         self, rng: np.random.Generator, is_red_zone: bool = False
     ) -> PlayerModel:
-        """Select a receiver weighted by target share."""
+        """Randomly select a pass target, weighted by target share.
+
+        Players with target_share > 0 are preferred.  When none exist,
+        all non-QB players are eligible with uniform probability.
+        Raises ValueError if no eligible receivers exist.
+        """
         eligible = [p for p in self.players if p.usage.target_share > 0]
         if not eligible:
             # Fallback: any non-QB with uniform weights
@@ -82,7 +87,12 @@ class TeamRoster:
     def select_rusher(
         self, rng: np.random.Generator, is_red_zone: bool = False
     ) -> PlayerModel:
-        """Select a ball carrier weighted by carry share."""
+        """Randomly select a ball carrier, weighted by carry share.
+
+        Players with carry_share > 0 are preferred.  When none exist,
+        all RBs are eligible with uniform probability.
+        Raises ValueError if no eligible rushers exist.
+        """
         eligible = [p for p in self.players if p.usage.carry_share > 0]
         if not eligible:
             # Fallback: any RB with uniform weights
