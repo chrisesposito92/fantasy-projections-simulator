@@ -113,3 +113,57 @@ class TestTeamRoster:
         rng = np.random.default_rng(42)
         receiver = kc_roster.select_receiver(rng, is_red_zone=True)
         assert receiver is not None
+
+    # --- Finding 1: division-by-zero on fallback paths ---
+
+    def test_select_receiver_fallback_uniform_when_no_target_shares(self):
+        """When no player has target_share > 0, fallback to uniform weights."""
+        rb = PlayerModel("RB1", "Back", "RB", "T",
+                         PlayerUsage(carry_share=0.60),
+                         PlayerOutcomes(rushing_yards_dist=np.array([3, 5])))
+        wr = PlayerModel("WR1", "Wide", "WR", "T",
+                         PlayerUsage(),
+                         PlayerOutcomes(receiving_yards_dist=np.array([8, 12])))
+        roster = TeamRoster(team="T", players=[rb, wr])
+        rng = np.random.default_rng(42)
+        # Should not raise; both non-QBs get equal probability
+        receivers = [roster.select_receiver(rng) for _ in range(100)]
+        ids = set(r.player_id for r in receivers)
+        assert ids == {"RB1", "WR1"}
+
+    def test_select_rusher_fallback_uniform_when_no_carry_shares(self):
+        """When no player has carry_share > 0, fallback to uniform weights."""
+        rb1 = PlayerModel("RB1", "Back1", "RB", "T",
+                          PlayerUsage(), PlayerOutcomes())
+        rb2 = PlayerModel("RB2", "Back2", "RB", "T",
+                          PlayerUsage(), PlayerOutcomes())
+        roster = TeamRoster(team="T", players=[rb1, rb2])
+        rng = np.random.default_rng(42)
+        # Should not raise; both RBs get equal probability
+        rushers = [roster.select_rusher(rng) for _ in range(100)]
+        ids = set(r.player_id for r in rushers)
+        assert ids == {"RB1", "RB2"}
+
+    # --- Finding 2: error handling for empty roster / missing positions ---
+
+    def test_get_starting_qb_raises_on_no_qb(self):
+        """get_starting_qb raises ValueError with a clear message when no QB exists."""
+        wr = PlayerModel("WR1", "Wide", "WR", "T",
+                         PlayerUsage(target_share=0.50), PlayerOutcomes())
+        roster = TeamRoster(team="T", players=[wr])
+        with pytest.raises(ValueError, match="No QB found on roster for T"):
+            roster.get_starting_qb()
+
+    def test_select_receiver_raises_on_empty_roster(self):
+        """select_receiver raises ValueError on an empty roster."""
+        roster = TeamRoster(team="T", players=[])
+        rng = np.random.default_rng(42)
+        with pytest.raises(ValueError, match="No eligible receivers on roster for T"):
+            roster.select_receiver(rng)
+
+    def test_select_rusher_raises_on_empty_roster(self):
+        """select_rusher raises ValueError on an empty roster."""
+        roster = TeamRoster(team="T", players=[])
+        rng = np.random.default_rng(42)
+        with pytest.raises(ValueError, match="No eligible rushers on roster for T"):
+            roster.select_rusher(rng)
