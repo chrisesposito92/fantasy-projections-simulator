@@ -59,7 +59,7 @@ def simulate_game(
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 continue
             elif decision == "field_goal":
-                recv_ds = home_dists.drive_start if state.possession == "home" else away_dists.drive_start
+                recv_ds = away_dists.drive_start if state.possession == "home" else home_dists.drive_start
                 attempt_field_goal(state, off_dists.kicking, recv_ds, rng, off_box)
                 apply_clock(state, 5)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
@@ -101,7 +101,7 @@ def simulate_game(
         away_score=state.away_score,
         home_box=home_box,
         away_box=away_box,
-        total_plays=total_plays,
+        total_plays=total_plays,  # scrimmage plays only (excludes punts/FGs)
         overtime=state.quarter >= 5,
     )
 
