@@ -11,7 +11,11 @@ TWO_POINT_SUCCESS_RATE = 0.48
 
 
 def apply_yards(state: GameState, yards: int) -> None:
-    """Apply yards gained to game state. Handles first downs and turnover on downs."""
+    """Apply yards gained to game state. Handles first downs and turnover on downs.
+
+    Precondition: caller must handle touchdowns (yard_line - yards <= 0) before
+    calling this function. Passing a touchdown play here will produce invalid state.
+    """
     state.yard_line -= yards
 
     if yards >= state.distance:
