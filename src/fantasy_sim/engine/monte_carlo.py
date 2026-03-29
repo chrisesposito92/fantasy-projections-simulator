@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 from fantasy_sim.engine.types import TeamDistributions, GameResult
 from fantasy_sim.engine.game_sim import simulate_game
