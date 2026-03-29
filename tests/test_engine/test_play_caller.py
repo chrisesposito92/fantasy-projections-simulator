@@ -93,3 +93,8 @@ class TestFourthDownDecision:
         """yard_line=45 → FG distance = 62 yards. Too far, should punt."""
         state = make_state(down=4, distance=5, yard_line=45)
         assert fourth_down_decision(state, make_kicking()) == "punt"
+
+    def test_go_for_it_preferred_over_fg_in_overlap_zone(self):
+        """4th and 2 at opp 25 — prefers go_for_it over a makeable 42-yd FG."""
+        state = make_state(down=4, distance=2, yard_line=25)
+        assert fourth_down_decision(state, make_kicking()) == "go_for_it"
