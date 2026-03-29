@@ -43,7 +43,7 @@ def _resolve_pass(
             yards = -(99 - state.yard_line)  # clamp to own end zone
         return PlayResult(
             play_type="pass", yards=yards, is_sack=True,
-            is_fumble=is_fumble, is_safety=is_safety,
+            is_fumble=is_fumble and not is_safety, is_safety=is_safety,
             clock_runoff=CLOCK_SACK,
         )
 
@@ -102,7 +102,7 @@ def _resolve_run(
     return PlayResult(
         play_type="run", yards=yards,
         is_touchdown=is_td and not is_fumble,
-        is_fumble=is_fumble,
+        is_fumble=is_fumble and not is_safety,
         is_safety=is_safety,
         clock_runoff=CLOCK_RUN,
     )

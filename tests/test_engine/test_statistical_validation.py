@@ -85,7 +85,7 @@ class TestStatisticalValidation:
             assert game.away_score == game.away_box.points
 
     def test_turnovers_reasonable(self, sim_results):
-        """Average turnovers per team should be 1-3 per game."""
+        """Average turnovers per game should be between 1 and 8."""
         total_games = len(sim_results.games)
         total_ints = sum(g.home_box.interceptions_thrown + g.away_box.interceptions_thrown for g in sim_results.games)
         total_fumbles = sum(g.home_box.fumbles_lost + g.away_box.fumbles_lost for g in sim_results.games)

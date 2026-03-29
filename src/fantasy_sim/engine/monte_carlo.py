@@ -42,6 +42,8 @@ def run_simulations(
     seed: int = 42,
 ) -> SimulationSummary:
     """Run N game simulations and return all results."""
+    if n_sims <= 0:
+        raise ValueError(f"n_sims must be positive, got {n_sims}")
     rng = np.random.default_rng(seed)
     games = []
     for _ in range(n_sims):

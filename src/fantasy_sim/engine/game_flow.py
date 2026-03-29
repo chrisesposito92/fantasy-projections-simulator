@@ -50,7 +50,11 @@ def handle_turnover(state: GameState, result: PlayResult) -> None:
     """Handle interception or fumble — flip possession at the spot."""
     spot = state.yard_line - result.yards
     change_possession(state)
-    state.yard_line = 100 - spot
+    if spot <= 0:
+        # Turnover in end zone = touchback at own 25
+        state.yard_line = 75
+    else:
+        state.yard_line = 100 - spot
     state.down = 1
     state.distance = 10
 
@@ -106,7 +110,7 @@ def attempt_field_goal(
         # Missed — opponent takes over at spot of kick (or own 20, whichever better)
         spot = state.yard_line + 7  # Snap spot
         change_possession(state)
-        state.yard_line = max(100 - spot, 80)  # At least own 20
+        state.yard_line = min(100 - spot, 80)  # No worse than own 20
         state.down = 1
         state.distance = 10
 
