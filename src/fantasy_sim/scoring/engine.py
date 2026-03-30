@@ -1,5 +1,11 @@
 from fantasy_sim.engine.types import PlayerBoxScore, TeamBoxScore
 
+_YARDAGE_BONUSES = [
+    ("rush_yards", "rushing_bonus_", [100, 200]),
+    ("receiving_yards", "receiving_bonus_", [100, 200]),
+    ("pass_yards", "passing_bonus_", [300, 400, 500]),
+]
+
 
 def score_player(box: PlayerBoxScore, config: dict) -> float:
     """Calculate fantasy points for an offensive player (QB/RB/WR/TE)."""
@@ -9,11 +15,19 @@ def score_player(box: PlayerBoxScore, config: dict) -> float:
     points += box.interceptions * config.get("interception", 0)
     points += box.rush_yards * config.get("rushing_yard", 0)
     points += box.rush_tds * config.get("rushing_td", 0)
-    points += box.receptions * config.get("reception", 0)
+    pos_key = f"reception_{box.position.lower()}"
+    reception_value = config.get(pos_key, config.get("reception", 0))
+    points += box.receptions * reception_value
     points += box.receiving_yards * config.get("receiving_yard", 0)
     points += box.receiving_tds * config.get("receiving_td", 0)
     points += box.fumbles_lost * config.get("fumble_lost", 0)
     points += box.two_point_conversions * config.get("two_point", 0)
+    for stat_attr, config_prefix, thresholds in _YARDAGE_BONUSES:
+        stat_value = getattr(box, stat_attr, 0)
+        for threshold in thresholds:
+            bonus_key = f"{config_prefix}{threshold}"
+            if stat_value >= threshold and bonus_key in config:
+                points += config[bonus_key]
     return points
 
 
