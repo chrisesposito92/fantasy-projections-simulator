@@ -219,6 +219,40 @@ class TestResolvePassWithPlayers:
         assert 0.50 <= rate <= 0.85
 
 
+class TestResolvePassScramble:
+    def _make_scramble_roster(self) -> TeamRoster:
+        qb = PlayerModel("QB1", "QB", "QB", "T",
+                         PlayerUsage(snap_share=1.0, scramble_rate=1.0),
+                         PlayerOutcomes(scramble_yards_dist=np.array([5, 8, 12]),
+                                        fumble_rate=0.0))
+        wr1 = PlayerModel("WR1", "WR1", "WR", "T",
+                          PlayerUsage(target_share=1.0),
+                          PlayerOutcomes(catch_rate=0.65,
+                                         receiving_yards_dist=np.array([10])))
+        rb1 = PlayerModel("RB1", "RB1", "RB", "T",
+                          PlayerUsage(carry_share=1.0),
+                          PlayerOutcomes(rushing_yards_dist=np.array([4])))
+        return TeamRoster(team="T", players=[qb, wr1, rb1])
+
+    def test_scramble_returns_run_play_type(self):
+        rng = np.random.default_rng(42)
+        roster = self._make_scramble_roster()
+        result = resolve_play(make_state(), "pass", make_outcomes(), make_turnover_rates(), rng, roster=roster)
+        assert result.play_type == "run"
+
+    def test_scramble_has_rusher_id_as_qb(self):
+        rng = np.random.default_rng(42)
+        roster = self._make_scramble_roster()
+        result = resolve_play(make_state(), "pass", make_outcomes(), make_turnover_rates(), rng, roster=roster)
+        assert result.rusher_id == "QB1"
+
+    def test_scramble_uses_scramble_yards_dist(self):
+        rng = np.random.default_rng(42)
+        roster = self._make_scramble_roster()
+        result = resolve_play(make_state(), "pass", make_outcomes(), make_turnover_rates(), rng, roster=roster)
+        assert result.yards in [5, 8, 12]
+
+
 class TestResolveRunWithPlayers:
     def test_run_has_rusher(self):
         rng = np.random.default_rng(42)
