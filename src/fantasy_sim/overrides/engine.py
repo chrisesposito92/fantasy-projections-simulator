@@ -42,7 +42,8 @@ def apply_player_override(
         elif field == "games_played":
             player.games_played = value
         elif field == "games_missed":
-            # games_missed is a list of week numbers; convert to games_played
+            # games_missed is a list of week numbers; store and convert to games_played
+            player.weeks_missed = list(value)
             player.games_played = 17 - len(value)
         else:
             raise ValueError(

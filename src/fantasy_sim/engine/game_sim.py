@@ -27,6 +27,7 @@ def simulate_game(
     rng: np.random.Generator,
     home_roster: TeamRoster | None = None,
     away_roster: TeamRoster | None = None,
+    week: int = 0,
 ) -> GameResult:
     """Simulate a complete NFL game play-by-play."""
     player_stats: dict[str, PlayerBoxScore] = {}
@@ -37,6 +38,7 @@ def simulate_game(
         home_team=home_dists.play_calling.team,
         away_team=away_dists.play_calling.team,
         receiving_2nd_half="away",
+        week=week,
     )
     home_box = TeamBoxScore()
     away_box = TeamBoxScore()

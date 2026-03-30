@@ -29,6 +29,7 @@ class GameState:
     away_team: str
     receiving_2nd_half: str  # "home" | "away"
     game_over: bool = False
+    week: int = 0
     two_min_warning_fired: bool = False
 
     @property

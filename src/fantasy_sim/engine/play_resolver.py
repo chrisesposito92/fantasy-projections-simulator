@@ -61,7 +61,7 @@ def _resolve_pass(
     receiver_id: str | None = None
 
     if roster is not None:
-        passer = select_passer(roster)
+        passer = select_passer(roster, state)
         passer_id = passer.player_id
 
         # QB scramble check — before sack/int, the QB decides to run
