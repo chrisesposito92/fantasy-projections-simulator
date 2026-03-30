@@ -29,6 +29,9 @@ uv run pytest tests/ -v -m statistical
 # Run simulation validation script (5000 games)
 uv run python scripts/validate_sim.py
 
+# Run player validation (1000 sims, no network needed)
+uv run python scripts/validate_players.py
+
 # Run data validation (requires network)
 uv run python scripts/validate_data.py
 
@@ -40,9 +43,9 @@ uv pip install -e ".[dev]"
 
 The project is organized as a pipeline:
 
-1. **Data Layer** (`data/loader.py`, `data/preprocessor.py`, `data/pipeline.py`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions
-2. **Models** (`models/game_state.py`, `models/distributions.py`) — Shared data types used by both preprocessing and simulation
-3. **Engine** (`engine/types.py`, `engine/play_caller.py`, `engine/play_resolver.py`, `engine/game_flow.py`, `engine/clock.py`, `engine/game_sim.py`, `engine/monte_carlo.py`) — Play-by-play game simulation with Monte Carlo runner
+1. **Data Layer** (`data/loader.py`, `data/preprocessor.py`, `data/pipeline.py`, `data/player_builder.py`, `data/rookie_builder.py`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models from PBP data, generates rookie archetypes
+2. **Models** (`models/game_state.py`, `models/distributions.py`, `models/player.py`) — Shared data types used by both preprocessing and simulation, including player usage/outcome models and team rosters
+3. **Engine** (`engine/types.py`, `engine/play_caller.py`, `engine/play_resolver.py`, `engine/player_selector.py`, `engine/game_flow.py`, `engine/clock.py`, `engine/game_sim.py`, `engine/monte_carlo.py`) — Play-by-play game simulation with player-level tracking and Monte Carlo runner
 4. **Scoring** (Phase 4) — Config-driven fantasy point calculation
 5. **Output** (Phase 4) — CLI, terminal tables, CSV/JSON export
 
@@ -54,9 +57,13 @@ The project is organized as a pipeline:
 - **MIN_BUCKET_PLAYS = 10**: Buckets with fewer than 10 plays fall back to team/league defaults.
 - **GameState**: Mutable dataclass tracking game state (quarter, clock, possession, down, distance, yard_line, scores). `score_differential` is from possessing team's perspective.
 - **yardline_100 convention**: 99=own 1, 75=own 25 (touchback), 50=midfield, 20=red zone, 1=goal line. TD when `yard_line - yards <= 0`. Safety when `yard_line - yards >= 100`.
-- **Play resolution priority**: Sack check → interception check → normal pass outcome. Fumble cancels TD.
-- **simulate_game()**: Main loop: 4th down decision → select play → resolve play → update box scores → handle outcome (safety/TD/turnover/yards) → clock → quarter transitions.
+- **Play resolution priority**: Scramble check (if roster) → sack check → interception check → normal pass outcome. Fumble cancels TD.
+- **simulate_game()**: Main loop: 4th down decision → select play → resolve play → update box scores → update player stats → handle outcome (safety/TD/turnover/yards) → clock → quarter transitions. Optional `home_roster`/`away_roster` params enable player-level tracking.
 - **TeamDistributions**: Bundles all distribution types needed per team. Passed to `simulate_game()` for home and away.
+- **PlayerModel / TeamRoster**: Per-player usage rates (target_share, carry_share) and outcome distributions (catch_rate, yards distributions). `TeamRoster` provides weighted selection of passer/receiver/rusher. When rosters are provided, play resolution uses player-specific distributions instead of team-level ones.
+- **PlayerBoxScore**: Per-player stats for one game (pass/rush/receiving). Tracked in `GameResult.player_stats` dict keyed by player_id.
+- **player_builder**: Builds `PlayerModel` objects from PBP + roster data. `MIN_PLAYER_PLAYS = 5` for per-player yards distributions.
+- **rookie_builder**: Generates `PlayerModel` for rookies using draft-capital-based archetypes (3 tiers by round).
 
 ## Testing
 
@@ -70,7 +77,8 @@ The project is organized as a pipeline:
 
 - **Phase 1 (Data Pipeline)**: Complete — 67 tests
 - **Phase 2 (Game State Machine)**: Complete — 80 tests (147 total)
-- **Phases 3-6**: Not started. See design spec for full roadmap.
+- **Phase 3 (Player Models)**: Complete — 61 tests (208 total)
+- **Phases 4-6**: Not started. See design spec for full roadmap.
 
 ## Style
 
