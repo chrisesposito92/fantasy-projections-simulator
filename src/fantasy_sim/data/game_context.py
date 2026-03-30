@@ -36,7 +36,7 @@ class GameContextBuilder:
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
         self._pipeline_cache: dict | None = None
-        self._cached_training_seasons: list[int] | None = None
+        self._cached_training_seasons: tuple[int, ...] | None = None
         self._pbp_stats_cache: dict | None = None
         self._player_models_cache: dict | None = None
         self._player_cache_key: tuple | None = None
@@ -61,13 +61,14 @@ class GameContextBuilder:
             pbp = self.loader.load_pbp(training_seasons)
 
         # --- Layer 1: Pipeline output (cached on training_seasons) ---
+        ts_key = tuple(sorted(training_seasons))
         if (
             self._pipeline_cache is None
-            or self._cached_training_seasons != training_seasons
+            or self._cached_training_seasons != ts_key
         ):
             pipeline = DataPipeline(cache_dir=self.cache_dir, seasons=training_seasons)
             self._pipeline_cache = pipeline.build(pbp=pbp)
-            self._cached_training_seasons = training_seasons
+            self._cached_training_seasons = ts_key
             self._pbp_stats_cache = None
 
         # --- Layer 2: PBP stats (cached on training_seasons) ---
@@ -75,11 +76,14 @@ class GameContextBuilder:
             self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons)
 
         # --- Layer 3: Player models (cached on training_seasons + target_season + week) ---
-        cache_key = (tuple(training_seasons), target_season, week)
+        cache_key = (ts_key, target_season, week)
         if self._player_models_cache is None or self._player_cache_key != cache_key:
             # Determine current rosters
             if rosters is not None:
                 current_rosters = rosters
+                # Filter to target_season if provided to prevent wrong-season assignments
+                if target_season is not None and "season" in current_rosters.columns:
+                    current_rosters = current_rosters.filter(pl.col("season") == target_season)
             else:
                 roster_season = target_season or (max(training_seasons) + 1)
                 current_rosters = self.loader.load_rosters([roster_season])
@@ -186,16 +190,20 @@ class GameContextBuilder:
     ) -> tuple[TeamDistributions, TeamDistributions, TeamRoster, TeamRoster]:
         """Build all context needed to simulate one game."""
         home_dists = self.build_team_distributions(
-            home_team, training_seasons, pbp, rosters, target_season, week
+            home_team, training_seasons=training_seasons, pbp=pbp,
+            rosters=rosters, target_season=target_season, week=week,
         )
         away_dists = self.build_team_distributions(
-            away_team, training_seasons, pbp, rosters, target_season, week
+            away_team, training_seasons=training_seasons, pbp=pbp,
+            rosters=rosters, target_season=target_season, week=week,
         )
         home_roster = self.build_team_roster(
-            home_team, training_seasons, pbp, rosters, target_season, week
+            home_team, training_seasons=training_seasons, pbp=pbp,
+            rosters=rosters, target_season=target_season, week=week,
         )
         away_roster = self.build_team_roster(
-            away_team, training_seasons, pbp, rosters, target_season, week
+            away_team, training_seasons=training_seasons, pbp=pbp,
+            rosters=rosters, target_season=target_season, week=week,
         )
         return home_dists, away_dists, home_roster, away_roster
 

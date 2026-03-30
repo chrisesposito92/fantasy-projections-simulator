@@ -263,18 +263,17 @@ def _assemble_models(
     team_air_yards = aggregated_stats["team_air_yards"]
     has_air_yards = aggregated_stats["has_air_yards"]
 
-    # Filter roster to active fantasy-relevant players
-    filtered = current_rosters.filter(
-        pl.col("status").is_in(list(ACTIVE_STATUSES)) &
-        pl.col("position").is_in(list(FANTASY_POSITIONS))
-    )
-
-    # Get latest roster entry per player (sort by season+week desc, take first)
+    # Get latest roster entry per player FIRST, then filter by status/position.
+    # This ensures a player who goes ACT→IR is correctly excluded (their
+    # latest row is IR, not a stale ACT row from an earlier week).
     roster_latest = (
-        filtered
+        current_rosters
         .sort(["season", "week"], descending=True)
         .group_by("player_id")
         .first()
+    ).filter(
+        pl.col("status").is_in(list(ACTIVE_STATUSES)) &
+        pl.col("position").is_in(list(FANTASY_POSITIONS))
     )
 
     models: dict[str, PlayerModel] = {}
