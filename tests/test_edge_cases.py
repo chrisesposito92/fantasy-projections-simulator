@@ -493,3 +493,46 @@ class TestRedistributionFullValidation:
             assert p.usage.target_share >= 0.0, (
                 f"{p.player_id} has negative target_share: {p.usage.target_share}"
             )
+
+
+# ---------------------------------------------------------------------------
+# 10. TestCIConfiguration (Gap 33)
+# ---------------------------------------------------------------------------
+
+class TestCIConfiguration:
+    """Gap 33: Verify CI workflow exists and is valid."""
+
+    def test_ci_workflow_exists(self):
+        from pathlib import Path
+        ci_path = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+        assert ci_path.exists(), f"CI workflow not found at {ci_path}"
+
+    def test_ci_workflow_is_valid_yaml(self):
+        import yaml
+        from pathlib import Path
+        ci_path = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+        with open(ci_path) as f:
+            config = yaml.safe_load(f)
+        # PyYAML parses the YAML keyword `on` as boolean True
+        assert True in config or "on" in config
+        assert "jobs" in config
+        assert "test" in config["jobs"]
+
+    def test_ci_excludes_integration_and_statistical(self):
+        from pathlib import Path
+        ci_path = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+        content = ci_path.read_text()
+        assert "not integration" in content
+        assert "not statistical" in content
+
+    def test_ci_has_python_version_matrix(self):
+        import yaml
+        from pathlib import Path
+        ci_path = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+        with open(ci_path) as f:
+            config = yaml.safe_load(f)
+        matrix = config["jobs"]["test"]["strategy"]["matrix"]
+        versions = matrix["python-version"]
+        assert "3.12" in versions
+        assert "3.13" in versions
+        assert "3.14" in versions
