@@ -40,21 +40,26 @@ def load_actual_scores(
     actuals = []
     for row in filtered.iter_rows(named=True):
         fumbles = (
-            row.get("receiving_fumbles_lost", 0) +
-            row.get("rushing_fumbles_lost", 0) +
-            row.get("sack_fumbles_lost", 0)
+            (row.get("receiving_fumbles_lost", 0) or 0) +
+            (row.get("rushing_fumbles_lost", 0) or 0) +
+            (row.get("sack_fumbles_lost", 0) or 0)
         )
+        # Handle nflverse column name variations
+        team = row.get("recent_team") or row.get("team") or ""
+        name = row.get("player_name") or row.get("player_display_name") or ""
+        interceptions = row.get("interceptions") or row.get("passing_interceptions") or 0
+        sacks = row.get("sacks") or row.get("sacks_suffered") or 0
         box = PlayerBoxScore(
             player_id=row["player_id"],
-            name=row["player_name"],
+            name=name,
             position=row["position"],
-            team=row["recent_team"],
+            team=team,
             pass_yards=row.get("passing_yards", 0) or 0,
             pass_tds=row.get("passing_tds", 0) or 0,
             completions=row.get("completions", 0) or 0,
             pass_attempts=row.get("attempts", 0) or 0,
-            interceptions=row.get("interceptions", 0) or 0,
-            sacks=row.get("sacks", 0) or 0,
+            interceptions=interceptions,
+            sacks=sacks,
             rush_yards=row.get("rushing_yards", 0) or 0,
             rush_tds=row.get("rushing_tds", 0) or 0,
             rush_attempts=row.get("carries", 0) or 0,
@@ -68,9 +73,9 @@ def load_actual_scores(
 
         actuals.append(ActualPlayerWeek(
             player_id=row["player_id"],
-            name=row["player_name"],
+            name=name,
             position=row["position"],
-            team=row["recent_team"],
+            team=team,
             season=row["season"],
             week=row["week"],
             fpts=round(fpts, 1),
