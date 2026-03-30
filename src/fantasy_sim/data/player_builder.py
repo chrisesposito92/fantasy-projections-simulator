@@ -219,9 +219,33 @@ def _aggregate_pbp_stats(
         if pid not in qb_stats:
             qb_stats[pid] = {
                 "attempts": 0, "team": row["posteam"], "game_ids": set(),
+                "non_sack_attempts": 0, "non_sack_fumbles": 0,
             }
         qb_stats[pid]["attempts"] += 1
         qb_stats[pid]["game_ids"].add(row["game_id"])
+        if row["sack"] != 1:
+            qb_stats[pid]["non_sack_attempts"] += 1
+            if row["fumble_lost"] == 1:
+                qb_stats[pid]["non_sack_fumbles"] += 1
+
+    # --- QB scramble separation ---
+    has_qb_scramble = "qb_scramble" in plays.columns
+    qb_scrambles: dict[str, dict] = {}
+
+    if has_qb_scramble:
+        qb_passer_ids = set(qb_stats.keys())
+        for row in rush_plays.iter_rows(named=True):
+            rid = row.get("rusher_player_id")
+            if rid is None or rid not in qb_passer_ids:
+                continue
+            if rid not in qb_scrambles:
+                qb_scrambles[rid] = {"scramble_count": 0, "scramble_yards": [],
+                                     "designed_count": 0}
+            if row.get("qb_scramble") == 1:
+                qb_scrambles[rid]["scramble_count"] += 1
+                qb_scrambles[rid]["scramble_yards"].append(row["yards_gained"])
+            else:
+                qb_scrambles[rid]["designed_count"] += 1
 
     return {
         "receiving": receiving_stats,
@@ -233,6 +257,8 @@ def _aggregate_pbp_stats(
         "team_rz_rush_attempts": team_rz_rush_attempts,
         "team_air_yards": team_air_yards,
         "has_air_yards": has_air_yards,
+        "qb_scrambles": qb_scrambles,
+        "has_qb_scramble": has_qb_scramble,
     }
 
 
@@ -262,6 +288,8 @@ def _assemble_models(
     team_rz_rush_attempts = aggregated_stats["team_rz_rush_attempts"]
     team_air_yards = aggregated_stats["team_air_yards"]
     has_air_yards = aggregated_stats["has_air_yards"]
+    qb_scrambles = aggregated_stats.get("qb_scrambles", {})
+    has_qb_scramble = aggregated_stats.get("has_qb_scramble", False)
 
     # Get latest roster entry per player FIRST, then filter by status/position.
     # This ensures a player who goes ACT→IR is correctly excluded (their
@@ -337,20 +365,6 @@ def _assemble_models(
             if team_rz_ra > 0:
                 usage.red_zone_carry_share = rs["rz_carries"] / team_rz_ra
 
-        # QB snap share and scramble rate (use hist_team for team totals)
-        if position == "QB" and pid in qb_stats:
-            qs = qb_stats[pid]
-            hist_team = qs["team"]
-            team_pa = team_pass_attempts.get(hist_team, 0)
-            usage.snap_share = qs["attempts"] / max(team_pa, 1)
-
-            # Scramble rate: QB rush attempts / (QB pass attempts + QB rush attempts)
-            qb_rush = rushing_stats[pid]["carries"] if pid in rushing_stats else 0
-            qb_pass = qs["attempts"]
-            total_qb_plays = qb_pass + qb_rush
-            if total_qb_plays > 0:
-                usage.scramble_rate = qb_rush / total_qb_plays
-
         # --- Outcomes ---
         outcomes = PlayerOutcomes()
 
@@ -363,13 +377,44 @@ def _assemble_models(
 
         if pid in rushing_stats:
             rs = rushing_stats[pid]
-            if position == "QB":
+            if position == "QB" and outcomes.scramble_yards_dist is None:
                 # QB rush yards -> scramble_yards_dist (not rushing_yards_dist)
+                # Only used in fallback path; qb_scramble path sets this below.
                 if len(rs["yards"]) >= 1:
                     outcomes.scramble_yards_dist = np.array(rs["yards"])
             else:
                 if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
                     outcomes.rushing_yards_dist = np.array(rs["yards"])
+
+        # QB snap share and scramble rate (use hist_team for team totals)
+        if position == "QB" and pid in qb_stats:
+            qs = qb_stats[pid]
+            hist_team = qs["team"]
+            team_pa = team_pass_attempts.get(hist_team, 0)
+            usage.snap_share = qs["attempts"] / max(team_pa, 1)
+
+            if has_qb_scramble and pid in qb_scrambles:
+                # Use qb_scramble column: only actual scrambles
+                sc = qb_scrambles[pid]
+                total_qb_plays = qs["attempts"] + sc["scramble_count"]
+                if total_qb_plays > 0:
+                    usage.scramble_rate = sc["scramble_count"] / total_qb_plays
+                # Build scramble_yards_dist from scramble-only plays
+                if len(sc["scramble_yards"]) >= 1:
+                    outcomes.scramble_yards_dist = np.array(sc["scramble_yards"])
+            else:
+                # Fallback: no qb_scramble column, use all QB rushes (old behavior)
+                qb_rush = rushing_stats[pid]["carries"] if pid in rushing_stats else 0
+                qb_pass = qs["attempts"]
+                total_qb_plays = qb_pass + qb_rush
+                if total_qb_plays > 0:
+                    usage.scramble_rate = qb_rush / total_qb_plays
+
+            # QB pass fumble rate
+            if qs["non_sack_attempts"] >= 100:
+                outcomes.pass_fumble_rate = qs["non_sack_fumbles"] / qs["non_sack_attempts"]
+            else:
+                outcomes.pass_fumble_rate = 0.0034  # League average
 
         models[pid] = PlayerModel(
             player_id=pid,

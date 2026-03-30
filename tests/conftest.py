@@ -348,6 +348,61 @@ def scramble_pbp() -> pl.DataFrame:
 
 
 @pytest.fixture
+def scramble_qb_pbp() -> pl.DataFrame:
+    """PBP with qb_scramble column for testing scramble vs designed run separation.
+
+    JA17 (BUF QB): 20 pass plays, 4 scrambles (qb_scramble=1), 6 designed runs (qb_scramble=0)
+    JC02 (BUF RB): 10 rush plays (all qb_scramble=0)
+    """
+    plays = []
+    base = {
+        "season": 2024, "week": 1, "game_id": "2024_01_BUF_KC",
+        "posteam": "BUF", "defteam": "KC",
+        "down": 1, "ydstogo": 10, "yardline_100": 50,
+        "score_differential": 0, "qtr": 1,
+        "pass_attempt": 0, "rush_attempt": 0,
+        "interception": 0, "fumble_lost": 0, "sack": 0,
+        "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+        "passer_player_id": None, "receiver_player_id": None,
+        "rusher_player_id": None, "qb_scramble": 0,
+    }
+
+    # JA17: 20 pass plays
+    for i in range(20):
+        plays.append({
+            **base, "play_type": "pass", "yards_gained": 8,
+            "complete_pass": 1, "pass_attempt": 1,
+            "passer_player_id": "JA17", "receiver_player_id": "SD14",
+        })
+
+    # JA17: 4 scrambles (qb_scramble=1)
+    for yards in [5, 8, 12, 3]:
+        plays.append({
+            **base, "play_type": "run", "yards_gained": yards,
+            "rush_attempt": 1, "rusher_player_id": "JA17",
+            "qb_scramble": 1,
+        })
+
+    # JA17: 6 designed runs (qb_scramble=0)
+    for yards in [1, 3, -1, 2, 15, 7]:
+        plays.append({
+            **base, "play_type": "run", "yards_gained": yards,
+            "rush_attempt": 1, "rusher_player_id": "JA17",
+            "qb_scramble": 0,
+        })
+
+    # JC02: 10 rush plays
+    for i in range(10):
+        plays.append({
+            **base, "play_type": "run", "yards_gained": 5,
+            "rush_attempt": 1, "rusher_player_id": "JC02",
+            "qb_scramble": 0,
+        })
+
+    return pl.DataFrame(plays)
+
+
+@pytest.fixture
 def traded_player_rosters() -> pl.DataFrame:
     """Season 2025 roster data for testing traded player team assignment.
 

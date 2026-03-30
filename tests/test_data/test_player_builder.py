@@ -319,3 +319,30 @@ class TestAssembleModels:
         agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
         models = _assemble_models(agg, traded_player_rosters)
         assert "PNT1" not in models
+
+
+class TestScrambleRateFix:
+    def test_scramble_rate_uses_qb_scramble_column(self, scramble_qb_pbp, sample_rosters):
+        """When qb_scramble column exists, only scrambles count toward scramble_rate."""
+        models = build_player_models(scramble_qb_pbp, sample_rosters, training_seasons=[2024])
+        ja = models.get("JA17")
+        assert ja is not None
+        # 4 scrambles / (20 passes + 4 scrambles) = 0.1667
+        assert ja.usage.scramble_rate == pytest.approx(4 / 24, abs=0.01)
+
+    def test_scramble_yards_dist_excludes_designed_runs(self, scramble_qb_pbp, sample_rosters):
+        """scramble_yards_dist should only contain yards from qb_scramble=1 plays."""
+        models = build_player_models(scramble_qb_pbp, sample_rosters, training_seasons=[2024])
+        ja = models.get("JA17")
+        assert ja is not None
+        assert ja.outcomes.scramble_yards_dist is not None
+        # Only scramble yards: [5, 8, 12, 3]
+        assert sorted(ja.outcomes.scramble_yards_dist.tolist()) == [3, 5, 8, 12]
+
+    def test_fallback_when_no_qb_scramble_column(self, scramble_pbp, sample_rosters):
+        """Without qb_scramble column, fall back to existing behavior (all QB rushes)."""
+        models = build_player_models(scramble_pbp, sample_rosters, training_seasons=[2024])
+        ja = models.get("JA17")
+        assert ja is not None
+        # Old behavior: 3 rushes / (10 passes + 3 rushes) = 0.2308
+        assert ja.usage.scramble_rate == pytest.approx(3 / 13, abs=0.01)
