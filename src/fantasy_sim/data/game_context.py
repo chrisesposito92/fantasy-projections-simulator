@@ -11,6 +11,9 @@ from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
 )
 from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+from fantasy_sim.overrides.parser import OverrideSet
+from fantasy_sim.overrides.engine import apply_player_override, apply_team_override
+from fantasy_sim.overrides.resolver import PlayerResolver
 
 
 # League average fallbacks for teams with no data
@@ -145,17 +148,13 @@ class GameContextBuilder:
 
 
 def apply_overrides(
-    overrides: "OverrideSet",
+    overrides: OverrideSet,
     home_dists: TeamDistributions,
     away_dists: TeamDistributions,
     home_roster: TeamRoster,
     away_roster: TeamRoster,
 ) -> None:
     """Apply player and team overrides to distributions and rosters. Mutates in place."""
-    from fantasy_sim.overrides.parser import OverrideSet  # noqa: F811
-    from fantasy_sim.overrides.engine import apply_player_override, apply_team_override
-    from fantasy_sim.overrides.resolver import PlayerResolver
-
     # Build resolver from both rosters
     resolver = PlayerResolver([home_roster, away_roster])
 
