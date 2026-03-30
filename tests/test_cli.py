@@ -8,6 +8,52 @@ import numpy as np
 from fantasy_sim.cli import main
 
 
+from fantasy_sim.engine.types import TeamDistributions
+from fantasy_sim.models.distributions import (
+    PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+)
+from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+
+
+def _make_test_dists(team):
+    """Create minimal TeamDistributions for CLI tests."""
+    return TeamDistributions(
+        play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
+        play_outcomes=PlayOutcomeDist(distributions={}, defaults={
+            "pass": np.array([0, 5, 8, 10, 12, 15]),
+            "run": np.array([2, 3, 4, 5, 6]),
+        }),
+        turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
+        kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
+        drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+    )
+
+
+def _make_test_roster(team):
+    """Create minimal TeamRoster for CLI tests."""
+    return TeamRoster(team=team, players=[
+        PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+        PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
+                   PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
+        PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
+                   PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
+                                 catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
+    ])
+
+
+def _wire_mocks(MockLoader, MockBuilder, schedule_rows):
+    """Wire loader and builder mocks with schedule data and default team context."""
+    mock_loader = MockLoader.return_value
+    mock_loader.load_schedules.return_value = pl.DataFrame(schedule_rows)
+    mock_loader.cache_dir = Path("/tmp/cache")
+    mock_builder = MockBuilder.return_value
+    mock_builder.build_game.return_value = (
+        _make_test_dists("KC"), _make_test_dists("BUF"),
+        _make_test_roster("KC"), _make_test_roster("BUF"),
+    )
+    return mock_loader, mock_builder
+
+
 @pytest.fixture
 def runner():
     return CliRunner()
@@ -50,46 +96,10 @@ class TestWeekCommand:
     @patch("fantasy_sim.cli.DataLoader")
     def test_week_command_runs(self, MockLoader, MockBuilder, runner):
         """Week command should load schedules, build context, run sims."""
-        mock_loader = MockLoader.return_value
-        mock_loader.load_schedules.return_value = pl.DataFrame([
+        _wire_mocks(MockLoader, MockBuilder, [
             {"season": 2024, "week": 1, "game_id": "g1",
              "home_team": "KC", "away_team": "BUF"},
         ])
-        mock_loader.cache_dir = Path("/tmp/cache")
-
-        mock_builder = MockBuilder.return_value
-        from fantasy_sim.engine.types import TeamDistributions
-        from fantasy_sim.models.distributions import (
-            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
-        )
-        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
-
-        def make_dists(team):
-            return TeamDistributions(
-                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
-                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
-                    "pass": np.array([0, 5, 8, 10, 12, 15]),
-                    "run": np.array([2, 3, 4, 5, 6]),
-                }),
-                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
-                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
-                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
-            )
-
-        def make_roster(team):
-            return TeamRoster(team=team, players=[
-                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
-                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
-                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
-                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
-                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
-                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
-            ])
-
-        mock_builder.build_game.return_value = (
-            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
-        )
-
         result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
         assert result.exit_code == 0
 
@@ -156,46 +166,10 @@ class TestGameCommand:
     @patch("fantasy_sim.cli.DataLoader")
     def test_game_command_runs(self, MockLoader, MockBuilder, runner):
         """game KC BUF --week 5 should simulate and display results."""
-        mock_loader = MockLoader.return_value
-        mock_loader.load_schedules.return_value = pl.DataFrame([
+        _wire_mocks(MockLoader, MockBuilder, [
             {"season": 2024, "week": 5, "game_id": "2024_05_KC_BUF",
              "home_team": "KC", "away_team": "BUF"},
         ])
-        mock_loader.cache_dir = Path("/tmp/cache")
-
-        mock_builder = MockBuilder.return_value
-        from fantasy_sim.engine.types import TeamDistributions
-        from fantasy_sim.models.distributions import (
-            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
-        )
-        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
-
-        def make_dists(team):
-            return TeamDistributions(
-                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
-                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
-                    "pass": np.array([0, 5, 8, 10, 12, 15]),
-                    "run": np.array([2, 3, 4, 5, 6]),
-                }),
-                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
-                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
-                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
-            )
-
-        def make_roster(team):
-            return TeamRoster(team=team, players=[
-                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
-                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
-                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
-                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
-                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
-                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
-            ])
-
-        mock_builder.build_game.return_value = (
-            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
-        )
-
         result = runner.invoke(main, ["game", "KC", "BUF", "--week", "5", "--sims", "10"])
         assert result.exit_code == 0
         assert "KC" in result.output
@@ -466,56 +440,18 @@ class TestSeasonAggregation:
 class TestSeasonByWeek:
     """--by-week flag on season command."""
 
-    @staticmethod
-    def _setup_mocks(MockLoader, MockBuilder):
-        """Configure loader and builder mocks for 2-week season data."""
-        mock_loader = MockLoader.return_value
-        mock_loader.load_schedules.return_value = pl.DataFrame([
-            {"season": 2024, "week": 1, "game_id": "g1", "game_type": "REG",
-             "home_team": "KC", "away_team": "BUF"},
-            {"season": 2024, "week": 2, "game_id": "g2", "game_type": "REG",
-             "home_team": "KC", "away_team": "MIA"},
-        ])
-        mock_loader.cache_dir = Path("/tmp/cache")
-
-        mock_builder = MockBuilder.return_value
-        from fantasy_sim.engine.types import TeamDistributions
-        from fantasy_sim.models.distributions import (
-            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
-        )
-        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
-
-        def make_dists(team):
-            return TeamDistributions(
-                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
-                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
-                    "pass": np.array([0, 5, 8, 10, 12, 15]),
-                    "run": np.array([2, 3, 4, 5, 6]),
-                }),
-                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
-                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
-                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
-            )
-
-        def make_roster(team):
-            return TeamRoster(team=team, players=[
-                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
-                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
-                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
-                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
-                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
-                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
-            ])
-
-        mock_builder.build_game.return_value = (
-            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
-        )
+    _SEASON_SCHEDULE = [
+        {"season": 2024, "week": 1, "game_id": "g1", "game_type": "REG",
+         "home_team": "KC", "away_team": "BUF"},
+        {"season": 2024, "week": 2, "game_id": "g2", "game_type": "REG",
+         "home_team": "KC", "away_team": "MIA"},
+    ]
 
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_default_aggregates(self, MockLoader, MockBuilder, runner):
         """Default season output should have one entry per player (aggregated)."""
-        self._setup_mocks(MockLoader, MockBuilder)
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE)
         result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
         assert result.exit_code == 0
         assert "Season Projections" in result.output
@@ -524,7 +460,7 @@ class TestSeasonByWeek:
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_by_week_shows_week_headers(self, MockLoader, MockBuilder, runner):
         """--by-week should show week-level headers."""
-        self._setup_mocks(MockLoader, MockBuilder)
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE)
         result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5", "--by-week"])
         assert result.exit_code == 0
         assert "Week 1" in result.output
@@ -534,7 +470,7 @@ class TestSeasonByWeek:
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_by_week_json_includes_week_field(self, MockLoader, MockBuilder, runner, tmp_path):
         """--by-week --format json should include 'week' field on each row."""
-        self._setup_mocks(MockLoader, MockBuilder)
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE)
         output = tmp_path / "by_week.json"
         result = runner.invoke(main, [
             "season", "--season", "2024", "--sims", "5",
@@ -551,7 +487,7 @@ class TestSeasonByWeek:
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_aggregated_json_no_week_field(self, MockLoader, MockBuilder, runner, tmp_path):
         """Default season JSON should NOT include 'week' field."""
-        self._setup_mocks(MockLoader, MockBuilder)
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE)
         output = tmp_path / "aggregated.json"
         result = runner.invoke(main, [
             "season", "--season", "2024", "--sims", "5",
@@ -604,50 +540,12 @@ class TestRegularSeasonDefault:
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_default_excludes_playoffs(self, MockLoader, MockBuilder, runner):
         """Default weeks='all' should only simulate REG games, not playoff games."""
-        mock_loader = MockLoader.return_value
-        mock_loader.load_schedules.return_value = pl.DataFrame([
+        _, mock_builder = _wire_mocks(MockLoader, MockBuilder, [
             {"season": 2024, "week": 18, "game_id": "g_reg", "game_type": "REG",
              "home_team": "KC", "away_team": "BUF"},
             {"season": 2024, "week": 19, "game_id": "g_wc", "game_type": "WC",
              "home_team": "KC", "away_team": "MIA"},
         ])
-        mock_loader.cache_dir = Path("/tmp/cache")
-
-        mock_builder = MockBuilder.return_value
-        from fantasy_sim.engine.types import TeamDistributions
-        from fantasy_sim.models.distributions import (
-            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
-        )
-        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
-
-        def make_dists(team):
-            return TeamDistributions(
-                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
-                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
-                    "pass": np.array([0, 5, 8, 10, 12, 15]),
-                    "run": np.array([2, 3, 4, 5, 6]),
-                }),
-                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
-                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
-                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
-            )
-
-        def make_roster(team):
-            return TeamRoster(team=team, players=[
-                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
-                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
-                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
-                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
-                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
-                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
-            ])
-
-        mock_builder.build_game.return_value = (
-            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
-        )
-
         result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
         assert result.exit_code == 0
-        # Should only simulate week 18 (REG), not week 19 (WC)
-        # build_game should be called exactly once (one REG game)
         assert mock_builder.build_game.call_count == 1

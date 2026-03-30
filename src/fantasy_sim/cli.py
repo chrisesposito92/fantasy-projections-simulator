@@ -176,7 +176,6 @@ def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
         except ValueError:
             raise click.BadParameter(f"Invalid week list: '{weeks_str}'. Use format: '1,3,5'")
 
-    # Validate range — only reject non-positive weeks
     invalid = [w for w in week_nums if w < 1]
     if invalid:
         raise click.BadParameter(
@@ -319,77 +318,74 @@ _KICKER_SUM_FIELDS = [
 ]
 
 
-def _aggregate_player_projections(projs: list[dict]) -> list[dict]:
-    """Aggregate per-game player projections into season totals.
+def _aggregate_projections(
+    projs: list[dict],
+    key_fn,
+    identity_fn,
+    sum_fields: list[str],
+) -> list[dict]:
+    """Aggregate per-game projections into season totals.
 
-    Groups by player_id, sums stat fields, drops distribution fields
-    (floor/ceiling/stddev), re-ranks by fpts.
+    Groups by key_fn(row), initializes identity fields via identity_fn(row),
+    sums sum_fields, re-ranks by fpts. Rounds once at the end.
     """
     grouped: dict[str, dict] = {}
     for p in projs:
-        pid = p["player_id"]
-        if pid not in grouped:
-            grouped[pid] = {
-                "player_id": pid,
-                "name": p["name"],
-                "position": p["position"],
-                "team": p["team"],
-            }
-            for field in _PLAYER_SUM_FIELDS:
-                grouped[pid][field] = 0.0
-        for field in _PLAYER_SUM_FIELDS:
+        key = key_fn(p)
+        if key not in grouped:
+            grouped[key] = identity_fn(p)
+            for field in sum_fields:
+                grouped[key][field] = 0.0
+        for field in sum_fields:
             if field in p:
-                grouped[pid][field] = round(grouped[pid][field] + p[field], 1)
+                grouped[key][field] += p[field]
 
     result = list(grouped.values())
+    for row in result:
+        for field in sum_fields:
+            row[field] = round(row[field], 1)
     result.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(result, 1):
         p["rank"] = i
     return result
+
+
+def _aggregate_player_projections(projs: list[dict]) -> list[dict]:
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p["player_id"],
+        identity_fn=lambda p: {
+            "player_id": p["player_id"], "name": p["name"],
+            "position": p["position"], "team": p["team"],
+        },
+        sum_fields=_PLAYER_SUM_FIELDS,
+    )
 
 
 def _aggregate_dst_projections(projs: list[dict]) -> list[dict]:
-    """Aggregate per-game DST projections into season totals."""
-    grouped: dict[str, dict] = {}
-    for p in projs:
-        team = p["team"]
-        if team not in grouped:
-            grouped[team] = {"team": team}
-            for field in _DST_SUM_FIELDS:
-                grouped[team][field] = 0.0
-        for field in _DST_SUM_FIELDS:
-            if field in p:
-                grouped[team][field] = round(grouped[team][field] + p[field], 1)
-
-    result = list(grouped.values())
-    result.sort(key=lambda p: p["fpts"], reverse=True)
-    for i, p in enumerate(result, 1):
-        p["rank"] = i
-    return result
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p["team"],
+        identity_fn=lambda p: {"team": p["team"]},
+        sum_fields=_DST_SUM_FIELDS,
+    )
 
 
 def _aggregate_kicker_projections(projs: list[dict]) -> list[dict]:
-    """Aggregate per-game kicker projections into season totals."""
-    grouped: dict[str, dict] = {}
-    for p in projs:
-        key = p.get("player_id", p["name"])
-        if key not in grouped:
-            grouped[key] = {"name": p["name"], "team": p["team"]}
-            if "player_id" in p:
-                grouped[key]["player_id"] = p["player_id"]
-            if "position" in p:
-                grouped[key]["position"] = p["position"]
-            for field in _KICKER_SUM_FIELDS:
-                grouped[key][field] = 0.0
-        for field in _KICKER_SUM_FIELDS:
-            if field in p:
-                grouped[key][field] = round(grouped[key][field] + p[field], 1)
+    def _kicker_identity(p):
+        result = {"name": p["name"], "team": p["team"]}
+        if "player_id" in p:
+            result["player_id"] = p["player_id"]
+        if "position" in p:
+            result["position"] = p["position"]
+        return result
 
-    result = list(grouped.values())
-    result.sort(key=lambda p: p["fpts"], reverse=True)
-    for i, p in enumerate(result, 1):
-        p["rank"] = i
-    return result
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p.get("player_id", p["name"]),
+        identity_fn=_kicker_identity,
+        sum_fields=_KICKER_SUM_FIELDS,
+    )
 
 
 def _display_projections(player_projs, output_format, output_path, detail=False,
@@ -630,7 +626,6 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     results.games, scoring_config, team_map=team_map,
                     home_roster=home_roster, away_roster=away_roster,
                 )
-                # Stamp week on each projection
                 for proj in player_batch:
                     proj["week"] = wk
                 for proj in dst_batch:
@@ -652,8 +647,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         all_kicker_projs.sort(key=lambda p: (p["week"], -p["fpts"]))
 
         if output_format == "table":
-            weeks_in_data = sorted(set(p["week"] for p in all_player_projs))
-            for wk in weeks_in_data:
+            for wk in week_nums:
                 wk_players = [p for p in all_player_projs if p["week"] == wk]
                 wk_dst = [p for p in all_dst_projs if p["week"] == wk]
                 wk_kickers = [p for p in all_kicker_projs if p["week"] == wk]
@@ -668,10 +662,9 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                 _display_projections(wk_players, "table", None, detail=detail,
                                      kicker_projs=wk_kickers, dst_projs=wk_dst)
         else:
-            # CSV/JSON: rank within each week before export
+            # Rank within each week before export
             for proj_list in (all_player_projs, all_dst_projs, all_kicker_projs):
-                weeks_in_data = sorted(set(p["week"] for p in proj_list))
-                for wk in weeks_in_data:
+                for wk in week_nums:
                     wk_projs = [p for p in proj_list if p["week"] == wk]
                     for i, p in enumerate(wk_projs, 1):
                         p["rank"] = i
