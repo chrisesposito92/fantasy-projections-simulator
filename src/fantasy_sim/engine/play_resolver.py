@@ -213,13 +213,7 @@ def _resolve_pass(
             else:
                 player_yards = max(team_yards, 1)  # Complete pass must gain at least 1 yard
 
-            # Red zone yards blending: cap player yards by team-level distribution
-            if state.yard_line <= 20:
-                yards = min(player_yards, max(team_yards, 1))
-            else:
-                yards = player_yards
-
-            yards = _apply_home_field(yards, is_home, rng)
+            yards = _apply_home_field(player_yards, is_home, rng)
             yards = _clamp_yards(state.yard_line, yards)
         else:
             yards = 0
@@ -239,6 +233,10 @@ def _resolve_pass(
                 is_td = False
         else:
             is_td = is_complete and (state.yard_line - yards) <= 0
+
+        # Red zone yards blending: cap non-TD catches by team-level distribution
+        if is_complete and not is_td and state.yard_line <= 20:
+            yards = min(yards, max(team_yards, 1))
 
         # Fumble check on completions — use player fumble rate, fall back to team rate
         is_fumble = False
@@ -306,22 +304,7 @@ def _resolve_run(
             )
             player_yards = play_outcomes.sample_yards("run", bucket, rng)
 
-        # Red zone yards blending: cap player yards by team-level distribution
-        if state.yard_line <= 20:
-            bucket = bucket_play(
-                state.down, state.distance, state.score_differential,
-                state.quarter, state.yard_line,
-            )
-            team_run_yards = play_outcomes.sample_yards("run", bucket, rng)
-            # Preserve negative yards (losses) — only cap positive gains
-            if player_yards > 0:
-                raw_yards = min(player_yards, max(team_run_yards, 1))
-            else:
-                raw_yards = player_yards
-        else:
-            raw_yards = player_yards
-
-        raw_yards = _apply_home_field(raw_yards, is_home, rng)
+        raw_yards = _apply_home_field(player_yards, is_home, rng)
         is_safety = (state.yard_line - raw_yards) >= 100
         yards = _clamp_yards(state.yard_line, raw_yards)
 
@@ -338,6 +321,15 @@ def _resolve_run(
                 is_td = False
         else:
             is_td = (state.yard_line - yards) <= 0
+
+        # Red zone yards blending: cap non-TD runs by team-level distribution
+        if not is_td and state.yard_line <= 20 and yards > 0:
+            bucket = bucket_play(
+                state.down, state.distance, state.score_differential,
+                state.quarter, state.yard_line,
+            )
+            team_run_yards = play_outcomes.sample_yards("run", bucket, rng)
+            yards = min(yards, max(team_run_yards, 1))
 
         # Use player fumble rate, fall back to team rate if unset
         player_fumble = rusher.outcomes.fumble_rate
