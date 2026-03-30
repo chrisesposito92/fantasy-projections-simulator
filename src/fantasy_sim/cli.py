@@ -17,6 +17,8 @@ from fantasy_sim.output.tables import (
     format_te_table, format_kicker_table, format_dst_table,
 )
 from fantasy_sim.output.export import export_csv, export_json
+from fantasy_sim.validation.backtester import Backtester
+from fantasy_sim.validation.report import format_backtest_report
 
 
 def _make_demo_dists(team: str) -> TeamDistributions:
@@ -261,6 +263,37 @@ def season(season_year, weeks, sims, scoring, output_format, output_path):
     player_projs = build_player_projections(all_game_results, scoring_config)
     click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
     _display_projections(player_projs, output_format, output_path)
+
+
+@main.command()
+@click.option("--season", default=2024, help="Season to backtest against")
+@click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower = faster)")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--training-years", default=3, help="Number of prior seasons for model fitting")
+def backtest(season, sims, scoring, training_years):
+    """Run backtest validation against a historical season.
+
+    Builds models using only prior-season data (no leakage), runs projections
+    for every week, and compares to actual results.
+
+    Requires nflverse data (will download on first run).
+    """
+    config = load_defaults()
+    scoring_config = resolve_scoring(config["scoring"], scoring)
+
+    click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
+    click.echo(f"Training data: {season - training_years}-{season - 1}\n")
+
+    bt = Backtester(
+        test_season=season,
+        n_sims=sims,
+        num_training_seasons=training_years,
+        scoring_format=scoring,
+    )
+    result = bt.run(scoring_config)
+
+    report = format_backtest_report(result)
+    click.echo(report)
 
 
 if __name__ == "__main__":

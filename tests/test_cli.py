@@ -91,3 +91,10 @@ class TestWeekCommand:
 
         result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
         assert result.exit_code == 0
+
+
+class TestBacktestCommand:
+    def test_backtest_help(self, runner):
+        result = runner.invoke(main, ["backtest", "--help"])
+        assert result.exit_code == 0
+        assert "season" in result.output.lower()
