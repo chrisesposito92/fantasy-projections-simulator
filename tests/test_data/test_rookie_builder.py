@@ -1,5 +1,3 @@
-import numpy as np
-import pytest
 from fantasy_sim.data.rookie_builder import build_rookie_model, POSITIONAL_ARCHETYPES
 from fantasy_sim.models.player import PlayerModel
 
