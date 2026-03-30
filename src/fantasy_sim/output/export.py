@@ -10,9 +10,15 @@ def export_csv(projections: list[dict], output_path: Path) -> None:
         output_path.write_text("")
         return
 
-    fieldnames = list(projections[0].keys())
+    # Collect all unique keys across all rows to handle mixed projection types
+    seen: dict[str, None] = {}
+    for row in projections:
+        for key in row:
+            seen[key] = None
+    fieldnames = list(seen.keys())
+
     with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore", restval="")
         writer.writeheader()
         writer.writerows(projections)
 
