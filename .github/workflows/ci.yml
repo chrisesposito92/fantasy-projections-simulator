@@ -35,7 +35,7 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run pytest tests/ \
+          uv run --python ${{ matrix.python-version }} pytest tests/ \
             -m "not integration and not statistical" \
             --tb=short \
             -q \
@@ -61,7 +61,7 @@ jobs:
 
       - name: Run statistical tests
         run: |
-          uv run pytest tests/ \
+          uv run --python 3.14 pytest tests/ \
             -m "statistical" \
             --tb=short \
             -q \
