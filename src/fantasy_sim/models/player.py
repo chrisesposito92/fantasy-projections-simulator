@@ -1,5 +1,5 @@
 # src/fantasy_sim/models/player.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 
 
@@ -35,6 +35,7 @@ class PlayerModel:
     usage: PlayerUsage
     outcomes: PlayerOutcomes
     games_played: int = 17
+    weeks_missed: list[int] = field(default_factory=list)
 
 
 @dataclass

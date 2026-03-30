@@ -23,6 +23,18 @@ SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
 HOME_FIELD_YARDS_BONUS = 0.5
 
 
+def _scale_clock_runoff(base_runoff: int, pace_factor: float) -> int:
+    """Scale clock runoff by pace factor.
+    pace_factor > 1.0: faster pace, less clock per play (more plays per game).
+    pace_factor < 1.0: slower pace, more clock per play (fewer plays per game).
+    pace_factor == 1.0: no change.
+    Returns at least 1 second to prevent infinite games.
+    """
+    if pace_factor == 1.0:
+        return base_runoff
+    return max(1, round(base_runoff / pace_factor))
+
+
 def _apply_home_field(yards: int, is_home: bool, rng: np.random.Generator) -> int:
     """Apply home-field advantage: 50% chance of +1 yard when is_home=True."""
     if is_home and rng.random() < HOME_FIELD_YARDS_BONUS:
@@ -38,11 +50,12 @@ def resolve_play(
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
     is_home: bool = False,
+    pace_factor: float = 1.0,
 ) -> PlayResult:
     if play_type == "pass":
-        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster, is_home)
+        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor)
     if play_type == "run":
-        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster, is_home)
+        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor)
     raise ValueError(f"Unexpected play_type: {play_type!r}")
 
 
@@ -53,6 +66,7 @@ def _resolve_pass(
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
     is_home: bool = False,
+    pace_factor: float = 1.0,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
     from fantasy_sim.engine.player_selector import select_passer, select_receiver, select_rusher
@@ -61,7 +75,7 @@ def _resolve_pass(
     receiver_id: str | None = None
 
     if roster is not None:
-        passer = select_passer(roster)
+        passer = select_passer(roster, state)
         passer_id = passer.player_id
 
         # QB scramble check — before sack/int, the QB decides to run
@@ -91,7 +105,7 @@ def _resolve_pass(
                 is_safety=is_safety,
                 rusher_id=passer_id,
                 passer_id=passer_id,
-                clock_runoff=CLOCK_RUN,
+                clock_runoff=_scale_clock_runoff(CLOCK_RUN, pace_factor),
             )
 
     # Check for sack first
@@ -105,7 +119,7 @@ def _resolve_pass(
         return PlayResult(
             play_type="pass", yards=yards, is_sack=True,
             is_fumble=is_fumble and not is_safety, is_safety=is_safety,
-            clock_runoff=CLOCK_SACK,
+            clock_runoff=_scale_clock_runoff(CLOCK_SACK, pace_factor),
             passer_id=passer_id,
         )
 
@@ -113,7 +127,7 @@ def _resolve_pass(
     if rng.random() < turnover_rates.int_rate:
         return PlayResult(
             play_type="pass", yards=0, is_interception=True,
-            clock_runoff=CLOCK_PASS_INCOMPLETE,
+            clock_runoff=_scale_clock_runoff(CLOCK_PASS_INCOMPLETE, pace_factor),
             passer_id=passer_id,
         )
 
@@ -158,7 +172,7 @@ def _resolve_pass(
             is_complete=is_complete,
             is_touchdown=is_td and not is_fumble,
             is_fumble=is_fumble,
-            clock_runoff=CLOCK_PASS_COMPLETE if is_complete else CLOCK_PASS_INCOMPLETE,
+            clock_runoff=_scale_clock_runoff(CLOCK_PASS_COMPLETE if is_complete else CLOCK_PASS_INCOMPLETE, pace_factor),
             passer_id=passer_id,
             receiver_id=receiver_id,
         )
@@ -180,7 +194,7 @@ def _resolve_pass(
         is_complete=is_complete,
         is_touchdown=is_td and not is_fumble,
         is_fumble=is_fumble,
-        clock_runoff=CLOCK_PASS_COMPLETE if is_complete else CLOCK_PASS_INCOMPLETE,
+        clock_runoff=_scale_clock_runoff(CLOCK_PASS_COMPLETE if is_complete else CLOCK_PASS_INCOMPLETE, pace_factor),
     )
 
 
@@ -191,6 +205,7 @@ def _resolve_run(
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
     is_home: bool = False,
+    pace_factor: float = 1.0,
 ) -> PlayResult:
     from fantasy_sim.engine.player_selector import select_rusher
 
@@ -226,7 +241,7 @@ def _resolve_run(
             is_touchdown=is_td and not is_fumble,
             is_fumble=is_fumble and not is_safety,
             is_safety=is_safety,
-            clock_runoff=CLOCK_RUN,
+            clock_runoff=_scale_clock_runoff(CLOCK_RUN, pace_factor),
             rusher_id=rusher_id,
         )
 
@@ -251,7 +266,7 @@ def _resolve_run(
         is_touchdown=is_td and not is_fumble,
         is_fumble=is_fumble and not is_safety,
         is_safety=is_safety,
-        clock_runoff=CLOCK_RUN,
+        clock_runoff=_scale_clock_runoff(CLOCK_RUN, pace_factor),
     )
 
 

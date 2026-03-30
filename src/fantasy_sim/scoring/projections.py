@@ -152,7 +152,7 @@ def build_dst_projections(
         "sacks": round(float(np.mean([b.sacks_made for b in home_boxes])), 1),
         "interceptions": round(float(np.mean([b.interceptions_caught for b in home_boxes])), 1),
         "fumble_recoveries": round(float(np.mean([b.fumbles_recovered for b in home_boxes])), 1),
-        "dst_tds": 0.0,  # Not tracked yet
+        "dst_tds": round(float(np.mean([b.defensive_tds for b in home_boxes])), 1),
         "safeties": round(float(np.mean([b.safeties for b in home_boxes])), 1),
         "points_allowed": round(float(np.mean(away_scores)), 1),
     })
@@ -166,7 +166,7 @@ def build_dst_projections(
         "sacks": round(float(np.mean([b.sacks_made for b in away_boxes])), 1),
         "interceptions": round(float(np.mean([b.interceptions_caught for b in away_boxes])), 1),
         "fumble_recoveries": round(float(np.mean([b.fumbles_recovered for b in away_boxes])), 1),
-        "dst_tds": 0.0,
+        "dst_tds": round(float(np.mean([b.defensive_tds for b in away_boxes])), 1),
         "safeties": round(float(np.mean([b.safeties for b in away_boxes])), 1),
         "points_allowed": round(float(np.mean(home_scores)), 1),
     })

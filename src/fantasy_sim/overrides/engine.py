@@ -13,7 +13,10 @@ PLAYER_META_FIELDS = {"games_played", "games_missed"}
 # Valid team override fields
 TEAM_OVERRIDE_FIELDS = {
     "pass_rate", "int_rate", "fumble_rate", "sack_rate", "sack_fumble_rate",
+    "pace_plays_per_game",
 }
+
+BASELINE_PLAYS_PER_GAME = 65
 
 
 def apply_player_override(
@@ -42,8 +45,14 @@ def apply_player_override(
         elif field == "games_played":
             player.games_played = value
         elif field == "games_missed":
-            # games_missed is a list of week numbers; convert to games_played
-            player.games_played = 17 - len(value)
+            # games_missed must be a list of week numbers (e.g., [4, 5, 6])
+            if isinstance(value, (int, float)):
+                raise ValueError(
+                    f"games_missed must be a list of week numbers (e.g., [4, 5, 6]), "
+                    f"not a single number. Got: {value}"
+                )
+            player.weeks_missed = list(value)
+            player.games_played = 17 - len(player.weeks_missed)
         else:
             raise ValueError(
                 f"Unknown override field '{field}'. "
@@ -148,6 +157,10 @@ def apply_team_override(dists: TeamDistributions, overrides: dict) -> None:
                 sack_rate=dists.turnover_rates.sack_rate,
                 sack_fumble_rate=value,
             )
+        elif field == "pace_plays_per_game":
+            if value <= 0:
+                raise ValueError(f"pace_plays_per_game must be positive, got {value}")
+            dists.pace_factor = value / BASELINE_PLAYS_PER_GAME
         else:
             raise ValueError(
                 f"Unknown team override field '{field}'. "

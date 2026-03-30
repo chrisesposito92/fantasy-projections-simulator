@@ -12,6 +12,7 @@ class TeamDistributions:
     turnover_rates: TurnoverRates
     kicking: KickingModel
     drive_start: DriveStartModel
+    pace_factor: float = 1.0
 
 
 @dataclass
@@ -29,6 +30,7 @@ class GameState:
     away_team: str
     receiving_2nd_half: str  # "home" | "away"
     game_over: bool = False
+    week: int = 0
     two_min_warning_fired: bool = False
 
     @property
@@ -125,6 +127,7 @@ class TeamBoxScore:
     interceptions_caught: int = 0
     fumbles_recovered: int = 0
     safeties: int = 0
+    defensive_tds: int = 0
 
 
 @dataclass

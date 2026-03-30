@@ -105,6 +105,7 @@ class Backtester:
                         home_dists, away_dists, n_sims=self.n_sims,
                         seed=seed,
                         home_roster=home_roster, away_roster=away_roster,
+                        week=wk,
                     )
                     # Build projections per-game to get correct per-player averages
                     game_projs = build_player_projections(results.games, scoring_config)
