@@ -351,6 +351,118 @@ class TestFormatInference:
         assert not output.exists()
 
 
+class TestSeasonAggregation:
+    """Season-level aggregation of per-game projections."""
+
+    def test_aggregate_player_projections_sums_stats(self):
+        """Two entries for same player should sum into one."""
+        from fantasy_sim.cli import _aggregate_player_projections
+        projs = [
+            {"player_id": "p1", "name": "QB1", "position": "QB", "team": "KC",
+             "fpts": 20.0, "pass_yards": 250.0, "pass_tds": 2.0, "interceptions": 1.0,
+             "sacks": 1.0, "rush_yards": 10.0, "rush_tds": 0.0,
+             "targets": 0.0, "receptions": 0.0, "receiving_yards": 0.0,
+             "receiving_tds": 0.0, "fumbles_lost": 0.0, "rank": 1},
+            {"player_id": "p1", "name": "QB1", "position": "QB", "team": "KC",
+             "fpts": 15.0, "pass_yards": 200.0, "pass_tds": 1.0, "interceptions": 0.0,
+             "sacks": 2.0, "rush_yards": 5.0, "rush_tds": 1.0,
+             "targets": 0.0, "receptions": 0.0, "receiving_yards": 0.0,
+             "receiving_tds": 0.0, "fumbles_lost": 1.0, "rank": 2},
+        ]
+        result = _aggregate_player_projections(projs)
+        assert len(result) == 1
+        assert result[0]["player_id"] == "p1"
+        assert result[0]["fpts"] == 35.0
+        assert result[0]["pass_yards"] == 450.0
+        assert result[0]["pass_tds"] == 3.0
+        assert result[0]["rush_tds"] == 1.0
+        assert result[0]["fumbles_lost"] == 1.0
+        assert result[0]["rank"] == 1
+
+    def test_aggregate_player_projections_multiple_players(self):
+        """Multiple players should each be aggregated and ranked by fpts."""
+        from fantasy_sim.cli import _aggregate_player_projections
+        projs = [
+            {"player_id": "p1", "name": "QB1", "position": "QB", "team": "KC",
+             "fpts": 20.0, "pass_yards": 250.0, "pass_tds": 2.0, "interceptions": 0.0,
+             "sacks": 0.0, "rush_yards": 0.0, "rush_tds": 0.0,
+             "targets": 0.0, "receptions": 0.0, "receiving_yards": 0.0,
+             "receiving_tds": 0.0, "fumbles_lost": 0.0, "rank": 1},
+            {"player_id": "p2", "name": "WR1", "position": "WR", "team": "KC",
+             "fpts": 25.0, "pass_yards": 0.0, "pass_tds": 0.0, "interceptions": 0.0,
+             "sacks": 0.0, "rush_yards": 0.0, "rush_tds": 0.0,
+             "targets": 8.0, "receptions": 5.0, "receiving_yards": 100.0,
+             "receiving_tds": 1.0, "fumbles_lost": 0.0, "rank": 2},
+        ]
+        result = _aggregate_player_projections(projs)
+        assert len(result) == 2
+        assert result[0]["player_id"] == "p2"
+        assert result[0]["rank"] == 1
+        assert result[1]["player_id"] == "p1"
+        assert result[1]["rank"] == 2
+
+    def test_aggregate_drops_detail_fields(self):
+        """Aggregation should drop floor/ceiling/stddev fields."""
+        from fantasy_sim.cli import _aggregate_player_projections
+        projs = [
+            {"player_id": "p1", "name": "QB1", "position": "QB", "team": "KC",
+             "fpts": 20.0, "fpts_floor": 10.0, "fpts_ceiling": 30.0, "fpts_stddev": 5.0,
+             "pass_yards": 250.0, "pass_yards_floor": 150.0, "pass_yards_ceiling": 350.0, "pass_yards_stddev": 50.0,
+             "pass_tds": 2.0, "pass_tds_floor": 1.0, "pass_tds_ceiling": 3.0, "pass_tds_stddev": 0.5,
+             "interceptions": 0.0, "interceptions_floor": 0.0, "interceptions_ceiling": 1.0, "interceptions_stddev": 0.3,
+             "rush_yards": 0.0, "rush_yards_floor": 0.0, "rush_yards_ceiling": 0.0, "rush_yards_stddev": 0.0,
+             "rush_tds": 0.0, "rush_tds_floor": 0.0, "rush_tds_ceiling": 0.0, "rush_tds_stddev": 0.0,
+             "targets": 0.0, "targets_floor": 0.0, "targets_ceiling": 0.0, "targets_stddev": 0.0,
+             "receptions": 0.0, "receptions_floor": 0.0, "receptions_ceiling": 0.0, "receptions_stddev": 0.0,
+             "receiving_yards": 0.0, "receiving_yards_floor": 0.0, "receiving_yards_ceiling": 0.0, "receiving_yards_stddev": 0.0,
+             "receiving_tds": 0.0, "receiving_tds_floor": 0.0, "receiving_tds_ceiling": 0.0, "receiving_tds_stddev": 0.0,
+             "fumbles_lost": 0.0, "fumbles_lost_floor": 0.0, "fumbles_lost_ceiling": 0.0, "fumbles_lost_stddev": 0.0,
+             "sacks": 0.0, "rank": 1},
+        ]
+        result = _aggregate_player_projections(projs)
+        assert "fpts_floor" not in result[0]
+        assert "fpts_ceiling" not in result[0]
+        assert "fpts_stddev" not in result[0]
+        assert "pass_yards_floor" not in result[0]
+        assert "fpts" in result[0]
+        assert "pass_yards" in result[0]
+
+    def test_aggregate_dst_projections(self):
+        """DST projections for same team should sum across weeks."""
+        from fantasy_sim.cli import _aggregate_dst_projections
+        projs = [
+            {"team": "KC", "fpts": 8.0, "sacks": 3.0, "interceptions": 1.0,
+             "fumble_recoveries": 0.0, "dst_tds": 0.0, "safeties": 0.0,
+             "points_allowed": 17.0, "rank": 1},
+            {"team": "KC", "fpts": 10.0, "sacks": 2.0, "interceptions": 2.0,
+             "fumble_recoveries": 1.0, "dst_tds": 1.0, "safeties": 0.0,
+             "points_allowed": 14.0, "rank": 1},
+        ]
+        result = _aggregate_dst_projections(projs)
+        assert len(result) == 1
+        assert result[0]["fpts"] == 18.0
+        assert result[0]["sacks"] == 5.0
+        assert result[0]["interceptions"] == 3.0
+        assert result[0]["points_allowed"] == 31.0
+
+    def test_aggregate_kicker_projections(self):
+        """Kicker projections for same player should sum across weeks."""
+        from fantasy_sim.cli import _aggregate_kicker_projections
+        projs = [
+            {"name": "K1", "team": "KC", "player_id": "k1", "position": "K",
+             "fpts": 9.0, "fg_attempts": 3.0, "fg_made": 2.0,
+             "fg_50_plus": 1.0, "xp_attempts": 4.0, "xp_made": 3.0, "rank": 1},
+            {"name": "K1", "team": "KC", "player_id": "k1", "position": "K",
+             "fpts": 7.0, "fg_attempts": 2.0, "fg_made": 2.0,
+             "fg_50_plus": 0.0, "xp_attempts": 3.0, "xp_made": 3.0, "rank": 1},
+        ]
+        result = _aggregate_kicker_projections(projs)
+        assert len(result) == 1
+        assert result[0]["fpts"] == 16.0
+        assert result[0]["fg_made"] == 4.0
+        assert result[0]["xp_made"] == 6.0
+
+
 class TestDetailFlag:
     """Gap 19: --detail flag on demo and game commands."""
 

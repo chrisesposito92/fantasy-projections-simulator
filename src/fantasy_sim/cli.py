@@ -301,6 +301,97 @@ def _infer_format(output_format: str, output_path: str | None, ctx: click.Contex
     return output_format
 
 
+# Stat fields to sum during season aggregation
+_PLAYER_SUM_FIELDS = [
+    "fpts", "pass_yards", "pass_tds", "interceptions", "sacks",
+    "rush_yards", "rush_tds", "targets", "receptions",
+    "receiving_yards", "receiving_tds", "fumbles_lost",
+]
+
+_DST_SUM_FIELDS = [
+    "fpts", "sacks", "interceptions", "fumble_recoveries",
+    "dst_tds", "safeties", "points_allowed",
+]
+
+_KICKER_SUM_FIELDS = [
+    "fpts", "fg_attempts", "fg_made", "fg_50_plus",
+    "xp_attempts", "xp_made",
+]
+
+
+def _aggregate_player_projections(projs: list[dict]) -> list[dict]:
+    """Aggregate per-game player projections into season totals.
+
+    Groups by player_id, sums stat fields, drops distribution fields
+    (floor/ceiling/stddev), re-ranks by fpts.
+    """
+    grouped: dict[str, dict] = {}
+    for p in projs:
+        pid = p["player_id"]
+        if pid not in grouped:
+            grouped[pid] = {
+                "player_id": pid,
+                "name": p["name"],
+                "position": p["position"],
+                "team": p["team"],
+            }
+            for field in _PLAYER_SUM_FIELDS:
+                grouped[pid][field] = 0.0
+        for field in _PLAYER_SUM_FIELDS:
+            if field in p:
+                grouped[pid][field] = round(grouped[pid][field] + p[field], 1)
+
+    result = list(grouped.values())
+    result.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(result, 1):
+        p["rank"] = i
+    return result
+
+
+def _aggregate_dst_projections(projs: list[dict]) -> list[dict]:
+    """Aggregate per-game DST projections into season totals."""
+    grouped: dict[str, dict] = {}
+    for p in projs:
+        team = p["team"]
+        if team not in grouped:
+            grouped[team] = {"team": team}
+            for field in _DST_SUM_FIELDS:
+                grouped[team][field] = 0.0
+        for field in _DST_SUM_FIELDS:
+            if field in p:
+                grouped[team][field] = round(grouped[team][field] + p[field], 1)
+
+    result = list(grouped.values())
+    result.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(result, 1):
+        p["rank"] = i
+    return result
+
+
+def _aggregate_kicker_projections(projs: list[dict]) -> list[dict]:
+    """Aggregate per-game kicker projections into season totals."""
+    grouped: dict[str, dict] = {}
+    for p in projs:
+        key = p.get("player_id", p["name"])
+        if key not in grouped:
+            grouped[key] = {"name": p["name"], "team": p["team"]}
+            if "player_id" in p:
+                grouped[key]["player_id"] = p["player_id"]
+            if "position" in p:
+                grouped[key]["position"] = p["position"]
+            for field in _KICKER_SUM_FIELDS:
+                grouped[key][field] = 0.0
+        for field in _KICKER_SUM_FIELDS:
+            if field in p:
+                grouped[key][field] = round(grouped[key][field] + p[field], 1)
+
+    result = list(grouped.values())
+    result.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(result, 1):
+        p["rank"] = i
+    return result
+
+
 def _display_projections(player_projs, output_format, output_path, detail=False,
                          kicker_projs=None, dst_projs=None):
     """Display or export projections."""
