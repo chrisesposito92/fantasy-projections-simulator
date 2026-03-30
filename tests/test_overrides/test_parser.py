@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from fantasy_sim.overrides.parser import (
     parse_override_config,
     parse_cli_override,

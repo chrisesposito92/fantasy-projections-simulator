@@ -30,7 +30,7 @@ def parse_override_config(path: Path) -> OverrideSet:
     return result
 
 
-def parse_cli_override(override_str: str) -> tuple[str, str, float | int | list]:
+def parse_cli_override(override_str: str) -> tuple[str, str, float | int | list | str]:
     """Parse a CLI override string like 'mahomes.target_share=0.30'.
 
     Returns: (entity_name, field_name, value)

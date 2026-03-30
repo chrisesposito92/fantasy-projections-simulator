@@ -1,4 +1,4 @@
-from fantasy_sim.models.player import TeamRoster, PlayerModel
+from fantasy_sim.models.player import TeamRoster
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import PlayCallingDist, TurnoverRates
 
@@ -138,4 +138,9 @@ def apply_team_override(dists: TeamDistributions, overrides: dict) -> None:
                 fumble_rate=dists.turnover_rates.fumble_rate,
                 sack_rate=dists.turnover_rates.sack_rate,
                 sack_fumble_rate=value,
+            )
+        else:
+            raise ValueError(
+                f"Unknown team override field '{field}'. "
+                f"Valid: {TEAM_OVERRIDE_FIELDS}"
             )

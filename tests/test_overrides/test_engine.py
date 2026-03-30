@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-from copy import deepcopy
 from fantasy_sim.overrides.engine import (
     apply_player_override,
     apply_team_override,
