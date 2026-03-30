@@ -91,7 +91,7 @@ def simulate_game(
 
         # Update per-player stats when rosters are provided
         if roster is not None:
-            _update_player_stats(player_stats, result)
+            _update_player_stats(player_stats, result, roster)
 
         # Handle play outcome
         if result.is_safety:
@@ -182,14 +182,27 @@ def _handle_safety(
     perform_kickoff(state, def_drive_start, rng)
 
 
+def _get_player_info(roster: "TeamRoster", player_id: str) -> tuple[str, str, str]:
+    """Look up player name, position, team from roster."""
+    for p in roster.players:
+        if p.player_id == player_id:
+            return p.name, p.position, p.team
+    return "", "", ""
+
+
 def _update_player_stats(
     player_stats: dict[str, PlayerBoxScore],
     result: PlayResult,
+    roster: "TeamRoster",
 ) -> None:
     """Update per-player stats from a play result."""
     if result.passer_id is not None:
-        qb = player_stats.setdefault(result.passer_id, PlayerBoxScore(
-            player_id=result.passer_id, name="", position="QB", team=""))
+        if result.passer_id not in player_stats:
+            name, position, team = _get_player_info(roster, result.passer_id)
+            player_stats[result.passer_id] = PlayerBoxScore(
+                player_id=result.passer_id, name=name,
+                position=position or "QB", team=team)
+        qb = player_stats[result.passer_id]
         if result.play_type == "pass":
             qb.pass_attempts += 1
             if result.is_sack:
@@ -203,8 +216,12 @@ def _update_player_stats(
                     qb.pass_tds += 1
 
     if result.receiver_id is not None:
-        rec = player_stats.setdefault(result.receiver_id, PlayerBoxScore(
-            player_id=result.receiver_id, name="", position="", team=""))
+        if result.receiver_id not in player_stats:
+            name, position, team = _get_player_info(roster, result.receiver_id)
+            player_stats[result.receiver_id] = PlayerBoxScore(
+                player_id=result.receiver_id, name=name,
+                position=position, team=team)
+        rec = player_stats[result.receiver_id]
         rec.targets += 1
         if result.is_complete:
             rec.receptions += 1
@@ -215,8 +232,12 @@ def _update_player_stats(
             rec.fumbles_lost += 1
 
     if result.rusher_id is not None:
-        rush = player_stats.setdefault(result.rusher_id, PlayerBoxScore(
-            player_id=result.rusher_id, name="", position="", team=""))
+        if result.rusher_id not in player_stats:
+            name, position, team = _get_player_info(roster, result.rusher_id)
+            player_stats[result.rusher_id] = PlayerBoxScore(
+                player_id=result.rusher_id, name=name,
+                position=position, team=team)
+        rush = player_stats[result.rusher_id]
         rush.rush_attempts += 1
         rush.rush_yards += result.yards
         if result.is_touchdown:

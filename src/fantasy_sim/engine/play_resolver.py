@@ -56,21 +56,26 @@ def _resolve_pass(
         if passer.usage.scramble_rate > 0 and rng.random() < passer.usage.scramble_rate:
             scramble_yards_dist = passer.outcomes.scramble_yards_dist
             if scramble_yards_dist is not None and len(scramble_yards_dist) > 0:
-                yards = int(rng.choice(scramble_yards_dist))
+                raw_yards = int(rng.choice(scramble_yards_dist))
             else:
                 # Fall back to team run distribution
                 bucket = bucket_play(
                     state.down, state.distance, state.score_differential,
                     state.quarter, state.yard_line,
                 )
-                yards = play_outcomes.sample_yards("run", bucket, rng)
-            yards = _clamp_yards(state.yard_line, yards)
+                raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+            is_safety = (state.yard_line - raw_yards) >= 100
+            if is_safety:
+                yards = -(99 - state.yard_line)
+            else:
+                yards = _clamp_yards(state.yard_line, raw_yards)
             is_td = (state.yard_line - yards) <= 0
             is_fumble = rng.random() < passer.outcomes.fumble_rate
             return PlayResult(
                 play_type="run", yards=yards,
-                is_touchdown=is_td and not is_fumble,
-                is_fumble=is_fumble,
+                is_touchdown=is_td and not is_fumble and not is_safety,
+                is_fumble=is_fumble and not is_safety,
+                is_safety=is_safety,
                 rusher_id=passer_id,
                 passer_id=passer_id,
                 clock_runoff=CLOCK_RUN,
@@ -127,10 +132,12 @@ def _resolve_pass(
 
         is_td = is_complete and (state.yard_line - yards) <= 0
 
-        # Fumble check on completions — use player fumble rate
+        # Fumble check on completions — use player fumble rate, fall back to team rate
         is_fumble = False
-        if is_complete and rng.random() < receiver.outcomes.fumble_rate:
-            is_fumble = True
+        if is_complete:
+            player_fumble = receiver.outcomes.fumble_rate
+            effective_rate = player_fumble if player_fumble > 0 else turnover_rates.fumble_rate
+            is_fumble = rng.random() < effective_rate
 
         return PlayResult(
             play_type="pass", yards=yards,
@@ -192,8 +199,10 @@ def _resolve_run(
         yards = _clamp_yards(state.yard_line, raw_yards)
         is_td = (state.yard_line - yards) <= 0
 
-        # Use player fumble rate
-        is_fumble = rng.random() < rusher.outcomes.fumble_rate
+        # Use player fumble rate, fall back to team rate if unset
+        player_fumble = rusher.outcomes.fumble_rate
+        effective_rate = player_fumble if player_fumble > 0 else turnover_rates.fumble_rate
+        is_fumble = rng.random() < effective_rate
 
         return PlayResult(
             play_type="run", yards=yards,

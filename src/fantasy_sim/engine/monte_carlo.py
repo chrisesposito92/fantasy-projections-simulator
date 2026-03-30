@@ -43,18 +43,24 @@ class SimulationSummary:
 
     def player_summary(self) -> dict[str, dict]:
         """Aggregate per-player stats across all simulations."""
+        # Collect all player IDs seen across all sims
+        all_player_ids: set[str] = set()
+        for game in self.games:
+            all_player_ids.update(game.player_stats.keys())
+
         player_totals: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
 
         for game in self.games:
-            for pid, box in game.player_stats.items():
-                player_totals[pid]["pass_yards"].append(box.pass_yards)
-                player_totals[pid]["rush_yards"].append(box.rush_yards)
-                player_totals[pid]["receiving_yards"].append(box.receiving_yards)
-                player_totals[pid]["targets"].append(box.targets)
-                player_totals[pid]["receptions"].append(box.receptions)
-                player_totals[pid]["pass_tds"].append(box.pass_tds)
-                player_totals[pid]["rush_tds"].append(box.rush_tds)
-                player_totals[pid]["receiving_tds"].append(box.receiving_tds)
+            for pid in all_player_ids:
+                box = game.player_stats.get(pid)
+                player_totals[pid]["pass_yards"].append(box.pass_yards if box else 0)
+                player_totals[pid]["rush_yards"].append(box.rush_yards if box else 0)
+                player_totals[pid]["receiving_yards"].append(box.receiving_yards if box else 0)
+                player_totals[pid]["targets"].append(box.targets if box else 0)
+                player_totals[pid]["receptions"].append(box.receptions if box else 0)
+                player_totals[pid]["pass_tds"].append(box.pass_tds if box else 0)
+                player_totals[pid]["rush_tds"].append(box.rush_tds if box else 0)
+                player_totals[pid]["receiving_tds"].append(box.receiving_tds if box else 0)
 
         result = {}
         for pid, stats in player_totals.items():

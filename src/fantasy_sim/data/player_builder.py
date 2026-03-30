@@ -20,7 +20,7 @@ def build_player_models(
 
     player_meta = (
         rosters.filter(pl.col("season").is_in(seasons))
-        .sort("week", descending=True)
+        .sort(["season", "week"], descending=True)
         .group_by("player_id")
         .first()
         .select(["player_id", "player_name", "position", "team"])
@@ -87,16 +87,16 @@ def build_player_models(
         usage = PlayerUsage()
         if pid in receiving_stats:
             rs = receiving_stats[pid]
-            team_pa = team_pass_attempts.get(team, 1)
-            usage.target_share = rs["targets"] / team_pa
+            team_pa = team_pass_attempts.get(team, 0)
+            usage.target_share = rs["targets"] / max(team_pa, 1)
         if pid in rushing_stats:
             rs = rushing_stats[pid]
-            team_ra = team_rush_attempts.get(team, 1)
-            usage.carry_share = rs["carries"] / team_ra
+            team_ra = team_rush_attempts.get(team, 0)
+            usage.carry_share = rs["carries"] / max(team_ra, 1)
         if position == "QB" and pid in qb_stats:
             qs = qb_stats[pid]
-            team_pa = team_pass_attempts.get(team, 1)
-            usage.snap_share = qs["attempts"] / team_pa
+            team_pa = team_pass_attempts.get(team, 0)
+            usage.snap_share = qs["attempts"] / max(team_pa, 1)
 
         outcomes = PlayerOutcomes()
         if pid in receiving_stats:
