@@ -33,8 +33,17 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Monte Carlo runner (`run_simulations()`) with aggregate statistics
 - Statistical validation (2000+ game tests produce NFL-realistic averages)
 
+**Phase 3: Player Models** — Complete (61 tests, 208 total)
+
+- Per-player data types: `PlayerModel`, `PlayerUsage`, `PlayerOutcomes`, `TeamRoster`
+- Player builder: constructs player models from historical PBP + roster data
+- Rookie archetype system: draft-capital-based models for rookies without PBP history
+- Player selector: weighted selection of passer/receiver/rusher from roster
+- Player-aware play resolution: uses player-specific catch rates and yards distributions
+- Per-player box scores tracked through game simulation and Monte Carlo runner
+- Statistical validation (500+ sims produce plausible player-level stats)
+
 **Upcoming:**
-- Phase 3: Player Models (per-player usage and outcome distributions)
 - Phase 4: Scoring + Config + CLI
 - Phase 5: Validation + Tuning (backtest against 2023/2024 seasons)
 - Phase 6: Overrides + Polish
@@ -62,18 +71,22 @@ src/fantasy_sim/
 ├── data/
 │   ├── loader.py           # nflreadpy wrapper with parquet caching
 │   ├── preprocessor.py     # Distribution fitting from historical PBP
-│   └── pipeline.py         # Orchestrates loading + preprocessing
+│   ├── pipeline.py         # Orchestrates loading + preprocessing
+│   ├── player_builder.py   # Build PlayerModels from PBP + roster data
+│   └── rookie_builder.py   # Rookie archetypes by draft capital
 ├── models/
 │   ├── game_state.py       # GameStateBucket + bucketing functions
-│   └── distributions.py    # Distribution dataclasses (PlayCallingDist, etc.)
+│   ├── distributions.py    # Distribution dataclasses (PlayCallingDist, etc.)
+│   └── player.py           # PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 ├── engine/
-│   ├── types.py            # GameState, TeamBoxScore, PlayResult, GameResult
+│   ├── types.py            # GameState, TeamBoxScore, PlayerBoxScore, PlayResult, GameResult
 │   ├── play_caller.py      # Play type selection + 4th down decisions
-│   ├── play_resolver.py    # Pass/run outcome resolution
+│   ├── play_resolver.py    # Pass/run outcome resolution (player-aware)
+│   ├── player_selector.py  # Select passer/receiver/rusher from roster
 │   ├── game_flow.py        # Scoring, possession, kickoff, punt, FG, PAT
 │   ├── clock.py            # Clock runoff + quarter/OT transitions
-│   ├── game_sim.py         # simulate_game() main loop
-│   └── monte_carlo.py      # run_simulations() + SimulationSummary
+│   ├── game_sim.py         # simulate_game() main loop with player tracking
+│   └── monte_carlo.py      # run_simulations() + per-player aggregation
 ├── scoring/                # (Phase 4) Config-driven fantasy scoring
 ├── config/                 # (Phase 4) YAML config loading
 ├── output/                 # (Phase 4) Terminal tables, CSV/JSON export
@@ -103,3 +116,4 @@ print(results.summary())
 - [Design Spec](docs/superpowers/specs/2026-03-29-fantasy-projections-simulator-design.md)
 - [Phase 1 Plan](docs/superpowers/plans/2026-03-29-phase1-data-pipeline.md)
 - [Phase 2 Plan](docs/superpowers/plans/2026-03-29-phase2-game-state-machine.md)
+- [Phase 3 Plan](docs/superpowers/plans/2026-03-29-phase3-player-models.md)

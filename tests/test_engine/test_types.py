@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from fantasy_sim.engine.types import (
     GameState, TeamBoxScore, PlayResult, GameResult, TeamDistributions,
+    PlayerBoxScore,
 )
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
@@ -97,6 +98,56 @@ class TestTeamDistributions:
         )
         assert td.play_calling.team == "KC"
         assert td.kicking.xp_rate == pytest.approx(0.94)
+
+
+class TestPlayerBoxScore:
+    def test_defaults_to_zero(self):
+        box = PlayerBoxScore(player_id="PM15", name="Mahomes", position="QB", team="KC")
+        assert box.pass_attempts == 0
+        assert box.rush_yards == 0
+        assert box.targets == 0
+
+    def test_tracks_passing(self):
+        box = PlayerBoxScore(player_id="PM15", name="Mahomes", position="QB", team="KC")
+        box.pass_attempts += 30
+        box.completions += 22
+        box.pass_yards += 280
+        box.pass_tds += 2
+        assert box.pass_attempts == 30
+        assert box.completions == 22
+
+    def test_tracks_receiving(self):
+        box = PlayerBoxScore(player_id="TK87", name="Kelce", position="TE", team="KC")
+        box.targets += 8
+        box.receptions += 6
+        box.receiving_yards += 78
+        box.receiving_tds += 1
+        assert box.targets == 8
+        assert box.receptions == 6
+
+
+class TestPlayResultWithPlayers:
+    def test_play_result_with_player_ids(self):
+        result = PlayResult(
+            play_type="pass", yards=12, is_complete=True,
+            passer_id="PM15", receiver_id="TK87", clock_runoff=35,
+        )
+        assert result.passer_id == "PM15"
+        assert result.receiver_id == "TK87"
+        assert result.rusher_id is None
+
+
+class TestGameResultWithPlayers:
+    def test_game_result_has_player_stats(self):
+        result = GameResult(
+            home_score=24, away_score=17,
+            home_box=TeamBoxScore(), away_box=TeamBoxScore(),
+            total_plays=120, overtime=False,
+            player_stats={
+                "PM15": PlayerBoxScore("PM15", "Mahomes", "QB", "KC"),
+            },
+        )
+        assert "PM15" in result.player_stats
 
 
 class TestGameResult:
