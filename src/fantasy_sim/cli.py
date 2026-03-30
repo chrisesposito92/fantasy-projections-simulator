@@ -20,6 +20,8 @@ from fantasy_sim.output.tables import (
 from fantasy_sim.output.export import export_csv, export_json
 from fantasy_sim.validation.backtester import Backtester
 from fantasy_sim.validation.report import format_backtest_report
+from fantasy_sim.overrides.parser import parse_override_config, parse_cli_override, OverrideSet
+from fantasy_sim.data.game_context import apply_overrides as apply_overrides_fn
 
 
 def _make_demo_dists(team: str) -> TeamDistributions:
@@ -66,6 +68,30 @@ def _make_demo_roster(team: str) -> TeamRoster:
     ])
 
 
+def _build_overrides(overrides: tuple[str, ...], config_path: str | None) -> OverrideSet:
+    """Merge overrides from config file and CLI flags."""
+    result = OverrideSet()
+
+    # Load config file overrides first
+    if config_path is not None:
+        result = parse_override_config(Path(config_path))
+
+    # CLI overrides take precedence
+    for override_str in overrides:
+        entity, field_name, value = parse_cli_override(override_str)
+        # Determine if it's a team (all-caps, 2-3 chars) or player
+        if entity.isupper() and len(entity) <= 3:
+            if entity not in result.teams:
+                result.teams[entity] = {}
+            result.teams[entity][field_name] = value
+        else:
+            if entity not in result.players:
+                result.players[entity] = {}
+            result.players[entity][field_name] = value
+
+    return result
+
+
 @click.group()
 def main():
     """Fantasy football projections via play-by-play simulation."""
@@ -77,7 +103,9 @@ def main():
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]), help="Scoring format")
 @click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]), help="Output format")
 @click.option("--output", "output_path", default=None, help="Output file path (for csv/json)")
-def demo(sims, scoring, output_format, output_path):
+@click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
+@click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+def demo(sims, scoring, output_format, output_path, overrides, config_path):
     """Run a demo simulation with synthetic team data."""
     config = load_defaults()
     scoring_config = resolve_scoring(config["scoring"], scoring)
@@ -88,6 +116,10 @@ def demo(sims, scoring, output_format, output_path):
     away_dists = _make_demo_dists("AWAY")
     home_roster = _make_demo_roster("HOME")
     away_roster = _make_demo_roster("AWAY")
+
+    override_set = _build_overrides(overrides, config_path)
+    if override_set.players or override_set.teams:
+        apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
 
     results = run_simulations(
         home_dists, away_dists, n_sims=sims, seed=42,
@@ -167,7 +199,9 @@ def _display_projections(player_projs, output_format, output_path):
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
 @click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
 @click.option("--output", "output_path", default=None)
-def week(week_num, season, sims, scoring, output_format, output_path):
+@click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
+@click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path):
     """Simulate all games in an NFL week using real nflverse data."""
     config = load_defaults()
     scoring_config = resolve_scoring(config["scoring"], scoring)
@@ -199,6 +233,10 @@ def week(week_num, season, sims, scoring, output_format, output_path):
             home_team=home, away_team=away, seasons=training_seasons,
         )
 
+        override_set = _build_overrides(overrides, config_path)
+        if override_set.players or override_set.teams:
+            apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
+
         seed = zlib.crc32(game["game_id"].encode()) % (2**31)
         results = run_simulations(
             home_dists, away_dists, n_sims=sims, seed=seed,
@@ -228,7 +266,9 @@ def week(week_num, season, sims, scoring, output_format, output_path):
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
 @click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
 @click.option("--output", "output_path", default=None)
-def season(season_year, weeks, sims, scoring, output_format, output_path):
+@click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
+@click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path):
     """Simulate a full NFL season using real nflverse data."""
     config = load_defaults()
     scoring_config = resolve_scoring(config["scoring"], scoring)
@@ -260,6 +300,9 @@ def season(season_year, weeks, sims, scoring, output_format, output_path):
             home_dists, away_dists, home_roster, away_roster = builder.build_game(
                 home, away, seasons=training_seasons,
             )
+            override_set = _build_overrides(overrides, config_path)
+            if override_set.players or override_set.teams:
+                apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
             seed = zlib.crc32(game["game_id"].encode()) % (2**31)
             results = run_simulations(
                 home_dists, away_dists, n_sims=sims,

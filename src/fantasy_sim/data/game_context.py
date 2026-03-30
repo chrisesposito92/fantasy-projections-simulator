@@ -142,3 +142,39 @@ class GameContextBuilder:
         home_roster = self.build_team_roster(home_team, seasons, pbp, rosters)
         away_roster = self.build_team_roster(away_team, seasons, pbp, rosters)
         return home_dists, away_dists, home_roster, away_roster
+
+
+def apply_overrides(
+    overrides: "OverrideSet",
+    home_dists: TeamDistributions,
+    away_dists: TeamDistributions,
+    home_roster: TeamRoster,
+    away_roster: TeamRoster,
+) -> None:
+    """Apply player and team overrides to distributions and rosters. Mutates in place."""
+    from fantasy_sim.overrides.parser import OverrideSet  # noqa: F811
+    from fantasy_sim.overrides.engine import apply_player_override, apply_team_override
+    from fantasy_sim.overrides.resolver import PlayerResolver
+
+    # Build resolver from both rosters
+    resolver = PlayerResolver([home_roster, away_roster])
+
+    # Apply team overrides
+    for team, team_overrides in overrides.teams.items():
+        if team == home_roster.team:
+            apply_team_override(home_dists, team_overrides)
+        elif team == away_roster.team:
+            apply_team_override(away_dists, team_overrides)
+
+    # Apply player overrides
+    for player_query, player_overrides in overrides.players.items():
+        try:
+            player_id = resolver.resolve(player_query)
+        except KeyError:
+            continue  # Skip unresolvable players
+
+        # Find which roster the player is on
+        for roster in [home_roster, away_roster]:
+            if any(p.player_id == player_id for p in roster.players):
+                apply_player_override(roster, player_id, player_overrides)
+                break

@@ -93,6 +93,26 @@ class TestWeekCommand:
         assert result.exit_code == 0
 
 
+class TestOverrideCLI:
+    def test_override_flag_accepted(self, runner):
+        result = runner.invoke(main, ["demo", "--sims", "10", "--override", "HOME_WR1.target_share=0.30"])
+        assert result.exit_code == 0
+
+    def test_config_flag_accepted(self, runner, tmp_path):
+        config = tmp_path / "season.yaml"
+        config.write_text("season: 2025\nplayers:\n  HOME_WR1:\n    target_share: 0.30\n")
+        result = runner.invoke(main, ["demo", "--sims", "10", "--config", str(config)])
+        assert result.exit_code == 0
+
+    def test_multiple_overrides(self, runner):
+        result = runner.invoke(main, [
+            "demo", "--sims", "10",
+            "--override", "HOME_WR1.target_share=0.30",
+            "--override", "HOME_RB1.carry_share=0.75",
+        ])
+        assert result.exit_code == 0
+
+
 class TestBacktestCommand:
     def test_backtest_help(self, runner):
         result = runner.invoke(main, ["backtest", "--help"])
