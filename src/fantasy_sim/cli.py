@@ -201,7 +201,8 @@ def main():
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.pass_context
+def demo(ctx, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Run a demo simulation with synthetic team data."""
     season_yaml_path = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml_path=season_yaml_path)
@@ -231,6 +232,8 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
     team_map = {"HOME": "HOME", "AWAY": "AWAY"}
     dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
     kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
+
+    output_format = _infer_format(output_format, output_path, ctx)
 
     if output_format == "table":
         qbs = [p for p in player_projs if p["position"] == "QB"]
@@ -281,6 +284,21 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
         else:
             export_json(all_projs, Path(output_path))
         click.echo(f"Exported to {output_path}")
+
+
+def _infer_format(output_format: str, output_path: str | None, ctx: click.Context) -> str:
+    """Infer output format from file extension if --format was not explicitly set."""
+    source = ctx.get_parameter_source("output_format")
+    if source != click.core.ParameterSource.DEFAULT:
+        return output_format  # User explicitly set --format
+    if output_path is None:
+        return output_format
+    ext = Path(output_path).suffix.lower()
+    if ext == ".json":
+        return "json"
+    elif ext == ".csv":
+        return "csv"
+    return output_format
 
 
 def _display_projections(player_projs, output_format, output_path, detail=False,
@@ -340,7 +358,8 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.pass_context
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -428,6 +447,7 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     player_projs = all_player_projs
     click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
 
+    output_format = _infer_format(output_format, output_path, ctx)
     _display_projections(player_projs, output_format, output_path, detail=detail,
                          kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
@@ -443,7 +463,8 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.pass_context
+def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -529,6 +550,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
 
     player_projs = all_player_projs
     click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
+    output_format = _infer_format(output_format, output_path, ctx)
     _display_projections(player_projs, output_format, output_path, detail=detail,
                          kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 

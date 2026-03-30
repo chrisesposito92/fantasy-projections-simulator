@@ -305,6 +305,50 @@ class TestWeeksValidation:
         assert "invalid week" not in result.output.lower()
 
 
+class TestFormatInference:
+    """Format auto-inference from --output file extension."""
+
+    def test_json_extension_infers_json(self, runner, tmp_path):
+        """--output foo.json without --format should export JSON."""
+        output = tmp_path / "result.json"
+        result = runner.invoke(main, ["demo", "--sims", "10", "--output", str(output)])
+        assert result.exit_code == 0
+        assert output.exists()
+        import json
+        data = json.loads(output.read_text())
+        assert isinstance(data, list)
+
+    def test_csv_extension_infers_csv(self, runner, tmp_path):
+        """--output foo.csv without --format should export CSV."""
+        output = tmp_path / "result.csv"
+        result = runner.invoke(main, ["demo", "--sims", "10", "--output", str(output)])
+        assert result.exit_code == 0
+        assert output.exists()
+        content = output.read_text()
+        assert "," in content  # CSV has commas
+
+    def test_explicit_format_overrides_extension(self, runner, tmp_path):
+        """--format csv --output foo.json should export CSV (format wins)."""
+        output = tmp_path / "result.json"
+        result = runner.invoke(main, ["demo", "--sims", "10", "--format", "csv", "--output", str(output)])
+        assert result.exit_code == 0
+        assert output.exists()
+        content = output.read_text()
+        # Should be CSV despite .json extension
+        assert "," in content
+        import json
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(content)
+
+    def test_unknown_extension_defaults_to_table(self, runner, tmp_path):
+        """--output foo.txt without --format should display table (no file)."""
+        output = tmp_path / "result.txt"
+        result = runner.invoke(main, ["demo", "--sims", "10", "--output", str(output)])
+        assert result.exit_code == 0
+        # Table mode doesn't write files, so output should NOT exist
+        assert not output.exists()
+
+
 class TestDetailFlag:
     """Gap 19: --detail flag on demo and game commands."""
 
