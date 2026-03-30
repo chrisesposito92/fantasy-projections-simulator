@@ -75,7 +75,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 
 **Phase 7A: Data + Engine Accuracy** — Complete (41 tests, 370 total)
 
-- Recency weighting: `season_weights` parameter on core preprocessor methods (play calling, play outcomes, turnover rates) for biasing toward recent seasons
+- Recency weighting:: `season_weights` parameter on core preprocessor methods (play calling, play outcomes, turnover rates) for biasing toward recent seasons
 - Penalty modeling: `check_penalty()` / `apply_penalty()` with per-team `PenaltyRates` (false start, holding, PI)
 - Red zone metrics: `red_zone_target_share` and `red_zone_carry_share` computed from PBP (yardline_100 <= 20)
 - Air yards share: `air_yards_share` in `PlayerUsage` computed from PBP air_yards column
@@ -85,6 +85,20 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Two-point conversion tracking: `attempt_pat()` returns scorer_id, `PlayerBoxScore.two_point_conversions` flows to scoring
 - Rookie blend system: `blend_with_archetype()` blends sparse player data with positional archetypes by games played
 - Pipeline output: `penalty_rates` and `season_weights` included in pipeline build results (engine wiring via TeamDistributions in future phase)
+
+**Phase 7B: Scoring + Config + CLI** — Complete (48 tests, 418 total)
+
+- Position-specific reception scoring: `reception_wr`, `reception_te`, etc. override the generic `reception` key per position
+- Yardage bonus thresholds: `rushing_bonus_100`, `passing_bonus_300`, etc. stack at multiple tiers
+- Custom scoring config: `custom_scoring.yaml` with `inherit` + `overrides` format, loaded via `--scoring-config`
+- Config resolution chain: defaults.yaml -> season.yaml -> --scoring-config, with auto-detect of `config/season.yaml`
+- Detailed projections: `build_detailed_projections()` adds floor (10th pct), ceiling (90th pct), and stddev for fpts and all tracked stats
+- Detail table formatters: QB/RB/WR/TE tables with Flr/Ceil/SD columns, activated via `--detail` flag
+- `game` command: single-game deep dive with per-team breakdowns, win percentages, `--demo` and `--detail` support
+- `player` command: single-player projection via fuzzy name matching with detailed stat card
+- Kicker attribution: `build_kicker_projections()` uses roster kicker names when available
+- Week validation: `--weeks` values validated to 1-18 range with helpful error messages
+- CLI defaults from `defaults.yaml`: `num_sims` and `historical_seasons` drive default behavior
 
 ## Quick Start
 
@@ -139,7 +153,7 @@ src/fantasy_sim/
 │   ├── engine.py           # apply_player_override(), apply_team_override(), redistribution
 │   ├── resolver.py         # PlayerResolver — fuzzy name → player_id matching
 │   └── parser.py           # OverrideSet, parse_override_config(), parse_cli_override()
-├── cli.py                  # Click CLI entry point (demo, week, season, backtest)
+├── cli.py                  # Click CLI entry point (demo, week, season, game, player, backtest)
 └── validation/
     ├── metrics.py          # Spearman correlation, MAE, boom/bust calibration
     ├── backtester.py       # Hold-out backtest runner (no data leakage)
@@ -186,6 +200,20 @@ uv run fantasy-sim week 1 --season 2024 --sims 100 --override "mahomes.games_pla
 
 # Load overrides from config file
 uv run fantasy-sim week 1 --season 2024 --config config/season.example.yaml
+
+# Single-game deep dive
+uv run fantasy-sim game KC BUF --week 5 --sims 100
+uv run fantasy-sim game HOME AWAY --demo --sims 100
+
+# Single-player projection (fuzzy name matching)
+uv run fantasy-sim player "nico_collins" --week 5 --sims 100
+
+# Detailed projections with floor/ceiling/stddev
+uv run fantasy-sim demo --sims 100 --detail
+uv run fantasy-sim game KC BUF --week 5 --detail
+
+# Custom scoring config (position-specific, yardage bonuses)
+uv run fantasy-sim week 1 --scoring-config config/custom_scoring.example.yaml
 ```
 
 ### Python API

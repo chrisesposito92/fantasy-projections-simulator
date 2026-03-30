@@ -55,6 +55,21 @@ uv run fantasy-sim backtest --season 2024 --sims 50
 uv run fantasy-sim demo --sims 100 --override "HOME_WR1.target_share=0.30"
 uv run fantasy-sim week 1 --season 2024 --override "mahomes.games_played=14"
 uv run fantasy-sim week 1 --season 2024 --config config/season.example.yaml
+
+# Game command (single-game deep dive)
+uv run fantasy-sim game KC BUF --week 5 --sims 100
+uv run fantasy-sim game HOME AWAY --demo --sims 100
+
+# Player command (single-player projection)
+uv run fantasy-sim player "nico_collins" --week 5 --sims 100
+uv run fantasy-sim player HOME_QB --demo --sims 100
+
+# Detail mode (floor/ceiling/stddev)
+uv run fantasy-sim demo --sims 100 --detail
+uv run fantasy-sim week 1 --sims 100 --detail
+
+# Custom scoring
+uv run fantasy-sim week 1 --scoring-config config/custom_scoring.yaml
 ```
 
 ## Architecture
@@ -69,20 +84,21 @@ The project is organized as a pipeline:
 6. **Output** (`output/tables.py`, `output/export.py`) — Rich terminal tables by position, CSV/JSON export
 7. **Validation** (`validation/metrics.py`, `validation/backtester.py`, `validation/report.py`) — Accuracy metrics (Spearman, MAE, boom/bust calibration), hold-out backtesting framework, formatted validation reports
 8. **Overrides** (`overrides/engine.py`, `overrides/resolver.py`, `overrides/parser.py`) — Player/team override engine with proportional share redistribution, fuzzy name matching, YAML + CLI parsing
-9. **CLI** (`cli.py`) — Click-based CLI with `demo`, `week`, `season`, `backtest` commands, `--override` and `--config` flags, rich progress bars
+9. **CLI** (`cli.py`) — Click-based CLI with `demo`, `week`, `season`, `game`, `player`, `backtest` commands, `--override`, `--config`, `--detail`, `--scoring-config` flags, rich progress bars
 
 ## Key Patterns
 
 - **ConfigLoader**: `load_config()` loads YAML, `resolve_scoring()` resolves `_inherit` chains. `load_defaults()` loads `config/defaults.yaml`. Scoring presets: PPR (base), half_ppr (_inherit: ppr, reception: 0.5), standard (_inherit: ppr, reception: 0).
-- **ScoringEngine**: `score_player(box, config)` for QB/RB/WR/TE, `score_dst(box, opponent_score, config)` with 7 points-allowed brackets, `score_kicker(box, config)` with FG distance buckets.
-- **ProjectionBuilder**: `build_player_projections(games, config)` aggregates PlayerBoxScore across sims into mean stats + fpts, sorted by fpts. `build_dst_projections(games, config, team_map)` for DST.
+- **ScoringEngine**: `score_player(box, config)` for QB/RB/WR/TE with position-specific reception keys (`reception_wr`, `reception_te`) and yardage bonus thresholds (`rushing_bonus_100`, `passing_bonus_300`). `score_dst(box, opponent_score, config)` with 7 points-allowed brackets. `score_kicker(box, config)` with FG distance buckets.
+- **CustomScoring**: `load_custom_scoring(path, presets)` reads `custom_scoring.yaml` with `inherit` + `overrides` format. `_resolve_config_chain()` merges defaults -> season.yaml -> --scoring-config.
+- **ProjectionBuilder**: `build_player_projections(games, config)` aggregates PlayerBoxScore across sims into mean stats + fpts, sorted by fpts. `build_detailed_projections(games, config)` adds floor (10th pct), ceiling (90th pct), and stddev for fpts and all tracked stats. `build_dst_projections(games, config, team_map)` for DST. `build_kicker_projections()` accepts optional rosters for real kicker attribution.
 - **GameContextBuilder**: `build_game(home, away, seasons)` constructs `TeamDistributions` + `TeamRoster` per team from real nflverse data. Caches pipeline output across calls. Falls back to league-average distributions for unknown teams.
 - **ActualPlayerWeek**: Loads real player stats, scores with config. Used by backtester for comparison.
 - **Backtester**: `Backtester(test_season, n_sims, num_training_seasons)` runs hold-out validation. `run(scoring_config)` returns `BacktestResult` with `passes_targets()` method. Targets: rank_corr > 0.80, weekly_mae < 6.0, season_mae < 25, calibration < 0.10.
 - **OverrideEngine**: `apply_player_override(roster, player_id, overrides)` applies usage/outcome/meta overrides; automatically triggers `redistribute_target_shares()` or `redistribute_carry_shares()` for share fields. `apply_team_override(dists, overrides)` modifies PlayCallingDist and TurnoverRates. Both raise on unknown fields.
 - **PlayerResolver**: `PlayerResolver(rosters).resolve(query)` resolves names to player_id via exact ID → exact name → underscore conversion → fuzzy match (thefuzz, MIN_MATCH_SCORE=70).
 - **OverrideParser**: `parse_override_config(path)` reads season.yaml into `OverrideSet`. `parse_cli_override("name.field=value")` parses CLI strings. `_build_overrides()` in CLI merges config + CLI overrides (CLI takes precedence).
-- **CLI**: `fantasy-sim demo` runs synthetic simulations. `fantasy-sim week N --season YYYY` simulates a real NFL week. `fantasy-sim season --season YYYY` simulates a full season. `fantasy-sim backtest --season YYYY` runs historical validation. Common options: `--sims`, `--scoring` (ppr/half_ppr/standard), `--format` (table/csv/json), `--output`, `--override "name.field=value"`, `--config path/to/season.yaml`.
+- **CLI**: `fantasy-sim demo` runs synthetic simulations. `fantasy-sim week N --season YYYY` simulates a real NFL week. `fantasy-sim season --season YYYY` simulates a full season. `fantasy-sim game HOME AWAY` simulates a single matchup with per-team breakdowns. `fantasy-sim player QUERY` shows single-player projection via fuzzy matching. `fantasy-sim backtest --season YYYY` runs historical validation. Common options: `--sims`, `--scoring` (ppr/half_ppr/standard), `--scoring-config path/to/custom.yaml`, `--detail` (floor/ceiling/stddev), `--format` (table/csv/json), `--output`, `--override "name.field=value"`, `--config path/to/season.yaml`.
 - **GameStateBucket**: Discretized game state (down, distance, score_diff, quarter, yard_zone) used as dict keys for probability lookups. Defined in `models/game_state.py`, used everywhere.
 - **Distribution types**: `PlayCallingDist`, `PlayOutcomeDist`, `TurnoverRates`, `KickingModel`, `DriveStartModel` in `models/distributions.py`. The sim engine samples from these.
 - **Empirical distributions**: Play outcomes are stored as numpy arrays of historical values and sampled from directly (non-parametric).
@@ -119,6 +135,7 @@ The project is organized as a pipeline:
 - **Phase 5 (Validation + Tuning)**: Complete — 31 tests (291 total)
 - **Phase 6 (Overrides + Polish)**: Complete — 38 tests (329 total)
 - **Phase 7A (Data + Engine Accuracy)**: Complete — 41 tests (370 total)
+- **Phase 7B (Scoring + Config + CLI)**: Complete — 48 tests (418 total)
 
 ## Style
 
