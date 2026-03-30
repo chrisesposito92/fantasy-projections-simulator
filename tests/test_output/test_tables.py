@@ -68,3 +68,54 @@ class TestFormatDSTTable:
         ]
         result = format_dst_table(projections)
         assert "BAL" in result
+
+
+class TestDetailTables:
+    def _make_qb_detail_proj(self):
+        return [{"rank": 1, "player_id": "QB1", "name": "QB Name", "team": "KC", "position": "QB",
+            "fpts": 22.5, "fpts_floor": 12.0, "fpts_ceiling": 35.0, "fpts_stddev": 7.2,
+            "pass_yards": 280.0, "pass_yards_floor": 180.0, "pass_yards_ceiling": 390.0, "pass_yards_stddev": 65.0,
+            "pass_tds": 2.1, "pass_tds_floor": 1.0, "pass_tds_ceiling": 3.0, "pass_tds_stddev": 0.8,
+            "interceptions": 0.8, "rush_yards": 15.0, "rush_tds": 0.2, "sacks": 2.0, "fumbles_lost": 0.3,
+            "targets": 0.0, "receptions": 0.0, "receiving_yards": 0.0, "receiving_tds": 0.0}]
+
+    def _make_rb_detail_proj(self):
+        return [{"rank": 1, "player_id": "RB1", "name": "RB Name", "team": "KC", "position": "RB",
+            "fpts": 18.0, "fpts_floor": 8.0, "fpts_ceiling": 30.0, "fpts_stddev": 6.5,
+            "rush_yards": 75.0, "rush_yards_floor": 35.0, "rush_yards_ceiling": 120.0, "rush_yards_stddev": 28.0,
+            "rush_tds": 0.7, "targets": 4.0, "receptions": 3.0,
+            "receiving_yards": 22.0, "receiving_yards_floor": 5.0, "receiving_yards_ceiling": 45.0,
+            "receiving_tds": 0.2, "fumbles_lost": 0.1,
+            "pass_yards": 0.0, "pass_tds": 0.0, "interceptions": 0.0, "sacks": 0.0}]
+
+    def test_format_qb_detail_table_returns_string(self):
+        from fantasy_sim.output.tables import format_qb_detail_table
+        result = format_qb_detail_table(self._make_qb_detail_proj())
+        assert isinstance(result, str)
+        assert "QB" in result
+
+    def test_qb_detail_table_has_floor_ceiling(self):
+        from fantasy_sim.output.tables import format_qb_detail_table
+        result = format_qb_detail_table(self._make_qb_detail_proj())
+        assert "Flr" in result or "Floor" in result
+        assert "Ceil" in result
+
+    def test_format_rb_detail_table_returns_string(self):
+        from fantasy_sim.output.tables import format_rb_detail_table
+        result = format_rb_detail_table(self._make_rb_detail_proj())
+        assert isinstance(result, str)
+        assert "RB" in result
+
+    def test_format_wr_detail_table_returns_string(self):
+        from fantasy_sim.output.tables import format_wr_detail_table
+        proj = self._make_rb_detail_proj()
+        proj[0]["position"] = "WR"
+        result = format_wr_detail_table(proj)
+        assert isinstance(result, str)
+
+    def test_format_te_detail_table_returns_string(self):
+        from fantasy_sim.output.tables import format_te_detail_table
+        proj = self._make_rb_detail_proj()
+        proj[0]["position"] = "TE"
+        result = format_te_detail_table(proj)
+        assert isinstance(result, str)

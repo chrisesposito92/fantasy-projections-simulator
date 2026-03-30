@@ -111,6 +111,154 @@ def format_te_table(projections: list[dict]) -> str:
     return _render_table(table)
 
 
+def format_qb_detail_table(projections: list[dict]) -> str:
+    """QB table with floor/ceiling/stddev columns."""
+    table = Table(title="QB Projections (Detailed)")
+    table.add_column("Rk", justify="right", style="bold")
+    table.add_column("Player", style="cyan")
+    table.add_column("Team")
+    table.add_column("FPts", justify="right", style="green bold")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("SD", justify="right", style="dim")
+    table.add_column("PaYd", justify="right")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("PaTD", justify="right")
+    table.add_column("INT", justify="right")
+    table.add_column("RuYd", justify="right")
+    table.add_column("FL", justify="right")
+
+    for p in projections:
+        table.add_row(
+            str(p["rank"]), p["name"], p["team"],
+            f"{p['fpts']:.1f}",
+            f"{p.get('fpts_floor', 0):.1f}",
+            f"{p.get('fpts_ceiling', 0):.1f}",
+            f"{p.get('fpts_stddev', 0):.1f}",
+            f"{p['pass_yards']:.0f}",
+            f"{p.get('pass_yards_floor', 0):.0f}",
+            f"{p.get('pass_yards_ceiling', 0):.0f}",
+            f"{p['pass_tds']:.1f}",
+            f"{p['interceptions']:.1f}",
+            f"{p.get('rush_yards', 0):.1f}",
+            f"{p['fumbles_lost']:.1f}",
+        )
+
+    return _render_table(table)
+
+
+def format_rb_detail_table(projections: list[dict]) -> str:
+    """RB table with floor/ceiling/stddev columns."""
+    table = Table(title="RB Projections (Detailed)")
+    table.add_column("Rk", justify="right", style="bold")
+    table.add_column("Player", style="cyan")
+    table.add_column("Team")
+    table.add_column("FPts", justify="right", style="green bold")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("SD", justify="right", style="dim")
+    table.add_column("RuYd", justify="right")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("RuTD", justify="right")
+    table.add_column("Rec", justify="right")
+    table.add_column("ReYd", justify="right")
+    table.add_column("FL", justify="right")
+
+    for p in projections:
+        table.add_row(
+            str(p["rank"]), p["name"], p["team"],
+            f"{p['fpts']:.1f}",
+            f"{p.get('fpts_floor', 0):.1f}",
+            f"{p.get('fpts_ceiling', 0):.1f}",
+            f"{p.get('fpts_stddev', 0):.1f}",
+            f"{p['rush_yards']:.1f}",
+            f"{p.get('rush_yards_floor', 0):.1f}",
+            f"{p.get('rush_yards_ceiling', 0):.1f}",
+            f"{p['rush_tds']:.1f}",
+            f"{p['receptions']:.1f}",
+            f"{p['receiving_yards']:.1f}",
+            f"{p['fumbles_lost']:.1f}",
+        )
+
+    return _render_table(table)
+
+
+def format_wr_detail_table(projections: list[dict]) -> str:
+    """WR table with floor/ceiling/stddev columns."""
+    table = Table(title="WR Projections (Detailed)")
+    table.add_column("Rk", justify="right", style="bold")
+    table.add_column("Player", style="cyan")
+    table.add_column("Team")
+    table.add_column("FPts", justify="right", style="green bold")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("SD", justify="right", style="dim")
+    table.add_column("Tgt", justify="right")
+    table.add_column("Rec", justify="right")
+    table.add_column("ReYd", justify="right")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("ReTD", justify="right")
+    table.add_column("FL", justify="right")
+
+    for p in projections:
+        table.add_row(
+            str(p["rank"]), p["name"], p["team"],
+            f"{p['fpts']:.1f}",
+            f"{p.get('fpts_floor', 0):.1f}",
+            f"{p.get('fpts_ceiling', 0):.1f}",
+            f"{p.get('fpts_stddev', 0):.1f}",
+            f"{p['targets']:.1f}",
+            f"{p['receptions']:.1f}",
+            f"{p['receiving_yards']:.1f}",
+            f"{p.get('receiving_yards_floor', 0):.1f}",
+            f"{p.get('receiving_yards_ceiling', 0):.1f}",
+            f"{p['receiving_tds']:.1f}",
+            f"{p['fumbles_lost']:.1f}",
+        )
+
+    return _render_table(table)
+
+
+def format_te_detail_table(projections: list[dict]) -> str:
+    """TE table with floor/ceiling/stddev columns."""
+    table = Table(title="TE Projections (Detailed)")
+    table.add_column("Rk", justify="right", style="bold")
+    table.add_column("Player", style="cyan")
+    table.add_column("Team")
+    table.add_column("FPts", justify="right", style="green bold")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("SD", justify="right", style="dim")
+    table.add_column("Tgt", justify="right")
+    table.add_column("Rec", justify="right")
+    table.add_column("ReYd", justify="right")
+    table.add_column("Flr", justify="right", style="dim")
+    table.add_column("Ceil", justify="right", style="yellow")
+    table.add_column("ReTD", justify="right")
+    table.add_column("FL", justify="right")
+
+    for p in projections:
+        table.add_row(
+            str(p["rank"]), p["name"], p["team"],
+            f"{p['fpts']:.1f}",
+            f"{p.get('fpts_floor', 0):.1f}",
+            f"{p.get('fpts_ceiling', 0):.1f}",
+            f"{p.get('fpts_stddev', 0):.1f}",
+            f"{p['targets']:.1f}",
+            f"{p['receptions']:.1f}",
+            f"{p['receiving_yards']:.1f}",
+            f"{p.get('receiving_yards_floor', 0):.1f}",
+            f"{p.get('receiving_yards_ceiling', 0):.1f}",
+            f"{p['receiving_tds']:.1f}",
+            f"{p['fumbles_lost']:.1f}",
+        )
+
+    return _render_table(table)
+
+
 def format_kicker_table(projections: list[dict]) -> str:
     table = Table(title="K Projections")
     table.add_column("Rank", justify="right", style="bold")
