@@ -93,6 +93,61 @@ def _build_overrides(overrides: tuple[str, ...], config_path: str | None) -> Ove
     return result
 
 
+def _resolve_config_chain(
+    scoring_format: str,
+    scoring_config_path: str | None,
+    season_yaml_path: str | None = None,
+) -> dict:
+    """Resolve scoring config through the config chain.
+
+    Resolution order:
+    1. defaults.yaml -> resolve scoring preset (ppr/half_ppr/standard)
+    2. If season.yaml exists at season_yaml_path, load scoring_format from it
+    3. If --scoring-config is provided, load custom scoring (overrides preset)
+    """
+    from fantasy_sim.config.loader import load_custom_scoring
+
+    defaults = load_defaults()
+    scoring_presets = defaults["scoring"]
+
+    effective_format = scoring_format
+    if season_yaml_path:
+        season_path = Path(season_yaml_path)
+        if season_path.exists():
+            import yaml
+            with open(season_path) as f:
+                season_config = yaml.safe_load(f) or {}
+            if "scoring_format" in season_config:
+                effective_format = season_config["scoring_format"]
+
+    scoring_config = resolve_scoring(scoring_presets, effective_format)
+
+    if scoring_config_path:
+        scoring_config = load_custom_scoring(Path(scoring_config_path), scoring_presets)
+
+    return scoring_config
+
+
+def _get_training_seasons(season: int) -> list[int]:
+    """Get training seasons from defaults.yaml."""
+    defaults = load_defaults()
+    sim_config = defaults.get("simulation", {})
+    num_years = len(sim_config.get("historical_seasons", [1, 2, 3]))
+    return list(range(season - num_years, season))
+
+
+def _auto_detect_season_yaml() -> str | None:
+    """Auto-detect config/season.yaml if it exists."""
+    candidates = [
+        Path("config/season.yaml"),
+        Path.cwd() / "config" / "season.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
 @click.group()
 def main():
     """Fantasy football projections via play-by-play simulation."""
@@ -106,10 +161,10 @@ def main():
 @click.option("--output", "output_path", default=None, help="Output file path (for csv/json)")
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
-def demo(sims, scoring, output_format, output_path, overrides, config_path):
+@click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
+def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
     """Run a demo simulation with synthetic team data."""
-    config = load_defaults()
-    scoring_config = resolve_scoring(config["scoring"], scoring)
+    scoring_config = _resolve_config_chain(scoring, scoring_config_path)
 
     click.echo(f"Running {sims} simulations ({scoring} scoring)...")
 
@@ -196,17 +251,22 @@ def _display_projections(player_projs, output_format, output_path):
 @main.command()
 @click.argument("week_num", type=int)
 @click.option("--season", default=2024, help="NFL season year")
-@click.option("--sims", default=1000, type=click.IntRange(min=1))
+@click.option("--sims", default=None, type=click.IntRange(min=1))
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
 @click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
 @click.option("--output", "output_path", default=None)
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
-def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path):
+@click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
+def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
     """Simulate all games in an NFL week using real nflverse data."""
-    config = load_defaults()
-    scoring_config = resolve_scoring(config["scoring"], scoring)
-    training_seasons = [s for s in range(season - 3, season)]
+    season_yaml = config_path or _auto_detect_season_yaml()
+    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
+    training_seasons = _get_training_seasons(season)
+
+    if sims is None:
+        defaults = load_defaults()
+        sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
     loader = DataLoader()
     builder = GameContextBuilder(cache_dir=loader.cache_dir)
@@ -269,17 +329,22 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
 @main.command()
 @click.option("--season", "season_year", default=2024, help="NFL season year")
 @click.option("--weeks", default="all", help="Weeks to simulate: 'all' or '1-5' or '1,3,5'")
-@click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower for season)")
+@click.option("--sims", default=None, type=click.IntRange(min=1), help="Sims per game (lower for season)")
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
 @click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
 @click.option("--output", "output_path", default=None)
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
-def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path):
+@click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
+def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
     """Simulate a full NFL season using real nflverse data."""
-    config = load_defaults()
-    scoring_config = resolve_scoring(config["scoring"], scoring)
-    training_seasons = [s for s in range(season_year - 3, season_year)]
+    season_yaml = config_path or _auto_detect_season_yaml()
+    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
+    training_seasons = _get_training_seasons(season_year)
+
+    if sims is None:
+        defaults = load_defaults()
+        sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
     loader = DataLoader()
     builder = GameContextBuilder(cache_dir=loader.cache_dir)

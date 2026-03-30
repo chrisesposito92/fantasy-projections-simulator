@@ -113,6 +113,36 @@ class TestOverrideCLI:
         assert result.exit_code == 0
 
 
+class TestConfigResolution:
+    def test_resolve_config_chain_defaults_only(self):
+        """Without custom config, should use defaults for the given format."""
+        from fantasy_sim.cli import _resolve_config_chain
+        result = _resolve_config_chain("ppr", scoring_config_path=None)
+        assert result["passing_td"] == 4
+        assert result["reception"] == 1
+
+    def test_resolve_config_chain_with_scoring_config(self, tmp_path):
+        """Custom scoring config should override the preset."""
+        from fantasy_sim.cli import _resolve_config_chain
+        custom = tmp_path / "custom.yaml"
+        custom.write_text("inherit: ppr\noverrides:\n  passing_td: 6\n")
+        result = _resolve_config_chain("ppr", scoring_config_path=str(custom))
+        assert result["passing_td"] == 6
+        assert result["reception"] == 1  # inherited from ppr
+
+    def test_defaults_yaml_provides_num_sims(self):
+        """defaults.yaml should provide simulation.num_sims == 1000."""
+        from fantasy_sim.config.loader import load_defaults
+        defaults = load_defaults()
+        assert defaults["simulation"]["num_sims"] == 1000
+
+    def test_defaults_yaml_provides_historical_seasons(self):
+        """defaults.yaml should provide simulation.historical_seasons."""
+        from fantasy_sim.config.loader import load_defaults
+        defaults = load_defaults()
+        assert defaults["simulation"]["historical_seasons"] == [2022, 2023, 2024]
+
+
 class TestBacktestCommand:
     def test_backtest_help(self, runner):
         result = runner.invoke(main, ["backtest", "--help"])
