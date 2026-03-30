@@ -223,6 +223,7 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     click.echo(f"Found {week_games.shape[0]} games. Running {sims} sims each ({scoring})...\n")
 
     all_player_projs = []
+    override_set = _build_overrides(overrides, config_path)
 
     for game in week_games.iter_rows(named=True):
         home = game["home_team"]
@@ -233,7 +234,6 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
             home_team=home, away_team=away, seasons=training_seasons,
         )
 
-        override_set = _build_overrides(overrides, config_path)
         if override_set.players or override_set.teams:
             apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
 
@@ -290,6 +290,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
     all_player_projs = []
+    override_set = _build_overrides(overrides, config_path)
     for wk in week_nums:
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == season_year)
@@ -300,7 +301,6 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
             home_dists, away_dists, home_roster, away_roster = builder.build_game(
                 home, away, seasons=training_seasons,
             )
-            override_set = _build_overrides(overrides, config_path)
             if override_set.players or override_set.teams:
                 apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
             seed = zlib.crc32(game["game_id"].encode()) % (2**31)
