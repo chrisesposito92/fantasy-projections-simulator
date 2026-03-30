@@ -8,6 +8,7 @@ from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, 
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 
 MIN_PLAYER_PLAYS = 5
+MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
 FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
 ACTIVE_STATUSES = {"ACT"}
 
@@ -172,7 +173,7 @@ def _aggregate_pbp_stats(
         if rid not in receiving_stats:
             receiving_stats[rid] = {
                 "targets": 0, "catches": 0, "yards": [],
-                "rz_targets": 0, "air_yards": 0.0,
+                "rz_targets": 0, "rz_catches": 0, "air_yards": 0.0,
                 "team": row["posteam"], "game_ids": set(),
             }
         receiving_stats[rid]["targets"] += 1
@@ -181,6 +182,8 @@ def _aggregate_pbp_stats(
         # Red zone target
         if row["yardline_100"] <= 20:
             receiving_stats[rid]["rz_targets"] += 1
+            if row["complete_pass"] == 1:
+                receiving_stats[rid]["rz_catches"] += 1
 
         # Air yards
         if has_air_yards and row.get("air_yards") is not None:
@@ -372,6 +375,11 @@ def _assemble_models(
             rs = receiving_stats[pid]
             if rs["targets"] > 0:
                 outcomes.catch_rate = rs["catches"] / rs["targets"]
+            # Red zone catch rate
+            if rs["rz_targets"] >= MIN_RZ_TARGETS:
+                outcomes.red_zone_catch_rate = rs["rz_catches"] / rs["rz_targets"]
+            elif outcomes.catch_rate > 0:
+                outcomes.red_zone_catch_rate = outcomes.catch_rate * 0.85
             if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
                 outcomes.receiving_yards_dist = np.array(rs["yards"])
 

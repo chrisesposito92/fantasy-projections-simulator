@@ -346,3 +346,60 @@ class TestScrambleRateFix:
         assert ja is not None
         # Old behavior: 3 rushes / (10 passes + 3 rushes) = 0.2308
         assert ja.usage.scramble_rate == pytest.approx(3 / 13, abs=0.01)
+
+
+class TestRedZoneCatchRate:
+    def test_rz_catch_rate_computed_with_enough_samples(self, rz_pbp, sample_rosters):
+        """RE11 has 5 RZ targets and 5 RZ catches -> rz_catch_rate = 1.0.
+        But 5 < 10 threshold, so should fall back to catch_rate * 0.85."""
+        models = build_player_models(rz_pbp, sample_rosters, training_seasons=[2024])
+        re = models.get("RE11")
+        assert re is not None
+        assert re.outcomes.red_zone_catch_rate == pytest.approx(re.outcomes.catch_rate * 0.85, abs=0.01)
+
+    def test_rz_catch_rate_fallback_below_threshold(self, expanded_pbp, sample_rosters):
+        """Players with < 10 RZ targets use catch_rate * 0.85 fallback."""
+        models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
+        tk = models.get("TK87")
+        assert tk is not None
+        if tk.outcomes.catch_rate > 0:
+            assert tk.outcomes.red_zone_catch_rate == pytest.approx(tk.outcomes.catch_rate * 0.85, abs=0.01)
+
+    def test_rz_catch_rate_data_driven_with_enough_targets(self):
+        """With >= 10 RZ targets, use actual RZ catch rate."""
+        import polars as pl
+        plays = []
+        base = {
+            "season": 2024, "week": 1, "game_id": "2024_01_T1",
+            "posteam": "T1", "defteam": "T2",
+            "down": 1, "ydstogo": 10, "score_differential": 0, "qtr": 1,
+            "rush_attempt": 0, "interception": 0, "fumble_lost": 0,
+            "sack": 0, "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "QB1", "rusher_player_id": None,
+        }
+        # 15 RZ targets, 9 completions -> rz_catch_rate = 0.60
+        for i in range(9):
+            plays.append({**base, "play_type": "pass", "yardline_100": 15,
+                          "yards_gained": 8, "complete_pass": 1, "pass_attempt": 1,
+                          "receiver_player_id": "WR1"})
+        for i in range(6):
+            plays.append({**base, "play_type": "pass", "yardline_100": 15,
+                          "yards_gained": 0, "complete_pass": 0, "pass_attempt": 1,
+                          "receiver_player_id": "WR1"})
+        # 10 non-RZ targets, 7 completions -> overall catch_rate = 16/25 = 0.64
+        for i in range(7):
+            plays.append({**base, "play_type": "pass", "yardline_100": 50,
+                          "yards_gained": 12, "complete_pass": 1, "pass_attempt": 1,
+                          "receiver_player_id": "WR1"})
+        for i in range(3):
+            plays.append({**base, "play_type": "pass", "yardline_100": 50,
+                          "yards_gained": 0, "complete_pass": 0, "pass_attempt": 1,
+                          "receiver_player_id": "WR1"})
+        pbp = pl.DataFrame(plays)
+        rosters = pl.DataFrame([
+            {"season": 2024, "week": 1, "player_id": "QB1", "player_name": "QB", "position": "QB", "team": "T1", "status": "ACT"},
+            {"season": 2024, "week": 1, "player_id": "WR1", "player_name": "WR", "position": "WR", "team": "T1", "status": "ACT"},
+        ])
+        models = build_player_models(pbp, rosters, training_seasons=[2024])
+        wr = models["WR1"]
+        assert wr.outcomes.red_zone_catch_rate == pytest.approx(9 / 15, abs=0.01)
