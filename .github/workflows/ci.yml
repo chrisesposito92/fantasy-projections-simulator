@@ -28,14 +28,16 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev --python ${{ matrix.python-version }}
+        run: uv pip install -e ".[dev]"
 
       - name: Run tests
         run: |
-          .venv/bin/pytest tests/ \
+          pytest tests/ \
             -m "not integration and not statistical" \
             --tb=short \
             -q \
@@ -54,14 +56,16 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        run: uv python install 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - name: Install dependencies
-        run: uv sync --dev --python 3.14
+        run: uv pip install -e ".[dev]"
 
       - name: Run statistical tests
         run: |
-          .venv/bin/pytest tests/ \
+          pytest tests/ \
             -m "statistical" \
             --tb=short \
             -q \
