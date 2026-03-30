@@ -60,6 +60,73 @@ def build_player_projections(
     return projections
 
 
+# Stats to compute distributions for
+_DISTRIBUTION_STATS = [
+    "pass_yards", "pass_tds", "rush_yards", "rush_tds",
+    "targets", "receptions", "receiving_yards", "receiving_tds",
+    "fumbles_lost",
+]
+
+
+def build_detailed_projections(
+    games: list[GameResult], scoring_config: dict
+) -> list[dict]:
+    """Build projections with floor (10th pct), ceiling (90th pct), and stddev.
+
+    Returns the same structure as build_player_projections, plus:
+    - fpts_floor, fpts_ceiling, fpts_stddev
+    - {stat}_floor, {stat}_ceiling, {stat}_stddev for each stat in _DISTRIBUTION_STATS
+    """
+    if not games:
+        return []
+
+    n_games = len(games)
+    player_games: dict[str, list[PlayerBoxScore]] = defaultdict(list)
+    for game in games:
+        for pid, box in game.player_stats.items():
+            player_games[pid].append(box)
+
+    projections = []
+    for pid, boxes in player_games.items():
+        if not boxes:
+            continue
+        first = boxes[0]
+
+        # Compute per-sim fpts for distribution
+        fpts_per_sim = [score_player(b, scoring_config) for b in boxes]
+        fpts_all = fpts_per_sim + [0.0] * (n_games - len(boxes))
+        fpts_arr = np.array(fpts_all)
+
+        proj = {
+            "player_id": pid,
+            "name": first.name,
+            "position": first.position,
+            "team": first.team,
+            "fpts": round(float(np.mean(fpts_arr)), 1),
+            "fpts_floor": round(float(np.percentile(fpts_arr, 10)), 1),
+            "fpts_ceiling": round(float(np.percentile(fpts_arr, 90)), 1),
+            "fpts_stddev": round(float(np.std(fpts_arr)), 1),
+        }
+
+        # Add stat means + distributions
+        for stat in _DISTRIBUTION_STATS:
+            values = [getattr(b, stat, 0) for b in boxes]
+            all_values = values + [0] * (n_games - len(boxes))
+            arr = np.array(all_values, dtype=float)
+            proj[stat] = round(float(np.mean(arr)), 1)
+            proj[f"{stat}_floor"] = round(float(np.percentile(arr, 10)), 1)
+            proj[f"{stat}_ceiling"] = round(float(np.percentile(arr, 90)), 1)
+            proj[f"{stat}_stddev"] = round(float(np.std(arr)), 1)
+
+        projections.append(proj)
+
+    projections.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(projections, 1):
+        p["rank"] = i
+
+    return projections
+
+
 def build_dst_projections(
     games: list[GameResult],
     scoring_config: dict,
