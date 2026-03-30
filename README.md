@@ -53,8 +53,17 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Click CLI: `fantasy-sim demo` runs full pipeline end-to-end with synthetic data
 - FG distance tracking added to engine (0-39, 40-49, 50+ yard buckets)
 
+**Phase 5: Validation + Tuning** — Complete (31 tests, 291 total)
+
+- GameContextBuilder: bridges real nflverse data to the simulation engine
+- New CLI commands: `fantasy-sim week 1 --season 2024` and `fantasy-sim season --season 2024`
+- Actual results loader: scores real player stats with config for backtest comparisons
+- Accuracy metrics: Spearman rank correlation, MAE (weekly + season total), boom/bust calibration
+- Backtesting framework: hold-out validation using only prior-season data (no leakage)
+- Validation report with pass/fail indicators per metric against spec targets
+- CLI: `fantasy-sim backtest --season 2024` runs full historical validation
+
 **Upcoming:**
-- Phase 5: Validation + Tuning (backtest against 2023/2024 seasons)
 - Phase 6: Overrides + Polish
 
 ## Quick Start
@@ -82,7 +91,9 @@ src/fantasy_sim/
 │   ├── preprocessor.py     # Distribution fitting from historical PBP
 │   ├── pipeline.py         # Orchestrates loading + preprocessing
 │   ├── player_builder.py   # Build PlayerModels from PBP + roster data
-│   └── rookie_builder.py   # Rookie archetypes by draft capital
+│   ├── rookie_builder.py   # Rookie archetypes by draft capital
+│   ├── game_context.py     # GameContextBuilder — real data → sim engine
+│   └── actuals.py          # Load + score actual player stats for backtesting
 ├── models/
 │   ├── game_state.py       # GameStateBucket + bucketing functions
 │   ├── distributions.py    # Distribution dataclasses (PlayCallingDist, etc.)
@@ -104,8 +115,11 @@ src/fantasy_sim/
 ├── output/
 │   ├── tables.py           # Rich terminal tables (QB/RB/WR/TE/K/DST)
 │   └── export.py           # CSV and JSON file export
-├── cli.py                  # Click CLI entry point (fantasy-sim command)
-└── validation/             # (Phase 5) Backtesting framework
+├── cli.py                  # Click CLI entry point (demo, week, season, backtest)
+└── validation/
+    ├── metrics.py          # Spearman correlation, MAE, boom/bust calibration
+    ├── backtester.py       # Hold-out backtest runner (no data leakage)
+    └── report.py           # Rich-formatted validation report
 ```
 
 ## Tech Stack
@@ -130,6 +144,15 @@ uv run fantasy-sim demo --sims 100 --scoring half_ppr
 # Export to file
 uv run fantasy-sim demo --sims 100 --format csv --output projections.csv
 uv run fantasy-sim demo --sims 100 --format json --output projections.json
+
+# Simulate a real NFL week (requires network for nflverse data)
+uv run fantasy-sim week 1 --season 2024 --sims 100
+
+# Simulate a full season
+uv run fantasy-sim season --season 2024 --sims 50
+
+# Backtest against historical actuals
+uv run fantasy-sim backtest --season 2024 --sims 50
 ```
 
 ### Python API
@@ -150,5 +173,3 @@ print(results.summary())
 - [Phase 3 Plan](docs/superpowers/plans/2026-03-29-phase3-player-models.md)
 - [Phase 4 Plan](docs/superpowers/plans/2026-03-29-phase4-scoring-config-cli.md)
 - [Phase 5 Plan](docs/superpowers/plans/2026-03-29-phase5-validation-tuning.md)
-- [Phase 3 Plan](docs/superpowers/plans/2026-03-29-phase3-player-models.md)
-- [Phase 4 Plan](docs/superpowers/plans/2026-03-29-phase4-scoring-config-cli.md)
