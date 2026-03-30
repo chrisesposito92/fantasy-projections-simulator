@@ -1,0 +1,23 @@
+# config/season.example.yaml
+# Copy to config/season.yaml and customize for your league.
+
+season: 2025
+weeks: all
+scoring_format: ppr
+
+# Team-level overrides
+teams:
+  KC:
+    pass_rate: 0.62
+  BUF:
+    pass_rate: 0.58
+
+# Player-level overrides (use player names or nflverse player_id)
+players:
+  patrick_mahomes:
+    games_missed: [4, 5, 6]
+  nico_collins:
+    target_share: 0.28
+  bijan_robinson:
+    carry_share: 0.72
+    red_zone_carry_share: 0.80

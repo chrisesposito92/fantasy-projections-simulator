@@ -8,7 +8,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Runs Monte Carlo simulations (1,000+ per game) to produce statistical distributions — not just point estimates
 - Outputs full stat lines (passing yards, rushing yards, receptions, TDs, etc.) alongside fantasy points
 - Supports any scoring format (PPR, half-PPR, standard, custom) via YAML config
-- Enables "what if" analysis via player and team overrides (target share, games missed, pace, pass rate)
+- Enables "what if" analysis via player and team overrides (`--override`, `--config`) with fuzzy name matching and automatic share redistribution
 
 ## Project Status
 
@@ -63,8 +63,15 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Validation report with pass/fail indicators per metric against spec targets
 - CLI: `fantasy-sim backtest --season 2024` runs full historical validation
 
-**Upcoming:**
-- Phase 6: Overrides + Polish
+**Phase 6: Overrides + Polish** — Complete (38 tests, 329 total)
+
+- Override engine: `apply_player_override()` and `apply_team_override()` with proportional share redistribution
+- Fuzzy player name resolver: resolves CLI names (e.g., "mahomes") to nflverse player IDs via thefuzz
+- Override config parser: reads `season.yaml` files and `--override` CLI strings into structured OverrideSet
+- CLI integration: `--override "name.field=value"` and `--config season.yaml` flags on demo, week, season commands
+- Rich progress bars on `week` and `season` commands
+- Helpful error messages for common issues (missing data, invalid weeks)
+- 6 integration tests covering all Phase 6 spec requirements
 
 ## Quick Start
 
@@ -115,6 +122,10 @@ src/fantasy_sim/
 ├── output/
 │   ├── tables.py           # Rich terminal tables (QB/RB/WR/TE/K/DST)
 │   └── export.py           # CSV and JSON file export
+├── overrides/
+│   ├── engine.py           # apply_player_override(), apply_team_override(), redistribution
+│   ├── resolver.py         # PlayerResolver — fuzzy name → player_id matching
+│   └── parser.py           # OverrideSet, parse_override_config(), parse_cli_override()
 ├── cli.py                  # Click CLI entry point (demo, week, season, backtest)
 └── validation/
     ├── metrics.py          # Spearman correlation, MAE, boom/bust calibration
@@ -128,6 +139,8 @@ src/fantasy_sim/
 - **nflreadpy** — NFL play-by-play data from nflverse
 - **polars** — Fast DataFrames for data processing
 - **numpy/scipy** — Numerical simulation and distribution fitting
+- **thefuzz** — Fuzzy string matching for player name resolution
+- **rich** — Progress bars and terminal formatting
 - **pytest** — Testing with pytest-xdist and hypothesis
 
 ## Quick Simulation
@@ -153,6 +166,13 @@ uv run fantasy-sim season --season 2024 --sims 50
 
 # Backtest against historical actuals
 uv run fantasy-sim backtest --season 2024 --sims 50
+
+# Override player stats ("what if" scenarios)
+uv run fantasy-sim demo --sims 100 --override "HOME_WR1.target_share=0.30"
+uv run fantasy-sim week 1 --season 2024 --sims 100 --override "mahomes.games_played=14"
+
+# Load overrides from config file
+uv run fantasy-sim week 1 --season 2024 --config config/season.example.yaml
 ```
 
 ### Python API
@@ -173,3 +193,4 @@ print(results.summary())
 - [Phase 3 Plan](docs/superpowers/plans/2026-03-29-phase3-player-models.md)
 - [Phase 4 Plan](docs/superpowers/plans/2026-03-29-phase4-scoring-config-cli.md)
 - [Phase 5 Plan](docs/superpowers/plans/2026-03-29-phase5-validation-tuning.md)
+- [Phase 6 Plan](docs/superpowers/plans/2026-03-30-phase6-overrides-polish.md)
