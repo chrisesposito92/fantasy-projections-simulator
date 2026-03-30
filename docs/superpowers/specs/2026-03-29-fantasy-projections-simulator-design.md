@@ -564,3 +564,5 @@ Player-level and team-level override system in config and CLI flags. Error handl
 - DFS lineup optimization
 - Trade value analysis
 - Draft ranking generator
+- Team context adjustments for veteran signings/trades (e.g., WR moving from run-heavy to pass-heavy offense gets target share adjustment based on new team's scheme)
+- Raw-volume usage shares with roster-assembly normalization (compute shares from raw carry/target counts at `build_team_roster` time rather than against historical team totals — more principled but requires `PlayerUsage` model changes)
