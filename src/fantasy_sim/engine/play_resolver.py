@@ -216,7 +216,11 @@ def _resolve_pass(
                 is_td = True
             else:
                 # Tackled short of goal line
-                yards = max(1, state.yard_line - rng.integers(1, max(2, state.yard_line // 3)))
+                short_amount = int(rng.integers(1, max(2, state.yard_line // 3)))
+                yards = max(0, state.yard_line - short_amount)
+                # Ensure receiver doesn't reach the goal line
+                if yards >= state.yard_line:
+                    yards = max(0, state.yard_line - 1)
                 is_td = False
         else:
             is_td = is_complete and (state.yard_line - yards) <= 0
