@@ -1,13 +1,10 @@
 import json
-import numpy as np
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 from fantasy_sim.cli import main
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.scoring.engine import score_player
-from fantasy_sim.scoring.projections import build_player_projections
-from fantasy_sim.engine.types import GameResult, TeamBoxScore, PlayerBoxScore
+from fantasy_sim.engine.types import PlayerBoxScore
 
 
 class TestScoringConsistency:
