@@ -373,3 +373,34 @@ class TestHomeFieldAdvantage:
         state = make_state()
         result = resolve_play(state, "run", outcomes, rates, rng, is_home=False)
         assert result.yards == 5
+
+
+class TestRedZoneTDGate:
+    def test_outside_red_zone_always_true(self):
+        from fantasy_sim.engine.play_resolver import _red_zone_td_gate
+        rng = np.random.default_rng(42)
+        for _ in range(50):
+            assert _red_zone_td_gate(25, "pass", rng) is True
+            assert _red_zone_td_gate(50, "run", rng) is True
+
+    def test_close_to_goal_high_probability(self):
+        from fantasy_sim.engine.play_resolver import _red_zone_td_gate
+        rng = np.random.default_rng(42)
+        tds = sum(_red_zone_td_gate(2, "pass", rng) for _ in range(1000))
+        # 90% gate -> expect ~900, allow ±50
+        assert 840 <= tds <= 960
+
+    def test_far_red_zone_low_probability(self):
+        from fantasy_sim.engine.play_resolver import _red_zone_td_gate
+        rng = np.random.default_rng(42)
+        tds = sum(_red_zone_td_gate(18, "pass", rng) for _ in range(1000))
+        # 30% gate -> expect ~300, allow ±50
+        assert 240 <= tds <= 360
+
+    def test_run_gate_lower_than_pass(self):
+        from fantasy_sim.engine.play_resolver import _red_zone_td_gate
+        rng = np.random.default_rng(42)
+        pass_tds = sum(_red_zone_td_gate(5, "pass", rng) for _ in range(1000))
+        rng = np.random.default_rng(42)
+        run_tds = sum(_red_zone_td_gate(5, "run", rng) for _ in range(1000))
+        assert run_tds < pass_tds

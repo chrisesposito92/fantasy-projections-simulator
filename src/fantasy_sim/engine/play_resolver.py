@@ -22,6 +22,42 @@ SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
 # Home-field advantage: 50% chance of +1 yard per play
 HOME_FIELD_YARDS_BONUS = 0.5
 
+# Red zone TD gate probabilities — calibrated from 2024 NFL data.
+# Given a play with enough yards to score, probability it actually results in a TD.
+PASS_TD_GATE = {
+    (1, 3): 0.90,
+    (4, 5): 0.90,
+    (6, 10): 0.80,
+    (11, 15): 0.50,
+    (16, 20): 0.30,
+}
+
+RUN_TD_GATE = {
+    (1, 3): 0.65,
+    (4, 5): 0.55,
+    (6, 10): 0.40,
+    (11, 15): 0.25,
+    (16, 20): 0.15,
+}
+
+# League-average red zone catch rate modifier (RZ completion % / overall %)
+RZ_CATCH_RATE_MODIFIER = 0.85
+
+
+def _red_zone_td_gate(yard_line: int, play_type: str, rng: np.random.Generator) -> bool:
+    """Check if a would-be TD actually scores, based on field position.
+
+    Returns True if the TD stands, False if the player is tackled short.
+    Outside the red zone (yard_line > 20), always returns True.
+    """
+    if yard_line > 20:
+        return True
+    gate_table = PASS_TD_GATE if play_type == "pass" else RUN_TD_GATE
+    for (lo, hi), prob in gate_table.items():
+        if lo <= yard_line <= hi:
+            return rng.random() < prob
+    return True  # Safety fallback
+
 
 def _scale_clock_runoff(base_runoff: int, pace_factor: float) -> int:
     """Scale clock runoff by pace factor.
