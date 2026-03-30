@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
-from fantasy_sim.data.player_builder import build_player_models, build_team_roster
-from fantasy_sim.models.player import TeamRoster
+from fantasy_sim.data.player_builder import build_player_models, build_team_roster, blend_with_archetype
+from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 
 
 class TestBuildPlayerModels:
@@ -133,3 +134,81 @@ class TestQBScrambleData:
         jc = models.get("JC02")
         assert jc is not None
         assert jc.usage.scramble_rate == 0.0
+
+
+class TestRookieBlendSystem:
+    def test_full_data_player_no_blend(self):
+        """A player with 17 games should have no blending (all real data)."""
+        usage = PlayerUsage(target_share=0.25, red_zone_target_share=0.20)
+        outcomes = PlayerOutcomes(catch_rate=0.68, fumble_rate=0.005)
+        model = PlayerModel(
+            player_id="WR1", name="Vet WR", position="WR", team="KC",
+            usage=usage, outcomes=outcomes, games_played=17,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        assert blended.usage.target_share == pytest.approx(0.25)
+        assert blended.outcomes.catch_rate == pytest.approx(0.68)
+
+    def test_zero_games_full_archetype(self):
+        """A player with 0 games should be 100% archetype (tier3 fallback)."""
+        usage = PlayerUsage(target_share=0.0)
+        outcomes = PlayerOutcomes(catch_rate=0.0, fumble_rate=0.0)
+        model = PlayerModel(
+            player_id="WR1", name="New WR", position="WR", team="KC",
+            usage=usage, outcomes=outcomes, games_played=0,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        arch = POSITIONAL_ARCHETYPES["WR"]["tier3"]
+        assert blended.usage.target_share == pytest.approx(arch["target_share"])
+        assert blended.outcomes.catch_rate == pytest.approx(arch["catch_rate"])
+
+    def test_partial_blend(self):
+        """A player with 2 of 4 blend games should be 50% real, 50% archetype."""
+        usage = PlayerUsage(target_share=0.30)
+        outcomes = PlayerOutcomes(catch_rate=0.70, fumble_rate=0.01)
+        model = PlayerModel(
+            player_id="WR1", name="Soph WR", position="WR", team="KC",
+            usage=usage, outcomes=outcomes, games_played=2,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        arch = POSITIONAL_ARCHETYPES["WR"]["tier3"]
+        expected_ts = 0.5 * 0.30 + 0.5 * arch["target_share"]
+        assert blended.usage.target_share == pytest.approx(expected_ts, abs=0.01)
+
+    def test_blend_doesnt_modify_original(self):
+        """Blending should return a new model, not modify the original."""
+        usage = PlayerUsage(target_share=0.30)
+        outcomes = PlayerOutcomes(catch_rate=0.70)
+        model = PlayerModel(
+            player_id="WR1", name="WR", position="WR", team="KC",
+            usage=usage, outcomes=outcomes, games_played=2,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        assert model.usage.target_share == 0.30
+        assert blended is not model
+
+    def test_qb_blend_includes_scramble_rate(self):
+        """QB blending should include scramble_rate from archetype."""
+        usage = PlayerUsage(snap_share=0.50, scramble_rate=0.10)
+        outcomes = PlayerOutcomes(fumble_rate=0.02)
+        model = PlayerModel(
+            player_id="QB1", name="Rook QB", position="QB", team="KC",
+            usage=usage, outcomes=outcomes, games_played=1,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        arch = POSITIONAL_ARCHETYPES["QB"]["tier3"]
+        expected_sr = 0.25 * 0.10 + 0.75 * arch["scramble_rate"]
+        assert blended.usage.scramble_rate == pytest.approx(expected_sr, abs=0.01)
+
+    def test_rb_blend_includes_carry_share(self):
+        """RB blending should include carry_share from archetype."""
+        usage = PlayerUsage(carry_share=0.40, target_share=0.06)
+        outcomes = PlayerOutcomes(catch_rate=0.60, fumble_rate=0.01)
+        model = PlayerModel(
+            player_id="RB1", name="Rook RB", position="RB", team="KC",
+            usage=usage, outcomes=outcomes, games_played=2,
+        )
+        blended = blend_with_archetype(model, rookie_blend_games=4)
+        arch = POSITIONAL_ARCHETYPES["RB"]["tier3"]
+        expected_cs = 0.5 * 0.40 + 0.5 * arch["carry_share"]
+        assert blended.usage.carry_share == pytest.approx(expected_cs, abs=0.01)

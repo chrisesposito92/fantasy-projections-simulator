@@ -1,16 +1,100 @@
 """Build PlayerModel objects from PBP and roster data."""
 
+from copy import deepcopy
+
 import polars as pl
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
 
 MIN_PLAYER_PLAYS = 5
+
+
+def blend_with_archetype(
+    model: PlayerModel,
+    rookie_blend_games: int = 4,
+    draft_round: int = 7,
+) -> PlayerModel:
+    """Blend a player's real stats with positional archetype when data is sparse."""
+    if model.games_played >= rookie_blend_games:
+        return model
+
+    if model.position not in POSITIONAL_ARCHETYPES:
+        return model
+
+    # Determine tier from draft round
+    if draft_round <= 2:
+        tier = "tier1"
+    elif draft_round <= 4:
+        tier = "tier2"
+    else:
+        tier = "tier3"
+
+    archetype = POSITIONAL_ARCHETYPES[model.position][tier]
+    real_weight = min(1.0, model.games_played / max(rookie_blend_games, 1))
+    arch_weight = 1.0 - real_weight
+
+    blended_model = deepcopy(model)
+
+    # Blend usage rates by position
+    if model.position == "QB":
+        blended_model.usage.snap_share = _blend_float(
+            model.usage.snap_share, archetype.get("snap_share", 0.0), real_weight, arch_weight)
+        blended_model.usage.scramble_rate = _blend_float(
+            model.usage.scramble_rate, archetype.get("scramble_rate", 0.0), real_weight, arch_weight)
+    elif model.position == "RB":
+        blended_model.usage.carry_share = _blend_float(
+            model.usage.carry_share, archetype.get("carry_share", 0.0), real_weight, arch_weight)
+        blended_model.usage.target_share = _blend_float(
+            model.usage.target_share, archetype.get("target_share", 0.0), real_weight, arch_weight)
+    elif model.position in ("WR", "TE"):
+        blended_model.usage.target_share = _blend_float(
+            model.usage.target_share, archetype.get("target_share", 0.0), real_weight, arch_weight)
+        blended_model.usage.red_zone_target_share = _blend_float(
+            model.usage.red_zone_target_share, archetype.get("red_zone_target_share", 0.0), real_weight, arch_weight)
+
+    # Blend outcome rates
+    blended_model.outcomes.catch_rate = _blend_float(
+        model.outcomes.catch_rate, archetype.get("catch_rate", 0.0), real_weight, arch_weight)
+    blended_model.outcomes.fumble_rate = _blend_float(
+        model.outcomes.fumble_rate, archetype.get("fumble_rate", 0.0), real_weight, arch_weight)
+
+    # Blend yards distributions
+    if model.position == "QB" and "scramble_yards" in archetype:
+        blended_model.outcomes.scramble_yards_dist = _blend_dist(
+            model.outcomes.scramble_yards_dist, np.array(archetype["scramble_yards"]), real_weight, arch_weight)
+    if model.position == "RB" and "rush_yards" in archetype:
+        blended_model.outcomes.rushing_yards_dist = _blend_dist(
+            model.outcomes.rushing_yards_dist, np.array(archetype["rush_yards"]), real_weight, arch_weight)
+    if model.position in ("RB", "WR", "TE") and "rec_yards" in archetype:
+        blended_model.outcomes.receiving_yards_dist = _blend_dist(
+            model.outcomes.receiving_yards_dist, np.array(archetype["rec_yards"]), real_weight, arch_weight)
+
+    return blended_model
+
+
+def _blend_float(real: float, archetype: float, real_weight: float, arch_weight: float) -> float:
+    return real * real_weight + archetype * arch_weight
+
+
+def _blend_dist(real_dist, archetype_dist, real_weight, arch_weight):
+    """Blend two yard distributions by concatenating proportional samples."""
+    if real_dist is None or len(real_dist) == 0:
+        return archetype_dist.copy()
+    target_size = max(len(real_dist) + len(archetype_dist), 10)
+    real_count = max(1, int(target_size * real_weight))
+    arch_count = max(1, int(target_size * arch_weight))
+    rng = np.random.default_rng(0)
+    real_samples = rng.choice(real_dist, size=min(real_count, len(real_dist) * 3), replace=True)
+    arch_samples = rng.choice(archetype_dist, size=min(arch_count, len(archetype_dist) * 3), replace=True)
+    return np.concatenate([real_samples, arch_samples])
 
 
 def build_player_models(
     pbp: pl.DataFrame,
     rosters: pl.DataFrame,
     seasons: list[int],
+    rookie_blend_games: int = 0,
 ) -> dict[str, PlayerModel]:
     """Build PlayerModels from PBP and roster data. Returns dict keyed by player_id."""
     plays = pbp.filter(
@@ -218,6 +302,13 @@ def build_player_models(
             outcomes=outcomes,
             games_played=len(game_ids) if game_ids else 17,
         )
+
+    # Apply rookie blend if configured
+    if rookie_blend_games > 0:
+        for pid in list(models.keys()):
+            model = models[pid]
+            if model.games_played < rookie_blend_games:
+                models[pid] = blend_with_archetype(model, rookie_blend_games=rookie_blend_games)
 
     return models
 
