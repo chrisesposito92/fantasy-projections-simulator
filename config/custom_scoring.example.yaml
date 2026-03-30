@@ -1,0 +1,21 @@
+# config/custom_scoring.example.yaml
+# Custom scoring configuration. Copy and modify for your league.
+#
+# Usage: fantasy-sim week 1 --scoring-config config/custom_scoring.yaml
+#
+# "inherit" sets the base preset (ppr, half_ppr, or standard).
+# "overrides" adds or replaces scoring values on top of the base.
+
+inherit: ppr
+
+overrides:
+  # Superflex / 6pt passing TD
+  passing_td: 6
+
+  # TE premium
+  reception_te: 1.5
+
+  # Yardage bonuses (stackable)
+  rushing_bonus_100: 3
+  receiving_bonus_100: 3
+  passing_bonus_300: 3

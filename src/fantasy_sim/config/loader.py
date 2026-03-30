@@ -56,6 +56,35 @@ def resolve_scoring(
         return {k: v for k, v in preset.items()}
 
 
+def load_custom_scoring(path: Path, scoring_presets: dict) -> dict:
+    """Load a custom scoring config that optionally inherits from a preset.
+
+    Custom scoring file format:
+        inherit: ppr          # optional: base preset to inherit from
+        overrides:            # scoring keys to override or add
+            passing_td: 6
+            reception_wr: 1.5
+    """
+    config = load_config(path)
+
+    inherit_from = config.get("inherit")
+    if inherit_from:
+        base = resolve_scoring(scoring_presets, inherit_from)
+    else:
+        base = {}
+
+    if "overrides" in config and not isinstance(config["overrides"], dict):
+        raise ConfigError(
+            f"'overrides' must be a mapping in custom scoring config: {path}"
+        )
+
+    overrides = config.get("overrides") or {}
+    if overrides:
+        base.update(overrides)
+
+    return base
+
+
 def get_defaults_path() -> Path:
     """Return the path to the default config file."""
     return Path(__file__).parent.parent.parent.parent / "config" / "defaults.yaml"

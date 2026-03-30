@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from fantasy_sim.config.loader import load_config, resolve_scoring, ConfigError
+from fantasy_sim.config.loader import load_config, resolve_scoring, load_custom_scoring, load_defaults, ConfigError
 
 
 @pytest.fixture
@@ -82,3 +82,52 @@ class TestResolveScoringInheritance:
         config = load_config(defaults_path)
         resolved = resolve_scoring(config["scoring"], "half_ppr")
         assert "_inherit" not in resolved
+
+
+class TestLoadCustomScoring:
+    def test_load_custom_scoring_with_inherit(self, tmp_path):
+        """Custom scoring with inherit should start from preset and apply overrides."""
+        content = "inherit: ppr\noverrides:\n  passing_td: 6\n  reception_wr: 1.5\n"
+        p = tmp_path / "custom.yaml"
+        p.write_text(content)
+        defaults = load_defaults()
+        result = load_custom_scoring(p, defaults["scoring"])
+        assert result["passing_td"] == 6
+        assert result["reception_wr"] == 1.5
+        assert result["rushing_td"] == 6  # inherited from ppr
+
+    def test_load_custom_scoring_without_inherit(self, tmp_path):
+        """Custom scoring without inherit should only contain overrides."""
+        content = "overrides:\n  passing_td: 6\n  rushing_td: 8\n"
+        p = tmp_path / "custom.yaml"
+        p.write_text(content)
+        defaults = load_defaults()
+        result = load_custom_scoring(p, defaults["scoring"])
+        assert result["passing_td"] == 6
+        assert result["rushing_td"] == 8
+        assert "reception" not in result  # no inherit, no base
+
+    def test_load_custom_scoring_inherit_half_ppr(self, tmp_path):
+        """Custom scoring can inherit from half_ppr."""
+        content = "inherit: half_ppr\noverrides:\n  passing_td: 6\n"
+        p = tmp_path / "custom.yaml"
+        p.write_text(content)
+        defaults = load_defaults()
+        result = load_custom_scoring(p, defaults["scoring"])
+        assert result["passing_td"] == 6
+        assert result["reception"] == 0.5  # from half_ppr
+
+    def test_load_custom_scoring_invalid_inherit(self, tmp_path):
+        """Custom scoring with invalid inherit should raise ConfigError."""
+        content = "inherit: nonexistent\noverrides:\n  passing_td: 6\n"
+        p = tmp_path / "custom.yaml"
+        p.write_text(content)
+        defaults = load_defaults()
+        with pytest.raises(ConfigError):
+            load_custom_scoring(p, defaults["scoring"])
+
+    def test_load_custom_scoring_file_not_found(self):
+        """Custom scoring with non-existent file should raise ConfigError."""
+        defaults = load_defaults()
+        with pytest.raises(ConfigError):
+            load_custom_scoring(Path("/tmp/does_not_exist.yaml"), defaults["scoring"])

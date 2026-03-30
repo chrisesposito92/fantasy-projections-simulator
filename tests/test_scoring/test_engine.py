@@ -160,3 +160,119 @@ class TestScorePlayerTwoPoint:
         points = score_player(box, ppr_config)
         expected = 50 * 0.1 + 1 * 6  # 5 + 6 = 11
         assert points == pytest.approx(expected)
+
+
+class TestPositionSpecificReception:
+    def test_wr_uses_position_specific_key(self):
+        config = {
+            "receiving_yard": 0.1, "receiving_td": 6,
+            "reception": 1.0, "reception_wr": 1.5,
+        }
+        box = PlayerBoxScore("WR1", "WR1", "WR", "KC",
+                            receptions=5, receiving_yards=100, receiving_tds=1)
+        points = score_player(box, config)
+        expected = 5 * 1.5 + 100 * 0.1 + 1 * 6  # 7.5 + 10 + 6 = 23.5
+        assert points == pytest.approx(expected)
+
+    def test_te_uses_position_specific_key(self):
+        config = {
+            "receiving_yard": 0.1, "receiving_td": 6,
+            "reception": 1.0, "reception_te": 1.5,
+        }
+        box = PlayerBoxScore("TE1", "TE1", "TE", "KC",
+                            receptions=4, receiving_yards=60, receiving_tds=1)
+        points = score_player(box, config)
+        expected = 4 * 1.5 + 60 * 0.1 + 1 * 6  # 6 + 6 + 6 = 18
+        assert points == pytest.approx(expected)
+
+    def test_rb_falls_back_to_generic_reception(self):
+        config = {
+            "receiving_yard": 0.1, "receiving_td": 6,
+            "reception": 1.0, "reception_wr": 1.5,
+        }
+        box = PlayerBoxScore("RB1", "RB1", "RB", "KC",
+                            receptions=3, receiving_yards=30, receiving_tds=0)
+        points = score_player(box, config)
+        expected = 3 * 1.0 + 30 * 0.1  # 3 + 3 = 6
+        assert points == pytest.approx(expected)
+
+    def test_no_position_key_uses_generic(self):
+        config = {
+            "receiving_yard": 0.1, "receiving_td": 6,
+            "reception": 1.0,
+        }
+        box = PlayerBoxScore("WR1", "WR1", "WR", "KC",
+                            receptions=5, receiving_yards=100, receiving_tds=1)
+        points = score_player(box, config)
+        expected = 5 * 1.0 + 100 * 0.1 + 1 * 6  # 5 + 10 + 6 = 21
+        assert points == pytest.approx(expected)
+
+    def test_qb_uses_position_specific_reception(self):
+        config = {
+            "passing_yard": 0.04, "passing_td": 4,
+            "reception": 1.0, "reception_qb": 0,
+        }
+        box = PlayerBoxScore("QB1", "QB1", "QB", "KC",
+                            pass_yards=300, pass_tds=2, receptions=1)
+        points = score_player(box, config)
+        expected = 300 * 0.04 + 2 * 4 + 1 * 0  # 12 + 8 + 0 = 20
+        assert points == pytest.approx(expected)
+
+
+class TestYardageBonuses:
+    def test_rushing_bonus_100(self):
+        config = {"rushing_yard": 0.1, "rushing_bonus_100": 3}
+        box = PlayerBoxScore("RB1", "RB1", "RB", "KC", rush_yards=120)
+        points = score_player(box, config)
+        expected = 120 * 0.1 + 3  # 12 + 3 = 15
+        assert points == pytest.approx(expected)
+
+    def test_rushing_no_bonus_under_100(self):
+        config = {"rushing_yard": 0.1, "rushing_bonus_100": 3}
+        box = PlayerBoxScore("RB1", "RB1", "RB", "KC", rush_yards=99)
+        points = score_player(box, config)
+        expected = 99 * 0.1  # 9.9, no bonus
+        assert points == pytest.approx(expected)
+
+    def test_receiving_bonus_100(self):
+        config = {"receiving_yard": 0.1, "receiving_bonus_100": 3}
+        box = PlayerBoxScore("WR1", "WR1", "WR", "KC", receiving_yards=105)
+        points = score_player(box, config)
+        expected = 105 * 0.1 + 3  # 10.5 + 3 = 13.5
+        assert points == pytest.approx(expected)
+
+    def test_passing_bonus_300(self):
+        config = {"passing_yard": 0.04, "passing_bonus_300": 3}
+        box = PlayerBoxScore("QB1", "QB1", "QB", "KC", pass_yards=320)
+        points = score_player(box, config)
+        expected = 320 * 0.04 + 3  # 12.8 + 3 = 15.8
+        assert points == pytest.approx(expected)
+
+    def test_passing_no_bonus_under_300(self):
+        config = {"passing_yard": 0.04, "passing_bonus_300": 3}
+        box = PlayerBoxScore("QB1", "QB1", "QB", "KC", pass_yards=299)
+        points = score_player(box, config)
+        expected = 299 * 0.04  # 11.96, no bonus
+        assert points == pytest.approx(expected)
+
+    def test_rushing_bonus_200_stacks(self):
+        config = {"rushing_yard": 0.1, "rushing_bonus_100": 3, "rushing_bonus_200": 5}
+        box = PlayerBoxScore("RB1", "RB1", "RB", "KC", rush_yards=210)
+        points = score_player(box, config)
+        expected = 210 * 0.1 + 3 + 5  # 21 + 3 + 5 = 29
+        assert points == pytest.approx(expected)
+
+    def test_passing_bonus_400_stacks(self):
+        config = {"passing_yard": 0.04, "passing_bonus_300": 3, "passing_bonus_400": 5}
+        box = PlayerBoxScore("QB1", "QB1", "QB", "KC", pass_yards=420)
+        points = score_player(box, config)
+        expected = 420 * 0.04 + 3 + 5  # 16.8 + 3 + 5 = 24.8
+        assert points == pytest.approx(expected)
+
+    def test_no_bonus_keys_no_effect(self):
+        config = {"rushing_yard": 0.1, "passing_yard": 0.04, "receiving_yard": 0.1}
+        box = PlayerBoxScore("RB1", "RB1", "RB", "KC",
+                            rush_yards=150, pass_yards=350, receiving_yards=120)
+        points = score_player(box, config)
+        expected = 150 * 0.1 + 350 * 0.04 + 120 * 0.1  # 15 + 14 + 12 = 41
+        assert points == pytest.approx(expected)
