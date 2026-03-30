@@ -98,7 +98,10 @@ class Backtester:
                 home, away = game["home_team"], game["away_team"]
                 try:
                     home_dists, away_dists, home_roster, away_roster = self.builder.build_game(
-                        home, away, seasons=self.training_seasons,
+                        home, away,
+                        training_seasons=self.training_seasons,
+                        target_season=self.test_season,
+                        week=wk,
                     )
                     seed = zlib.crc32(game["game_id"].encode()) % (2**31)
                     results = run_simulations(
