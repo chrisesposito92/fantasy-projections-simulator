@@ -31,11 +31,11 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --python ${{ matrix.python-version }}
 
       - name: Run tests
         run: |
-          uv run python -m pytest tests/ \
+          uv run --python ${{ matrix.python-version }} python -m pytest tests/ \
             -m "not integration and not statistical" \
             --tb=short \
             -q \
@@ -57,11 +57,11 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --dev --python 3.14
 
       - name: Run statistical tests
         run: |
-          uv run python -m pytest tests/ \
+          uv run --python 3.14 python -m pytest tests/ \
             -m "statistical" \
             --tb=short \
             -q \

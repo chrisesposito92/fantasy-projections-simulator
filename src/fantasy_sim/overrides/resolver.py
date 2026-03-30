@@ -10,7 +10,10 @@ AMBIGUITY_THRESHOLD = 5
 
 class AmbiguousMatchError(KeyError):
     """Raised when a player query matches multiple players with similar scores."""
-    pass
+
+    def __str__(self) -> str:
+        # KeyError.__str__ wraps in repr(), garbling multi-line messages
+        return self.args[0] if self.args else ""
 
 
 class PlayerResolver:
