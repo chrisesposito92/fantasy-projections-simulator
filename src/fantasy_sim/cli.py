@@ -283,7 +283,8 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
         click.echo(f"Exported to {output_path}")
 
 
-def _display_projections(player_projs, output_format, output_path, detail=False):
+def _display_projections(player_projs, output_format, output_path, detail=False,
+                         kicker_projs=None, dst_projs=None):
     """Display or export projections."""
     if output_format == "table":
         qbs = [p for p in player_projs if p["position"] == "QB"]
@@ -313,13 +314,18 @@ def _display_projections(player_projs, output_format, output_path, detail=False)
                 click.echo(format_wr_table(wrs[:24]))
             if tes:
                 click.echo(format_te_table(tes[:12]))
+        if kicker_projs:
+            click.echo(format_kicker_table(kicker_projs))
+        if dst_projs:
+            click.echo(format_dst_table(dst_projs))
     elif output_format in ("csv", "json"):
         if output_path is None:
             output_path = f"projections.{output_format}"
+        all_projs = player_projs + (kicker_projs or []) + (dst_projs or [])
         if output_format == "csv":
-            export_csv(player_projs, Path(output_path))
+            export_csv(all_projs, Path(output_path))
         else:
-            export_json(player_projs, Path(output_path))
+            export_json(all_projs, Path(output_path))
         click.echo(f"Exported to {output_path}")
 
 
@@ -361,6 +367,8 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     click.echo(f"Found {week_games.shape[0]} games. Running {sims} sims each ({scoring})...\n")
 
     all_player_projs = []
+    all_dst_projs = []
+    all_kicker_projs = []
     override_set = _build_overrides(overrides, config_path)
 
     with Progress(
@@ -389,22 +397,38 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
                 week=week_num,
             )
 
+            team_map = {"HOME": home, "AWAY": away}
+
             # Build projections per-game so each player's stats use correct denominator
             if detail:
                 from fantasy_sim.scoring.projections import build_detailed_projections
                 all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
             else:
                 all_player_projs.extend(build_player_projections(results.games, scoring_config))
+
+            all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
+            all_kicker_projs.extend(build_kicker_projections(
+                results.games, scoring_config, team_map=team_map,
+                home_roster=home_roster, away_roster=away_roster,
+            ))
             progress.advance(task)
 
     # Re-sort and re-rank across all games
     all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(all_player_projs, 1):
         p["rank"] = i
+    all_dst_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_dst_projs, 1):
+        p["rank"] = i
+    all_kicker_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_kicker_projs, 1):
+        p["rank"] = i
+
     player_projs = all_player_projs
     click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
 
-    _display_projections(player_projs, output_format, output_path, detail=detail)
+    _display_projections(player_projs, output_format, output_path, detail=detail,
+                         kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
 
 @main.command()
@@ -448,6 +472,8 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
     all_player_projs = []
+    all_dst_projs = []
+    all_kicker_projs = []
     override_set = _build_overrides(overrides, config_path)
 
     with Progress(
@@ -476,19 +502,33 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
                     home_roster=home_roster, away_roster=away_roster,
                     week=wk,
                 )
+                team_map = {"HOME": home, "AWAY": away}
                 if detail:
                     from fantasy_sim.scoring.projections import build_detailed_projections
                     all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
                 else:
                     all_player_projs.extend(build_player_projections(results.games, scoring_config))
+                all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
+                all_kicker_projs.extend(build_kicker_projections(
+                    results.games, scoring_config, team_map=team_map,
+                    home_roster=home_roster, away_roster=away_roster,
+                ))
             progress.advance(task)
 
     all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(all_player_projs, 1):
         p["rank"] = i
+    all_dst_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_dst_projs, 1):
+        p["rank"] = i
+    all_kicker_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_kicker_projs, 1):
+        p["rank"] = i
+
     player_projs = all_player_projs
     click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
-    _display_projections(player_projs, output_format, output_path, detail=detail)
+    _display_projections(player_projs, output_format, output_path, detail=detail,
+                         kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
 
 @main.command()
