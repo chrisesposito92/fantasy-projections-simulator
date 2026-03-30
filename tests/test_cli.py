@@ -143,6 +143,72 @@ class TestConfigResolution:
         assert defaults["simulation"]["historical_seasons"] == [2022, 2023, 2024]
 
 
+class TestGameCommand:
+    """Gap 17: game command — single-game deep dive."""
+
+    def test_game_help(self, runner):
+        result = runner.invoke(main, ["game", "--help"])
+        assert result.exit_code == 0
+        assert "game" in result.output.lower() or "home" in result.output.lower()
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_game_command_runs(self, MockLoader, MockBuilder, runner):
+        """game KC BUF --week 5 should simulate and display results."""
+        mock_loader = MockLoader.return_value
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {"season": 2024, "week": 5, "game_id": "2024_05_KC_BUF",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        mock_loader.cache_dir = Path("/tmp/cache")
+
+        mock_builder = MockBuilder.return_value
+        from fantasy_sim.engine.types import TeamDistributions
+        from fantasy_sim.models.distributions import (
+            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+        )
+        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+
+        def make_dists(team):
+            return TeamDistributions(
+                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
+                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
+                    "pass": np.array([0, 5, 8, 10, 12, 15]),
+                    "run": np.array([2, 3, 4, 5, 6]),
+                }),
+                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
+                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
+                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+            )
+
+        def make_roster(team):
+            return TeamRoster(team=team, players=[
+                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
+                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
+                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
+                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
+                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
+            ])
+
+        mock_builder.build_game.return_value = (
+            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
+        )
+
+        result = runner.invoke(main, ["game", "KC", "BUF", "--week", "5", "--sims", "10"])
+        assert result.exit_code == 0
+        assert "KC" in result.output
+        assert "BUF" in result.output
+        assert "Win" in result.output or "win" in result.output
+
+    def test_game_demo_mode(self, runner):
+        """game with --demo should work without real data."""
+        result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10"])
+        assert result.exit_code == 0
+        assert "HOME" in result.output
+        assert "AWAY" in result.output
+
+
 class TestBacktestCommand:
     def test_backtest_help(self, runner):
         result = runner.invoke(main, ["backtest", "--help"])

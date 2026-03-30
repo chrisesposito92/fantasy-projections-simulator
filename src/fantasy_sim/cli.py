@@ -401,6 +401,130 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
 
 
 @main.command()
+@click.argument("home_team")
+@click.argument("away_team")
+@click.option("--week", "week_num", default=1, type=int, help="Week number for schedule lookup")
+@click.option("--season", default=2024, help="NFL season year")
+@click.option("--sims", default=None, type=click.IntRange(min=1), help="Number of simulations")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom_scoring.yaml")
+@click.option("--demo", is_flag=True, help="Use synthetic data (no network needed)")
+@click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
+@click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
+@click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path):
+    """Simulate a single game with deep-dive projections.
+
+    Example: fantasy-sim game KC BUF --week 5
+    """
+    effective_config_path = config_path or _auto_detect_season_yaml()
+    scoring_config = _resolve_config_chain(
+        scoring_format=scoring,
+        scoring_config_path=scoring_config_path,
+        season_yaml_path=effective_config_path,
+    )
+
+    if sims is None:
+        defaults = load_defaults()
+        sims = defaults.get("simulation", {}).get("num_sims", 1000)
+
+    home_team = home_team.upper()
+    away_team = away_team.upper()
+
+    if demo:
+        home_dists = _make_demo_dists(home_team)
+        away_dists = _make_demo_dists(away_team)
+        home_roster = _make_demo_roster(home_team)
+        away_roster = _make_demo_roster(away_team)
+    else:
+        training_seasons = _get_training_seasons(season)
+        loader = DataLoader()
+        builder = GameContextBuilder(cache_dir=loader.cache_dir)
+        home_dists, away_dists, home_roster, away_roster = builder.build_game(
+            home_team=home_team, away_team=away_team, seasons=training_seasons,
+        )
+
+    override_set = _build_overrides(overrides, effective_config_path)
+    if override_set.players or override_set.teams:
+        apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
+
+    click.echo(f"Simulating {away_team} @ {home_team} — Week {week_num} ({sims} sims)...\n")
+
+    seed = 42 if demo else zlib.crc32(f"{season}_{week_num}_{home_team}_{away_team}".encode()) % (2**31)
+    results = run_simulations(
+        home_dists, away_dists, n_sims=sims, seed=seed,
+        home_roster=home_roster, away_roster=away_roster,
+    )
+
+    # Game summary
+    game_summary = results.summary()
+    home_wins = sum(1 for g in results.games if g.home_score > g.away_score)
+    away_wins = sum(1 for g in results.games if g.away_score > g.home_score)
+    ties = len(results.games) - home_wins - away_wins
+
+    click.echo(f"{home_team} vs {away_team} — Week {week_num} ({sims} sims)")
+    click.echo(f"Avg Score: {home_team} {game_summary['home_score_mean']:.1f} - {away_team} {game_summary['away_score_mean']:.1f}")
+    click.echo(f"{home_team} Win%: {home_wins/len(results.games):.1%}   {away_team} Win%: {away_wins/len(results.games):.1%}")
+    if ties > 0:
+        click.echo(f"Tie%: {ties/len(results.games):.1%}")
+    click.echo()
+
+    # Player projections — grouped by team
+    team_map = {"HOME": home_team, "AWAY": away_team}
+    if detail:
+        from fantasy_sim.scoring.projections import build_detailed_projections
+        player_projs = build_detailed_projections(results.games, scoring_config)
+    else:
+        player_projs = build_player_projections(results.games, scoring_config)
+
+    dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
+    kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
+
+    # Display by team
+    for team_name in [home_team, away_team]:
+        team_players = [p for p in player_projs if p["team"] == team_name]
+        if not team_players:
+            continue
+
+        click.echo(f"{team_name} Key Players:")
+        if detail:
+            from fantasy_sim.output.tables import (
+                format_qb_detail_table, format_rb_detail_table,
+                format_wr_detail_table, format_te_detail_table,
+            )
+            qbs = [p for p in team_players if p["position"] == "QB"]
+            rbs = [p for p in team_players if p["position"] == "RB"]
+            wrs = [p for p in team_players if p["position"] == "WR"]
+            tes = [p for p in team_players if p["position"] == "TE"]
+            if qbs:
+                click.echo(format_qb_detail_table(qbs))
+            if rbs:
+                click.echo(format_rb_detail_table(rbs))
+            if wrs:
+                click.echo(format_wr_detail_table(wrs))
+            if tes:
+                click.echo(format_te_detail_table(tes))
+        else:
+            qbs = [p for p in team_players if p["position"] == "QB"]
+            rbs = [p for p in team_players if p["position"] == "RB"]
+            wrs = [p for p in team_players if p["position"] == "WR"]
+            tes = [p for p in team_players if p["position"] == "TE"]
+            if qbs:
+                click.echo(format_qb_table(qbs))
+            if rbs:
+                click.echo(format_rb_table(rbs))
+            if wrs:
+                click.echo(format_wr_table(wrs))
+            if tes:
+                click.echo(format_te_table(tes))
+
+    if kicker_projs:
+        click.echo(format_kicker_table(kicker_projs))
+    if dst_projs:
+        click.echo(format_dst_table(dst_projs))
+
+
+@main.command()
 @click.option("--season", default=2024, help="Season to backtest against")
 @click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower = faster)")
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
