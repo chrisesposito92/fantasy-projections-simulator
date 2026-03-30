@@ -583,6 +583,10 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         week_nums = parsed_weeks
         game_schedule = schedules.filter(pl.col("season") == season_year)
 
+    if not week_nums:
+        click.echo(f"No regular-season games found for {season_year}.", err=True)
+        raise SystemExit(1)
+
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
     all_player_projs = []
@@ -681,6 +685,13 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         all_player_projs = _aggregate_player_projections(all_player_projs)
         all_dst_projs = _aggregate_dst_projections(all_dst_projs)
         all_kicker_projs = _aggregate_kicker_projections(all_kicker_projs)
+
+        if detail:
+            click.echo(
+                "Note: floor/ceiling/stddev are not available for aggregated season totals. "
+                "Use --by-week --detail for weekly distributions."
+            )
+            detail = False
 
         click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
         _display_projections(all_player_projs, output_format, output_path, detail=detail,
