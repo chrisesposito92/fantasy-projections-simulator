@@ -73,8 +73,13 @@ def load_custom_scoring(path: Path, scoring_presets: dict) -> dict:
     else:
         base = {}
 
-    overrides = config.get("overrides", {})
-    if overrides and isinstance(overrides, dict):
+    if "overrides" in config and not isinstance(config["overrides"], dict):
+        raise ConfigError(
+            f"'overrides' must be a mapping in custom scoring config: {path}"
+        )
+
+    overrides = config.get("overrides") or {}
+    if overrides:
         base.update(overrides)
 
     return base

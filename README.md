@@ -75,7 +75,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 
 **Phase 7A: Data + Engine Accuracy** — Complete (41 tests, 370 total)
 
-- Recency weighting:: `season_weights` parameter on core preprocessor methods (play calling, play outcomes, turnover rates) for biasing toward recent seasons
+- Recency weighting: `season_weights` parameter on core preprocessor methods (play calling, play outcomes, turnover rates) for biasing toward recent seasons
 - Penalty modeling: `check_penalty()` / `apply_penalty()` with per-team `PenaltyRates` (false start, holding, PI)
 - Red zone metrics: `red_zone_target_share` and `red_zone_carry_share` computed from PBP (yardline_100 <= 20)
 - Air yards share: `air_yards_share` in `PlayerUsage` computed from PBP air_yards column

@@ -165,6 +165,10 @@ def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
             start, end = int(parts[0]), int(parts[1])
         except ValueError:
             raise click.BadParameter(f"Invalid week range: '{weeks_str}'. Week numbers must be integers.")
+        if start > end:
+            raise click.BadParameter(
+                f"Invalid week range: '{weeks_str}'. Start week must be less than or equal to end week."
+            )
         week_nums = list(range(start, end + 1))
     else:
         try:
@@ -199,7 +203,8 @@ def main():
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Run a demo simulation with synthetic team data."""
-    scoring_config = _resolve_config_chain(scoring, scoring_config_path)
+    season_yaml_path = config_path or _auto_detect_season_yaml()
+    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml_path=season_yaml_path)
 
     click.echo(f"Running {sims} simulations ({scoring} scoring)...")
 
@@ -562,7 +567,10 @@ def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_p
         player_projs = build_player_projections(results.games, scoring_config)
 
     dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
-    kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
+    kicker_projs = build_kicker_projections(
+        results.games, scoring_config, team_map=team_map,
+        home_roster=home_roster, away_roster=away_roster,
+    )
 
     # Display by team
     for team_name in [home_team, away_team]:
