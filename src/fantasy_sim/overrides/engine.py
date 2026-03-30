@@ -13,7 +13,6 @@ PLAYER_META_FIELDS = {"games_played", "games_missed"}
 # Valid team override fields
 TEAM_OVERRIDE_FIELDS = {
     "pass_rate", "int_rate", "fumble_rate", "sack_rate", "sack_fumble_rate",
-    "pace_plays_per_game",
 }
 
 
@@ -69,6 +68,10 @@ def redistribute_target_shares(
     if total_eligible == 0:
         return
 
+    # Cap delta so teammates don't go below zero (preserves total)
+    if delta > total_eligible:
+        delta = total_eligible
+
     for p in eligible:
         proportion = p.usage.target_share / total_eligible
         adjustment = -delta * proportion
@@ -92,6 +95,10 @@ def redistribute_carry_shares(
     if total_eligible == 0:
         return
 
+    # Cap delta so teammates don't go below zero (preserves total)
+    if delta > total_eligible:
+        delta = total_eligible
+
     for p in eligible:
         proportion = p.usage.carry_share / total_eligible
         adjustment = -delta * proportion
@@ -102,6 +109,8 @@ def apply_team_override(dists: TeamDistributions, overrides: dict) -> None:
     """Apply team-level overrides to distributions. Mutates in place."""
     for field, value in overrides.items():
         if field == "pass_rate":
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"pass_rate must be between 0.0 and 1.0, got {value}")
             dists.play_calling = PlayCallingDist(
                 team=dists.play_calling.team,
                 distributions=dists.play_calling.distributions,

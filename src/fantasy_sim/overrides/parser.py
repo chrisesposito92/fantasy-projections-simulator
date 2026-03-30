@@ -20,11 +20,19 @@ def parse_override_config(path: Path) -> OverrideSet:
     players = config.get("players", {})
     if players:
         for name, overrides in players.items():
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"Player '{name}' overrides must be a mapping, got {type(overrides).__name__}"
+                )
             result.players[str(name)] = dict(overrides)
 
     teams = config.get("teams", {})
     if teams:
         for team, overrides in teams.items():
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"Team '{team}' overrides must be a mapping, got {type(overrides).__name__}"
+                )
             result.teams[str(team)] = dict(overrides)
 
     return result
@@ -60,7 +68,8 @@ def parse_cli_override(override_str: str) -> tuple[str, str, float | int | list 
     except ValueError:
         # Try as list (e.g., "[1,2,3]")
         if value_str.startswith("[") and value_str.endswith("]"):
-            value = [int(x.strip()) for x in value_str[1:-1].split(",")]
+            inner = value_str[1:-1].strip()
+            value = [int(x.strip()) for x in inner.split(",") if x.strip()] if inner else []
         else:
             value = value_str
 
