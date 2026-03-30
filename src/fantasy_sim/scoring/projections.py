@@ -62,7 +62,7 @@ def build_player_projections(
 
 # Stats to compute distributions for
 _DISTRIBUTION_STATS = [
-    "pass_yards", "pass_tds", "rush_yards", "rush_tds",
+    "pass_yards", "pass_tds", "interceptions", "rush_yards", "rush_tds",
     "targets", "receptions", "receiving_yards", "receiving_tds",
     "fumbles_lost",
 ]

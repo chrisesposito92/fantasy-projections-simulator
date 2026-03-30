@@ -285,3 +285,36 @@ class TestBacktestCommand:
         result = runner.invoke(main, ["backtest", "--help"])
         assert result.exit_code == 0
         assert "season" in result.output.lower()
+
+
+class TestWeeksValidation:
+    """Gap 20: Validate week numbers are 1-18."""
+
+    def test_season_invalid_week_range(self, runner):
+        """Weeks 0 or 19+ should produce a helpful error."""
+        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "0-5", "--sims", "10"])
+        assert result.exit_code != 0 or "invalid" in result.output.lower() or "1-18" in result.output
+
+    def test_season_invalid_single_week(self, runner):
+        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "19", "--sims", "10"])
+        assert result.exit_code != 0 or "invalid" in result.output.lower() or "1-18" in result.output
+
+    def test_season_valid_week_range(self, runner):
+        """Valid range should not raise validation error (may fail on data loading)."""
+        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "1-2", "--sims", "10"])
+        assert "invalid week" not in result.output.lower()
+
+
+class TestDetailFlag:
+    """Gap 19: --detail flag on demo and game commands."""
+
+    def test_demo_detail_flag(self, runner):
+        """--detail flag should be accepted on demo."""
+        result = runner.invoke(main, ["demo", "--sims", "10", "--detail"])
+        assert result.exit_code == 0
+        assert "Flr" in result.output or "Floor" in result.output or "Ceil" in result.output
+
+    def test_game_detail_flag(self, runner):
+        """--detail flag should be accepted on game command."""
+        result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10", "--detail"])
+        assert result.exit_code == 0

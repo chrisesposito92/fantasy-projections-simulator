@@ -148,6 +148,40 @@ def _auto_detect_season_yaml() -> str | None:
     return None
 
 
+def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
+    """Parse --weeks string and validate all week numbers are 1-18.
+
+    Accepts: 'all', '1-5', '1,3,5,7'
+    Raises click.BadParameter for invalid week numbers.
+    """
+    if weeks_str == "all":
+        return []  # Empty signals "all" to the caller
+
+    if "-" in weeks_str and "," not in weeks_str:
+        parts = weeks_str.split("-")
+        if len(parts) != 2:
+            raise click.BadParameter(f"Invalid week range: '{weeks_str}'. Use format: '1-5'")
+        try:
+            start, end = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise click.BadParameter(f"Invalid week range: '{weeks_str}'. Week numbers must be integers.")
+        week_nums = list(range(start, end + 1))
+    else:
+        try:
+            week_nums = [int(w.strip()) for w in weeks_str.split(",")]
+        except ValueError:
+            raise click.BadParameter(f"Invalid week list: '{weeks_str}'. Use format: '1,3,5'")
+
+    # Validate range
+    invalid = [w for w in week_nums if w < 1 or w > 18]
+    if invalid:
+        raise click.BadParameter(
+            f"Invalid week number(s): {invalid}. Regular season weeks are 1-18."
+        )
+
+    return week_nums
+
+
 @click.group()
 def main():
     """Fantasy football projections via play-by-play simulation."""
@@ -162,7 +196,8 @@ def main():
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
-def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
+@click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
+def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Run a demo simulation with synthetic team data."""
     scoring_config = _resolve_config_chain(scoring, scoring_config_path)
 
@@ -193,20 +228,40 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
     kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
 
     if output_format == "table":
-        # Group by position and display
         qbs = [p for p in player_projs if p["position"] == "QB"]
         rbs = [p for p in player_projs if p["position"] == "RB"]
         wrs = [p for p in player_projs if p["position"] == "WR"]
         tes = [p for p in player_projs if p["position"] == "TE"]
 
-        if qbs:
-            click.echo(format_qb_table(qbs))
-        if rbs:
-            click.echo(format_rb_table(rbs))
-        if wrs:
-            click.echo(format_wr_table(wrs))
-        if tes:
-            click.echo(format_te_table(tes))
+        if detail:
+            from fantasy_sim.scoring.projections import build_detailed_projections
+            from fantasy_sim.output.tables import (
+                format_qb_detail_table, format_rb_detail_table,
+                format_wr_detail_table, format_te_detail_table,
+            )
+            player_projs = build_detailed_projections(results.games, scoring_config)
+            qbs = [p for p in player_projs if p["position"] == "QB"]
+            rbs = [p for p in player_projs if p["position"] == "RB"]
+            wrs = [p for p in player_projs if p["position"] == "WR"]
+            tes = [p for p in player_projs if p["position"] == "TE"]
+            if qbs:
+                click.echo(format_qb_detail_table(qbs))
+            if rbs:
+                click.echo(format_rb_detail_table(rbs))
+            if wrs:
+                click.echo(format_wr_detail_table(wrs))
+            if tes:
+                click.echo(format_te_detail_table(tes))
+        else:
+            if qbs:
+                click.echo(format_qb_table(qbs))
+            if rbs:
+                click.echo(format_rb_table(rbs))
+            if wrs:
+                click.echo(format_wr_table(wrs))
+            if tes:
+                click.echo(format_te_table(tes))
+
         if kicker_projs:
             click.echo(format_kicker_table(kicker_projs))
         if dst_projs:
@@ -223,21 +278,36 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
         click.echo(f"Exported to {output_path}")
 
 
-def _display_projections(player_projs, output_format, output_path):
+def _display_projections(player_projs, output_format, output_path, detail=False):
     """Display or export projections."""
     if output_format == "table":
         qbs = [p for p in player_projs if p["position"] == "QB"]
         rbs = [p for p in player_projs if p["position"] == "RB"]
         wrs = [p for p in player_projs if p["position"] == "WR"]
         tes = [p for p in player_projs if p["position"] == "TE"]
-        if qbs:
-            click.echo(format_qb_table(qbs[:24]))
-        if rbs:
-            click.echo(format_rb_table(rbs[:24]))
-        if wrs:
-            click.echo(format_wr_table(wrs[:24]))
-        if tes:
-            click.echo(format_te_table(tes[:12]))
+
+        if detail:
+            from fantasy_sim.output.tables import (
+                format_qb_detail_table, format_rb_detail_table,
+                format_wr_detail_table, format_te_detail_table,
+            )
+            if qbs:
+                click.echo(format_qb_detail_table(qbs[:24]))
+            if rbs:
+                click.echo(format_rb_detail_table(rbs[:24]))
+            if wrs:
+                click.echo(format_wr_detail_table(wrs[:24]))
+            if tes:
+                click.echo(format_te_detail_table(tes[:12]))
+        else:
+            if qbs:
+                click.echo(format_qb_table(qbs[:24]))
+            if rbs:
+                click.echo(format_rb_table(rbs[:24]))
+            if wrs:
+                click.echo(format_wr_table(wrs[:24]))
+            if tes:
+                click.echo(format_te_table(tes[:12]))
     elif output_format in ("csv", "json"):
         if output_path is None:
             output_path = f"projections.{output_format}"
@@ -258,7 +328,8 @@ def _display_projections(player_projs, output_format, output_path):
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
-def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
+@click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
+def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -313,7 +384,11 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
             )
 
             # Build projections per-game so each player's stats use correct denominator
-            all_player_projs.extend(build_player_projections(results.games, scoring_config))
+            if detail:
+                from fantasy_sim.scoring.projections import build_detailed_projections
+                all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
+            else:
+                all_player_projs.extend(build_player_projections(results.games, scoring_config))
             progress.advance(task)
 
     # Re-sort and re-rank across all games
@@ -323,7 +398,7 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     player_projs = all_player_projs
     click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
 
-    _display_projections(player_projs, output_format, output_path)
+    _display_projections(player_projs, output_format, output_path, detail=detail)
 
 
 @main.command()
@@ -336,7 +411,8 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
-def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path):
+@click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
+def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -346,18 +422,22 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
         defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
+    try:
+        parsed_weeks = _parse_and_validate_weeks(weeks)
+    except click.BadParameter as e:
+        click.echo(f"Error: {e.format_message()}", err=True)
+        raise SystemExit(1)
+
     loader = DataLoader()
     builder = GameContextBuilder(cache_dir=loader.cache_dir)
 
     schedules = loader.load_schedules([season_year])
 
-    if weeks == "all":
+    if not parsed_weeks:
+        # "all" — get from schedule data
         week_nums = sorted(schedules.filter(pl.col("season") == season_year)["week"].unique().to_list())
-    elif "-" in weeks:
-        start, end = weeks.split("-")
-        week_nums = list(range(int(start), int(end) + 1))
     else:
-        week_nums = [int(w) for w in weeks.split(",")]
+        week_nums = parsed_weeks
 
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
@@ -389,7 +469,11 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
                     seed=seed,
                     home_roster=home_roster, away_roster=away_roster,
                 )
-                all_player_projs.extend(build_player_projections(results.games, scoring_config))
+                if detail:
+                    from fantasy_sim.scoring.projections import build_detailed_projections
+                    all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
+                else:
+                    all_player_projs.extend(build_player_projections(results.games, scoring_config))
             progress.advance(task)
 
     all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
@@ -397,7 +481,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
         p["rank"] = i
     player_projs = all_player_projs
     click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
-    _display_projections(player_projs, output_format, output_path)
+    _display_projections(player_projs, output_format, output_path, detail=detail)
 
 
 @main.command()
