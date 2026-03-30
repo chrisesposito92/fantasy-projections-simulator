@@ -17,7 +17,7 @@ def check_two_minute_warning(state: GameState) -> None:
     """If clock just crossed below 120 in Q2/Q4, snap it back to 120. Fires once per half."""
     if state.quarter not in (2, 4):
         return
-    if state.clock < TWO_MINUTE_MARK and not state.two_min_warning_fired:
+    if state.clock <= TWO_MINUTE_MARK and not state.two_min_warning_fired:
         state.clock = TWO_MINUTE_MARK
         state.two_min_warning_fired = True
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from fantasy_sim.engine.types import GameState, GameResult, TeamBoxScore, TeamDistributions, PlayResult, PlayerBoxScore
 from fantasy_sim.engine.play_caller import select_play_type, fourth_down_decision
-from fantasy_sim.engine.play_resolver import resolve_play, check_penalty, apply_penalty
+from fantasy_sim.engine.play_resolver import resolve_play, check_penalty
 from fantasy_sim.engine.game_flow import (
     apply_yards, change_possession, score_points,
     handle_turnover, perform_kickoff, perform_punt,
@@ -90,21 +90,15 @@ def simulate_game(
         )
         total_plays += 1
 
-        # Update box scores
-        _update_box_scores(off_box, def_box, result)
-
-        # Update per-player stats when rosters are provided
-        if roster is not None:
-            _update_player_stats(player_stats, result, roster)
-
-        # --- Penalty check (post-play) ---
+        # --- Penalty check FIRST — if penalty, skip stats and play outcome ---
         off_penalty_rates = getattr(off_dists, 'penalty_rates', None)
         if off_penalty_rates is not None and not result.is_penalty:
             penalty = check_penalty(off_penalty_rates, rng)
             if penalty is not None:
                 penalty_type, penalty_yards = penalty
                 if penalty_type == "pass_interference":
-                    yards = min(penalty_yards, state.yard_line)
+                    max_advance = max(0, state.yard_line - 1)
+                    yards = min(penalty_yards, max_advance)
                     state.yard_line -= yards
                     state.down = 1
                     state.distance = min(10, state.yard_line)
@@ -115,6 +109,13 @@ def simulate_game(
                 check_two_minute_warning(state)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 continue
+
+        # Only update stats if play was NOT a penalty
+        _update_box_scores(off_box, def_box, result)
+
+        # Update per-player stats when rosters are provided
+        if roster is not None:
+            _update_player_stats(player_stats, result, roster)
 
         # Handle play outcome
         if result.is_safety:

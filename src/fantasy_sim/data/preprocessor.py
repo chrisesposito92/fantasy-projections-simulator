@@ -55,7 +55,7 @@ class Preprocessor:
             season_plays = plays.filter(pl.col("season") == season)
             if season_plays.is_empty():
                 continue
-            raw_weight = season_weights.get(int(season), 1.0)
+            raw_weight = season_weights.get(int(season), 0.0)
             reps = max(1, round((raw_weight / max_weight) * 10))
             frames.extend([season_plays] * reps)
 
