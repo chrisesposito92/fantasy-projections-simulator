@@ -67,9 +67,9 @@ def main():
 
 
 @main.command()
-@click.option("--sims", default=100, help="Number of simulations per game")
-@click.option("--scoring", default="ppr", help="Scoring format: ppr, half_ppr, standard")
-@click.option("--format", "output_format", default="table", help="Output format: table, csv, json")
+@click.option("--sims", default=100, type=click.IntRange(min=1), help="Number of simulations per game")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]), help="Scoring format")
+@click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]), help="Output format")
 @click.option("--output", "output_path", default=None, help="Output file path (for csv/json)")
 def demo(sims, scoring, output_format, output_path):
     """Run a demo simulation with synthetic team data."""

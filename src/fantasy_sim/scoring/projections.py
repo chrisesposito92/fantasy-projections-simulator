@@ -9,8 +9,15 @@ def build_player_projections(
 ) -> list[dict]:
     """Aggregate player stats across games and compute fantasy points.
 
+    Averages over total number of sims (not just sims where the player
+    appeared), so players with fewer touches are not overstated.
+
     Returns list of projection dicts sorted by fpts descending.
     """
+    if not games:
+        return []
+
+    n_games = len(games)
     player_games: dict[str, list[PlayerBoxScore]] = defaultdict(list)
     for game in games:
         for pid, box in game.player_stats.items():
@@ -22,26 +29,26 @@ def build_player_projections(
             continue
         first = boxes[0]
 
-        fpts_list = [score_player(b, scoring_config) for b in boxes]
-        mean_fpts = np.mean(fpts_list)
+        # Average over ALL sims, treating missing appearances as zero
+        fpts_total = sum(score_player(b, scoring_config) for b in boxes)
 
         proj = {
             "player_id": pid,
             "name": first.name,
             "position": first.position,
             "team": first.team,
-            "fpts": round(float(mean_fpts), 1),
-            "pass_yards": round(float(np.mean([b.pass_yards for b in boxes])), 1),
-            "pass_tds": round(float(np.mean([b.pass_tds for b in boxes])), 1),
-            "interceptions": round(float(np.mean([b.interceptions for b in boxes])), 1),
-            "sacks": round(float(np.mean([b.sacks for b in boxes])), 1),
-            "rush_yards": round(float(np.mean([b.rush_yards for b in boxes])), 1),
-            "rush_tds": round(float(np.mean([b.rush_tds for b in boxes])), 1),
-            "targets": round(float(np.mean([b.targets for b in boxes])), 1),
-            "receptions": round(float(np.mean([b.receptions for b in boxes])), 1),
-            "receiving_yards": round(float(np.mean([b.receiving_yards for b in boxes])), 1),
-            "receiving_tds": round(float(np.mean([b.receiving_tds for b in boxes])), 1),
-            "fumbles_lost": round(float(np.mean([b.fumbles_lost for b in boxes])), 1),
+            "fpts": round(float(fpts_total / n_games), 1),
+            "pass_yards": round(float(sum(b.pass_yards for b in boxes) / n_games), 1),
+            "pass_tds": round(float(sum(b.pass_tds for b in boxes) / n_games), 1),
+            "interceptions": round(float(sum(b.interceptions for b in boxes) / n_games), 1),
+            "sacks": round(float(sum(b.sacks for b in boxes) / n_games), 1),
+            "rush_yards": round(float(sum(b.rush_yards for b in boxes) / n_games), 1),
+            "rush_tds": round(float(sum(b.rush_tds for b in boxes) / n_games), 1),
+            "targets": round(float(sum(b.targets for b in boxes) / n_games), 1),
+            "receptions": round(float(sum(b.receptions for b in boxes) / n_games), 1),
+            "receiving_yards": round(float(sum(b.receiving_yards for b in boxes) / n_games), 1),
+            "receiving_tds": round(float(sum(b.receiving_tds for b in boxes) / n_games), 1),
+            "fumbles_lost": round(float(sum(b.fumbles_lost for b in boxes) / n_games), 1),
         }
         projections.append(proj)
 
@@ -59,6 +66,9 @@ def build_dst_projections(
     team_map: dict[str, str] | None = None,
 ) -> list[dict]:
     """Build DST projections from game results."""
+    if not games:
+        return []
+
     home_boxes = [g.home_box for g in games]
     away_boxes = [g.away_box for g in games]
     home_scores = [g.home_score for g in games]

@@ -67,8 +67,8 @@ class TestCLIPipeline:
             result = runner.invoke(main, ["demo", "--sims", "10", "--scoring", fmt])
             assert result.exit_code == 0, f"Failed for format: {fmt}"
 
-    def test_projections_are_ranked(self):
+    def test_projections_are_ranked(self, tmp_path):
         runner = CliRunner()
-        result = runner.invoke(main, ["demo", "--sims", "50", "--format", "json", "--output", "/dev/stdout"])
-        # Even though json goes to stdout, the exit should be clean
+        output = tmp_path / "ranked.json"
+        result = runner.invoke(main, ["demo", "--sims", "50", "--format", "json", "--output", str(output)])
         assert result.exit_code == 0
