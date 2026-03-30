@@ -125,6 +125,7 @@ class TeamBoxScore:
     interceptions_caught: int = 0
     fumbles_recovered: int = 0
     safeties: int = 0
+    defensive_tds: int = 0
 
 
 @dataclass

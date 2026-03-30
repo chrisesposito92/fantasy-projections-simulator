@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from fantasy_sim.models.player import TeamRoster
 
 MAX_PLAYS = 400
+INT_RETURN_TD_RATE = 0.20   # ~20% of INTs returned for TD
+FUMBLE_RETURN_TD_RATE = 0.10  # ~10% of fumble recoveries returned for TD
 
 
 def simulate_game(
@@ -111,7 +113,7 @@ def simulate_game(
                 continue
 
         # Only update stats if play was NOT a penalty
-        _update_box_scores(off_box, def_box, result)
+        _update_box_scores(off_box, def_box, result, rng=rng)
 
         # Update per-player stats when rosters are provided
         if roster is not None:
@@ -155,7 +157,12 @@ def simulate_game(
     )
 
 
-def _update_box_scores(off_box: TeamBoxScore, def_box: TeamBoxScore, result: PlayResult) -> None:
+def _update_box_scores(
+    off_box: TeamBoxScore,
+    def_box: TeamBoxScore,
+    result: PlayResult,
+    rng: np.random.Generator | None = None,
+) -> None:
     """Update both offensive and defensive box scores from a play result."""
     if result.play_type == "pass":
         off_box.pass_attempts += 1
@@ -166,6 +173,8 @@ def _update_box_scores(off_box: TeamBoxScore, def_box: TeamBoxScore, result: Pla
         elif result.is_interception:
             off_box.interceptions_thrown += 1
             def_box.interceptions_caught += 1
+            if rng is not None and rng.random() < INT_RETURN_TD_RATE:
+                def_box.defensive_tds += 1
         elif result.is_complete:
             off_box.completions += 1
             off_box.pass_yards += result.yards
@@ -180,6 +189,8 @@ def _update_box_scores(off_box: TeamBoxScore, def_box: TeamBoxScore, result: Pla
     if result.is_fumble:
         off_box.fumbles_lost += 1
         def_box.fumbles_recovered += 1
+        if rng is not None and rng.random() < FUMBLE_RETURN_TD_RATE:
+            def_box.defensive_tds += 1
 
 
 def _handle_touchdown(

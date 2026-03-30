@@ -35,7 +35,7 @@ def score_dst(box: TeamBoxScore, opponent_score: int, config: dict) -> float:
     """Calculate fantasy points for a team defense/special teams."""
     points = 0.0
     points += box.sacks_made * config.get("dst_sack", 0)
-    # dst_td not yet tracked in TeamBoxScore (no defensive TD attribution in engine)
+    points += box.defensive_tds * config.get("dst_td", 0)
     points += box.interceptions_caught * config.get("dst_interception", 0)
     points += box.fumbles_recovered * config.get("dst_fumble_recovery", 0)
     points += box.safeties * config.get("dst_safety", 0)
