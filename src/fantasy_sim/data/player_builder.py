@@ -5,9 +5,11 @@ from copy import deepcopy
 import polars as pl
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
-from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
+from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 
 MIN_PLAYER_PLAYS = 5
+FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
+ACTIVE_STATUSES = {"ACT"}
 
 
 def blend_with_archetype(
@@ -88,6 +90,19 @@ def _blend_dist(real_dist, archetype_dist, real_weight, arch_weight):
     real_samples = rng.choice(real_dist, size=min(real_count, len(real_dist) * 3), replace=True)
     arch_samples = rng.choice(archetype_dist, size=min(arch_count, len(archetype_dist) * 3), replace=True)
     return np.concatenate([real_samples, arch_samples])
+
+
+def build_kicker_model(player_id: str, name: str, team: str) -> PlayerModel:
+    """Build a placeholder PlayerModel for a kicker (name tag for scoring attribution)."""
+    return PlayerModel(
+        player_id=player_id,
+        name=name,
+        position="K",
+        team=team,
+        usage=PlayerUsage(),
+        outcomes=PlayerOutcomes(),
+        games_played=17,
+    )
 
 
 def _aggregate_pbp_stats(
@@ -219,6 +234,162 @@ def _aggregate_pbp_stats(
         "team_air_yards": team_air_yards,
         "has_air_yards": has_air_yards,
     }
+
+
+def _assemble_models(
+    aggregated_stats: dict,
+    current_rosters: pl.DataFrame,
+    rookie_blend_games: int = 0,
+) -> dict[str, PlayerModel]:
+    """Merge pre-computed PBP stats with a current roster to produce PlayerModels.
+
+    Players on the current roster get their team/position from the roster.
+    Usage shares are computed against the player's HISTORICAL team totals
+    (the team recorded in the PBP stats), not the current team.
+
+    - Skill players with PBP data -> historical stats, current team
+    - Skill players without PBP data -> rookie archetype (draft_round=7)
+    - Kickers -> placeholder model via build_kicker_model
+    - Players NOT on current roster -> excluded
+    - Only status == "ACT" and position in FANTASY_POSITIONS are included
+    """
+    receiving_stats = aggregated_stats["receiving"]
+    rushing_stats = aggregated_stats["rushing"]
+    qb_stats = aggregated_stats["qb"]
+    team_pass_attempts = aggregated_stats["team_pass_attempts"]
+    team_rush_attempts = aggregated_stats["team_rush_attempts"]
+    team_rz_pass_attempts = aggregated_stats["team_rz_pass_attempts"]
+    team_rz_rush_attempts = aggregated_stats["team_rz_rush_attempts"]
+    team_air_yards = aggregated_stats["team_air_yards"]
+    has_air_yards = aggregated_stats["has_air_yards"]
+
+    # Filter roster to active fantasy-relevant players
+    filtered = current_rosters.filter(
+        pl.col("status").is_in(list(ACTIVE_STATUSES)) &
+        pl.col("position").is_in(list(FANTASY_POSITIONS))
+    )
+
+    # Get latest roster entry per player (sort by season+week desc, take first)
+    roster_latest = (
+        filtered
+        .sort(["season", "week"], descending=True)
+        .group_by("player_id")
+        .first()
+    )
+
+    models: dict[str, PlayerModel] = {}
+
+    for row in roster_latest.iter_rows(named=True):
+        pid = row["player_id"]
+        name = row["player_name"]
+        position = row["position"]
+        team = row["team"]
+
+        # Kickers get a placeholder model
+        if position == "K":
+            models[pid] = build_kicker_model(pid, name, team)
+            continue
+
+        # Check if this player has any PBP data
+        has_pbp = pid in receiving_stats or pid in rushing_stats or pid in qb_stats
+
+        if not has_pbp:
+            # No PBP history -> rookie archetype (tier 3, draft_round=7)
+            models[pid] = build_rookie_model(pid, name, position, team, draft_round=7)
+            continue
+
+        # Player has PBP data — build model with historical stats, current team
+        # Collect game_ids across all stat categories for games_played
+        game_ids: set[str] = set()
+        if pid in receiving_stats:
+            game_ids |= receiving_stats[pid]["game_ids"]
+        if pid in rushing_stats:
+            game_ids |= rushing_stats[pid]["game_ids"]
+        if pid in qb_stats:
+            game_ids |= qb_stats[pid]["game_ids"]
+
+        usage = PlayerUsage()
+
+        # Target share + red zone target share (use hist_team for team totals)
+        if pid in receiving_stats:
+            rs = receiving_stats[pid]
+            hist_team = rs["team"]
+            team_pa = team_pass_attempts.get(hist_team, 0)
+            usage.target_share = rs["targets"] / max(team_pa, 1)
+
+            team_rz_pa = team_rz_pass_attempts.get(hist_team, 0)
+            if team_rz_pa > 0:
+                usage.red_zone_target_share = rs["rz_targets"] / team_rz_pa
+
+            # Air yards share
+            if has_air_yards:
+                team_ay = team_air_yards.get(hist_team, 0.0)
+                if team_ay > 0:
+                    usage.air_yards_share = rs["air_yards"] / team_ay
+
+        # Carry share + red zone carry share (use hist_team for team totals)
+        if pid in rushing_stats:
+            rs = rushing_stats[pid]
+            hist_team = rs["team"]
+            team_ra = team_rush_attempts.get(hist_team, 0)
+            usage.carry_share = rs["carries"] / max(team_ra, 1)
+
+            team_rz_ra = team_rz_rush_attempts.get(hist_team, 0)
+            if team_rz_ra > 0:
+                usage.red_zone_carry_share = rs["rz_carries"] / team_rz_ra
+
+        # QB snap share and scramble rate (use hist_team for team totals)
+        if position == "QB" and pid in qb_stats:
+            qs = qb_stats[pid]
+            hist_team = qs["team"]
+            team_pa = team_pass_attempts.get(hist_team, 0)
+            usage.snap_share = qs["attempts"] / max(team_pa, 1)
+
+            # Scramble rate: QB rush attempts / (QB pass attempts + QB rush attempts)
+            qb_rush = rushing_stats[pid]["carries"] if pid in rushing_stats else 0
+            qb_pass = qs["attempts"]
+            total_qb_plays = qb_pass + qb_rush
+            if total_qb_plays > 0:
+                usage.scramble_rate = qb_rush / total_qb_plays
+
+        # --- Outcomes ---
+        outcomes = PlayerOutcomes()
+
+        if pid in receiving_stats:
+            rs = receiving_stats[pid]
+            if rs["targets"] > 0:
+                outcomes.catch_rate = rs["catches"] / rs["targets"]
+            if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
+                outcomes.receiving_yards_dist = np.array(rs["yards"])
+
+        if pid in rushing_stats:
+            rs = rushing_stats[pid]
+            if position == "QB":
+                # QB rush yards -> scramble_yards_dist (not rushing_yards_dist)
+                if len(rs["yards"]) >= 1:
+                    outcomes.scramble_yards_dist = np.array(rs["yards"])
+            else:
+                if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
+                    outcomes.rushing_yards_dist = np.array(rs["yards"])
+
+        models[pid] = PlayerModel(
+            player_id=pid,
+            name=name,
+            position=position,
+            team=team,
+            usage=usage,
+            outcomes=outcomes,
+            games_played=len(game_ids) if game_ids else 17,
+        )
+
+    # Apply rookie blend if configured
+    if rookie_blend_games > 0:
+        for pid in list(models.keys()):
+            model = models[pid]
+            if model.games_played < rookie_blend_games:
+                models[pid] = blend_with_archetype(model, rookie_blend_games=rookie_blend_games)
+
+    return models
 
 
 def build_player_models(

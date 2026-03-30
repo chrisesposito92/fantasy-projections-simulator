@@ -1,6 +1,9 @@
 import numpy as np
 import pytest
-from fantasy_sim.data.player_builder import build_player_models, build_team_roster, blend_with_archetype, _aggregate_pbp_stats
+from fantasy_sim.data.player_builder import (
+    build_player_models, build_team_roster, blend_with_archetype,
+    _aggregate_pbp_stats, build_kicker_model, _assemble_models,
+)
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 
@@ -246,3 +249,73 @@ class TestAggregatePbpStats:
         """Passing [2023] with expanded_pbp (only 2024 data) returns empty receiving dict."""
         result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2023])
         assert result["receiving"] == {}
+
+
+class TestBuildKickerModel:
+    def test_returns_player_model(self):
+        model = build_kicker_model("KC_K", "H.Butker", "KC")
+        assert isinstance(model, PlayerModel)
+
+    def test_has_kicker_position(self):
+        model = build_kicker_model("KC_K", "H.Butker", "KC")
+        assert model.position == "K"
+        assert model.team == "KC"
+        assert model.name == "H.Butker"
+
+    def test_has_default_usage_and_outcomes(self):
+        model = build_kicker_model("KC_K", "H.Butker", "KC")
+        assert model.usage.target_share == 0.0
+        assert model.usage.carry_share == 0.0
+        assert model.games_played == 17
+
+
+class TestAssembleModels:
+    def test_player_with_pbp_gets_historical_stats(self, traded_player_pbp, traded_player_rosters):
+        """IP01 has rushing PBP data — carry_share should be > 0."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "IP01" in models
+        assert models["IP01"].usage.carry_share > 0
+
+    def test_traded_player_gets_current_team(self, traded_player_pbp, traded_player_rosters):
+        """JM28 played for CIN in 2024 PBP but is on HOU roster in 2025."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "JM28" in models
+        assert models["JM28"].team == "HOU"
+
+    def test_retired_player_excluded(self, traded_player_pbp, traded_player_rosters):
+        """RET99 has PBP data but is not on any 2025 roster."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "RET99" not in models
+
+    def test_rookie_gets_archetype_model(self, traded_player_pbp, traded_player_rosters):
+        """ROOK1 is on HOU roster but has no PBP data — should get rookie archetype."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "ROOK1" in models
+        assert models["ROOK1"].team == "HOU"
+        assert models["ROOK1"].position == "WR"
+        assert models["ROOK1"].usage.target_share > 0
+
+    def test_kicker_gets_placeholder_model(self, traded_player_pbp, traded_player_rosters):
+        """KC_K and HOU_K should be kicker placeholder models."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "KC_K" in models
+        assert models["KC_K"].position == "K"
+        assert "HOU_K" in models
+        assert models["HOU_K"].position == "K"
+
+    def test_ir_player_excluded(self, traded_player_pbp, traded_player_rosters):
+        """IR01 is on KC roster with IR status — should be excluded."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "IR01" not in models
+
+    def test_punter_excluded(self, traded_player_pbp, traded_player_rosters):
+        """PNT1 is on KC roster as punter — should be excluded (not a fantasy position)."""
+        agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
+        models = _assemble_models(agg, traded_player_rosters)
+        assert "PNT1" not in models
