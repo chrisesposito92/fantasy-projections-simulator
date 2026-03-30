@@ -1,7 +1,7 @@
 from collections import defaultdict
 import numpy as np
 from fantasy_sim.engine.types import GameResult, PlayerBoxScore
-from fantasy_sim.scoring.engine import score_player, score_dst
+from fantasy_sim.scoring.engine import score_player, score_dst, score_kicker
 
 
 def build_player_projections(
@@ -103,6 +103,40 @@ def build_dst_projections(
         "safeties": round(float(np.mean([b.safeties for b in away_boxes])), 1),
         "points_allowed": round(float(np.mean(home_scores)), 1),
     })
+
+    projections.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(projections, 1):
+        p["rank"] = i
+
+    return projections
+
+
+def build_kicker_projections(
+    games: list[GameResult],
+    scoring_config: dict,
+    team_map: dict[str, str] | None = None,
+) -> list[dict]:
+    """Build kicker projections from team-level kicking stats."""
+    if not games:
+        return []
+
+    home_boxes = [g.home_box for g in games]
+    away_boxes = [g.away_box for g in games]
+
+    projections = []
+    for side, boxes in [("HOME", home_boxes), ("AWAY", away_boxes)]:
+        name = team_map.get(side, side) if team_map else side
+        fpts_list = [score_kicker(b, scoring_config) for b in boxes]
+        projections.append({
+            "name": f"{name} K",
+            "team": name,
+            "fpts": round(float(np.mean(fpts_list)), 1),
+            "fg_attempts": round(float(np.mean([b.fg_attempts for b in boxes])), 1),
+            "fg_made": round(float(np.mean([b.fg_made for b in boxes])), 1),
+            "fg_50_plus": round(float(np.mean([b.fg_made_50_plus for b in boxes])), 1),
+            "xp_attempts": round(float(np.mean([b.xp_attempts for b in boxes])), 1),
+            "xp_made": round(float(np.mean([b.xp_made for b in boxes])), 1),
+        })
 
     projections.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(projections, 1):
