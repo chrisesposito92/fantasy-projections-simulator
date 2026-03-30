@@ -149,9 +149,9 @@ def _auto_detect_season_yaml() -> str | None:
 
 
 def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
-    """Parse --weeks string and validate all week numbers are 1-18.
+    """Parse --weeks string and validate all week numbers are positive.
 
-    Accepts: 'all', '1-5', '1,3,5,7'
+    Accepts: 'all', '1-5', '1,3,5,7', '19-22' (playoff weeks)
     Raises click.BadParameter for invalid week numbers.
     """
     if weeks_str == "all":
@@ -176,11 +176,11 @@ def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
         except ValueError:
             raise click.BadParameter(f"Invalid week list: '{weeks_str}'. Use format: '1,3,5'")
 
-    # Validate range
-    invalid = [w for w in week_nums if w < 1 or w > 18]
+    # Validate range — only reject non-positive weeks
+    invalid = [w for w in week_nums if w < 1]
     if invalid:
         raise click.BadParameter(
-            f"Invalid week number(s): {invalid}. Regular season weeks are 1-18."
+            f"Invalid week number(s): {invalid}. Week numbers must be positive."
         )
 
     return week_nums
@@ -486,10 +486,14 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
     schedules = loader.load_schedules([season_year])
 
     if not parsed_weeks:
-        # "all" — get from schedule data
-        week_nums = sorted(schedules.filter(pl.col("season") == season_year)["week"].unique().to_list())
+        # "all" — regular season only
+        game_schedule = schedules.filter(
+            (pl.col("season") == season_year) & (pl.col("game_type") == "REG")
+        )
+        week_nums = sorted(game_schedule["week"].unique().to_list())
     else:
         week_nums = parsed_weeks
+        game_schedule = schedules.filter(pl.col("season") == season_year)
 
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
@@ -507,9 +511,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         task = progress.add_task("Simulating season...", total=len(week_nums))
         for wk in week_nums:
             progress.update(task, description=f"Week {wk}")
-            week_games = schedules.filter(
-                (pl.col("week") == wk) & (pl.col("season") == season_year)
-            )
+            week_games = game_schedule.filter(pl.col("week") == wk)
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 home_dists, away_dists, home_roster, away_roster = builder.build_game(

@@ -1,4 +1,5 @@
 import pytest
+import click
 from click.testing import CliRunner
 from unittest.mock import patch
 from pathlib import Path
@@ -288,16 +289,17 @@ class TestBacktestCommand:
 
 
 class TestWeeksValidation:
-    """Gap 20: Validate week numbers are 1-18."""
+    """Validate week number parsing and rejection of non-positive weeks."""
 
     def test_season_invalid_week_range(self, runner):
-        """Weeks 0 or 19+ should produce a helpful error."""
+        """Week 0 in a range should produce a helpful error."""
         result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "0-5", "--sims", "10"])
-        assert result.exit_code != 0 or "invalid" in result.output.lower() or "1-18" in result.output
+        assert result.exit_code != 0 or "invalid" in result.output.lower()
 
-    def test_season_invalid_single_week(self, runner):
-        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "19", "--sims", "10"])
-        assert result.exit_code != 0 or "invalid" in result.output.lower() or "1-18" in result.output
+    def test_season_invalid_week_zero(self, runner):
+        """Week 0 should produce a helpful error."""
+        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "0", "--sims", "10"])
+        assert result.exit_code != 0 or "invalid" in result.output.lower()
 
     def test_season_valid_week_range(self, runner):
         """Valid range should not raise validation error (may fail on data loading)."""
@@ -362,3 +364,76 @@ class TestDetailFlag:
         """--detail flag should be accepted on game command."""
         result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10", "--detail"])
         assert result.exit_code == 0
+
+
+class TestRegularSeasonDefault:
+    """Season command should default to regular season games only."""
+
+    def test_parse_weeks_all_returns_empty(self):
+        """'all' should return empty list (signals dynamic lookup)."""
+        from fantasy_sim.cli import _parse_and_validate_weeks
+        assert _parse_and_validate_weeks("all") == []
+
+    def test_parse_weeks_allows_playoff_weeks(self):
+        """Explicit week 19+ should be accepted (no hardcoded 1-18 limit)."""
+        from fantasy_sim.cli import _parse_and_validate_weeks
+        result = _parse_and_validate_weeks("19-22")
+        assert result == [19, 20, 21, 22]
+
+    def test_parse_weeks_rejects_zero(self):
+        """Week 0 should still be rejected."""
+        from fantasy_sim.cli import _parse_and_validate_weeks
+        with pytest.raises(click.BadParameter):
+            _parse_and_validate_weeks("0")
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_default_excludes_playoffs(self, MockLoader, MockBuilder, runner):
+        """Default weeks='all' should only simulate REG games, not playoff games."""
+        mock_loader = MockLoader.return_value
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {"season": 2024, "week": 18, "game_id": "g_reg", "game_type": "REG",
+             "home_team": "KC", "away_team": "BUF"},
+            {"season": 2024, "week": 19, "game_id": "g_wc", "game_type": "WC",
+             "home_team": "KC", "away_team": "MIA"},
+        ])
+        mock_loader.cache_dir = Path("/tmp/cache")
+
+        mock_builder = MockBuilder.return_value
+        from fantasy_sim.engine.types import TeamDistributions
+        from fantasy_sim.models.distributions import (
+            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+        )
+        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+
+        def make_dists(team):
+            return TeamDistributions(
+                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
+                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
+                    "pass": np.array([0, 5, 8, 10, 12, 15]),
+                    "run": np.array([2, 3, 4, 5, 6]),
+                }),
+                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
+                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
+                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+            )
+
+        def make_roster(team):
+            return TeamRoster(team=team, players=[
+                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
+                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
+                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
+                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
+                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
+            ])
+
+        mock_builder.build_game.return_value = (
+            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
+        )
+
+        result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
+        assert result.exit_code == 0
+        # Should only simulate week 18 (REG), not week 19 (WC)
+        # build_game should be called exactly once (one REG game)
+        assert mock_builder.build_game.call_count == 1
