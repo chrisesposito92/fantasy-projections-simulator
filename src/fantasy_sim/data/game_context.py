@@ -6,7 +6,7 @@ import numpy as np
 from fantasy_sim.data.loader import DataLoader, DEFAULT_CACHE_DIR
 from fantasy_sim.data.pipeline import DataPipeline
 from fantasy_sim.data.player_builder import (
-    build_player_models, build_team_roster,
+    build_team_roster,
     _aggregate_pbp_stats, _assemble_models,
 )
 from fantasy_sim.engine.types import TeamDistributions
