@@ -8,10 +8,10 @@ from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
-from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections
+from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_kicker_projections
 from fantasy_sim.output.tables import (
     format_qb_table, format_rb_table, format_wr_table,
-    format_te_table, format_dst_table,
+    format_te_table, format_kicker_table, format_dst_table,
 )
 from fantasy_sim.output.export import export_csv, export_json
 
@@ -94,10 +94,9 @@ def demo(sims, scoring, output_format, output_path):
 
     # Build projections
     player_projs = build_player_projections(results.games, scoring_config)
-    dst_projs = build_dst_projections(
-        results.games, scoring_config,
-        team_map={"HOME": "HOME", "AWAY": "AWAY"},
-    )
+    team_map = {"HOME": "HOME", "AWAY": "AWAY"}
+    dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
+    kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
 
     if output_format == "table":
         # Group by position and display
@@ -114,13 +113,15 @@ def demo(sims, scoring, output_format, output_path):
             click.echo(format_wr_table(wrs))
         if tes:
             click.echo(format_te_table(tes))
+        if kicker_projs:
+            click.echo(format_kicker_table(kicker_projs))
         if dst_projs:
             click.echo(format_dst_table(dst_projs))
 
     elif output_format in ("csv", "json"):
         if output_path is None:
             output_path = f"projections.{output_format}"
-        all_projs = player_projs + dst_projs
+        all_projs = player_projs + kicker_projs + dst_projs
         if output_format == "csv":
             export_csv(all_projs, Path(output_path))
         else:
