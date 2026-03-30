@@ -82,9 +82,11 @@ def simulate_game(
         # Select and resolve play
         play_type = select_play_type(state, off_dists.play_calling, rng)
         roster = home_roster if state.possession == "home" else away_roster
+        is_home_team = (state.possession == "home")
         result = resolve_play(
             state, play_type, off_dists.play_outcomes,
             off_dists.turnover_rates, rng, roster=roster,
+            is_home=is_home_team,
         )
         total_plays += 1
 
