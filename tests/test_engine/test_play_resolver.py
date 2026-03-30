@@ -521,3 +521,46 @@ class TestRedZoneTDGate:
         rng = np.random.default_rng(42)
         run_tds = sum(_red_zone_td_gate(5, "run", rng) for _ in range(1000))
         assert run_tds < pass_tds
+
+
+class TestRedZoneRunResolution:
+    def test_rz_run_td_gate_reduces_tds(self):
+        """From the 3-yard line, not all 5-yard runs should be TDs."""
+        rng = np.random.default_rng(42)
+        rb = PlayerModel("RB1", "RB1", "RB", "T",
+                         PlayerUsage(carry_share=1.0),
+                         PlayerOutcomes(rushing_yards_dist=np.array([5, 5, 5, 5, 5]),
+                                        fumble_rate=0.0))
+        roster = TeamRoster(team="T", players=[rb])
+        outcomes = make_outcomes(run_yards=[5])
+        rates = make_turnover_rates()
+        tds = 0
+        n = 1000
+        for _ in range(n):
+            state = make_state(yard_line=3)
+            result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
+            if result.is_touchdown:
+                tds += 1
+        td_rate = tds / n
+        # RUN_TD_GATE at 1-3 is 0.65, so ~65% should be TDs
+        assert 0.50 <= td_rate <= 0.80
+
+    def test_rz_run_yards_blending(self):
+        """In the red zone, non-TD run yards capped by team dist."""
+        rng = np.random.default_rng(42)
+        rb = PlayerModel("RB1", "RB1", "RB", "T",
+                         PlayerUsage(carry_share=1.0),
+                         PlayerOutcomes(rushing_yards_dist=np.array([25, 25, 25]),
+                                        fumble_rate=0.0))
+        roster = TeamRoster(team="T", players=[rb])
+        outcomes = make_outcomes(run_yards=[4, 5, 6])  # Team dist: 4-6 yards
+        rates = make_turnover_rates()
+        non_td_yards = []
+        for _ in range(2000):
+            state = make_state(yard_line=18)
+            result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
+            if not result.is_touchdown and not result.is_fumble and not result.is_safety:
+                non_td_yards.append(result.yards)
+        if non_td_yards:
+            avg = sum(non_td_yards) / len(non_td_yards)
+            assert avg < 12  # Should be capped, not 25

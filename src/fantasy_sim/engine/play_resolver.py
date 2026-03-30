@@ -282,19 +282,47 @@ def _resolve_run(
 
         # Use player's rushing yards dist if available
         if rusher.outcomes.rushing_yards_dist is not None and len(rusher.outcomes.rushing_yards_dist) > 0:
-            raw_yards = int(rng.choice(rusher.outcomes.rushing_yards_dist))
+            player_yards = int(rng.choice(rusher.outcomes.rushing_yards_dist))
         else:
             # Fall back to team distribution
             bucket = bucket_play(
                 state.down, state.distance, state.score_differential,
                 state.quarter, state.yard_line,
             )
-            raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+            player_yards = play_outcomes.sample_yards("run", bucket, rng)
+
+        # Red zone yards blending: cap player yards by team-level distribution
+        if state.yard_line <= 20:
+            bucket = bucket_play(
+                state.down, state.distance, state.score_differential,
+                state.quarter, state.yard_line,
+            )
+            team_run_yards = play_outcomes.sample_yards("run", bucket, rng)
+            # Preserve negative yards (losses) — only cap positive gains
+            if player_yards > 0:
+                raw_yards = min(player_yards, max(team_run_yards, 1))
+            else:
+                raw_yards = player_yards
+        else:
+            raw_yards = player_yards
 
         raw_yards = _apply_home_field(raw_yards, is_home, rng)
         is_safety = (state.yard_line - raw_yards) >= 100
         yards = _clamp_yards(state.yard_line, raw_yards)
-        is_td = (state.yard_line - yards) <= 0
+
+        # TD determination with red zone gate
+        if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
+            if _red_zone_td_gate(state.yard_line, "run", rng):
+                is_td = True
+            else:
+                # Tackled short of goal line
+                short_amount = int(rng.integers(1, max(2, state.yard_line // 3)))
+                yards = max(0, state.yard_line - short_amount)
+                if yards >= state.yard_line:
+                    yards = max(0, state.yard_line - 1)
+                is_td = False
+        else:
+            is_td = (state.yard_line - yards) <= 0
 
         # Use player fumble rate, fall back to team rate if unset
         player_fumble = rusher.outcomes.fumble_rate
