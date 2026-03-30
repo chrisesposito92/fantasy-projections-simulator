@@ -386,6 +386,7 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
             results = run_simulations(
                 home_dists, away_dists, n_sims=sims, seed=seed,
                 home_roster=home_roster, away_roster=away_roster,
+                week=week_num,
             )
 
             # Build projections per-game so each player's stats use correct denominator
@@ -473,6 +474,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
                     home_dists, away_dists, n_sims=sims,
                     seed=seed,
                     home_roster=home_roster, away_roster=away_roster,
+                    week=wk,
                 )
                 if detail:
                     from fantasy_sim.scoring.projections import build_detailed_projections
@@ -543,6 +545,7 @@ def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_p
     results = run_simulations(
         home_dists, away_dists, n_sims=sims, seed=seed,
         home_roster=home_roster, away_roster=away_roster,
+        week=week_num,
     )
 
     # Game summary
@@ -716,6 +719,7 @@ def player(player_query, week_num, season, sims, scoring, scoring_config_path, d
     results = run_simulations(
         hd, ad, n_sims=sims, seed=seed,
         home_roster=hr, away_roster=ar,
+        week=week_num,
     )
 
     # Build detailed projections for this player

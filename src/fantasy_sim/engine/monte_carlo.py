@@ -79,6 +79,7 @@ def run_simulations(
     seed: int = 42,
     home_roster: TeamRoster | None = None,
     away_roster: TeamRoster | None = None,
+    week: int = 0,
 ) -> SimulationSummary:
     """Run N game simulations and return all results."""
     if n_sims <= 0:
@@ -87,6 +88,7 @@ def run_simulations(
     games = []
     for _ in range(n_sims):
         result = simulate_game(home_dists, away_dists, rng,
-                               home_roster=home_roster, away_roster=away_roster)
+                               home_roster=home_roster, away_roster=away_roster,
+                               week=week)
         games.append(result)
     return SimulationSummary(games=games)
