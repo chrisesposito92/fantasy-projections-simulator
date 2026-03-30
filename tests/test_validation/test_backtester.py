@@ -1,4 +1,6 @@
 # tests/test_validation/test_backtester.py
+import polars as pl
+from unittest.mock import patch, MagicMock
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 
@@ -37,3 +39,37 @@ class TestBacktester:
             total_weeks_evaluated=18,
         )
         assert not result.passes_targets()
+
+
+class TestBacktesterRosterHandling:
+    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_build_game_receives_target_season_and_week(self, mock_loader_cls, mock_builder_cls):
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = "/tmp/test"
+
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {"season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame({"season": pl.Series([], dtype=pl.Int32)})
+
+        mock_builder = MagicMock()
+        mock_builder_cls.return_value = mock_builder
+        mock_builder.build_game.side_effect = Exception("stop")
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        config = load_defaults()
+        scoring_config = resolve_scoring(config["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10)
+        bt.loader = mock_loader
+        bt.builder = mock_builder
+
+        bt.run(scoring_config)
+
+        call_kwargs = mock_builder.build_game.call_args[1]
+        assert call_kwargs["training_seasons"] == [2021, 2022, 2023]
+        assert call_kwargs["target_season"] == 2024
+        assert call_kwargs["week"] == 1

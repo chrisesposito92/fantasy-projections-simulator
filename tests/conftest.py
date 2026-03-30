@@ -345,3 +345,167 @@ def scramble_pbp() -> pl.DataFrame:
         })
 
     return pl.DataFrame(plays)
+
+
+@pytest.fixture
+def traded_player_rosters() -> pl.DataFrame:
+    """Season 2025 roster data for testing traded player team assignment.
+
+    Contains:
+    - KC standard players (QB, TE, WR, RB, K) — all ACT weeks 1-3
+    - HOU players including JM28 (J.Mixon, traded from CIN) and ROOK1 (no PBP history)
+    - IR01 (KC RB, IR status) — should be excluded by status filtering
+    - PNT1 (KC P, ACT) — should be excluded by position filtering
+    """
+    rows = []
+    for week in range(1, 4):
+        rows.extend([
+            # KC players
+            {"season": 2025, "week": week, "player_id": "PM15", "player_name": "P.Mahomes", "position": "QB", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "TK87", "player_name": "T.Kelce", "position": "TE", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "RE11", "player_name": "R.Rice", "position": "WR", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "IP01", "player_name": "I.Pacheco", "position": "RB", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "KC_K", "player_name": "H.Butker", "position": "K", "team": "KC", "status": "ACT"},
+            # KC IR and punter (should be excluded)
+            {"season": 2025, "week": week, "player_id": "IR01", "player_name": "I.Injured", "position": "RB", "team": "KC", "status": "IR"},
+            {"season": 2025, "week": week, "player_id": "PNT1", "player_name": "P.Punter", "position": "P", "team": "KC", "status": "ACT"},
+            # HOU players
+            {"season": 2025, "week": week, "player_id": "JA17", "player_name": "J.Allen", "position": "QB", "team": "HOU", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "SD14", "player_name": "S.Diggs", "position": "WR", "team": "HOU", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "JM28", "player_name": "J.Mixon", "position": "RB", "team": "HOU", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "HOU_K", "player_name": "K.Fairbairn", "position": "K", "team": "HOU", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "ROOK1", "player_name": "R.Rookie", "position": "WR", "team": "HOU", "status": "ACT"},
+        ])
+    return pl.DataFrame(rows)
+
+
+@pytest.fixture
+def traded_player_pbp() -> pl.DataFrame:
+    """Season 2024 PBP training data for traded player tests.
+
+    Contains:
+    - KC: 20 passes (PM15 -> TK87/RE11 ~55/45 split), 10 runs (IP01)
+    - CIN: 15 passes (JA17 -> SD14), 10 runs (JM28 on CIN — his OLD team),
+           5 runs (RET99 — retired, not on any 2025 roster)
+    Note: JM28 has CIN as posteam here; ROOK1 has no PBP history at all.
+    """
+    rng = np.random.RandomState(99)
+    plays = []
+
+    # KC: 20 passes (PM15 -> TK87/RE11, ~55/45 split)
+    for i in range(20):
+        receiver = rng.choice(["TK87", "RE11"], p=[0.55, 0.45])
+        complete = int(rng.random() < 0.65)
+        yards = int(rng.normal(8, 6)) if complete else 0
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_KC_CIN",
+            "play_type": "pass", "posteam": "KC", "defteam": "CIN",
+            "down": int(rng.choice([1, 2, 3])), "ydstogo": 10, "yardline_100": int(rng.randint(20, 80)),
+            "score_differential": 0, "qtr": int(rng.choice([1, 2, 3, 4])),
+            "yards_gained": yards, "complete_pass": complete,
+            "pass_attempt": 1, "rush_attempt": 0,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(yards > 0 and rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "PM15", "receiver_player_id": receiver,
+            "rusher_player_id": None,
+        })
+
+    # KC: 10 runs (IP01)
+    for i in range(10):
+        yards = int(rng.normal(4.5, 3))
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_KC_CIN",
+            "play_type": "run", "posteam": "KC", "defteam": "CIN",
+            "down": int(rng.choice([1, 2, 3])), "ydstogo": 10, "yardline_100": int(rng.randint(20, 80)),
+            "score_differential": 0, "qtr": int(rng.choice([1, 2, 3, 4])),
+            "yards_gained": yards, "complete_pass": 0,
+            "pass_attempt": 0, "rush_attempt": 1,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": None, "receiver_player_id": None,
+            "rusher_player_id": "IP01",
+        })
+
+    # CIN: 15 passes (JA17 -> SD14)
+    for i in range(15):
+        complete = int(rng.random() < 0.62)
+        yards = int(rng.normal(9, 7)) if complete else 0
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_CIN_KC",
+            "play_type": "pass", "posteam": "CIN", "defteam": "KC",
+            "down": int(rng.choice([1, 2, 3])), "ydstogo": 10, "yardline_100": int(rng.randint(20, 80)),
+            "score_differential": 0, "qtr": int(rng.choice([1, 2, 3, 4])),
+            "yards_gained": yards, "complete_pass": complete,
+            "pass_attempt": 1, "rush_attempt": 0,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(yards > 0 and rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "JA17", "receiver_player_id": "SD14",
+            "rusher_player_id": None,
+        })
+
+    # CIN: 10 runs (JM28 — his old team before trade to HOU)
+    for i in range(10):
+        yards = int(rng.normal(4.2, 3.5))
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_CIN_KC",
+            "play_type": "run", "posteam": "CIN", "defteam": "KC",
+            "down": int(rng.choice([1, 2, 3])), "ydstogo": 10, "yardline_100": int(rng.randint(20, 80)),
+            "score_differential": 0, "qtr": int(rng.choice([1, 2, 3, 4])),
+            "yards_gained": yards, "complete_pass": 0,
+            "pass_attempt": 0, "rush_attempt": 1,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": None, "receiver_player_id": None,
+            "rusher_player_id": "JM28",
+        })
+
+    # CIN: 5 runs (RET99 — retired player not on any 2025 roster)
+    for i in range(5):
+        yards = int(rng.normal(3.8, 2.5))
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_CIN_KC",
+            "play_type": "run", "posteam": "CIN", "defteam": "KC",
+            "down": int(rng.choice([1, 2, 3])), "ydstogo": 10, "yardline_100": int(rng.randint(20, 80)),
+            "score_differential": 0, "qtr": int(rng.choice([1, 2, 3, 4])),
+            "yards_gained": yards, "complete_pass": 0,
+            "pass_attempt": 0, "rush_attempt": 1,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": None, "receiver_player_id": None,
+            "rusher_player_id": "RET99",
+        })
+
+    return pl.DataFrame(plays)
+
+
+@pytest.fixture
+def midseason_trade_rosters() -> pl.DataFrame:
+    """Season 2025 roster data for testing mid-season trades (weeks 1-9).
+
+    SD14 is on HOU for weeks 1-4, then traded to KC for weeks 5-9.
+    KC and HOU base players are present all 9 weeks.
+    """
+    rows = []
+    for week in range(1, 10):
+        # KC core players — all weeks
+        rows.extend([
+            {"season": 2025, "week": week, "player_id": "PM15", "player_name": "P.Mahomes", "position": "QB", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "TK87", "player_name": "T.Kelce", "position": "TE", "team": "KC", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "IP01", "player_name": "I.Pacheco", "position": "RB", "team": "KC", "status": "ACT"},
+        ])
+        # HOU core players — all weeks
+        rows.extend([
+            {"season": 2025, "week": week, "player_id": "JA17", "player_name": "J.Allen", "position": "QB", "team": "HOU", "status": "ACT"},
+            {"season": 2025, "week": week, "player_id": "JM28", "player_name": "J.Mixon", "position": "RB", "team": "HOU", "status": "ACT"},
+        ])
+        # SD14 — HOU weeks 1-4, KC weeks 5-9
+        if week <= 4:
+            rows.append({"season": 2025, "week": week, "player_id": "SD14", "player_name": "S.Diggs", "position": "WR", "team": "HOU", "status": "ACT"})
+        else:
+            rows.append({"season": 2025, "week": week, "player_id": "SD14", "player_name": "S.Diggs", "position": "WR", "team": "KC", "status": "ACT"})
+    return pl.DataFrame(rows)

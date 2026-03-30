@@ -76,7 +76,7 @@ uv run fantasy-sim week 1 --scoring-config config/custom_scoring.yaml
 
 The project is organized as a pipeline:
 
-1. **Data Layer** (`data/loader.py`, `data/preprocessor.py`, `data/pipeline.py`, `data/player_builder.py`, `data/rookie_builder.py`, `data/game_context.py`, `data/actuals.py`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models from PBP data, generates rookie archetypes, bridges real data to sim engine, loads actual player stats for backtesting
+1. **Data Layer** (`data/loader.py`, `data/preprocessor.py`, `data/pipeline.py`, `data/player_builder.py`, `data/rookie_builder.py`, `data/game_context.py`, `data/actuals.py`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models from PBP data, generates rookie archetypes, bridges real data to sim engine, loads actual player stats for backtesting. Player models separate stats (historical PBP) from team assignment (current-season roster) via `_aggregate_pbp_stats()` (cached, expensive) + `_assemble_models()` (cheap, per-week). `build_kicker_model()` creates placeholder kicker models for scoring attribution.
 2. **Models** (`models/game_state.py`, `models/distributions.py`, `models/player.py`) — Shared data types used by both preprocessing and simulation, including player usage/outcome models and team rosters
 3. **Engine** (`engine/types.py`, `engine/play_caller.py`, `engine/play_resolver.py`, `engine/player_selector.py`, `engine/game_flow.py`, `engine/clock.py`, `engine/game_sim.py`, `engine/monte_carlo.py`) — Play-by-play game simulation with player-level tracking and Monte Carlo runner
 4. **Config** (`config/loader.py`, `config/defaults.yaml`) — YAML config loading with `_inherit` scoring preset inheritance (PPR, half-PPR, standard)
@@ -92,7 +92,7 @@ The project is organized as a pipeline:
 - **ScoringEngine**: `score_player(box, config)` for QB/RB/WR/TE with position-specific reception keys (`reception_wr`, `reception_te`) and yardage bonus thresholds (`rushing_bonus_100`, `passing_bonus_300`). `score_dst(box, opponent_score, config)` with 7 points-allowed brackets. `score_kicker(box, config)` with FG distance buckets.
 - **CustomScoring**: `load_custom_scoring(path, presets)` reads `custom_scoring.yaml` with `inherit` + `overrides` format. `_resolve_config_chain()` merges defaults -> season.yaml -> --scoring-config.
 - **ProjectionBuilder**: `build_player_projections(games, config)` aggregates PlayerBoxScore across sims into mean stats + fpts, sorted by fpts. `build_detailed_projections(games, config)` adds floor (10th pct), ceiling (90th pct), and stddev for fpts and all tracked stats. `build_dst_projections(games, config, team_map)` for DST. `build_kicker_projections()` accepts optional rosters for real kicker attribution.
-- **GameContextBuilder**: `build_game(home, away, seasons)` constructs `TeamDistributions` + `TeamRoster` per team from real nflverse data. Caches pipeline output across calls. Falls back to league-average distributions for unknown teams.
+- **GameContextBuilder**: `build_game(home, away, training_seasons, target_season, week)` constructs `TeamDistributions` + `TeamRoster` per team from real nflverse data. Three-layer cache: pipeline output (training_seasons), PBP stats (training_seasons), player models (training_seasons + target_season + week). Falls back to league-average distributions for unknown teams. Roster loaded from `target_season`, optionally filtered to `week` for per-week accuracy (mid-season trades, IR moves).
 - **ActualPlayerWeek**: Loads real player stats, scores with config. Used by backtester for comparison.
 - **Backtester**: `Backtester(test_season, n_sims, num_training_seasons)` runs hold-out validation. `run(scoring_config)` returns `BacktestResult` with `passes_targets()` method. Targets: rank_corr > 0.80, weekly_mae < 6.0, season_mae < 25, calibration < 0.10.
 - **OverrideEngine**: `apply_player_override(roster, player_id, overrides)` applies usage/outcome/meta overrides; automatically triggers `redistribute_target_shares()` or `redistribute_carry_shares()` for share fields. `apply_team_override(dists, overrides)` modifies PlayCallingDist and TurnoverRates. Both raise on unknown fields.
@@ -142,6 +142,7 @@ The project is organized as a pipeline:
 - **Phase 7A (Data + Engine Accuracy)**: Complete — 41 tests (370 total)
 - **Phase 7B (Scoring + Config + CLI)**: Complete — 48 tests (418 total)
 - **Phase 7C (Polish + Tests + CI)**: Complete — 87 tests (505 total)
+- **Roster/Team Assignment Fix**: Complete — 21 tests (533 total). Separated player team assignment (current-season roster) from statistical profile (historical PBP). Fixes traded players, missing kickers, missing rookies, and retired player inclusion.
 
 ## Style
 

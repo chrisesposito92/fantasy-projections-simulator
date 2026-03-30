@@ -5,9 +5,11 @@ from copy import deepcopy
 import polars as pl
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
-from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
+from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 
 MIN_PLAYER_PLAYS = 5
+FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
+ACTIVE_STATUSES = {"ACT"}
 
 
 def blend_with_archetype(
@@ -90,30 +92,43 @@ def _blend_dist(real_dist, archetype_dist, real_weight, arch_weight):
     return np.concatenate([real_samples, arch_samples])
 
 
-def build_player_models(
-    pbp: pl.DataFrame,
-    rosters: pl.DataFrame,
-    seasons: list[int],
-    rookie_blend_games: int = 0,
-) -> dict[str, PlayerModel]:
-    """Build PlayerModels from PBP and roster data. Returns dict keyed by player_id."""
-    plays = pbp.filter(
-        pl.col("play_type").is_in(["pass", "run"]) &
-        pl.col("season").is_in(seasons)
+def build_kicker_model(player_id: str, name: str, team: str) -> PlayerModel:
+    """Build a placeholder PlayerModel for a kicker (name tag for scoring attribution)."""
+    return PlayerModel(
+        player_id=player_id,
+        name=name,
+        position="K",
+        team=team,
+        usage=PlayerUsage(),
+        outcomes=PlayerOutcomes(),
+        games_played=17,
     )
 
-    # --- Player metadata from rosters ---
-    player_meta = (
-        rosters.filter(pl.col("season").is_in(seasons))
-        .sort(["season", "week"], descending=True)
-        .group_by("player_id")
-        .first()
-        .select(["player_id", "player_name", "position", "team"])
+
+def _aggregate_pbp_stats(
+    pbp: pl.DataFrame,
+    training_seasons: list[int],
+) -> dict:
+    """Aggregate raw PBP data into per-player and per-team stat buckets.
+
+    This is a pure data-extraction step — no PlayerModel objects are created.
+    The result can be cached and reused across multiple roster merges.
+
+    Returns a dict with keys:
+        - receiving: dict[player_id -> {targets, catches, yards list, rz_targets, air_yards, team, game_ids set}]
+        - rushing:   dict[player_id -> {carries, yards list, rz_carries, team, game_ids set}]
+        - qb:        dict[player_id -> {attempts, team, game_ids set}]
+        - team_pass_attempts:    dict[team -> int]
+        - team_rush_attempts:    dict[team -> int]
+        - team_rz_pass_attempts: dict[team -> int]
+        - team_rz_rush_attempts: dict[team -> int]
+        - team_air_yards:        dict[team -> float]
+        - has_air_yards:         bool
+    """
+    plays = pbp.filter(
+        pl.col("play_type").is_in(["pass", "run"]) &
+        pl.col("season").is_in(training_seasons)
     )
-    meta_map = {
-        row["player_id"]: row
-        for row in player_meta.iter_rows(named=True)
-    }
 
     # --- Team-level totals ---
     team_pass_attempts: dict[str, int] = {}
@@ -208,22 +223,82 @@ def build_player_models(
         qb_stats[pid]["attempts"] += 1
         qb_stats[pid]["game_ids"].add(row["game_id"])
 
-    # --- Build PlayerModels ---
-    models: dict[str, PlayerModel] = {}
-    all_player_ids = set()
-    all_player_ids.update(receiving_stats.keys())
-    all_player_ids.update(rushing_stats.keys())
-    all_player_ids.update(qb_stats.keys())
+    return {
+        "receiving": receiving_stats,
+        "rushing": rushing_stats,
+        "qb": qb_stats,
+        "team_pass_attempts": team_pass_attempts,
+        "team_rush_attempts": team_rush_attempts,
+        "team_rz_pass_attempts": team_rz_pass_attempts,
+        "team_rz_rush_attempts": team_rz_rush_attempts,
+        "team_air_yards": team_air_yards,
+        "has_air_yards": has_air_yards,
+    }
 
-    for pid in all_player_ids:
-        meta = meta_map.get(pid)
-        if meta is None:
+
+def _assemble_models(
+    aggregated_stats: dict,
+    current_rosters: pl.DataFrame,
+    rookie_blend_games: int = 0,
+) -> dict[str, PlayerModel]:
+    """Merge pre-computed PBP stats with a current roster to produce PlayerModels.
+
+    Players on the current roster get their team/position from the roster.
+    Usage shares are computed against the player's HISTORICAL team totals
+    (the team recorded in the PBP stats), not the current team.
+
+    - Skill players with PBP data -> historical stats, current team
+    - Skill players without PBP data -> rookie archetype (draft_round=7)
+    - Kickers -> placeholder model via build_kicker_model
+    - Players NOT on current roster -> excluded
+    - Only status == "ACT" and position in FANTASY_POSITIONS are included
+    """
+    receiving_stats = aggregated_stats["receiving"]
+    rushing_stats = aggregated_stats["rushing"]
+    qb_stats = aggregated_stats["qb"]
+    team_pass_attempts = aggregated_stats["team_pass_attempts"]
+    team_rush_attempts = aggregated_stats["team_rush_attempts"]
+    team_rz_pass_attempts = aggregated_stats["team_rz_pass_attempts"]
+    team_rz_rush_attempts = aggregated_stats["team_rz_rush_attempts"]
+    team_air_yards = aggregated_stats["team_air_yards"]
+    has_air_yards = aggregated_stats["has_air_yards"]
+
+    # Get latest roster entry per player FIRST, then filter by status/position.
+    # This ensures a player who goes ACT→IR is correctly excluded (their
+    # latest row is IR, not a stale ACT row from an earlier week).
+    roster_latest = (
+        current_rosters
+        .sort(["season", "week"], descending=True)
+        .group_by("player_id")
+        .first()
+    ).filter(
+        pl.col("status").is_in(list(ACTIVE_STATUSES)) &
+        pl.col("position").is_in(list(FANTASY_POSITIONS))
+    )
+
+    models: dict[str, PlayerModel] = {}
+
+    for row in roster_latest.iter_rows(named=True):
+        pid = row["player_id"]
+        name = row["player_name"]
+        position = row["position"]
+        team = row["team"]
+
+        # Kickers get a placeholder model
+        if position == "K":
+            models[pid] = build_kicker_model(pid, name, team)
             continue
 
-        team = meta["team"]
-        position = meta["position"]
+        # Check if this player has any PBP data
+        has_pbp = pid in receiving_stats or pid in rushing_stats or pid in qb_stats
 
-        # Collect game_ids across all stat categories for this player
+        if not has_pbp:
+            # No PBP history -> rookie archetype (tier 3, draft_round=7)
+            models[pid] = build_rookie_model(pid, name, position, team, draft_round=7)
+            continue
+
+        # Player has PBP data — build model with historical stats, current team
+        # Collect game_ids across all stat categories for games_played
         game_ids: set[str] = set()
         if pid in receiving_stats:
             game_ids |= receiving_stats[pid]["game_ids"]
@@ -234,36 +309,39 @@ def build_player_models(
 
         usage = PlayerUsage()
 
-        # Target share + red zone target share
+        # Target share + red zone target share (use hist_team for team totals)
         if pid in receiving_stats:
             rs = receiving_stats[pid]
-            team_pa = team_pass_attempts.get(team, 0)
+            hist_team = rs["team"]
+            team_pa = team_pass_attempts.get(hist_team, 0)
             usage.target_share = rs["targets"] / max(team_pa, 1)
 
-            team_rz_pa = team_rz_pass_attempts.get(team, 0)
+            team_rz_pa = team_rz_pass_attempts.get(hist_team, 0)
             if team_rz_pa > 0:
                 usage.red_zone_target_share = rs["rz_targets"] / team_rz_pa
 
             # Air yards share
             if has_air_yards:
-                team_ay = team_air_yards.get(team, 0.0)
+                team_ay = team_air_yards.get(hist_team, 0.0)
                 if team_ay > 0:
                     usage.air_yards_share = rs["air_yards"] / team_ay
 
-        # Carry share + red zone carry share
+        # Carry share + red zone carry share (use hist_team for team totals)
         if pid in rushing_stats:
             rs = rushing_stats[pid]
-            team_ra = team_rush_attempts.get(team, 0)
+            hist_team = rs["team"]
+            team_ra = team_rush_attempts.get(hist_team, 0)
             usage.carry_share = rs["carries"] / max(team_ra, 1)
 
-            team_rz_ra = team_rz_rush_attempts.get(team, 0)
+            team_rz_ra = team_rz_rush_attempts.get(hist_team, 0)
             if team_rz_ra > 0:
                 usage.red_zone_carry_share = rs["rz_carries"] / team_rz_ra
 
-        # QB snap share and scramble rate
+        # QB snap share and scramble rate (use hist_team for team totals)
         if position == "QB" and pid in qb_stats:
             qs = qb_stats[pid]
-            team_pa = team_pass_attempts.get(team, 0)
+            hist_team = qs["team"]
+            team_pa = team_pass_attempts.get(hist_team, 0)
             usage.snap_share = qs["attempts"] / max(team_pa, 1)
 
             # Scramble rate: QB rush attempts / (QB pass attempts + QB rush attempts)
@@ -295,7 +373,7 @@ def build_player_models(
 
         models[pid] = PlayerModel(
             player_id=pid,
-            name=meta["player_name"],
+            name=name,
             position=position,
             team=team,
             usage=usage,
@@ -311,6 +389,22 @@ def build_player_models(
                 models[pid] = blend_with_archetype(model, rookie_blend_games=rookie_blend_games)
 
     return models
+
+
+def build_player_models(
+    pbp: pl.DataFrame,
+    current_rosters: pl.DataFrame,
+    training_seasons: list[int],
+    rookie_blend_games: int = 0,
+) -> dict[str, PlayerModel]:
+    """Build PlayerModels from PBP stats and current roster.
+
+    Stats come from historical PBP (training_seasons). Team assignment
+    comes from current_rosters. Players on the roster without PBP data
+    get archetype (skill positions) or placeholder (kickers) models.
+    """
+    aggregated = _aggregate_pbp_stats(pbp, training_seasons)
+    return _assemble_models(aggregated, current_rosters, rookie_blend_games)
 
 
 def build_team_roster(team: str, models: dict[str, PlayerModel]) -> TeamRoster:
