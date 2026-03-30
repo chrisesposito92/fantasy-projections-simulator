@@ -3,9 +3,25 @@ import numpy as np
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+    PenaltyRates,
 )
 
 MIN_BUCKET_PLAYS = 10
+
+# League-average fallback constants for penalty rates
+_LEAGUE_AVG_PENALTY_RATE = 0.07
+_LEAGUE_AVG_TYPE_DIST = {
+    "false_start": 0.30,
+    "holding": 0.40,
+    "pass_interference": 0.15,
+    "other": 0.15,
+}
+_LEAGUE_AVG_YARDS = {
+    "false_start": 5.0,
+    "holding": 10.0,
+    "pass_interference": 15.0,
+    "other": 5.0,
+}
 
 
 class Preprocessor:
@@ -14,9 +30,48 @@ class Preprocessor:
     def _filter_real_plays(self, pbp: pl.DataFrame) -> pl.DataFrame:
         return pbp.filter(pl.col("play_type").is_in(["pass", "run"]))
 
-    def compute_play_calling(self, pbp: pl.DataFrame) -> dict[str, PlayCallingDist]:
+    def _apply_season_weights(
+        self,
+        plays: pl.DataFrame,
+        season_weights: dict[int, float] | None,
+    ) -> pl.DataFrame:
+        """Replicate rows proportional to season_weights for weighted sampling.
+
+        Normalises so the maximum weight yields 10 replications; all others are
+        proportional (minimum 1 replication).  If season_weights is None or
+        empty the original DataFrame is returned unchanged.
+        """
+        if not season_weights:
+            return plays
+
+        max_weight = max(season_weights.values())
+        if max_weight == 0:
+            return plays
+
+        frames: list[pl.DataFrame] = []
+        seasons_present = plays["season"].unique().to_list()
+
+        for season in seasons_present:
+            season_plays = plays.filter(pl.col("season") == season)
+            if season_plays.is_empty():
+                continue
+            raw_weight = season_weights.get(int(season), 1.0)
+            reps = max(1, round((raw_weight / max_weight) * 10))
+            frames.extend([season_plays] * reps)
+
+        if not frames:
+            return plays
+
+        return pl.concat(frames)
+
+    def compute_play_calling(
+        self,
+        pbp: pl.DataFrame,
+        season_weights: dict[int, float] | None = None,
+    ) -> dict[str, PlayCallingDist]:
         """Compute P(run|state) and P(pass|state) per team."""
         plays = self._filter_real_plays(pbp)
+        plays = self._apply_season_weights(plays, season_weights)
         teams = plays["posteam"].unique().to_list()
         result = {}
 
@@ -52,9 +107,14 @@ class Preprocessor:
 
         return result
 
-    def compute_play_outcomes(self, pbp: pl.DataFrame) -> PlayOutcomeDist:
+    def compute_play_outcomes(
+        self,
+        pbp: pl.DataFrame,
+        season_weights: dict[int, float] | None = None,
+    ) -> PlayOutcomeDist:
         """Compute empirical yards-gained distributions by play type and game state."""
         plays = self._filter_real_plays(pbp)
+        plays = self._apply_season_weights(plays, season_weights)
 
         bucket_yards: dict[tuple[str, GameStateBucket], list[int]] = {}
         defaults: dict[str, list[int]] = {"pass": [], "run": []}
@@ -81,9 +141,14 @@ class Preprocessor:
 
         return PlayOutcomeDist(distributions=distributions, defaults=final_defaults)
 
-    def compute_turnover_rates(self, pbp: pl.DataFrame) -> dict[str, TurnoverRates]:
+    def compute_turnover_rates(
+        self,
+        pbp: pl.DataFrame,
+        season_weights: dict[int, float] | None = None,
+    ) -> dict[str, TurnoverRates]:
         """Compute per-team turnover and sack rates from PBP data."""
         plays = self._filter_real_plays(pbp)
+        plays = self._apply_season_weights(plays, season_weights)
         teams = plays["posteam"].unique().to_list()
         result = {}
 
@@ -114,6 +179,68 @@ class Preprocessor:
             result[team] = TurnoverRates(
                 team=team, int_rate=int_rate, fumble_rate=fumble_rate,
                 sack_rate=sack_rate, sack_fumble_rate=sack_fumble_rate,
+            )
+
+        return result
+
+    def compute_penalty_rates(self, pbp: pl.DataFrame) -> dict[str, PenaltyRates]:
+        """Compute per-team penalty rates from PBP data.
+
+        For each team:
+        - penalty_rate = penalties / total_real_plays
+        - type_distribution derived from penalty_yards buckets:
+            <=5 -> false_start, 6-10 -> holding, >10 -> pass_interference
+        - avg_yards constants: false_start=5, holding=10, pass_interference=15, other=5
+        - If penalty_rate == 0, use league-average fallback.
+        """
+        plays = self._filter_real_plays(pbp)
+        teams = plays["posteam"].unique().to_list()
+        result: dict[str, PenaltyRates] = {}
+
+        for team in teams:
+            team_plays = plays.filter(pl.col("posteam") == team)
+            total_plays = team_plays.shape[0]
+            if total_plays == 0:
+                continue
+
+            penalty_plays = team_plays.filter(pl.col("penalty") == 1)
+            n_penalties = penalty_plays.shape[0]
+            penalty_rate = n_penalties / total_plays
+
+            avg_yards = dict(_LEAGUE_AVG_YARDS)
+
+            if penalty_rate == 0 or n_penalties == 0:
+                # Use league-average fallback
+                penalty_rate = _LEAGUE_AVG_PENALTY_RATE
+                type_distribution = dict(_LEAGUE_AVG_TYPE_DIST)
+            else:
+                # Derive type distribution from penalty_yards
+                counts: dict[str, int] = {
+                    "false_start": 0,
+                    "holding": 0,
+                    "pass_interference": 0,
+                    "other": 0,
+                }
+                for row in penalty_plays.iter_rows(named=True):
+                    yards = row["penalty_yards"]
+                    if yards <= 5:
+                        counts["false_start"] += 1
+                    elif yards <= 10:
+                        counts["holding"] += 1
+                    else:
+                        counts["pass_interference"] += 1
+
+                total_typed = sum(counts.values())
+                if total_typed > 0:
+                    type_distribution = {k: v / total_typed for k, v in counts.items()}
+                else:
+                    type_distribution = dict(_LEAGUE_AVG_TYPE_DIST)
+
+            result[team] = PenaltyRates(
+                team=team,
+                penalty_rate=penalty_rate,
+                type_distribution=type_distribution,
+                avg_yards=avg_yards,
             )
 
         return result

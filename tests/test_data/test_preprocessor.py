@@ -4,7 +4,7 @@ import pytest
 from fantasy_sim.data.preprocessor import Preprocessor
 from fantasy_sim.models.game_state import GameStateBucket
 from fantasy_sim.models.distributions import (
-    PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+    PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel, PenaltyRates,
 )
 
 
@@ -168,3 +168,232 @@ class TestDriveStartModelPreprocessor:
         for _ in range(50):
             yl = model.sample_start_yardline(rng)
             assert 1 <= yl <= 99
+
+
+def _make_multi_season_pbp() -> pl.DataFrame:
+    """Create a 3-season PBP dataset for recency-weighting tests.
+
+    - 2022: 10 run plays (all runs)
+    - 2023: 5 pass + 5 run (mixed)
+    - 2024: 10 pass plays (all passes)
+
+    Without weights: 15 pass / 30 total = 50% pass rate.
+    With weights {2022: 0.2, 2023: 0.3, 2024: 0.5}, recent passes dominate.
+    """
+    base = {
+        "game_id": "test_game",
+        "posteam": "KC",
+        "defteam": "BUF",
+        "down": 1,
+        "ydstogo": 10,
+        "yardline_100": 75,
+        "score_differential": 0,
+        "qtr": 1,
+        "yards_gained": 5,
+        "complete_pass": 0,
+        "pass_attempt": 0,
+        "rush_attempt": 1,
+        "interception": 0,
+        "fumble_lost": 0,
+        "sack": 0,
+        "touchdown": 0,
+        "penalty": 0,
+        "penalty_yards": 0,
+        "passer_player_id": None,
+        "receiver_player_id": None,
+        "rusher_player_id": "RB01",
+    }
+    plays = []
+    # 2022: 10 run plays
+    for i in range(10):
+        plays.append({**base, "season": 2022, "week": i + 1, "play_type": "run"})
+    # 2023: 5 pass + 5 run
+    for i in range(5):
+        plays.append({**base, "season": 2023, "week": i + 1, "play_type": "run"})
+    for i in range(5):
+        plays.append({
+            **base,
+            "season": 2023,
+            "week": i + 6,
+            "play_type": "pass",
+            "pass_attempt": 1,
+            "rush_attempt": 0,
+            "complete_pass": 1,
+            "rusher_player_id": None,
+            "passer_player_id": "QB01",
+            "receiver_player_id": "WR01",
+        })
+    # 2024: 10 pass plays
+    for i in range(10):
+        plays.append({
+            **base,
+            "season": 2024,
+            "week": i + 1,
+            "play_type": "pass",
+            "pass_attempt": 1,
+            "rush_attempt": 0,
+            "complete_pass": 1,
+            "rusher_player_id": None,
+            "passer_player_id": "QB01",
+            "receiver_player_id": "WR01",
+        })
+    return pl.DataFrame(plays)
+
+
+class TestRecencyWeighting:
+    def test_without_weights_equal_treatment(self):
+        """Without weights, 30 plays (15 pass, 15 run) => ~50% pass rate."""
+        pbp = _make_multi_season_pbp()
+        pre = Preprocessor()
+        dists = pre.compute_play_calling(pbp, season_weights=None)
+        kc = dists["KC"]
+        assert kc.default["pass"] == pytest.approx(0.5, abs=0.01)
+        assert kc.default["run"] == pytest.approx(0.5, abs=0.01)
+
+    def test_with_recency_weights_biases_recent(self):
+        """With weights {2022: 0.2, 2023: 0.3, 2024: 0.5}, recent passes dominate.
+
+        Replications (max=10):
+          2024 weight 0.5 -> 10 reps  -> 10*10 = 100 pass plays
+          2023 weight 0.3 -> 6 reps   -> 6*5=30 pass + 6*5=30 run
+          2022 weight 0.2 -> 4 reps   -> 4*10=40 run plays
+        Totals: 130 pass / 200 total = 65% pass rate.
+        """
+        pbp = _make_multi_season_pbp()
+        pre = Preprocessor()
+        weights = {2022: 0.2, 2023: 0.3, 2024: 0.5}
+        dists = pre.compute_play_calling(pbp, season_weights=weights)
+        kc = dists["KC"]
+        # Expect clearly more than 50% pass (the unweighted baseline)
+        assert kc.default["pass"] > 0.55
+
+    def test_play_outcomes_with_recency_weights(self):
+        """Weighted play outcomes return a valid PlayOutcomeDist without error."""
+        pbp = _make_multi_season_pbp()
+        pre = Preprocessor()
+        weights = {2022: 0.2, 2023: 0.3, 2024: 0.5}
+        dist = pre.compute_play_outcomes(pbp, season_weights=weights)
+        assert isinstance(dist, PlayOutcomeDist)
+        assert "pass" in dist.defaults or "run" in dist.defaults
+
+    def test_turnover_rates_with_recency_weights(self):
+        """compute_turnover_rates accepts season_weights without error."""
+        pbp = _make_multi_season_pbp()
+        pre = Preprocessor()
+        weights = {2022: 0.2, 2023: 0.3, 2024: 0.5}
+        rates = pre.compute_turnover_rates(pbp, season_weights=weights)
+        assert "KC" in rates
+        assert 0.0 <= rates["KC"].int_rate <= 1.0
+
+    def test_no_weights_backward_compatible(self):
+        """compute_play_calling() == compute_play_calling(season_weights=None)."""
+        pbp = _make_multi_season_pbp()
+        pre = Preprocessor()
+        dists_default = pre.compute_play_calling(pbp)
+        dists_none = pre.compute_play_calling(pbp, season_weights=None)
+        kc_default = dists_default["KC"]
+        kc_none = dists_none["KC"]
+        assert kc_default.default["pass"] == pytest.approx(kc_none.default["pass"])
+        assert kc_default.default["run"] == pytest.approx(kc_none.default["run"])
+
+
+class TestComputePenaltyRates:
+    def _make_penalty_pbp(self) -> pl.DataFrame:
+        """PBP data with some penalty plays for KC and BUF."""
+        base_run = {
+            "play_type": "run",
+            "posteam": "KC",
+            "defteam": "BUF",
+            "down": 1,
+            "ydstogo": 10,
+            "yardline_100": 50,
+            "score_differential": 0,
+            "qtr": 1,
+            "yards_gained": 5,
+            "complete_pass": 0,
+            "pass_attempt": 0,
+            "rush_attempt": 1,
+            "interception": 0,
+            "fumble_lost": 0,
+            "sack": 0,
+            "touchdown": 0,
+        }
+        plays = []
+        # KC: 10 plays, 3 with penalties (mix of yards)
+        for i in range(10):
+            p = {
+                **base_run,
+                "season": 2024,
+                "week": i + 1,
+                "game_id": f"2024_W{i+1}_KC_BUF",
+                "passer_player_id": None,
+                "receiver_player_id": None,
+                "rusher_player_id": "RB01",
+                "penalty": 0,
+                "penalty_yards": 0,
+            }
+            if i < 3:
+                p["penalty"] = 1
+                p["penalty_yards"] = [5, 10, 15][i]
+            plays.append(p)
+        # BUF: 10 plays, 0 penalties (tests league-avg fallback)
+        for i in range(10):
+            plays.append({
+                **base_run,
+                "season": 2024,
+                "week": i + 1,
+                "game_id": f"2024_W{i+1}_KC_BUF",
+                "posteam": "BUF",
+                "defteam": "KC",
+                "passer_player_id": None,
+                "receiver_player_id": None,
+                "rusher_player_id": "RB02",
+                "penalty": 0,
+                "penalty_yards": 0,
+            })
+        return pl.DataFrame(plays)
+
+    def test_returns_dict_of_penalty_rates(self):
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        assert isinstance(result, dict)
+        assert "KC" in result
+        assert "BUF" in result
+
+    def test_penalty_rates_are_penalty_rates_instances(self):
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        for team, pr in result.items():
+            assert isinstance(pr, PenaltyRates)
+
+    def test_kc_penalty_rate(self):
+        """KC has 3 penalties on 10 plays => 0.3."""
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        assert result["KC"].penalty_rate == pytest.approx(0.3, abs=0.01)
+
+    def test_kc_type_distribution_sums_to_one(self):
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        total = sum(result["KC"].type_distribution.values())
+        assert total == pytest.approx(1.0, abs=0.01)
+
+    def test_buf_uses_league_avg_fallback(self):
+        """BUF has 0 penalties => uses league average fallback rate of 0.07."""
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        assert result["BUF"].penalty_rate == pytest.approx(0.07, abs=0.001)
+
+    def test_avg_yards_present(self):
+        pbp = self._make_penalty_pbp()
+        pre = Preprocessor()
+        result = pre.compute_penalty_rates(pbp)
+        for team, pr in result.items():
+            assert "false_start" in pr.avg_yards
+            assert "holding" in pr.avg_yards
+            assert "pass_interference" in pr.avg_yards
