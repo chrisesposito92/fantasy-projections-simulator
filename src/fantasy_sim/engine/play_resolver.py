@@ -181,20 +181,45 @@ def _resolve_pass(
 
     if roster is not None and receiver_id is not None:
         # Player-aware pass resolution
-        is_complete = rng.random() < receiver.outcomes.catch_rate
+        # Use red zone catch rate when inside the 20
+        if state.yard_line <= 20:
+            effective_catch_rate = receiver.outcomes.red_zone_catch_rate
+            if effective_catch_rate <= 0:
+                effective_catch_rate = receiver.outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
+        else:
+            effective_catch_rate = receiver.outcomes.catch_rate
+
+        is_complete = rng.random() < effective_catch_rate
 
         if is_complete:
             # Use player's receiving yards dist if available, otherwise team dist
             if receiver.outcomes.receiving_yards_dist is not None and len(receiver.outcomes.receiving_yards_dist) > 0:
-                yards = int(rng.choice(receiver.outcomes.receiving_yards_dist))
+                player_yards = int(rng.choice(receiver.outcomes.receiving_yards_dist))
             else:
-                yards = max(team_yards, 1)  # Complete pass must gain at least 1 yard
+                player_yards = max(team_yards, 1)  # Complete pass must gain at least 1 yard
+
+            # Red zone yards blending: cap player yards by team-level distribution
+            if state.yard_line <= 20:
+                yards = min(player_yards, max(team_yards, 1))
+            else:
+                yards = player_yards
+
             yards = _apply_home_field(yards, is_home, rng)
             yards = _clamp_yards(state.yard_line, yards)
         else:
             yards = 0
 
-        is_td = is_complete and (state.yard_line - yards) <= 0
+        # TD determination with red zone gate
+        if is_complete and state.yard_line <= 20 and (state.yard_line - yards) <= 0:
+            if _red_zone_td_gate(state.yard_line, "pass", rng):
+                yards = _clamp_yards(state.yard_line, yards)
+                is_td = True
+            else:
+                # Tackled short of goal line
+                yards = max(1, state.yard_line - rng.integers(1, max(2, state.yard_line // 3)))
+                is_td = False
+        else:
+            is_td = is_complete and (state.yard_line - yards) <= 0
 
         # Fumble check on completions — use player fumble rate, fall back to team rate
         is_fumble = False
