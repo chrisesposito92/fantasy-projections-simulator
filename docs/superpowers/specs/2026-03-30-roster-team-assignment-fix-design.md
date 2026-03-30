@@ -26,7 +26,7 @@ Separate team assignment from statistical profile by adding a `current_rosters` 
 | No-history kickers | Dedicated `build_kicker_model()` placeholder | Kickers are name tags for attribution; actual kicking uses team-level `KickingModel` |
 | Historical players not on current roster | Drop silently | No value in building models for players who won't appear in any game |
 | Usage share computation | Historical team totals | Shares represent workload volume ("how much of a bellcow"), re-normalized at roster selection time via `select_rusher()`/`select_receiver()` weight division |
-| Roster filtering | `status in ("ACT", "RES")`, `position in ("QB", "RB", "WR", "TE", "K")` | Exclude coaches, practice squad, punters, long snappers; include IR-designated-to-return |
+| Roster filtering | `status == "ACT"`, `position in ("QB", "RB", "WR", "TE", "K")` | Exclude coaches, practice squad, IR, punters, long snappers. ACT-only is the safest default — IR players shouldn't consume target/carry shares. Status filter may need tuning based on nflverse status codes (e.g., "RSN" for IR-designated-to-return) |
 
 ## Changes by File
 
@@ -45,7 +45,7 @@ def build_player_models(pbp, current_rosters, training_seasons, rookie_blend_gam
 
 1. `_aggregate_pbp_stats(pbp, training_seasons)` — Computes `receiving_stats`, `rushing_stats`, `qb_stats`, and team-level totals (pass attempts, rush attempts, red zone attempts, air yards) from PBP. This is the expensive step (iterates millions of PBP rows). Returns a stats bundle that can be cached and reused across multiple roster merges.
 
-2. `_assemble_models(aggregated_stats, current_rosters)` — Iterates over players in `current_rosters` (filtered to active/reserve status, fantasy-relevant positions), looks up pre-computed stats by `player_id`, and builds `PlayerModel` objects. Three cases:
+2. `_assemble_models(aggregated_stats, current_rosters)` — Iterates over players in `current_rosters` (filtered to active status, fantasy-relevant positions), looks up pre-computed stats by `player_id`, and builds `PlayerModel` objects. Three cases:
    - **Player found in PBP stats** — Build model with historical stats, assign team/position from current roster
    - **Skill position player (QB/RB/WR/TE) not in PBP stats** — `build_rookie_model()` with draft round defaulting to 7 (tier 3) if unknown
    - **Kicker (K) not in PBP stats** — `build_kicker_model()` placeholder
@@ -147,4 +147,4 @@ For players without draft data, default to `draft_round=7` (tier 3 archetype —
 - **Integration test for kicker** — Kicker on current roster gets placeholder model
 - **Backtester test for per-week rosters** — Verify different weeks produce different roster compositions
 - **Cache test** — Verify PBP stats computed once, player models rebuilt per-week change
-- **Regression** — All 505 existing tests continue to pass (demo mode unaffected, real-data tests may need fixture updates for new parameters)
+- **Regression** — All 512 existing tests continue to pass (demo mode unaffected, real-data tests may need fixture updates for new parameters)
