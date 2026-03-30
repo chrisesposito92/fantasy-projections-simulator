@@ -3,6 +3,7 @@ import click
 import numpy as np
 import polars as pl
 from pathlib import Path
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
@@ -217,37 +218,43 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     )
 
     if week_games.shape[0] == 0:
-        click.echo(f"No games found for {season} Week {week_num}")
-        return
+        click.echo(f"No games found for {season} Week {week_num}.", err=True)
+        click.echo("Check the schedule data or try a different week.", err=True)
+        raise SystemExit(1)
 
     click.echo(f"Found {week_games.shape[0]} games. Running {sims} sims each ({scoring})...\n")
 
     all_player_projs = []
     override_set = _build_overrides(overrides, config_path)
 
-    for game in week_games.iter_rows(named=True):
-        home = game["home_team"]
-        away = game["away_team"]
-        click.echo(f"  Simulating {away} @ {home}...", nl=False)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        task = progress.add_task("Simulating games...", total=week_games.shape[0])
+        for game in week_games.iter_rows(named=True):
+            home = game["home_team"]
+            away = game["away_team"]
+            progress.update(task, description=f"{away} @ {home}")
 
-        home_dists, away_dists, home_roster, away_roster = builder.build_game(
-            home_team=home, away_team=away, seasons=training_seasons,
-        )
+            home_dists, away_dists, home_roster, away_roster = builder.build_game(
+                home_team=home, away_team=away, seasons=training_seasons,
+            )
 
-        if override_set.players or override_set.teams:
-            apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
+            if override_set.players or override_set.teams:
+                apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
 
-        seed = zlib.crc32(game["game_id"].encode()) % (2**31)
-        results = run_simulations(
-            home_dists, away_dists, n_sims=sims, seed=seed,
-            home_roster=home_roster, away_roster=away_roster,
-        )
+            seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+            results = run_simulations(
+                home_dists, away_dists, n_sims=sims, seed=seed,
+                home_roster=home_roster, away_roster=away_roster,
+            )
 
-        summary = results.summary()
-        click.echo(f" {home} {summary['home_score_mean']:.1f} - {away} {summary['away_score_mean']:.1f}")
-
-        # Build projections per-game so each player's stats use correct denominator
-        all_player_projs.extend(build_player_projections(results.games, scoring_config))
+            # Build projections per-game so each player's stats use correct denominator
+            all_player_projs.extend(build_player_projections(results.games, scoring_config))
+            progress.advance(task)
 
     # Re-sort and re-rank across all games
     all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
@@ -291,25 +298,34 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
 
     all_player_projs = []
     override_set = _build_overrides(overrides, config_path)
-    for wk in week_nums:
-        week_games = schedules.filter(
-            (pl.col("week") == wk) & (pl.col("season") == season_year)
-        )
-        click.echo(f"Week {wk}: {week_games.shape[0]} games")
-        for game in week_games.iter_rows(named=True):
-            home, away = game["home_team"], game["away_team"]
-            home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                home, away, seasons=training_seasons,
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        task = progress.add_task("Simulating season...", total=len(week_nums))
+        for wk in week_nums:
+            progress.update(task, description=f"Week {wk}")
+            week_games = schedules.filter(
+                (pl.col("week") == wk) & (pl.col("season") == season_year)
             )
-            if override_set.players or override_set.teams:
-                apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
-            seed = zlib.crc32(game["game_id"].encode()) % (2**31)
-            results = run_simulations(
-                home_dists, away_dists, n_sims=sims,
-                seed=seed,
-                home_roster=home_roster, away_roster=away_roster,
-            )
-            all_player_projs.extend(build_player_projections(results.games, scoring_config))
+            for game in week_games.iter_rows(named=True):
+                home, away = game["home_team"], game["away_team"]
+                home_dists, away_dists, home_roster, away_roster = builder.build_game(
+                    home, away, seasons=training_seasons,
+                )
+                if override_set.players or override_set.teams:
+                    apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
+                seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+                results = run_simulations(
+                    home_dists, away_dists, n_sims=sims,
+                    seed=seed,
+                    home_roster=home_roster, away_roster=away_roster,
+                )
+                all_player_projs.extend(build_player_projections(results.games, scoring_config))
+            progress.advance(task)
 
     all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(all_player_projs, 1):
