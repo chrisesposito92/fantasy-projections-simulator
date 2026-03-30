@@ -403,3 +403,43 @@ class TestRedZoneCatchRate:
         models = build_player_models(pbp, rosters, training_seasons=[2024])
         wr = models["WR1"]
         assert wr.outcomes.red_zone_catch_rate == pytest.approx(9 / 15, abs=0.01)
+
+
+class TestQBPassFumbleRate:
+    def test_pass_fumble_rate_computed(self):
+        """QB with enough pass plays gets per-player pass_fumble_rate."""
+        import polars as pl
+        plays = []
+        base = {
+            "season": 2024, "week": 1, "game_id": "2024_01_T1",
+            "posteam": "T1", "defteam": "T2",
+            "down": 1, "ydstogo": 10, "yardline_100": 50,
+            "score_differential": 0, "qtr": 1,
+            "rush_attempt": 0, "interception": 0,
+            "sack": 0, "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "QB1", "receiver_player_id": "WR1",
+            "rusher_player_id": None,
+        }
+        # 150 non-sack passes, 2 with fumble_lost
+        for i in range(148):
+            plays.append({**base, "play_type": "pass", "yards_gained": 8,
+                          "complete_pass": 1, "pass_attempt": 1, "fumble_lost": 0})
+        for i in range(2):
+            plays.append({**base, "play_type": "pass", "yards_gained": 0,
+                          "complete_pass": 0, "pass_attempt": 1, "fumble_lost": 1})
+        pbp = pl.DataFrame(plays)
+        rosters = pl.DataFrame([
+            {"season": 2024, "week": 1, "player_id": "QB1", "player_name": "QB", "position": "QB", "team": "T1", "status": "ACT"},
+            {"season": 2024, "week": 1, "player_id": "WR1", "player_name": "WR", "position": "WR", "team": "T1", "status": "ACT"},
+        ])
+        models = build_player_models(pbp, rosters, training_seasons=[2024])
+        qb = models["QB1"]
+        assert qb.outcomes.pass_fumble_rate == pytest.approx(2 / 150, abs=0.001)
+
+    def test_pass_fumble_rate_fallback_for_small_sample(self, expanded_pbp, sample_rosters):
+        """QBs with < 100 pass plays get league average 0.0034."""
+        models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
+        pm = models.get("PM15")
+        assert pm is not None
+        # expanded_pbp has 40 KC passes, well under 100
+        assert pm.outcomes.pass_fumble_rate == pytest.approx(0.0034, abs=0.0001)
