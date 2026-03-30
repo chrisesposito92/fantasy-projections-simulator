@@ -117,6 +117,11 @@ The project is organized as a pipeline:
 - **Home-field advantage**: `resolve_play(is_home=True)` gives 50% chance of +1 yard per play. `HOME_FIELD_YARDS_BONUS = 0.5`.
 - **Two-minute warning**: `check_two_minute_warning()` snaps clock to 120s once per half in Q2/Q4. `GameState.two_min_warning_fired` resets at halftime.
 - **Two-point conversions**: `attempt_pat()` returns scorer_id on 2PT success. `PlayerBoxScore.two_point_conversions` flows through `score_player()` via `config["two_point"]`.
+- **Defensive TDs**: `_update_box_scores(rng=rng)` rolls for pick-six (~20% of INTs via `INT_RETURN_TD_RATE`) and fumble return TD (~10% via `FUMBLE_RETURN_TD_RATE`). `TeamBoxScore.defensive_tds` flows through `score_dst()` and `build_dst_projections()`.
+- **Per-week availability**: `PlayerModel.weeks_missed: list[int]` stores specific weeks a player misses. `_filter_available()` in `player_selector.py` excludes them during those weeks. `GameState.week` tracks current week (0 = unset). Set via `games_missed` override.
+- **Pace factor**: `TeamDistributions.pace_factor` (default 1.0) scales clock runoff via `_scale_clock_runoff()` in `play_resolver.py`. Set via `pace_plays_per_game` team override (baseline 65 plays/game).
+- **Ambiguous match detection**: `PlayerResolver.resolve()` raises `AmbiguousMatchError(KeyError)` when 2+ players match within `AMBIGUITY_THRESHOLD=5` points. Exact ID/name lookups bypass the check.
+- **GitHub Actions CI**: `.github/workflows/ci.yml` runs pytest on push/PR across Python 3.12/3.13/3.14 with uv caching. Statistical tests gated by PR label.
 
 ## Testing
 
@@ -136,6 +141,7 @@ The project is organized as a pipeline:
 - **Phase 6 (Overrides + Polish)**: Complete — 38 tests (329 total)
 - **Phase 7A (Data + Engine Accuracy)**: Complete — 41 tests (370 total)
 - **Phase 7B (Scoring + Config + CLI)**: Complete — 48 tests (418 total)
+- **Phase 7C (Polish + Tests + CI)**: Complete — 87 tests (505 total)
 
 ## Style
 

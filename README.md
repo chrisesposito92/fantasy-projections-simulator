@@ -100,6 +100,16 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Week validation: `--weeks` values validated to 1-18 range with helpful error messages
 - CLI defaults from `defaults.yaml`: `num_sims` and `historical_seasons` drive default behavior
 
+**Phase 7C: Polish + Tests + CI** — Complete (87 tests, 505 total)
+
+- DST defensive TDs: probabilistic pick-sixes (~20% of INTs) and fumble return TDs (~10%) modeled in `_update_box_scores`, surfaced through `score_dst` and `build_dst_projections`
+- Per-week zero-out: `games_missed` override now stores specific week numbers in `weeks_missed`; players are filtered from simulation during those weeks via `_filter_available()` in `player_selector`
+- Pace override: `pace_plays_per_game` team override scales clock runoff via `pace_factor` to control plays-per-game (baseline 65)
+- Fuzzy matching disambiguation: `AmbiguousMatchError` raised when 2+ players match within 5 points of each other, listing all options for the user
+- Validation verification tests: backtest targets, boom/bust calibration edge cases, data leakage prevention
+- Comprehensive edge case suite: empty rosters, invalid overrides, scoring config edge cases, CLI validation, redistribution invariants
+- GitHub Actions CI: pytest on push/PR across Python 3.12/3.13/3.14 with uv caching; statistical tests gated by PR label
+
 ## Quick Start
 
 ```bash
