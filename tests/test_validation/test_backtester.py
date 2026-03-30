@@ -45,7 +45,6 @@ class TestBacktesterRosterHandling:
     @patch("fantasy_sim.validation.backtester.GameContextBuilder")
     @patch("fantasy_sim.validation.backtester.DataLoader")
     def test_build_game_receives_target_season_and_week(self, mock_loader_cls, mock_builder_cls):
-        """Backtester should pass target_season=test_season and week=wk to build_game."""
         mock_loader = MagicMock()
         mock_loader_cls.return_value = mock_loader
         mock_loader.cache_dir = "/tmp/test"

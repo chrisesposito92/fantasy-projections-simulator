@@ -492,7 +492,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                    home, away, training_seasons=training_seasons,
+                    home_team=home, away_team=away, training_seasons=training_seasons,
                     target_season=season_year, week=wk,
                 )
                 if override_set.players or override_set.teams:
