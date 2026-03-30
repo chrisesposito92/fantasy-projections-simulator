@@ -323,6 +323,8 @@ class TestRookieArchetypeDefaults:
         arch_catch = POSITIONAL_ARCHETYPES["RB"]["tier3"]["catch_rate"]
         assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
 
+
+class TestAssembleModelsExtra:
     def test_kicker_gets_placeholder_model(self, traded_player_pbp, traded_player_rosters):
         """KC_K and HOU_K should be kicker placeholder models."""
         agg = _aggregate_pbp_stats(traded_player_pbp, training_seasons=[2024])
