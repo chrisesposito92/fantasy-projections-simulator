@@ -463,6 +463,108 @@ class TestSeasonAggregation:
         assert result[0]["xp_made"] == 6.0
 
 
+class TestSeasonByWeek:
+    """--by-week flag on season command."""
+
+    @staticmethod
+    def _setup_mocks(MockLoader, MockBuilder):
+        """Configure loader and builder mocks for 2-week season data."""
+        mock_loader = MockLoader.return_value
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {"season": 2024, "week": 1, "game_id": "g1", "game_type": "REG",
+             "home_team": "KC", "away_team": "BUF"},
+            {"season": 2024, "week": 2, "game_id": "g2", "game_type": "REG",
+             "home_team": "KC", "away_team": "MIA"},
+        ])
+        mock_loader.cache_dir = Path("/tmp/cache")
+
+        mock_builder = MockBuilder.return_value
+        from fantasy_sim.engine.types import TeamDistributions
+        from fantasy_sim.models.distributions import (
+            PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
+        )
+        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+
+        def make_dists(team):
+            return TeamDistributions(
+                play_calling=PlayCallingDist(team=team, distributions={}, default={"pass": 0.55, "run": 0.45}),
+                play_outcomes=PlayOutcomeDist(distributions={}, defaults={
+                    "pass": np.array([0, 5, 8, 10, 12, 15]),
+                    "run": np.array([2, 3, 4, 5, 6]),
+                }),
+                turnover_rates=TurnoverRates(team=team, int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
+                kicking=KickingModel(fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
+                drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+            )
+
+        def make_roster(team):
+            return TeamRoster(team=team, players=[
+                PlayerModel(f"{team}_QB", "QB", "QB", team, PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+                PlayerModel(f"{team}_WR", "WR", "WR", team, PlayerUsage(target_share=0.50),
+                           PlayerOutcomes(catch_rate=0.60, receiving_yards_dist=np.array([8, 12]))),
+                PlayerModel(f"{team}_RB", "RB", "RB", team, PlayerUsage(carry_share=1.0, target_share=0.50),
+                           PlayerOutcomes(rushing_yards_dist=np.array([3, 5, 7]),
+                                         catch_rate=0.70, receiving_yards_dist=np.array([4, 6]))),
+            ])
+
+        mock_builder.build_game.return_value = (
+            make_dists("KC"), make_dists("BUF"), make_roster("KC"), make_roster("BUF"),
+        )
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_default_aggregates(self, MockLoader, MockBuilder, runner):
+        """Default season output should have one entry per player (aggregated)."""
+        self._setup_mocks(MockLoader, MockBuilder)
+        result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
+        assert result.exit_code == 0
+        assert "Season Projections" in result.output
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_by_week_shows_week_headers(self, MockLoader, MockBuilder, runner):
+        """--by-week should show week-level headers."""
+        self._setup_mocks(MockLoader, MockBuilder)
+        result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5", "--by-week"])
+        assert result.exit_code == 0
+        assert "Week 1" in result.output
+        assert "Week 2" in result.output
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_by_week_json_includes_week_field(self, MockLoader, MockBuilder, runner, tmp_path):
+        """--by-week --format json should include 'week' field on each row."""
+        self._setup_mocks(MockLoader, MockBuilder)
+        output = tmp_path / "by_week.json"
+        result = runner.invoke(main, [
+            "season", "--season", "2024", "--sims", "5",
+            "--by-week", "--format", "json", "--output", str(output),
+        ])
+        assert result.exit_code == 0
+        import json
+        data = json.loads(output.read_text())
+        assert len(data) > 0
+        for entry in data:
+            assert "week" in entry
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_aggregated_json_no_week_field(self, MockLoader, MockBuilder, runner, tmp_path):
+        """Default season JSON should NOT include 'week' field."""
+        self._setup_mocks(MockLoader, MockBuilder)
+        output = tmp_path / "aggregated.json"
+        result = runner.invoke(main, [
+            "season", "--season", "2024", "--sims", "5",
+            "--format", "json", "--output", str(output),
+        ])
+        assert result.exit_code == 0
+        import json
+        data = json.loads(output.read_text())
+        assert len(data) > 0
+        for entry in data:
+            assert "week" not in entry
+
+
 class TestDetailFlag:
     """Gap 19: --detail flag on demo and game commands."""
 
