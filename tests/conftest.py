@@ -164,3 +164,184 @@ def expanded_pbp() -> pl.DataFrame:
         })
 
     return pl.DataFrame(plays)
+
+
+@pytest.fixture
+def rz_pbp() -> pl.DataFrame:
+    """PBP with red zone plays (yardline_100 <= 20) for testing red zone metrics."""
+    plays = []
+    base = {
+        "season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+        "down": 1, "ydstogo": 10, "score_differential": 0, "qtr": 1,
+        "pass_attempt": 0, "rush_attempt": 0,
+        "interception": 0, "fumble_lost": 0, "sack": 0,
+        "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+        "passer_player_id": None, "receiver_player_id": None,
+        "rusher_player_id": None,
+    }
+
+    # KC: 5 non-rz passes (yardline_100=50, to TK87)
+    for i in range(5):
+        plays.append({
+            **base, "play_type": "pass", "posteam": "KC", "defteam": "BUF",
+            "yardline_100": 50, "yards_gained": 8, "complete_pass": 1,
+            "pass_attempt": 1, "passer_player_id": "PM15",
+            "receiver_player_id": "TK87", "air_yards": 6,
+        })
+
+    # KC: 5 rz passes (yardline_100=15, to RE11)
+    for i in range(5):
+        plays.append({
+            **base, "play_type": "pass", "posteam": "KC", "defteam": "BUF",
+            "yardline_100": 15, "yards_gained": 10, "complete_pass": 1,
+            "pass_attempt": 1, "passer_player_id": "PM15",
+            "receiver_player_id": "RE11", "air_yards": 8,
+        })
+
+    # KC: 5 non-rz runs (yardline_100=50, IP01)
+    for i in range(5):
+        plays.append({
+            **base, "play_type": "run", "posteam": "KC", "defteam": "BUF",
+            "yardline_100": 50, "yards_gained": 4, "complete_pass": 0,
+            "rush_attempt": 1, "rusher_player_id": "IP01", "air_yards": None,
+        })
+
+    # KC: 3 rz runs (yardline_100=10, IP01)
+    for i in range(3):
+        plays.append({
+            **base, "play_type": "run", "posteam": "KC", "defteam": "BUF",
+            "yardline_100": 10, "yards_gained": 3, "complete_pass": 0,
+            "rush_attempt": 1, "rusher_player_id": "IP01", "air_yards": None,
+        })
+
+    # BUF: 2 non-rz passes (yardline_100=40, to SD14)
+    for i in range(2):
+        plays.append({
+            **base, "play_type": "pass", "posteam": "BUF", "defteam": "KC",
+            "yardline_100": 40, "yards_gained": 12, "complete_pass": 1,
+            "pass_attempt": 1, "passer_player_id": "JA17",
+            "receiver_player_id": "SD14", "air_yards": 10,
+        })
+
+    # BUF: 3 rz passes (yardline_100=18, to SD14)
+    for i in range(3):
+        plays.append({
+            **base, "play_type": "pass", "posteam": "BUF", "defteam": "KC",
+            "yardline_100": 18, "yards_gained": 8, "complete_pass": 1,
+            "pass_attempt": 1, "passer_player_id": "JA17",
+            "receiver_player_id": "SD14", "air_yards": 7,
+        })
+
+    # BUF: 3 non-rz runs (yardline_100=50, JC02)
+    for i in range(3):
+        plays.append({
+            **base, "play_type": "run", "posteam": "BUF", "defteam": "KC",
+            "yardline_100": 50, "yards_gained": 5, "complete_pass": 0,
+            "rush_attempt": 1, "rusher_player_id": "JC02", "air_yards": None,
+        })
+
+    # BUF: 2 rz runs (yardline_100=8, JC02)
+    for i in range(2):
+        plays.append({
+            **base, "play_type": "run", "posteam": "BUF", "defteam": "KC",
+            "yardline_100": 8, "yards_gained": 2, "complete_pass": 0,
+            "rush_attempt": 1, "rusher_player_id": "JC02", "air_yards": None,
+        })
+
+    return pl.DataFrame(plays)
+
+
+@pytest.fixture
+def air_yards_pbp() -> pl.DataFrame:
+    """PBP with air_yards data for testing air yards share computation."""
+    plays = []
+    base = {
+        "season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+        "posteam": "KC", "defteam": "BUF",
+        "down": 1, "ydstogo": 10, "yardline_100": 50,
+        "score_differential": 0, "qtr": 1,
+        "pass_attempt": 0, "rush_attempt": 0,
+        "interception": 0, "fumble_lost": 0, "sack": 0,
+        "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+        "passer_player_id": None, "receiver_player_id": None,
+        "rusher_player_id": None,
+    }
+
+    # KC: 6 passes to TK87 with air_yards=10
+    for i in range(6):
+        plays.append({
+            **base, "play_type": "pass", "yards_gained": 12,
+            "complete_pass": 1, "pass_attempt": 1,
+            "passer_player_id": "PM15", "receiver_player_id": "TK87",
+            "air_yards": 10,
+        })
+
+    # KC: 3 passes to RE11 with air_yards=10
+    for i in range(3):
+        plays.append({
+            **base, "play_type": "pass", "yards_gained": 15,
+            "complete_pass": 1, "pass_attempt": 1,
+            "passer_player_id": "PM15", "receiver_player_id": "RE11",
+            "air_yards": 10,
+        })
+
+    # KC: 1 pass to IP01 with air_yards=10
+    plays.append({
+        **base, "play_type": "pass", "yards_gained": 5,
+        "complete_pass": 1, "pass_attempt": 1,
+        "passer_player_id": "PM15", "receiver_player_id": "IP01",
+        "air_yards": 10,
+    })
+
+    # KC: 5 runs (no air_yards)
+    for i in range(5):
+        plays.append({
+            **base, "play_type": "run", "yards_gained": 4,
+            "complete_pass": 0, "rush_attempt": 1,
+            "rusher_player_id": "IP01", "air_yards": None,
+        })
+
+    return pl.DataFrame(plays)
+
+
+@pytest.fixture
+def scramble_pbp() -> pl.DataFrame:
+    """PBP for testing QB scramble rate and scramble yards distribution."""
+    plays = []
+    base = {
+        "season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+        "posteam": "BUF", "defteam": "KC",
+        "down": 1, "ydstogo": 10, "yardline_100": 50,
+        "score_differential": 0, "qtr": 1,
+        "pass_attempt": 0, "rush_attempt": 0,
+        "interception": 0, "fumble_lost": 0, "sack": 0,
+        "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+        "passer_player_id": None, "receiver_player_id": None,
+        "rusher_player_id": None,
+    }
+
+    # BUF: JA17 10 pass plays
+    for i in range(10):
+        plays.append({
+            **base, "play_type": "pass", "yards_gained": 8,
+            "complete_pass": 1, "pass_attempt": 1,
+            "passer_player_id": "JA17", "receiver_player_id": "SD14",
+        })
+
+    # BUF: JA17 3 rush plays (scrambles)
+    for yards in [6, 8, 10]:
+        plays.append({
+            **base, "play_type": "run", "yards_gained": yards,
+            "complete_pass": 0, "rush_attempt": 1,
+            "rusher_player_id": "JA17",
+        })
+
+    # BUF: JC02 7 rush plays
+    for i in range(7):
+        plays.append({
+            **base, "play_type": "run", "yards_gained": 5,
+            "complete_pass": 0, "rush_attempt": 1,
+            "rusher_player_id": "JC02",
+        })
+
+    return pl.DataFrame(plays)

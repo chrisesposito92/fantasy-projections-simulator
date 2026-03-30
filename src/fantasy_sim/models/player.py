@@ -10,6 +10,7 @@ class PlayerUsage:
     red_zone_carry_share: float = 0.0
     target_share: float = 0.0
     red_zone_target_share: float = 0.0
+    air_yards_share: float = 0.0
     snap_share: float = 0.0
     scramble_rate: float = 0.0
 

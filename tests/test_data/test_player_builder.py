@@ -82,3 +82,54 @@ class TestBuildTeamRoster:
         assert roster.get_starting_qb() is not None
         assert roster.select_receiver(rng) is not None
         assert roster.select_rusher(rng) is not None
+
+
+class TestRedZoneMetrics:
+    def test_red_zone_target_share_computed(self, rz_pbp, sample_rosters):
+        models = build_player_models(rz_pbp, sample_rosters, seasons=[2024])
+        # RE11 for KC: has 5 rz targets. KC has 5 rz pass attempts total.
+        # SD14 for BUF: has 3 rz targets. BUF has 3 rz pass attempts total.
+        sd = models.get("SD14")
+        assert sd is not None
+        assert sd.usage.red_zone_target_share > 0
+
+    def test_red_zone_carry_share_computed(self, rz_pbp, sample_rosters):
+        models = build_player_models(rz_pbp, sample_rosters, seasons=[2024])
+        ip = models.get("IP01")
+        assert ip is not None
+        assert ip.usage.red_zone_carry_share > 0
+
+
+class TestAirYardsShare:
+    def test_air_yards_share_computed(self, air_yards_pbp, sample_rosters):
+        models = build_player_models(air_yards_pbp, sample_rosters, seasons=[2024])
+        tk = models.get("TK87")
+        assert tk is not None
+        assert tk.usage.air_yards_share > 0
+
+    def test_air_yards_share_sums_near_one(self, air_yards_pbp, sample_rosters):
+        models = build_player_models(air_yards_pbp, sample_rosters, seasons=[2024])
+        kc_receivers = [m for m in models.values() if m.team == "KC" and m.usage.air_yards_share > 0]
+        total = sum(p.usage.air_yards_share for p in kc_receivers)
+        assert total == pytest.approx(1.0, abs=0.05)
+
+
+class TestQBScrambleData:
+    def test_qb_scramble_rate_from_pbp(self, scramble_pbp, sample_rosters):
+        models = build_player_models(scramble_pbp, sample_rosters, seasons=[2024])
+        ja = models.get("JA17")
+        assert ja is not None
+        assert ja.usage.scramble_rate > 0
+
+    def test_qb_scramble_yards_dist(self, scramble_pbp, sample_rosters):
+        models = build_player_models(scramble_pbp, sample_rosters, seasons=[2024])
+        ja = models.get("JA17")
+        assert ja is not None
+        assert ja.outcomes.scramble_yards_dist is not None
+        assert len(ja.outcomes.scramble_yards_dist) > 0
+
+    def test_non_qb_has_no_scramble_rate(self, scramble_pbp, sample_rosters):
+        models = build_player_models(scramble_pbp, sample_rosters, seasons=[2024])
+        jc = models.get("JC02")
+        assert jc is not None
+        assert jc.usage.scramble_rate == 0.0
