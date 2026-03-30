@@ -525,6 +525,171 @@ def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_p
 
 
 @main.command()
+@click.argument("player_query")
+@click.option("--week", "week_num", default=1, type=int, help="Week number")
+@click.option("--season", default=2024, help="NFL season year")
+@click.option("--sims", default=None, type=click.IntRange(min=1), help="Number of simulations")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom_scoring.yaml")
+@click.option("--demo", is_flag=True, help="Use synthetic data (no network needed)")
+@click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
+@click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+def player(player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path):
+    """Show projection for a single player.
+
+    Uses fuzzy name matching. Example: fantasy-sim player "nico_collins" --week 5
+    """
+    effective_config_path = config_path or _auto_detect_season_yaml()
+    scoring_config = _resolve_config_chain(
+        scoring_format=scoring,
+        scoring_config_path=scoring_config_path,
+        season_yaml_path=effective_config_path,
+    )
+
+    if sims is None:
+        defaults = load_defaults()
+        sims = defaults.get("simulation", {}).get("num_sims", 1000)
+
+    if demo:
+        home_dists = _make_demo_dists("HOME")
+        away_dists = _make_demo_dists("AWAY")
+        home_roster = _make_demo_roster("HOME")
+        away_roster = _make_demo_roster("AWAY")
+        all_rosters = [home_roster, away_roster]
+        game_configs = [(home_dists, away_dists, home_roster, away_roster, "HOME", "AWAY")]
+    else:
+        training_seasons = _get_training_seasons(season)
+        loader = DataLoader()
+        builder = GameContextBuilder(cache_dir=loader.cache_dir)
+
+        click.echo(f"Loading schedule for {season} Week {week_num}...")
+        schedules = loader.load_schedules([season])
+        week_games = schedules.filter(
+            (pl.col("week") == week_num) & (pl.col("season") == season)
+        )
+
+        if week_games.shape[0] == 0:
+            click.echo(f"No games found for {season} Week {week_num}.", err=True)
+            raise SystemExit(1)
+
+        all_rosters = []
+        game_configs = []
+        for g in week_games.iter_rows(named=True):
+            home, away = g["home_team"], g["away_team"]
+            home_dists, away_dists, home_roster, away_roster = builder.build_game(
+                home_team=home, away_team=away, seasons=training_seasons,
+            )
+            all_rosters.extend([home_roster, away_roster])
+            game_configs.append((home_dists, away_dists, home_roster, away_roster, home, away))
+
+    # Resolve player name
+    from fantasy_sim.overrides.resolver import PlayerResolver
+    resolver = PlayerResolver(all_rosters)
+    try:
+        player_id = resolver.resolve(player_query)
+    except KeyError as e:
+        click.echo(f"No player found matching '{player_query}'. {e}", err=True)
+        raise SystemExit(1)
+
+    # Find which game this player is in
+    target_game = None
+    for game_cfg in game_configs:
+        hd, ad, hr, ar, home_name, away_name = game_cfg
+        roster_ids = {p.player_id for p in hr.players} | {p.player_id for p in ar.players}
+        if player_id in roster_ids:
+            target_game = game_cfg
+            break
+
+    if target_game is None:
+        click.echo(f"Player '{player_query}' not found in any Week {week_num} game.", err=True)
+        raise SystemExit(1)
+
+    hd, ad, hr, ar, home_name, away_name = target_game
+
+    override_set = _build_overrides(overrides, effective_config_path)
+    if override_set.players or override_set.teams:
+        apply_overrides_fn(override_set, hd, ad, hr, ar)
+
+    # Find player info
+    player_info = None
+    for roster in [hr, ar]:
+        for p in roster.players:
+            if p.player_id == player_id:
+                player_info = p
+                break
+
+    click.echo(f"Simulating {away_name} @ {home_name} for {player_info.name} ({player_info.position}, {player_info.team})...\n")
+
+    seed = 42 if demo else zlib.crc32(f"{season}_{week_num}_{home_name}_{away_name}".encode()) % (2**31)
+    results = run_simulations(
+        hd, ad, n_sims=sims, seed=seed,
+        home_roster=hr, away_roster=ar,
+    )
+
+    # Build detailed projections for this player
+    from fantasy_sim.scoring.projections import build_detailed_projections
+    all_projs = build_detailed_projections(results.games, scoring_config)
+    player_proj = next((p for p in all_projs if p["player_id"] == player_id), None)
+
+    if player_proj is None:
+        click.echo(f"No projection data for {player_info.name}.", err=True)
+        raise SystemExit(1)
+
+    # Display player card
+    click.echo(f"{player_info.name} ({player_info.position}, {player_info.team}) — Week {week_num}")
+    click.echo(f"Matchup: {away_name} @ {home_name} ({sims} sims)\n")
+
+    from rich.table import Table as RichTable
+    from rich.console import Console
+
+    table = RichTable(title=f"{player_info.name} Projection")
+    table.add_column("Stat", style="cyan")
+    table.add_column("Avg", justify="right", style="green bold")
+    table.add_column("Floor", justify="right", style="dim")
+    table.add_column("Ceiling", justify="right", style="yellow")
+    table.add_column("StdDev", justify="right", style="dim")
+
+    # FPts row
+    table.add_row(
+        "FPts",
+        f"{player_proj['fpts']:.1f}",
+        f"{player_proj['fpts_floor']:.1f}",
+        f"{player_proj['fpts_ceiling']:.1f}",
+        f"{player_proj['fpts_stddev']:.1f}",
+    )
+
+    # Position-specific stat rows
+    stat_labels = {
+        "pass_yards": "Pass Yds", "pass_tds": "Pass TD",
+        "interceptions": "INT",
+        "rush_yards": "Rush Yds", "rush_tds": "Rush TD",
+        "targets": "Targets", "receptions": "Rec",
+        "receiving_yards": "Rec Yds", "receiving_tds": "Rec TD",
+        "fumbles_lost": "Fum Lost",
+    }
+    for stat, label in stat_labels.items():
+        mean_val = player_proj.get(stat, 0)
+        if mean_val == 0 and stat not in ("fumbles_lost",):
+            floor_val = player_proj.get(f"{stat}_floor", 0)
+            ceil_val = player_proj.get(f"{stat}_ceiling", 0)
+            if mean_val == 0 and floor_val == 0 and ceil_val == 0:
+                continue
+
+        table.add_row(
+            label,
+            f"{mean_val:.1f}",
+            f"{player_proj.get(f'{stat}_floor', 0):.1f}",
+            f"{player_proj.get(f'{stat}_ceiling', 0):.1f}",
+            f"{player_proj.get(f'{stat}_stddev', 0):.1f}",
+        )
+
+    console = Console(width=120, force_terminal=True)
+    with console.capture() as capture:
+        console.print(table)
+    click.echo(capture.get())
+
+
+@main.command()
 @click.option("--season", default=2024, help="Season to backtest against")
 @click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower = faster)")
 @click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
