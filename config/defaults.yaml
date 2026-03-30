@@ -1,0 +1,55 @@
+# config/defaults.yaml
+simulation:
+  num_sims: 1000
+  historical_seasons: [2022, 2023, 2024]
+  recency_weights: [0.2, 0.3, 0.5]
+  rookie_blend_games: 4
+
+scoring:
+  ppr:
+    passing_yard: 0.04
+    passing_td: 4
+    interception: -2
+    rushing_yard: 0.1
+    rushing_td: 6
+    reception: 1
+    receiving_yard: 0.1
+    receiving_td: 6
+    fumble_lost: -2
+    two_point: 2
+    fg_0_39: 3
+    fg_40_49: 4
+    fg_50_plus: 5
+    xp_made: 1
+    fg_miss: -1
+    dst_sack: 1
+    dst_interception: 2
+    dst_fumble_recovery: 2
+    dst_td: 6
+    dst_safety: 2
+    dst_points_allowed_0: 10
+    dst_points_allowed_1_6: 7
+    dst_points_allowed_7_13: 4
+    dst_points_allowed_14_20: 1
+    dst_points_allowed_21_27: 0
+    dst_points_allowed_28_34: -1
+    dst_points_allowed_35_plus: -4
+  half_ppr:
+    _inherit: ppr
+    reception: 0.5
+  standard:
+    _inherit: ppr
+    reception: 0
+
+positions:
+  qb:
+    min_snaps: 200
+  rb:
+    min_carries: 30
+    min_targets: 10
+  wr:
+    min_targets: 30
+  te:
+    min_targets: 20
+  k: {}
+  dst: {}
