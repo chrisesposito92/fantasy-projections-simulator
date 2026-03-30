@@ -384,7 +384,8 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
             progress.update(task, description=f"{away} @ {home}")
 
             home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                home_team=home, away_team=away, seasons=training_seasons,
+                home_team=home, away_team=away, training_seasons=training_seasons,
+                target_season=season, week=week_num,
             )
 
             if override_set.players or override_set.teams:
@@ -491,7 +492,8 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                    home, away, seasons=training_seasons,
+                    home, away, training_seasons=training_seasons,
+                    target_season=season_year, week=wk,
                 )
                 if override_set.players or override_set.teams:
                     apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
@@ -572,7 +574,8 @@ def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_p
         loader = DataLoader()
         builder = GameContextBuilder(cache_dir=loader.cache_dir)
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
-            home_team=home_team, away_team=away_team, seasons=training_seasons,
+            home_team=home_team, away_team=away_team, training_seasons=training_seasons,
+            target_season=season, week=week_num,
         )
 
     override_set = _build_overrides(overrides, effective_config_path)
@@ -712,7 +715,8 @@ def player(player_query, week_num, season, sims, scoring, scoring_config_path, d
         for g in week_games.iter_rows(named=True):
             home, away = g["home_team"], g["away_team"]
             home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                home_team=home, away_team=away, seasons=training_seasons,
+                home_team=home, away_team=away, training_seasons=training_seasons,
+                target_season=season, week=week_num,
             )
             all_rosters.extend([home_roster, away_roster])
             game_configs.append((home_dists, away_dists, home_roster, away_roster, home, away))
