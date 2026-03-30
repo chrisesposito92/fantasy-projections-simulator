@@ -69,3 +69,98 @@ def sample_field_goals() -> pl.DataFrame:
         {"season": 2024, "play_type": "field_goal", "posteam": "BUF", "kick_distance": 43, "field_goal_result": "made"},
         {"season": 2024, "play_type": "field_goal", "posteam": "BUF", "kick_distance": 51, "field_goal_result": "missed"},
     ])
+
+
+@pytest.fixture
+def sample_rosters() -> pl.DataFrame:
+    """Minimal weekly roster data for KC and BUF."""
+    rows = []
+    for week in range(1, 4):
+        rows.extend([
+            {"season": 2024, "week": week, "player_id": "PM15", "player_name": "P.Mahomes", "position": "QB", "team": "KC", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "TK87", "player_name": "T.Kelce", "position": "TE", "team": "KC", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "RE11", "player_name": "R.Rice", "position": "WR", "team": "KC", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "IP01", "player_name": "I.Pacheco", "position": "RB", "team": "KC", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "JA17", "player_name": "J.Allen", "position": "QB", "team": "BUF", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "SD14", "player_name": "S.Diggs", "position": "WR", "team": "BUF", "status": "ACT"},
+            {"season": 2024, "week": week, "player_id": "JC02", "player_name": "J.Cook", "position": "RB", "team": "BUF", "status": "ACT"},
+        ])
+    return pl.DataFrame(rows)
+
+
+@pytest.fixture
+def expanded_pbp() -> pl.DataFrame:
+    """Larger PBP sample for player builder tests — 60 plays per team."""
+    rng = np.random.RandomState(42)
+    plays = []
+
+    # KC: 40 passes, 20 runs
+    for i in range(40):
+        receiver = rng.choice(["TK87", "RE11", "IP01"], p=[0.40, 0.35, 0.25])
+        complete = int(rng.random() < 0.65)
+        yards = int(rng.normal(8, 6)) if complete else 0
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_KC",
+            "play_type": "pass", "posteam": "KC", "defteam": "BUF",
+            "down": rng.choice([1,2,3]), "ydstogo": 10, "yardline_100": rng.randint(20, 80),
+            "score_differential": 0, "qtr": rng.choice([1,2,3,4]),
+            "yards_gained": yards, "complete_pass": complete,
+            "pass_attempt": 1, "rush_attempt": 0,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(yards > 0 and rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "PM15", "receiver_player_id": receiver,
+            "rusher_player_id": None,
+        })
+    for i in range(20):
+        rusher = rng.choice(["IP01"], p=[1.0])
+        yards = int(rng.normal(4.5, 3))
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_KC",
+            "play_type": "run", "posteam": "KC", "defteam": "BUF",
+            "down": rng.choice([1,2,3]), "ydstogo": 10, "yardline_100": rng.randint(20, 80),
+            "score_differential": 0, "qtr": rng.choice([1,2,3,4]),
+            "yards_gained": yards, "complete_pass": 0,
+            "pass_attempt": 0, "rush_attempt": 1,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": None, "receiver_player_id": None,
+            "rusher_player_id": rusher,
+        })
+
+    # BUF: 30 passes, 30 runs
+    for i in range(30):
+        receiver = rng.choice(["SD14", "JC02"], p=[0.70, 0.30])
+        complete = int(rng.random() < 0.62)
+        yards = int(rng.normal(9, 7)) if complete else 0
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_BUF",
+            "play_type": "pass", "posteam": "BUF", "defteam": "KC",
+            "down": rng.choice([1,2,3]), "ydstogo": 10, "yardline_100": rng.randint(20, 80),
+            "score_differential": 0, "qtr": rng.choice([1,2,3,4]),
+            "yards_gained": yards, "complete_pass": complete,
+            "pass_attempt": 1, "rush_attempt": 0,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(yards > 0 and rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "JA17", "receiver_player_id": receiver,
+            "rusher_player_id": None,
+        })
+    for i in range(30):
+        yards = int(rng.normal(4.2, 3.5))
+        plays.append({
+            "season": 2024, "week": (i % 3) + 1, "game_id": f"2024_0{(i%3)+1}_BUF",
+            "play_type": "run", "posteam": "BUF", "defteam": "KC",
+            "down": rng.choice([1,2,3]), "ydstogo": 10, "yardline_100": rng.randint(20, 80),
+            "score_differential": 0, "qtr": rng.choice([1,2,3,4]),
+            "yards_gained": yards, "complete_pass": 0,
+            "pass_attempt": 0, "rush_attempt": 1,
+            "interception": 0, "fumble_lost": 0, "sack": 0,
+            "touchdown": int(rng.random() < 0.05),
+            "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": None, "receiver_player_id": None,
+            "rusher_player_id": "JC02",
+        })
+
+    return pl.DataFrame(plays)
