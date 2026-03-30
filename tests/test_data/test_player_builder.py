@@ -1,8 +1,7 @@
 import numpy as np
-import polars as pl
 import pytest
 from fantasy_sim.data.player_builder import build_player_models, build_team_roster
-from fantasy_sim.models.player import PlayerModel, TeamRoster
+from fantasy_sim.models.player import TeamRoster
 
 
 class TestBuildPlayerModels:
