@@ -182,28 +182,56 @@ def build_kicker_projections(
     games: list[GameResult],
     scoring_config: dict,
     team_map: dict[str, str] | None = None,
+    home_roster: "TeamRoster | None" = None,
+    away_roster: "TeamRoster | None" = None,
 ) -> list[dict]:
-    """Build kicker projections from team-level kicking stats."""
+    """Build kicker projections from team-level kicking stats.
+
+    If rosters are provided and contain a player with position "K",
+    the kicker projection is attributed to that player. Otherwise,
+    a synthetic "{TEAM} K" entry is used.
+    """
     if not games:
         return []
 
     home_boxes = [g.home_box for g in games]
     away_boxes = [g.away_box for g in games]
 
+    def _find_kicker(roster) -> tuple[str | None, str | None]:
+        """Find the kicker's player_id and name from roster, if one exists."""
+        if roster is None:
+            return None, None
+        for p in roster.players:
+            if p.position == "K":
+                return p.player_id, p.name
+        return None, None
+
     projections = []
-    for side, boxes in [("HOME", home_boxes), ("AWAY", away_boxes)]:
-        name = team_map.get(side, side) if team_map else side
+    for side, boxes, roster in [
+        ("HOME", home_boxes, home_roster),
+        ("AWAY", away_boxes, away_roster),
+    ]:
+        team_name = team_map.get(side, side) if team_map else side
+        kicker_id, kicker_name = _find_kicker(roster)
+
+        if kicker_name is None:
+            kicker_name = f"{team_name} K"
+
         fpts_list = [score_kicker(b, scoring_config) for b in boxes]
-        projections.append({
-            "name": f"{name} K",
-            "team": name,
+        proj = {
+            "name": kicker_name,
+            "team": team_name,
             "fpts": round(float(np.mean(fpts_list)), 1),
             "fg_attempts": round(float(np.mean([b.fg_attempts for b in boxes])), 1),
             "fg_made": round(float(np.mean([b.fg_made for b in boxes])), 1),
             "fg_50_plus": round(float(np.mean([b.fg_made_50_plus for b in boxes])), 1),
             "xp_attempts": round(float(np.mean([b.xp_attempts for b in boxes])), 1),
             "xp_made": round(float(np.mean([b.xp_made for b in boxes])), 1),
-        })
+        }
+        if kicker_id:
+            proj["player_id"] = kicker_id
+            proj["position"] = "K"
+        projections.append(proj)
 
     projections.sort(key=lambda p: p["fpts"], reverse=True)
     for i, p in enumerate(projections, 1):

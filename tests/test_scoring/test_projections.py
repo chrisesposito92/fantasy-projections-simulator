@@ -1,5 +1,5 @@
 import pytest
-from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_detailed_projections
+from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_detailed_projections, build_kicker_projections
 from fantasy_sim.engine.types import GameResult, TeamBoxScore, PlayerBoxScore
 
 
@@ -157,3 +157,66 @@ class TestBuildDetailedProjections:
         assert "rush_yards_stddev" in rb
         assert "receiving_yards_floor" in rb
         assert "receiving_yards_ceiling" in rb
+
+
+class TestKickerAttribution:
+    """Gap 13: Kicker projections attributed to actual kicker player."""
+
+    def test_kicker_uses_team_name_when_no_roster(self, ppr_config):
+        """Without roster info, kicker is labeled as team name."""
+        kicker_config = {
+            "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "xp_made": 1, "fg_miss": -1,
+        }
+        games = [make_game_result() for _ in range(5)]
+        team_map = {"HOME": "KC", "AWAY": "BUF"}
+        projs = build_kicker_projections(games, kicker_config, team_map=team_map)
+        names = [p["name"] for p in projs]
+        assert any("KC" in n for n in names)
+
+    def test_kicker_attributed_to_roster_player(self):
+        """When roster has a kicker, projection uses the kicker's real name."""
+        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+        kicker_config = {
+            "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "xp_made": 1, "fg_miss": -1,
+        }
+        games = [make_game_result() for _ in range(5)]
+        home_roster = TeamRoster(team="KC", players=[
+            PlayerModel("kc_k", "Harrison Butker", "K", "KC",
+                       PlayerUsage(), PlayerOutcomes()),
+        ])
+        away_roster = TeamRoster(team="BUF", players=[
+            PlayerModel("buf_k", "Tyler Bass", "K", "BUF",
+                       PlayerUsage(), PlayerOutcomes()),
+        ])
+        team_map = {"HOME": "KC", "AWAY": "BUF"}
+        projs = build_kicker_projections(
+            games, kicker_config, team_map=team_map,
+            home_roster=home_roster, away_roster=away_roster,
+        )
+        names = [p["name"] for p in projs]
+        assert "Harrison Butker" in names
+        assert "Tyler Bass" in names
+
+    def test_kicker_no_k_on_roster_uses_synthetic(self):
+        """When roster has no K, fall back to team name."""
+        from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, PlayerOutcomes
+        kicker_config = {
+            "fg_0_39": 3, "fg_40_49": 4, "fg_50_plus": 5, "xp_made": 1, "fg_miss": -1,
+        }
+        games = [make_game_result() for _ in range(5)]
+        home_roster = TeamRoster(team="KC", players=[
+            PlayerModel("kc_qb", "Mahomes", "QB", "KC",
+                       PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+        ])
+        away_roster = TeamRoster(team="BUF", players=[
+            PlayerModel("buf_qb", "Allen", "QB", "BUF",
+                       PlayerUsage(snap_share=1.0), PlayerOutcomes()),
+        ])
+        team_map = {"HOME": "KC", "AWAY": "BUF"}
+        projs = build_kicker_projections(
+            games, kicker_config, team_map=team_map,
+            home_roster=home_roster, away_roster=away_roster,
+        )
+        names = [p["name"] for p in projs]
+        assert any("KC" in n for n in names)
+        assert any("BUF" in n for n in names)
