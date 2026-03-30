@@ -1,7 +1,11 @@
+import zlib
 import click
 import numpy as np
+import polars as pl
 from pathlib import Path
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
+from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.models.distributions import (
@@ -14,6 +18,8 @@ from fantasy_sim.output.tables import (
     format_te_table, format_kicker_table, format_dst_table,
 )
 from fantasy_sim.output.export import export_csv, export_json
+from fantasy_sim.validation.backtester import Backtester
+from fantasy_sim.validation.report import format_backtest_report
 
 
 def _make_demo_dists(team: str) -> TeamDistributions:
@@ -127,6 +133,178 @@ def demo(sims, scoring, output_format, output_path):
         else:
             export_json(all_projs, Path(output_path))
         click.echo(f"Exported to {output_path}")
+
+
+def _display_projections(player_projs, output_format, output_path):
+    """Display or export projections."""
+    if output_format == "table":
+        qbs = [p for p in player_projs if p["position"] == "QB"]
+        rbs = [p for p in player_projs if p["position"] == "RB"]
+        wrs = [p for p in player_projs if p["position"] == "WR"]
+        tes = [p for p in player_projs if p["position"] == "TE"]
+        if qbs:
+            click.echo(format_qb_table(qbs[:24]))
+        if rbs:
+            click.echo(format_rb_table(rbs[:24]))
+        if wrs:
+            click.echo(format_wr_table(wrs[:24]))
+        if tes:
+            click.echo(format_te_table(tes[:12]))
+    elif output_format in ("csv", "json"):
+        if output_path is None:
+            output_path = f"projections.{output_format}"
+        if output_format == "csv":
+            export_csv(player_projs, Path(output_path))
+        else:
+            export_json(player_projs, Path(output_path))
+        click.echo(f"Exported to {output_path}")
+
+
+@main.command()
+@click.argument("week_num", type=int)
+@click.option("--season", default=2024, help="NFL season year")
+@click.option("--sims", default=1000, type=click.IntRange(min=1))
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
+@click.option("--output", "output_path", default=None)
+def week(week_num, season, sims, scoring, output_format, output_path):
+    """Simulate all games in an NFL week using real nflverse data."""
+    config = load_defaults()
+    scoring_config = resolve_scoring(config["scoring"], scoring)
+    training_seasons = [s for s in range(season - 3, season)]
+
+    loader = DataLoader()
+    builder = GameContextBuilder(cache_dir=loader.cache_dir)
+
+    click.echo(f"Loading schedule for {season} Week {week_num}...")
+    schedules = loader.load_schedules([season])
+    week_games = schedules.filter(
+        (pl.col("week") == week_num) & (pl.col("season") == season)
+    )
+
+    if week_games.shape[0] == 0:
+        click.echo(f"No games found for {season} Week {week_num}")
+        return
+
+    click.echo(f"Found {week_games.shape[0]} games. Running {sims} sims each ({scoring})...\n")
+
+    all_player_projs = []
+
+    for game in week_games.iter_rows(named=True):
+        home = game["home_team"]
+        away = game["away_team"]
+        click.echo(f"  Simulating {away} @ {home}...", nl=False)
+
+        home_dists, away_dists, home_roster, away_roster = builder.build_game(
+            home_team=home, away_team=away, seasons=training_seasons,
+        )
+
+        seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+        results = run_simulations(
+            home_dists, away_dists, n_sims=sims, seed=seed,
+            home_roster=home_roster, away_roster=away_roster,
+        )
+
+        summary = results.summary()
+        click.echo(f" {home} {summary['home_score_mean']:.1f} - {away} {summary['away_score_mean']:.1f}")
+
+        # Build projections per-game so each player's stats use correct denominator
+        all_player_projs.extend(build_player_projections(results.games, scoring_config))
+
+    # Re-sort and re-rank across all games
+    all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_player_projs, 1):
+        p["rank"] = i
+    player_projs = all_player_projs
+    click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
+
+    _display_projections(player_projs, output_format, output_path)
+
+
+@main.command()
+@click.option("--season", "season_year", default=2024, help="NFL season year")
+@click.option("--weeks", default="all", help="Weeks to simulate: 'all' or '1-5' or '1,3,5'")
+@click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower for season)")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--format", "output_format", default="table", type=click.Choice(["table", "csv", "json"]))
+@click.option("--output", "output_path", default=None)
+def season(season_year, weeks, sims, scoring, output_format, output_path):
+    """Simulate a full NFL season using real nflverse data."""
+    config = load_defaults()
+    scoring_config = resolve_scoring(config["scoring"], scoring)
+    training_seasons = [s for s in range(season_year - 3, season_year)]
+
+    loader = DataLoader()
+    builder = GameContextBuilder(cache_dir=loader.cache_dir)
+
+    schedules = loader.load_schedules([season_year])
+
+    if weeks == "all":
+        week_nums = sorted(schedules.filter(pl.col("season") == season_year)["week"].unique().to_list())
+    elif "-" in weeks:
+        start, end = weeks.split("-")
+        week_nums = list(range(int(start), int(end) + 1))
+    else:
+        week_nums = [int(w) for w in weeks.split(",")]
+
+    click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
+
+    all_player_projs = []
+    for wk in week_nums:
+        week_games = schedules.filter(
+            (pl.col("week") == wk) & (pl.col("season") == season_year)
+        )
+        click.echo(f"Week {wk}: {week_games.shape[0]} games")
+        for game in week_games.iter_rows(named=True):
+            home, away = game["home_team"], game["away_team"]
+            home_dists, away_dists, home_roster, away_roster = builder.build_game(
+                home, away, seasons=training_seasons,
+            )
+            seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+            results = run_simulations(
+                home_dists, away_dists, n_sims=sims,
+                seed=seed,
+                home_roster=home_roster, away_roster=away_roster,
+            )
+            all_player_projs.extend(build_player_projections(results.games, scoring_config))
+
+    all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_player_projs, 1):
+        p["rank"] = i
+    player_projs = all_player_projs
+    click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
+    _display_projections(player_projs, output_format, output_path)
+
+
+@main.command()
+@click.option("--season", default=2024, help="Season to backtest against")
+@click.option("--sims", default=100, type=click.IntRange(min=1), help="Sims per game (lower = faster)")
+@click.option("--scoring", default="ppr", type=click.Choice(["ppr", "half_ppr", "standard"]))
+@click.option("--training-years", default=3, help="Number of prior seasons for model fitting")
+def backtest(season, sims, scoring, training_years):
+    """Run backtest validation against a historical season.
+
+    Builds models using only prior-season data (no leakage), runs projections
+    for every week, and compares to actual results.
+
+    Requires nflverse data (will download on first run).
+    """
+    config = load_defaults()
+    scoring_config = resolve_scoring(config["scoring"], scoring)
+
+    click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
+    click.echo(f"Training data: {season - training_years}-{season - 1}\n")
+
+    bt = Backtester(
+        test_season=season,
+        n_sims=sims,
+        num_training_seasons=training_years,
+        scoring_format=scoring,
+    )
+    result = bt.run(scoring_config)
+
+    report = format_backtest_report(result)
+    click.echo(report)
 
 
 if __name__ == "__main__":
