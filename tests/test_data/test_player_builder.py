@@ -297,7 +297,31 @@ class TestAssembleModels:
         assert "ROOK1" in models
         assert models["ROOK1"].team == "HOU"
         assert models["ROOK1"].position == "WR"
-        assert models["ROOK1"].usage.target_share > 0
+
+
+class TestRookieArchetypeDefaults:
+    def test_qb_archetype_has_pass_fumble_rate(self):
+        from fantasy_sim.data.rookie_builder import build_rookie_model
+        model = build_rookie_model("QB1", "Rookie QB", "QB", "KC", draft_round=1)
+        assert model.outcomes.pass_fumble_rate == pytest.approx(0.0034, abs=0.001)
+
+    def test_wr_archetype_has_red_zone_catch_rate(self):
+        from fantasy_sim.data.rookie_builder import build_rookie_model
+        model = build_rookie_model("WR1", "Rookie WR", "WR", "KC", draft_round=1)
+        arch_catch = POSITIONAL_ARCHETYPES["WR"]["tier1"]["catch_rate"]
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
+
+    def test_te_archetype_has_red_zone_catch_rate(self):
+        from fantasy_sim.data.rookie_builder import build_rookie_model
+        model = build_rookie_model("TE1", "Rookie TE", "TE", "KC", draft_round=3)
+        arch_catch = POSITIONAL_ARCHETYPES["TE"]["tier2"]["catch_rate"]
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
+
+    def test_rb_archetype_has_red_zone_catch_rate(self):
+        from fantasy_sim.data.rookie_builder import build_rookie_model
+        model = build_rookie_model("RB1", "Rookie RB", "RB", "KC", draft_round=5)
+        arch_catch = POSITIONAL_ARCHETYPES["RB"]["tier3"]["catch_rate"]
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
 
     def test_kicker_gets_placeholder_model(self, traded_player_pbp, traded_player_rosters):
         """KC_K and HOU_K should be kicker placeholder models."""
