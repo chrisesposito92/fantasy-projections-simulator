@@ -181,3 +181,25 @@ class TestAttemptPat:
         attempt_pat(state, kicking, rng, off_box)
         assert state.home_score >= 7  # Either XP (7) or 2PT (8)
         assert off_box.points >= 7
+
+
+class TestAttemptPatWithAttribution:
+    def test_2pt_success_returns_scorer_id(self):
+        state = make_state(possession="home", home_score=6)
+        rng = np.random.default_rng(42)
+        off_box = TeamBoxScore(points=6)
+        kicking = make_kicking(xp_rate=1.0)
+        scorer_id = attempt_pat(state, kicking, rng, off_box, td_scorer_id="WR1", force_two_point=True)
+        # With force_two_point=True and ~48% success rate, check result
+        if state.home_score == 8:  # 6 + 2 = success
+            assert scorer_id == "WR1"
+        else:
+            assert scorer_id is None
+
+    def test_xp_returns_none(self):
+        state = make_state(possession="home", home_score=6)
+        rng = np.random.default_rng(42)
+        off_box = TeamBoxScore(points=6)
+        kicking = make_kicking(xp_rate=1.0)
+        scorer_id = attempt_pat(state, kicking, rng, off_box, td_scorer_id="WR1", force_two_point=False)
+        assert scorer_id is None

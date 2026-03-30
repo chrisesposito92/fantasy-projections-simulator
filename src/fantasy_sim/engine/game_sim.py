@@ -120,7 +120,16 @@ def simulate_game(
         if result.is_safety:
             _handle_safety(state, off_box, def_box, def_dists.drive_start, rng)
         elif result.is_touchdown:
-            _handle_touchdown(state, off_dists, off_box, def_dists.drive_start, rng)
+            td_scorer_id = None
+            if result.play_type == "pass" and result.receiver_id:
+                td_scorer_id = result.receiver_id
+            elif result.play_type == "run" and result.rusher_id:
+                td_scorer_id = result.rusher_id
+
+            _handle_touchdown(
+                state, off_dists, off_box, def_dists.drive_start, rng,
+                td_scorer_id=td_scorer_id, player_stats=player_stats,
+            )
             # OT walk-off TD
             if state.quarter == 5 and state.home_score != state.away_score:
                 state.game_over = True
@@ -178,11 +187,17 @@ def _handle_touchdown(
     off_box: TeamBoxScore,
     recv_drive_start: DriveStartModel,
     rng: np.random.Generator,
+    td_scorer_id: str | None = None,
+    player_stats: dict[str, PlayerBoxScore] | None = None,
 ) -> None:
     """Score a TD (6 points), attempt PAT, then kickoff."""
     score_points(state, 6)
     off_box.points += 6
-    attempt_pat(state, off_dists.kicking, rng, off_box)
+    two_pt_scorer = attempt_pat(state, off_dists.kicking, rng, off_box, td_scorer_id=td_scorer_id)
+
+    if two_pt_scorer is not None and player_stats is not None and two_pt_scorer in player_stats:
+        player_stats[two_pt_scorer].two_point_conversions += 1
+
     change_possession(state)
     perform_kickoff(state, recv_drive_start, rng)
 
