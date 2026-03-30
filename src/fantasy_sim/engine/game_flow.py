@@ -102,12 +102,19 @@ def attempt_field_goal(
     if rng.random() < kicking.fg_prob(fg_distance):
         # Made
         off_box.fg_made += 1
+        if fg_distance < 40:
+            off_box.fg_made_0_39 += 1
+        elif fg_distance < 50:
+            off_box.fg_made_40_49 += 1
+        else:
+            off_box.fg_made_50_plus += 1
         score_points(state, 3)
         off_box.points += 3
         change_possession(state)
         perform_kickoff(state, drive_start, rng)
     else:
         # Missed — opponent takes over at spot of kick (or own 20, whichever better)
+        off_box.fg_missed += 1
         spot = state.yard_line + 7  # Snap spot
         change_possession(state)
         state.yard_line = min(100 - spot, 80)  # No worse than own 20

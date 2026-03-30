@@ -108,6 +108,11 @@ class TeamBoxScore:
     fumbles_lost: int = 0
     fg_attempts: int = 0
     fg_made: int = 0
+    # Kicking detail (for scoring)
+    fg_made_0_39: int = 0
+    fg_made_40_49: int = 0
+    fg_made_50_plus: int = 0
+    fg_missed: int = 0
     xp_attempts: int = 0
     xp_made: int = 0
     punts: int = 0

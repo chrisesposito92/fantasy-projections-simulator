@@ -43,8 +43,17 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Per-player box scores tracked through game simulation and Monte Carlo runner
 - Statistical validation (500+ sims produce plausible player-level stats)
 
+**Phase 4: Scoring + Config + CLI** — Complete (52 tests, 260 total)
+
+- YAML config system with scoring preset inheritance (`_inherit` chains: PPR → half-PPR, standard)
+- Fantasy scoring engine: `score_player()`, `score_dst()` (7 points-allowed brackets), `score_kicker()` (FG distance buckets)
+- Projection builder: aggregates Monte Carlo results into mean stats + fantasy points, ranked by position
+- Rich terminal tables for QB, RB, WR, TE, K, and DST projections
+- CSV and JSON export
+- Click CLI: `fantasy-sim demo` runs full pipeline end-to-end with synthetic data
+- FG distance tracking added to engine (0-39, 40-49, 50+ yard buckets)
+
 **Upcoming:**
-- Phase 4: Scoring + Config + CLI
 - Phase 5: Validation + Tuning (backtest against 2023/2024 seasons)
 - Phase 6: Overrides + Polish
 
@@ -87,9 +96,15 @@ src/fantasy_sim/
 │   ├── clock.py            # Clock runoff + quarter/OT transitions
 │   ├── game_sim.py         # simulate_game() main loop with player tracking
 │   └── monte_carlo.py      # run_simulations() + per-player aggregation
-├── scoring/                # (Phase 4) Config-driven fantasy scoring
-├── config/                 # (Phase 4) YAML config loading
-├── output/                 # (Phase 4) Terminal tables, CSV/JSON export
+├── config/
+│   └── loader.py           # YAML config loading with _inherit inheritance
+├── scoring/
+│   ├── engine.py           # score_player(), score_dst(), score_kicker()
+│   └── projections.py      # Aggregate sim results into ranked projections
+├── output/
+│   ├── tables.py           # Rich terminal tables (QB/RB/WR/TE/K/DST)
+│   └── export.py           # CSV and JSON file export
+├── cli.py                  # Click CLI entry point (fantasy-sim command)
 └── validation/             # (Phase 5) Backtesting framework
 ```
 
@@ -102,6 +117,22 @@ src/fantasy_sim/
 - **pytest** — Testing with pytest-xdist and hypothesis
 
 ## Quick Simulation
+
+### CLI (easiest)
+
+```bash
+# Demo with synthetic data (no network needed)
+uv run fantasy-sim demo --sims 100
+
+# Change scoring format
+uv run fantasy-sim demo --sims 100 --scoring half_ppr
+
+# Export to file
+uv run fantasy-sim demo --sims 100 --format csv --output projections.csv
+uv run fantasy-sim demo --sims 100 --format json --output projections.json
+```
+
+### Python API
 
 ```python
 from fantasy_sim.engine.monte_carlo import run_simulations
