@@ -68,12 +68,10 @@ class GameContextBuilder:
             pipeline = DataPipeline(cache_dir=self.cache_dir, seasons=training_seasons)
             self._pipeline_cache = pipeline.build(pbp=pbp)
             self._cached_training_seasons = training_seasons
+            self._pbp_stats_cache = None  # Invalidate PBP stats on training season change
 
         # --- Layer 2: PBP stats (cached on training_seasons) ---
-        if (
-            self._pbp_stats_cache is None
-            or self._cached_training_seasons != training_seasons
-        ):
+        if self._pbp_stats_cache is None:
             self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons)
 
         # --- Layer 3: Player models (cached on training_seasons + target_season + week) ---
