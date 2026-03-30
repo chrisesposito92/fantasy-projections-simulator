@@ -29,6 +29,7 @@ class GameState:
     away_team: str
     receiving_2nd_half: str  # "home" | "away"
     game_over: bool = False
+    two_min_warning_fired: bool = False
 
     @property
     def score_differential(self) -> int:
@@ -71,6 +72,7 @@ class PlayerBoxScore:
     receiving_tds: int = 0
     # Misc
     fumbles_lost: int = 0
+    two_point_conversions: int = 0
 
 
 @dataclass
@@ -84,6 +86,7 @@ class PlayResult:
     is_fumble: bool = False
     is_touchdown: bool = False
     is_safety: bool = False
+    is_penalty: bool = False
     clock_runoff: int = 0
     # Player attribution (Phase 3)
     passer_id: str | None = None

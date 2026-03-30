@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 from fantasy_sim.engine.types import GameState, GameResult, TeamBoxScore, TeamDistributions, PlayResult, PlayerBoxScore
 from fantasy_sim.engine.play_caller import select_play_type, fourth_down_decision
-from fantasy_sim.engine.play_resolver import resolve_play
+from fantasy_sim.engine.play_resolver import resolve_play, check_penalty, apply_penalty
 from fantasy_sim.engine.game_flow import (
     apply_yards, change_possession, score_points,
     handle_turnover, perform_kickoff, perform_punt,
     attempt_field_goal, attempt_pat,
 )
-from fantasy_sim.engine.clock import apply_clock, check_quarter_end
+from fantasy_sim.engine.clock import apply_clock, check_quarter_end, check_two_minute_warning
 from fantasy_sim.models.distributions import DriveStartModel
 
 from typing import TYPE_CHECKING
@@ -65,12 +65,14 @@ def simulate_game(
             if decision == "punt":
                 perform_punt(state, rng, off_box)
                 apply_clock(state, 5)
+                check_two_minute_warning(state)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 continue
             elif decision == "field_goal":
                 recv_ds = away_dists.drive_start if state.possession == "home" else home_dists.drive_start
                 attempt_field_goal(state, off_dists.kicking, recv_ds, rng, off_box)
                 apply_clock(state, 5)
+                check_two_minute_warning(state)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 # Check OT walk-off FG
                 if state.quarter == 5 and state.home_score != state.away_score:
@@ -93,6 +95,25 @@ def simulate_game(
         if roster is not None:
             _update_player_stats(player_stats, result, roster)
 
+        # --- Penalty check (post-play) ---
+        off_penalty_rates = getattr(off_dists, 'penalty_rates', None)
+        if off_penalty_rates is not None and not result.is_penalty:
+            penalty = check_penalty(off_penalty_rates, rng)
+            if penalty is not None:
+                penalty_type, penalty_yards = penalty
+                if penalty_type == "pass_interference":
+                    yards = min(penalty_yards, state.yard_line)
+                    state.yard_line -= yards
+                    state.down = 1
+                    state.distance = min(10, state.yard_line)
+                else:
+                    state.yard_line = min(99, state.yard_line + penalty_yards)
+                    state.distance = min(state.distance + penalty_yards, 99)
+                apply_clock(state, 0)
+                check_two_minute_warning(state)
+                check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
+                continue
+
         # Handle play outcome
         if result.is_safety:
             _handle_safety(state, off_box, def_box, def_dists.drive_start, rng)
@@ -108,6 +129,7 @@ def simulate_game(
 
         # Clock
         apply_clock(state, result.clock_runoff)
+        check_two_minute_warning(state)
         check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
 
     return GameResult(
