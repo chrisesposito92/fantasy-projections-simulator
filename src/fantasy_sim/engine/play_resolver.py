@@ -167,6 +167,21 @@ def _resolve_pass(
             passer_id=passer_id,
         )
 
+    # QB pre-throw fumble check (botched snap, strip while throwing)
+    if roster is not None and passer_id is not None:
+        passer_model = None
+        for p in roster.players:
+            if p.player_id == passer_id:
+                passer_model = p
+                break
+        if passer_model is not None and passer_model.outcomes.pass_fumble_rate > 0:
+            if rng.random() < passer_model.outcomes.pass_fumble_rate:
+                return PlayResult(
+                    play_type="pass", yards=0, is_fumble=True,
+                    clock_runoff=_scale_clock_runoff(CLOCK_PASS_INCOMPLETE, pace_factor),
+                    passer_id=passer_id,
+                )
+
     # Select receiver when roster is available (after sack/INT checks)
     if roster is not None:
         receiver = select_receiver(roster, state, rng)

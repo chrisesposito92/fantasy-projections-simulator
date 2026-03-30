@@ -523,6 +523,65 @@ class TestRedZoneTDGate:
         assert run_tds < pass_tds
 
 
+class TestQBPreThrowFumble:
+    def _make_fumble_roster(self, pass_fumble_rate: float) -> TeamRoster:
+        qb = PlayerModel("QB1", "QB", "QB", "T",
+                         PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+                         PlayerOutcomes(pass_fumble_rate=pass_fumble_rate))
+        wr = PlayerModel("WR1", "WR1", "WR", "T",
+                         PlayerUsage(target_share=1.0),
+                         PlayerOutcomes(catch_rate=1.0,
+                                        red_zone_catch_rate=1.0,
+                                        receiving_yards_dist=np.array([10]),
+                                        fumble_rate=0.0))
+        return TeamRoster(team="T", players=[qb, wr])
+
+    def test_pre_throw_fumble_fires(self):
+        """With pass_fumble_rate=1.0, every pass play should be a fumble."""
+        rng = np.random.default_rng(42)
+        roster = self._make_fumble_roster(pass_fumble_rate=1.0)
+        outcomes = make_outcomes(pass_yards=[10])
+        rates = make_turnover_rates()
+        result = resolve_play(make_state(), "pass", outcomes, rates, rng, roster=roster)
+        assert result.is_fumble
+        assert result.yards == 0
+        assert not result.is_touchdown
+        assert not result.is_complete
+
+    def test_pre_throw_fumble_before_completion(self):
+        """Pre-throw fumble should prevent any completion."""
+        rng = np.random.default_rng(42)
+        roster = self._make_fumble_roster(pass_fumble_rate=1.0)
+        outcomes = make_outcomes(pass_yards=[10])
+        rates = make_turnover_rates()
+        result = resolve_play(make_state(), "pass", outcomes, rates, rng, roster=roster)
+        assert not result.is_complete
+        assert result.passer_id == "QB1"
+        assert result.receiver_id is None  # Never got to select a receiver
+
+    def test_no_fumble_when_rate_zero(self):
+        """With pass_fumble_rate=0.0, no pre-throw fumbles."""
+        rng = np.random.default_rng(42)
+        roster = self._make_fumble_roster(pass_fumble_rate=0.0)
+        outcomes = make_outcomes(pass_yards=[10])
+        rates = make_turnover_rates()
+        fumbles = 0
+        for _ in range(200):
+            result = resolve_play(make_state(), "pass", outcomes, rates, rng, roster=roster)
+            if result.is_fumble and result.yards == 0:
+                fumbles += 1
+        assert fumbles == 0
+
+    def test_fumble_checked_after_sack_and_int(self):
+        """Sack takes priority over pre-throw fumble."""
+        rng = np.random.default_rng(42)
+        roster = self._make_fumble_roster(pass_fumble_rate=1.0)
+        outcomes = make_outcomes(pass_yards=[10])
+        rates = make_turnover_rates(sack_rate=1.0)
+        result = resolve_play(make_state(), "pass", outcomes, rates, rng, roster=roster)
+        assert result.is_sack  # Sack takes priority
+
+
 class TestRedZoneRunResolution:
     def test_rz_run_td_gate_reduces_tds(self):
         """From the 3-yard line, not all 5-yard runs should be TDs."""
