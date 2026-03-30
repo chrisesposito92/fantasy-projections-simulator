@@ -271,3 +271,105 @@ class TestResolveRunWithPlayers:
         roster = make_roster_for_resolver()
         result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
         assert result.yards in [3, 4, 5, 6, 7]
+
+
+from fantasy_sim.models.distributions import PenaltyRates
+
+
+def make_penalty_rates(**overrides) -> PenaltyRates:
+    defaults = dict(
+        team="KC",
+        penalty_rate=0.0,
+        type_distribution={"false_start": 0.30, "holding": 0.40, "pass_interference": 0.15, "other": 0.15},
+        avg_yards={"false_start": 5.0, "holding": 10.0, "pass_interference": 15.0, "other": 5.0},
+    )
+    defaults.update(overrides)
+    return PenaltyRates(**defaults)
+
+
+class TestPenaltyCheck:
+    def test_no_penalty_when_rate_zero(self):
+        from fantasy_sim.engine.play_resolver import check_penalty
+        rng = np.random.default_rng(42)
+        rates = make_penalty_rates(penalty_rate=0.0)
+        result = check_penalty(rates, rng)
+        assert result is None
+
+    def test_always_penalty_when_rate_one(self):
+        from fantasy_sim.engine.play_resolver import check_penalty
+        rng = np.random.default_rng(42)
+        rates = make_penalty_rates(penalty_rate=1.0)
+        result = check_penalty(rates, rng)
+        assert result is not None
+        penalty_type, yards = result
+        assert penalty_type in ("false_start", "holding", "pass_interference", "other")
+        assert yards > 0
+
+    def test_false_start_returns_5_yards(self):
+        from fantasy_sim.engine.play_resolver import check_penalty
+        rng = np.random.default_rng(42)
+        rates = make_penalty_rates(
+            penalty_rate=1.0,
+            type_distribution={"false_start": 1.0, "holding": 0.0, "pass_interference": 0.0, "other": 0.0},
+        )
+        result = check_penalty(rates, rng)
+        assert result is not None
+        penalty_type, yards = result
+        assert penalty_type == "false_start"
+        assert yards == 5
+
+    def test_holding_returns_10_yards(self):
+        from fantasy_sim.engine.play_resolver import check_penalty
+        rng = np.random.default_rng(42)
+        rates = make_penalty_rates(
+            penalty_rate=1.0,
+            type_distribution={"false_start": 0.0, "holding": 1.0, "pass_interference": 0.0, "other": 0.0},
+        )
+        result = check_penalty(rates, rng)
+        assert result is not None
+        penalty_type, yards = result
+        assert penalty_type == "holding"
+        assert yards == 10
+
+    def test_penalty_result_has_is_penalty_flag(self):
+        from fantasy_sim.engine.play_resolver import apply_penalty
+        state = make_state(down=2, distance=10, yard_line=50)
+        result = apply_penalty(state, "false_start", 5)
+        assert result.is_penalty is True
+        assert result.yards == -5
+        assert result.clock_runoff == 0
+
+
+class TestHomeFieldAdvantage:
+    def test_home_field_adds_yards(self):
+        """Over many samples, home team should average slightly more yards."""
+        rng = np.random.default_rng(42)
+        outcomes = make_outcomes(run_yards=[4, 4, 4, 4, 4])
+        rates = make_turnover_rates()
+        n = 500
+
+        home_yards = []
+        away_yards = []
+        for _ in range(n):
+            state = make_state(possession="home")
+            result = resolve_play(state, "run", outcomes, rates, rng, is_home=True)
+            if not result.is_fumble and not result.is_safety:
+                home_yards.append(result.yards)
+
+            state = make_state(possession="away")
+            result = resolve_play(state, "run", outcomes, rates, rng, is_home=False)
+            if not result.is_fumble and not result.is_safety:
+                away_yards.append(result.yards)
+
+        avg_home = sum(home_yards) / len(home_yards)
+        avg_away = sum(away_yards) / len(away_yards)
+        assert avg_home > avg_away
+
+    def test_is_home_false_no_bonus(self):
+        """With is_home=False, no yards bonus is applied."""
+        rng = np.random.default_rng(42)
+        outcomes = make_outcomes(run_yards=[5])
+        rates = make_turnover_rates()
+        state = make_state()
+        result = resolve_play(state, "run", outcomes, rates, rng, is_home=False)
+        assert result.yards == 5

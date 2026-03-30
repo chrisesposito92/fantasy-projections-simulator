@@ -13,7 +13,7 @@ def score_player(box: PlayerBoxScore, config: dict) -> float:
     points += box.receiving_yards * config.get("receiving_yard", 0)
     points += box.receiving_tds * config.get("receiving_td", 0)
     points += box.fumbles_lost * config.get("fumble_lost", 0)
-    # two_point not yet tracked in PlayerBoxScore (future enhancement)
+    points += box.two_point_conversions * config.get("two_point", 0)
     return points
 
 

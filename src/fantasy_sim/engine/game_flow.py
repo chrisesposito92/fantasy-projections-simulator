@@ -127,13 +127,17 @@ def attempt_pat(
     kicking: KickingModel,
     rng: np.random.Generator,
     off_box: TeamBoxScore,
-) -> None:
-    """Attempt PAT (extra point or 2-point conversion) after a touchdown."""
-    if rng.random() < TWO_POINT_ATTEMPT_RATE:
+    td_scorer_id: str | None = None,
+    force_two_point: bool | None = None,
+) -> str | None:
+    """Attempt PAT after a touchdown. Returns scorer_id on successful 2PT, else None."""
+    if force_two_point is True or (force_two_point is None and rng.random() < TWO_POINT_ATTEMPT_RATE):
         # 2-point attempt
         if rng.random() < TWO_POINT_SUCCESS_RATE:
             score_points(state, 2)
             off_box.points += 2
+            return td_scorer_id
+        return None
     else:
         # Extra point
         off_box.xp_attempts += 1
@@ -141,3 +145,4 @@ def attempt_pat(
             score_points(state, 1)
             off_box.points += 1
             off_box.xp_made += 1
+        return None

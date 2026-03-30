@@ -86,3 +86,48 @@ class TestCheckQuarterEnd:
         rng = np.random.default_rng(42)
         check_quarter_end(state, make_drive_start(), make_drive_start(), rng)
         assert state.game_over
+
+
+class TestTwoMinuteWarning:
+    def test_clock_stops_at_two_minutes_q2(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=2, clock=150)
+        apply_clock(state, 38)  # clock = 112
+        check_two_minute_warning(state)
+        assert state.clock == 120
+
+    def test_clock_stops_at_two_minutes_q4(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=4, clock=155)
+        apply_clock(state, 40)  # clock = 115
+        check_two_minute_warning(state)
+        assert state.clock == 120
+
+    def test_no_stop_in_q1(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=1, clock=150)
+        apply_clock(state, 38)  # clock = 112
+        check_two_minute_warning(state)
+        assert state.clock == 112
+
+    def test_no_stop_in_q3(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=3, clock=150)
+        apply_clock(state, 38)  # clock = 112
+        check_two_minute_warning(state)
+        assert state.clock == 112
+
+    def test_no_stop_when_already_below_two_minutes(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=2, clock=100)
+        state.two_min_warning_fired = True  # Already fired
+        apply_clock(state, 30)  # clock = 70
+        check_two_minute_warning(state)
+        assert state.clock == 70
+
+    def test_exact_120_no_stop(self):
+        from fantasy_sim.engine.clock import check_two_minute_warning
+        state = make_state(quarter=4, clock=158)
+        apply_clock(state, 38)  # clock = 120
+        check_two_minute_warning(state)
+        assert state.clock == 120

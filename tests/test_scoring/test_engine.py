@@ -142,3 +142,21 @@ class TestScoreKicker:
         points = score_kicker(box, kicker_config)
         expected = 1*5 + 1*1  # 5 + 1 = 6
         assert points == pytest.approx(expected)
+
+
+class TestScorePlayerTwoPoint:
+    def test_two_point_conversions_score(self, ppr_config):
+        box = PlayerBoxScore("WR1", "WR1", "WR", "KC",
+                            receiving_yards=50, receiving_tds=1,
+                            two_point_conversions=1)
+        points = score_player(box, ppr_config)
+        expected = 50 * 0.1 + 1 * 6 + 1 * 2  # 5 + 6 + 2 = 13
+        assert points == pytest.approx(expected)
+
+    def test_zero_two_point_no_effect(self, ppr_config):
+        box = PlayerBoxScore("WR1", "WR1", "WR", "KC",
+                            receiving_yards=50, receiving_tds=1,
+                            two_point_conversions=0)
+        points = score_player(box, ppr_config)
+        expected = 50 * 0.1 + 1 * 6  # 5 + 6 = 11
+        assert points == pytest.approx(expected)

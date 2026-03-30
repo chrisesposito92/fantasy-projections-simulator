@@ -73,6 +73,19 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Helpful error messages for common issues (missing data, invalid weeks)
 - 6 integration tests covering all Phase 6 spec requirements
 
+**Phase 7A: Data + Engine Accuracy** — Complete (41 tests, 370 total)
+
+- Recency weighting: `season_weights` parameter on core preprocessor methods (play calling, play outcomes, turnover rates) for biasing toward recent seasons
+- Penalty modeling: `check_penalty()` / `apply_penalty()` with per-team `PenaltyRates` (false start, holding, PI)
+- Red zone metrics: `red_zone_target_share` and `red_zone_carry_share` computed from PBP (yardline_100 <= 20)
+- Air yards share: `air_yards_share` in `PlayerUsage` computed from PBP air_yards column
+- QB scramble data: `scramble_rate` derived from QB rush attempts, `scramble_yards_dist` from QB rush yards
+- Two-minute warning: clock stops at 120s in Q2/Q4, fires once per half with halftime reset
+- Home-field advantage: probabilistic +0.5 yards/play bonus for home team via `_apply_home_field()`
+- Two-point conversion tracking: `attempt_pat()` returns scorer_id, `PlayerBoxScore.two_point_conversions` flows to scoring
+- Rookie blend system: `blend_with_archetype()` blends sparse player data with positional archetypes by games played
+- Pipeline output: `penalty_rates` and `season_weights` included in pipeline build results (engine wiring via TeamDistributions in future phase)
+
 ## Quick Start
 
 ```bash

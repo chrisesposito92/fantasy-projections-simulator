@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from fantasy_sim.engine.types import GameState, PlayResult
-from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates
+from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates, PenaltyRates
 from fantasy_sim.models.game_state import bucket_play
 
 # Avoid circular imports — TYPE_CHECKING is compile-time only
@@ -19,6 +19,16 @@ CLOCK_SACK = 38
 # Sack yardage loss distribution
 SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
 
+# Home-field advantage: 50% chance of +1 yard per play
+HOME_FIELD_YARDS_BONUS = 0.5
+
+
+def _apply_home_field(yards: int, is_home: bool, rng: np.random.Generator) -> int:
+    """Apply home-field advantage: 50% chance of +1 yard when is_home=True."""
+    if is_home and rng.random() < HOME_FIELD_YARDS_BONUS:
+        return yards + 1
+    return yards
+
 
 def resolve_play(
     state: GameState,
@@ -27,11 +37,12 @@ def resolve_play(
     turnover_rates: TurnoverRates,
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
+    is_home: bool = False,
 ) -> PlayResult:
     if play_type == "pass":
-        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster)
+        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster, is_home)
     if play_type == "run":
-        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster)
+        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster, is_home)
     raise ValueError(f"Unexpected play_type: {play_type!r}")
 
 
@@ -41,6 +52,7 @@ def _resolve_pass(
     turnover_rates: TurnoverRates,
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
+    is_home: bool = False,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
     from fantasy_sim.engine.player_selector import select_passer, select_receiver, select_rusher
@@ -64,6 +76,7 @@ def _resolve_pass(
                     state.quarter, state.yard_line,
                 )
                 raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+            raw_yards = _apply_home_field(raw_yards, is_home, rng)
             is_safety = (state.yard_line - raw_yards) >= 100
             if is_safety:
                 yards = -(99 - state.yard_line)
@@ -126,6 +139,7 @@ def _resolve_pass(
                 yards = int(rng.choice(receiver.outcomes.receiving_yards_dist))
             else:
                 yards = max(team_yards, 1)  # Complete pass must gain at least 1 yard
+            yards = _apply_home_field(yards, is_home, rng)
             yards = _clamp_yards(state.yard_line, yards)
         else:
             yards = 0
@@ -150,6 +164,7 @@ def _resolve_pass(
         )
 
     # Legacy path (no roster) — identical to Phase 2 behavior
+    team_yards = _apply_home_field(team_yards, is_home, rng)
     yards = _clamp_yards(state.yard_line, team_yards)
 
     is_complete = yards > 0
@@ -175,6 +190,7 @@ def _resolve_run(
     turnover_rates: TurnoverRates,
     rng: np.random.Generator,
     roster: TeamRoster | None = None,
+    is_home: bool = False,
 ) -> PlayResult:
     from fantasy_sim.engine.player_selector import select_rusher
 
@@ -195,6 +211,7 @@ def _resolve_run(
             )
             raw_yards = play_outcomes.sample_yards("run", bucket, rng)
 
+        raw_yards = _apply_home_field(raw_yards, is_home, rng)
         is_safety = (state.yard_line - raw_yards) >= 100
         yards = _clamp_yards(state.yard_line, raw_yards)
         is_td = (state.yard_line - yards) <= 0
@@ -219,6 +236,7 @@ def _resolve_run(
         state.quarter, state.yard_line,
     )
     raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+    raw_yards = _apply_home_field(raw_yards, is_home, rng)
 
     # Check safety on raw yards before clamping (ball pushed past own end zone)
     is_safety = (state.yard_line - raw_yards) >= 100
@@ -247,3 +265,28 @@ def _clamp_yards(yard_line: int, yards: int) -> int:
     if yards < max_loss:
         yards = max_loss
     return yards
+
+
+def check_penalty(penalty_rates: PenaltyRates, rng: np.random.Generator) -> tuple[str, int] | None:
+    """Check if a penalty occurs. Returns (penalty_type, yards) or None."""
+    if penalty_rates.penalty_rate <= 0:
+        return None
+    if rng.random() >= penalty_rates.penalty_rate:
+        return None
+
+    types = list(penalty_rates.type_distribution.keys())
+    probs = np.array([penalty_rates.type_distribution[t] for t in types])
+    if probs.sum() == 0:
+        return None
+    probs = probs / probs.sum()
+    penalty_type = types[rng.choice(len(types), p=probs)]
+    yards = int(penalty_rates.avg_yards.get(penalty_type, 5))
+    return penalty_type, yards
+
+
+def apply_penalty(state: GameState, penalty_type: str, penalty_yards: int) -> PlayResult:
+    """Create a PlayResult for a penalty. Does NOT mutate state."""
+    if penalty_type == "pass_interference":
+        return PlayResult(play_type="pass", yards=penalty_yards, is_penalty=True, clock_runoff=0)
+    else:
+        return PlayResult(play_type="pass", yards=-penalty_yards, is_penalty=True, clock_runoff=0)

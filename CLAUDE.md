@@ -89,13 +89,18 @@ The project is organized as a pipeline:
 - **MIN_BUCKET_PLAYS = 10**: Buckets with fewer than 10 plays fall back to team/league defaults.
 - **GameState**: Mutable dataclass tracking game state (quarter, clock, possession, down, distance, yard_line, scores). `score_differential` is from possessing team's perspective.
 - **yardline_100 convention**: 99=own 1, 75=own 25 (touchback), 50=midfield, 20=red zone, 1=goal line. TD when `yard_line - yards <= 0`. Safety when `yard_line - yards >= 100`.
-- **Play resolution priority**: Scramble check (if roster) → sack check → interception check → normal pass outcome. Fumble cancels TD.
-- **simulate_game()**: Main loop: 4th down decision → select play → resolve play → update box scores → update player stats → handle outcome (safety/TD/turnover/yards) → clock → quarter transitions. Optional `home_roster`/`away_roster` params enable player-level tracking.
+- **Play resolution priority**: Scramble check (if roster) → sack check → interception check → normal pass outcome → home-field bonus. Fumble cancels TD. Penalty check post-play in game loop.
+- **simulate_game()**: Main loop: 4th down decision → select play → resolve play → update box scores → update player stats → penalty check → handle outcome (safety/TD/turnover/yards) → clock → two-minute warning → quarter transitions. Optional `home_roster`/`away_roster` params enable player-level tracking.
 - **TeamDistributions**: Bundles all distribution types needed per team. Passed to `simulate_game()` for home and away.
 - **PlayerModel / TeamRoster**: Per-player usage rates (target_share, carry_share) and outcome distributions (catch_rate, yards distributions). `TeamRoster` provides weighted selection of passer/receiver/rusher. When rosters are provided, play resolution uses player-specific distributions instead of team-level ones.
 - **PlayerBoxScore**: Per-player stats for one game (pass/rush/receiving). Tracked in `GameResult.player_stats` dict keyed by player_id.
-- **player_builder**: Builds `PlayerModel` objects from PBP + roster data. `MIN_PLAYER_PLAYS = 5` for per-player yards distributions.
+- **player_builder**: Builds `PlayerModel` objects from PBP + roster data. `MIN_PLAYER_PLAYS = 5` for per-player yards distributions. Computes red zone shares (yardline_100 <= 20), air_yards_share, QB scramble_rate/scramble_yards_dist, and games_played. Optional `rookie_blend_games` param enables automatic archetype blending. `blend_with_archetype()` blends sparse player data with positional archetypes.
 - **rookie_builder**: Generates `PlayerModel` for rookies using draft-capital-based archetypes (3 tiers by round).
+- **Recency weighting**: `Preprocessor` methods accept `season_weights: dict[int, float]` to bias toward recent seasons via row replication.
+- **Penalty modeling**: `check_penalty()` samples penalties from `PenaltyRates`; `apply_penalty()` creates penalty PlayResults. Wired into game_sim loop with `getattr` fallback for backward compatibility.
+- **Home-field advantage**: `resolve_play(is_home=True)` gives 50% chance of +1 yard per play. `HOME_FIELD_YARDS_BONUS = 0.5`.
+- **Two-minute warning**: `check_two_minute_warning()` snaps clock to 120s once per half in Q2/Q4. `GameState.two_min_warning_fired` resets at halftime.
+- **Two-point conversions**: `attempt_pat()` returns scorer_id on 2PT success. `PlayerBoxScore.two_point_conversions` flows through `score_player()` via `config["two_point"]`.
 
 ## Testing
 
@@ -113,6 +118,7 @@ The project is organized as a pipeline:
 - **Phase 4 (Scoring + Config + CLI)**: Complete — 52 tests (260 total)
 - **Phase 5 (Validation + Tuning)**: Complete — 31 tests (291 total)
 - **Phase 6 (Overrides + Polish)**: Complete — 38 tests (329 total)
+- **Phase 7A (Data + Engine Accuracy)**: Complete — 41 tests (370 total)
 
 ## Style
 

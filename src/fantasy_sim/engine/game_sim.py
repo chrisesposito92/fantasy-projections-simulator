@@ -3,13 +3,13 @@ from __future__ import annotations
 import numpy as np
 from fantasy_sim.engine.types import GameState, GameResult, TeamBoxScore, TeamDistributions, PlayResult, PlayerBoxScore
 from fantasy_sim.engine.play_caller import select_play_type, fourth_down_decision
-from fantasy_sim.engine.play_resolver import resolve_play
+from fantasy_sim.engine.play_resolver import resolve_play, check_penalty
 from fantasy_sim.engine.game_flow import (
     apply_yards, change_possession, score_points,
     handle_turnover, perform_kickoff, perform_punt,
     attempt_field_goal, attempt_pat,
 )
-from fantasy_sim.engine.clock import apply_clock, check_quarter_end
+from fantasy_sim.engine.clock import apply_clock, check_quarter_end, check_two_minute_warning
 from fantasy_sim.models.distributions import DriveStartModel
 
 from typing import TYPE_CHECKING
@@ -65,12 +65,14 @@ def simulate_game(
             if decision == "punt":
                 perform_punt(state, rng, off_box)
                 apply_clock(state, 5)
+                check_two_minute_warning(state)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 continue
             elif decision == "field_goal":
                 recv_ds = away_dists.drive_start if state.possession == "home" else home_dists.drive_start
                 attempt_field_goal(state, off_dists.kicking, recv_ds, rng, off_box)
                 apply_clock(state, 5)
+                check_two_minute_warning(state)
                 check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
                 # Check OT walk-off FG
                 if state.quarter == 5 and state.home_score != state.away_score:
@@ -80,13 +82,35 @@ def simulate_game(
         # Select and resolve play
         play_type = select_play_type(state, off_dists.play_calling, rng)
         roster = home_roster if state.possession == "home" else away_roster
+        is_home_team = (state.possession == "home")
         result = resolve_play(
             state, play_type, off_dists.play_outcomes,
             off_dists.turnover_rates, rng, roster=roster,
+            is_home=is_home_team,
         )
         total_plays += 1
 
-        # Update box scores
+        # --- Penalty check FIRST — if penalty, skip stats and play outcome ---
+        off_penalty_rates = getattr(off_dists, 'penalty_rates', None)
+        if off_penalty_rates is not None and not result.is_penalty:
+            penalty = check_penalty(off_penalty_rates, rng)
+            if penalty is not None:
+                penalty_type, penalty_yards = penalty
+                if penalty_type == "pass_interference":
+                    max_advance = max(0, state.yard_line - 1)
+                    yards = min(penalty_yards, max_advance)
+                    state.yard_line -= yards
+                    state.down = 1
+                    state.distance = min(10, state.yard_line)
+                else:
+                    state.yard_line = min(99, state.yard_line + penalty_yards)
+                    state.distance = min(state.distance + penalty_yards, 99)
+                apply_clock(state, 0)
+                check_two_minute_warning(state)
+                check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
+                continue
+
+        # Only update stats if play was NOT a penalty
         _update_box_scores(off_box, def_box, result)
 
         # Update per-player stats when rosters are provided
@@ -97,7 +121,16 @@ def simulate_game(
         if result.is_safety:
             _handle_safety(state, off_box, def_box, def_dists.drive_start, rng)
         elif result.is_touchdown:
-            _handle_touchdown(state, off_dists, off_box, def_dists.drive_start, rng)
+            td_scorer_id = None
+            if result.play_type == "pass" and result.receiver_id:
+                td_scorer_id = result.receiver_id
+            elif result.play_type == "run" and result.rusher_id:
+                td_scorer_id = result.rusher_id
+
+            _handle_touchdown(
+                state, off_dists, off_box, def_dists.drive_start, rng,
+                td_scorer_id=td_scorer_id, player_stats=player_stats,
+            )
             # OT walk-off TD
             if state.quarter == 5 and state.home_score != state.away_score:
                 state.game_over = True
@@ -108,6 +141,7 @@ def simulate_game(
 
         # Clock
         apply_clock(state, result.clock_runoff)
+        check_two_minute_warning(state)
         check_quarter_end(state, home_dists.drive_start, away_dists.drive_start, rng)
 
     return GameResult(
@@ -154,11 +188,17 @@ def _handle_touchdown(
     off_box: TeamBoxScore,
     recv_drive_start: DriveStartModel,
     rng: np.random.Generator,
+    td_scorer_id: str | None = None,
+    player_stats: dict[str, PlayerBoxScore] | None = None,
 ) -> None:
     """Score a TD (6 points), attempt PAT, then kickoff."""
     score_points(state, 6)
     off_box.points += 6
-    attempt_pat(state, off_dists.kicking, rng, off_box)
+    two_pt_scorer = attempt_pat(state, off_dists.kicking, rng, off_box, td_scorer_id=td_scorer_id)
+
+    if two_pt_scorer is not None and player_stats is not None and two_pt_scorer in player_stats:
+        player_stats[two_pt_scorer].two_point_conversions += 1
+
     change_possession(state)
     perform_kickoff(state, recv_drive_start, rng)
 
