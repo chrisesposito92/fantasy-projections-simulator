@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections
 from fantasy_sim.engine.types import GameResult, TeamBoxScore, PlayerBoxScore

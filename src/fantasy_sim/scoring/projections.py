@@ -1,7 +1,7 @@
 from collections import defaultdict
 import numpy as np
-from fantasy_sim.engine.types import GameResult, PlayerBoxScore, TeamBoxScore
-from fantasy_sim.scoring.engine import score_player, score_dst, score_kicker
+from fantasy_sim.engine.types import GameResult, PlayerBoxScore
+from fantasy_sim.scoring.engine import score_player, score_dst
 
 
 def build_player_projections(
