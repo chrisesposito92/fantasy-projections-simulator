@@ -13,10 +13,15 @@ def load_config(path: Path) -> dict:
     if not path.exists():
         raise ConfigError(f"Config file not found: {path}")
     with open(path) as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ConfigError(f"Config file is empty or not a valid YAML mapping: {path}")
+    return data
 
 
-def resolve_scoring(scoring_presets: dict, format_name: str) -> dict:
+def resolve_scoring(
+    scoring_presets: dict, format_name: str, _seen: frozenset[str] | None = None,
+) -> dict:
     """Resolve a scoring format, following _inherit chains.
 
     Args:
@@ -26,6 +31,11 @@ def resolve_scoring(scoring_presets: dict, format_name: str) -> dict:
     Returns:
         Flat dict of stat_name -> point_value with all inheritance resolved.
     """
+    _seen = _seen or frozenset()
+    if format_name in _seen:
+        raise ConfigError(
+            f"Circular _inherit detected: '{format_name}' already in chain"
+        )
     if format_name not in scoring_presets:
         raise ConfigError(
             f"Unknown scoring format '{format_name}'. "
@@ -36,7 +46,7 @@ def resolve_scoring(scoring_presets: dict, format_name: str) -> dict:
 
     if "_inherit" in preset:
         parent_name = preset["_inherit"]
-        base = resolve_scoring(scoring_presets, parent_name)
+        base = resolve_scoring(scoring_presets, parent_name, _seen | {format_name})
         # Override parent values with child values
         for k, v in preset.items():
             if k != "_inherit":
