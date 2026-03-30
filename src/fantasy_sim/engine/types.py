@@ -12,6 +12,7 @@ class TeamDistributions:
     turnover_rates: TurnoverRates
     kicking: KickingModel
     drive_start: DriveStartModel
+    pace_factor: float = 1.0
 
 
 @dataclass

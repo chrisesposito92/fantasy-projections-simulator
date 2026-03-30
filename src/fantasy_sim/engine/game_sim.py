@@ -91,6 +91,7 @@ def simulate_game(
             state, play_type, off_dists.play_outcomes,
             off_dists.turnover_rates, rng, roster=roster,
             is_home=is_home_team,
+            pace_factor=off_dists.pace_factor,
         )
         total_plays += 1
 
