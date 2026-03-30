@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from fantasy_sim.data.player_builder import build_player_models, build_team_roster, blend_with_archetype
+from fantasy_sim.data.player_builder import build_player_models, build_team_roster, blend_with_archetype, _aggregate_pbp_stats
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 
@@ -212,3 +212,37 @@ class TestRookieBlendSystem:
         arch = POSITIONAL_ARCHETYPES["RB"]["tier3"]
         expected_cs = 0.5 * 0.40 + 0.5 * arch["carry_share"]
         assert blended.usage.carry_share == pytest.approx(expected_cs, abs=0.01)
+
+
+class TestAggregatePbpStats:
+    def test_returns_receiving_stats(self, expanded_pbp):
+        """TK87 should have targets > 0 from the expanded_pbp fixture."""
+        result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2024])
+        receiving = result["receiving"]
+        assert "TK87" in receiving
+        assert receiving["TK87"]["targets"] > 0
+
+    def test_returns_rushing_stats(self, expanded_pbp):
+        """IP01 should have carries > 0 from the expanded_pbp fixture."""
+        result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2024])
+        rushing = result["rushing"]
+        assert "IP01" in rushing
+        assert rushing["IP01"]["carries"] > 0
+
+    def test_returns_qb_stats(self, expanded_pbp):
+        """PM15 should have attempts > 0 from the expanded_pbp fixture."""
+        result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2024])
+        qb = result["qb"]
+        assert "PM15" in qb
+        assert qb["PM15"]["attempts"] > 0
+
+    def test_returns_team_totals(self, expanded_pbp):
+        """KC should have pass and rush attempts > 0."""
+        result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2024])
+        assert result["team_pass_attempts"]["KC"] > 0
+        assert result["team_rush_attempts"]["KC"] > 0
+
+    def test_filters_by_training_seasons(self, expanded_pbp):
+        """Passing [2023] with expanded_pbp (only 2024 data) returns empty receiving dict."""
+        result = _aggregate_pbp_stats(expanded_pbp, training_seasons=[2023])
+        assert result["receiving"] == {}

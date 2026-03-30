@@ -90,6 +90,137 @@ def _blend_dist(real_dist, archetype_dist, real_weight, arch_weight):
     return np.concatenate([real_samples, arch_samples])
 
 
+def _aggregate_pbp_stats(
+    pbp: pl.DataFrame,
+    training_seasons: list[int],
+) -> dict:
+    """Aggregate raw PBP data into per-player and per-team stat buckets.
+
+    This is a pure data-extraction step — no PlayerModel objects are created.
+    The result can be cached and reused across multiple roster merges.
+
+    Returns a dict with keys:
+        - receiving: dict[player_id -> {targets, catches, yards list, rz_targets, air_yards, team, game_ids set}]
+        - rushing:   dict[player_id -> {carries, yards list, rz_carries, team, game_ids set}]
+        - qb:        dict[player_id -> {attempts, team, game_ids set}]
+        - team_pass_attempts:    dict[team -> int]
+        - team_rush_attempts:    dict[team -> int]
+        - team_rz_pass_attempts: dict[team -> int]
+        - team_rz_rush_attempts: dict[team -> int]
+        - team_air_yards:        dict[team -> float]
+        - has_air_yards:         bool
+    """
+    plays = pbp.filter(
+        pl.col("play_type").is_in(["pass", "run"]) &
+        pl.col("season").is_in(training_seasons)
+    )
+
+    # --- Team-level totals ---
+    team_pass_attempts: dict[str, int] = {}
+    team_rush_attempts: dict[str, int] = {}
+    team_rz_pass_attempts: dict[str, int] = {}
+    team_rz_rush_attempts: dict[str, int] = {}
+    team_air_yards: dict[str, float] = {}
+
+    has_air_yards = "air_yards" in plays.columns
+
+    for team in plays["posteam"].unique().to_list():
+        tp = plays.filter(pl.col("posteam") == team)
+        pass_plays_team = tp.filter(pl.col("play_type") == "pass")
+        rush_plays_team = tp.filter(pl.col("play_type") == "run")
+
+        team_pass_attempts[team] = pass_plays_team.shape[0]
+        team_rush_attempts[team] = rush_plays_team.shape[0]
+
+        # Red zone totals (yardline_100 <= 20)
+        team_rz_pass_attempts[team] = pass_plays_team.filter(
+            pl.col("yardline_100") <= 20
+        ).shape[0]
+        team_rz_rush_attempts[team] = rush_plays_team.filter(
+            pl.col("yardline_100") <= 20
+        ).shape[0]
+
+        # Air yards total per team
+        if has_air_yards:
+            ay_series = pass_plays_team["air_yards"].drop_nulls()
+            team_air_yards[team] = float(ay_series.sum()) if len(ay_series) > 0 else 0.0
+        else:
+            team_air_yards[team] = 0.0
+
+    # --- Receiving stats (pass plays) ---
+    pass_plays = plays.filter(pl.col("play_type") == "pass")
+    receiving_stats: dict[str, dict] = {}
+    for row in pass_plays.iter_rows(named=True):
+        rid = row.get("receiver_player_id")
+        if rid is None:
+            continue
+        if rid not in receiving_stats:
+            receiving_stats[rid] = {
+                "targets": 0, "catches": 0, "yards": [],
+                "rz_targets": 0, "air_yards": 0.0,
+                "team": row["posteam"], "game_ids": set(),
+            }
+        receiving_stats[rid]["targets"] += 1
+        receiving_stats[rid]["game_ids"].add(row["game_id"])
+
+        # Red zone target
+        if row["yardline_100"] <= 20:
+            receiving_stats[rid]["rz_targets"] += 1
+
+        # Air yards
+        if has_air_yards and row.get("air_yards") is not None:
+            receiving_stats[rid]["air_yards"] += row["air_yards"]
+
+        if row["complete_pass"] == 1:
+            receiving_stats[rid]["catches"] += 1
+            receiving_stats[rid]["yards"].append(row["yards_gained"])
+
+    # --- Rushing stats (run plays) ---
+    rush_plays = plays.filter(pl.col("play_type") == "run")
+    rushing_stats: dict[str, dict] = {}
+    for row in rush_plays.iter_rows(named=True):
+        rid = row.get("rusher_player_id")
+        if rid is None:
+            continue
+        if rid not in rushing_stats:
+            rushing_stats[rid] = {
+                "carries": 0, "yards": [], "rz_carries": 0,
+                "team": row["posteam"], "game_ids": set(),
+            }
+        rushing_stats[rid]["carries"] += 1
+        rushing_stats[rid]["yards"].append(row["yards_gained"])
+        rushing_stats[rid]["game_ids"].add(row["game_id"])
+
+        # Red zone carry
+        if row["yardline_100"] <= 20:
+            rushing_stats[rid]["rz_carries"] += 1
+
+    # --- QB stats (passer on pass plays) ---
+    qb_stats: dict[str, dict] = {}
+    for row in pass_plays.iter_rows(named=True):
+        pid = row.get("passer_player_id")
+        if pid is None:
+            continue
+        if pid not in qb_stats:
+            qb_stats[pid] = {
+                "attempts": 0, "team": row["posteam"], "game_ids": set(),
+            }
+        qb_stats[pid]["attempts"] += 1
+        qb_stats[pid]["game_ids"].add(row["game_id"])
+
+    return {
+        "receiving": receiving_stats,
+        "rushing": rushing_stats,
+        "qb": qb_stats,
+        "team_pass_attempts": team_pass_attempts,
+        "team_rush_attempts": team_rush_attempts,
+        "team_rz_pass_attempts": team_rz_pass_attempts,
+        "team_rz_rush_attempts": team_rz_rush_attempts,
+        "team_air_yards": team_air_yards,
+        "has_air_yards": has_air_yards,
+    }
+
+
 def build_player_models(
     pbp: pl.DataFrame,
     rosters: pl.DataFrame,
