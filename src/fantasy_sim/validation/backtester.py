@@ -1,7 +1,8 @@
-# src/fantasy_sim/validation/backtester.py
 from dataclasses import dataclass
 from pathlib import Path
 from collections import defaultdict
+import math
+import zlib
 import numpy as np
 import polars as pl
 from fantasy_sim.data.loader import DataLoader
@@ -36,8 +37,9 @@ class BacktestResult:
             return False
         if self.season_mae > self.SEASON_MAE_TARGET:
             return False
-        for corr in self.rank_correlations.values():
-            if corr < self.RANK_CORR_TARGET:
+        for position in ("QB", "RB", "WR", "TE"):
+            corr = self.rank_correlations.get(position, 0.0)
+            if math.isnan(corr) or corr < self.RANK_CORR_TARGET:
                 return False
         if self.boom_bust_calibration > self.CALIBRATION_TARGET:
             return False
@@ -91,33 +93,30 @@ class Backtester:
                 (pl.col("week") == wk) & (pl.col("season") == self.test_season)
             )
 
-            week_results = []
+            games_this_week = 0
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 try:
                     home_dists, away_dists, home_roster, away_roster = self.builder.build_game(
                         home, away, seasons=self.training_seasons,
                     )
+                    seed = zlib.crc32(game["game_id"].encode()) % (2**31)
                     results = run_simulations(
                         home_dists, away_dists, n_sims=self.n_sims,
-                        seed=hash(game["game_id"]) % (2**31),
+                        seed=seed,
                         home_roster=home_roster, away_roster=away_roster,
                     )
-                    week_results.extend(results.games)
+                    # Build projections per-game to get correct per-player averages
+                    game_projs = build_player_projections(results.games, scoring_config)
+                    for proj in game_projs:
+                        pid = proj["player_id"]
+                        projected_by_player_week[pid][wk] = proj["fpts"]
+                        if pid in actual_by_player_week and wk in actual_by_player_week[pid]:
+                            error = abs(proj["fpts"] - actual_by_player_week[pid][wk])
+                            all_weekly_errors.append(error)
+                    games_this_week += 1
                 except Exception:
                     continue
-
-            if not week_results:
-                continue
-
-            week_projs = build_player_projections(week_results, scoring_config)
-
-            for proj in week_projs:
-                pid = proj["player_id"]
-                projected_by_player_week[pid][wk] = proj["fpts"]
-                if pid in actual_by_player_week and wk in actual_by_player_week[pid]:
-                    error = abs(proj["fpts"] - actual_by_player_week[pid][wk])
-                    all_weekly_errors.append(error)
 
         weekly_mae = float(np.mean(all_weekly_errors)) if all_weekly_errors else 99.0
 

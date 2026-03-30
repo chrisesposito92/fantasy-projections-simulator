@@ -1,3 +1,4 @@
+import zlib
 import click
 import numpy as np
 import polars as pl
@@ -187,7 +188,7 @@ def week(week_num, season, sims, scoring, output_format, output_path):
 
     click.echo(f"Found {week_games.shape[0]} games. Running {sims} sims each ({scoring})...\n")
 
-    all_game_results = []
+    all_player_projs = []
 
     for game in week_games.iter_rows(named=True):
         home = game["home_team"]
@@ -198,17 +199,23 @@ def week(week_num, season, sims, scoring, output_format, output_path):
             home_team=home, away_team=away, seasons=training_seasons,
         )
 
+        seed = zlib.crc32(game["game_id"].encode()) % (2**31)
         results = run_simulations(
-            home_dists, away_dists, n_sims=sims, seed=hash(game["game_id"]) % (2**31),
+            home_dists, away_dists, n_sims=sims, seed=seed,
             home_roster=home_roster, away_roster=away_roster,
         )
 
         summary = results.summary()
         click.echo(f" {home} {summary['home_score_mean']:.1f} - {away} {summary['away_score_mean']:.1f}")
 
-        all_game_results.extend(results.games)
+        # Build projections per-game so each player's stats use correct denominator
+        all_player_projs.extend(build_player_projections(results.games, scoring_config))
 
-    player_projs = build_player_projections(all_game_results, scoring_config)
+    # Re-sort and re-rank across all games
+    all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_player_projs, 1):
+        p["rank"] = i
+    player_projs = all_player_projs
     click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
 
     _display_projections(player_projs, output_format, output_path)
@@ -242,7 +249,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path):
 
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
-    all_game_results = []
+    all_player_projs = []
     for wk in week_nums:
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == season_year)
@@ -253,14 +260,18 @@ def season(season_year, weeks, sims, scoring, output_format, output_path):
             home_dists, away_dists, home_roster, away_roster = builder.build_game(
                 home, away, seasons=training_seasons,
             )
+            seed = zlib.crc32(game["game_id"].encode()) % (2**31)
             results = run_simulations(
                 home_dists, away_dists, n_sims=sims,
-                seed=hash(game["game_id"]) % (2**31),
+                seed=seed,
                 home_roster=home_roster, away_roster=away_roster,
             )
-            all_game_results.extend(results.games)
+            all_player_projs.extend(build_player_projections(results.games, scoring_config))
 
-    player_projs = build_player_projections(all_game_results, scoring_config)
+    all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(all_player_projs, 1):
+        p["rank"] = i
+    player_projs = all_player_projs
     click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
     _display_projections(player_projs, output_format, output_path)
 

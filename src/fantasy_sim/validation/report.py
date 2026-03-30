@@ -22,7 +22,7 @@ def format_backtest_report(result: BacktestResult) -> str:
         weekly_status = "PASS" if result.weekly_mae <= BacktestResult.WEEKLY_MAE_TARGET else "FAIL"
         weekly_style = "green" if weekly_status == "PASS" else "red"
         table.add_row(
-            "Weekly MAE (top 24)",
+            "Weekly MAE",
             f"{result.weekly_mae:.2f}",
             f"< {BacktestResult.WEEKLY_MAE_TARGET:.1f}",
             f"[{weekly_style}]{weekly_status}[/{weekly_style}]",
