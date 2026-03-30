@@ -164,3 +164,76 @@ class TestResolveRun:
         rates = make_turnover_rates()
         result = resolve_play(state, "run", outcomes, rates, rng)
         assert result.clock_runoff > 0
+
+
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+
+
+def make_roster_for_resolver() -> TeamRoster:
+    qb = PlayerModel("QB1", "QB", "QB", "T",
+                     PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+                     PlayerOutcomes())
+    wr1 = PlayerModel("WR1", "WR1", "WR", "T",
+                      PlayerUsage(target_share=0.50),
+                      PlayerOutcomes(
+                          catch_rate=0.65,
+                          receiving_yards_dist=np.array([8, 10, 12, 15, 20]),
+                          fumble_rate=0.0,
+                      ))
+    rb1 = PlayerModel("RB1", "RB1", "RB", "T",
+                      PlayerUsage(carry_share=1.0, target_share=0.50),
+                      PlayerOutcomes(
+                          rushing_yards_dist=np.array([3, 5, 7, 4, 6]),
+                          catch_rate=0.80,
+                          receiving_yards_dist=np.array([4, 6, 8]),
+                          fumble_rate=0.0,
+                      ))
+    return TeamRoster(team="T", players=[qb, wr1, rb1])
+
+
+class TestResolvePassWithPlayers:
+    def test_pass_has_passer_and_receiver(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        outcomes = make_outcomes(pass_yards=[10])
+        rates = make_turnover_rates()
+        roster = make_roster_for_resolver()
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
+        assert result.passer_id == "QB1"
+        assert result.receiver_id is not None
+        assert result.receiver_id in ("WR1", "RB1")
+
+    def test_pass_uses_player_catch_rate(self):
+        rng = np.random.default_rng(42)
+        completions = 0
+        n = 200
+        for _ in range(n):
+            state = make_state()
+            outcomes = make_outcomes(pass_yards=[10])
+            rates = make_turnover_rates()
+            roster = make_roster_for_resolver()
+            result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
+            if result.is_complete:
+                completions += 1
+        rate = completions / n
+        assert 0.50 <= rate <= 0.85
+
+
+class TestResolveRunWithPlayers:
+    def test_run_has_rusher(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        outcomes = make_outcomes(run_yards=[5])
+        rates = make_turnover_rates()
+        roster = make_roster_for_resolver()
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
+        assert result.rusher_id == "RB1"
+
+    def test_run_uses_player_yards_dist(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        outcomes = make_outcomes(run_yards=[100])  # Team dist says 100, but player dist overrides
+        rates = make_turnover_rates()
+        roster = make_roster_for_resolver()
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
+        assert result.yards in [3, 4, 5, 6, 7]
