@@ -44,9 +44,17 @@ uv run fantasy-sim demo --sims 100 --scoring half_ppr
 uv run fantasy-sim demo --sims 100 --format csv --output projections.csv
 uv run fantasy-sim demo --sims 100 --format json --output projections.json
 
-# Simulate real NFL week/season (requires network)
+# Simulate real NFL week (requires network)
 uv run fantasy-sim week 1 --season 2024 --sims 100
+
+# Simulate real NFL season (regular season only by default, requires network)
 uv run fantasy-sim season --season 2024 --sims 50
+
+# Season with per-week breakdowns
+uv run fantasy-sim season --season 2024 --sims 50 --by-week
+
+# Season export (format auto-inferred from extension)
+uv run fantasy-sim season --season 2024 --sims 50 --output rankings.json
 
 # Backtest against historical actuals
 uv run fantasy-sim backtest --season 2024 --sims 50
@@ -98,7 +106,7 @@ The project is organized as a pipeline:
 - **OverrideEngine**: `apply_player_override(roster, player_id, overrides)` applies usage/outcome/meta overrides; automatically triggers `redistribute_target_shares()` or `redistribute_carry_shares()` for share fields. `apply_team_override(dists, overrides)` modifies PlayCallingDist and TurnoverRates. Both raise on unknown fields.
 - **PlayerResolver**: `PlayerResolver(rosters).resolve(query)` resolves names to player_id via exact ID → exact name → underscore conversion → fuzzy match (thefuzz, MIN_MATCH_SCORE=70).
 - **OverrideParser**: `parse_override_config(path)` reads season.yaml into `OverrideSet`. `parse_cli_override("name.field=value")` parses CLI strings. `_build_overrides()` in CLI merges config + CLI overrides (CLI takes precedence).
-- **CLI**: `fantasy-sim demo` runs synthetic simulations. `fantasy-sim week N --season YYYY` simulates a real NFL week. `fantasy-sim season --season YYYY` simulates a full season. `fantasy-sim game HOME AWAY` simulates a single matchup with per-team breakdowns. `fantasy-sim player QUERY` shows single-player projection via fuzzy matching. `fantasy-sim backtest --season YYYY` runs historical validation. Common options: `--sims`, `--scoring` (ppr/half_ppr/standard), `--scoring-config path/to/custom.yaml`, `--detail` (floor/ceiling/stddev), `--format` (table/csv/json), `--output`, `--override "name.field=value"`, `--config path/to/season.yaml`.
+- **CLI**: `fantasy-sim demo` runs synthetic simulations. `fantasy-sim week N --season YYYY` simulates a real NFL week. `fantasy-sim season --season YYYY` simulates a full season (regular season only by default). `fantasy-sim game HOME AWAY` simulates a single matchup with per-team breakdowns. `fantasy-sim player QUERY` shows single-player projection via fuzzy matching. `fantasy-sim backtest --season YYYY` runs historical validation. Common options: `--sims`, `--scoring` (ppr/half_ppr/standard), `--scoring-config path/to/custom.yaml`, `--detail` (floor/ceiling/stddev), `--format` (table/csv/json), `--output`, `--override "name.field=value"`, `--config path/to/season.yaml`. `--by-week` on season command outputs per-week breakdowns with week headers instead of season totals. `--output` auto-infers format from `.json`/`.csv` extension.
 - **GameStateBucket**: Discretized game state (down, distance, score_diff, quarter, yard_zone) used as dict keys for probability lookups. Defined in `models/game_state.py`, used everywhere.
 - **Distribution types**: `PlayCallingDist`, `PlayOutcomeDist`, `TurnoverRates`, `KickingModel`, `DriveStartModel` in `models/distributions.py`. The sim engine samples from these.
 - **Empirical distributions**: Play outcomes are stored as numpy arrays of historical values and sampled from directly (non-parametric).

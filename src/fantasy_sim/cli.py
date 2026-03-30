@@ -149,9 +149,9 @@ def _auto_detect_season_yaml() -> str | None:
 
 
 def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
-    """Parse --weeks string and validate all week numbers are 1-18.
+    """Parse --weeks string and validate all week numbers are positive.
 
-    Accepts: 'all', '1-5', '1,3,5,7'
+    Accepts: 'all', '1-5', '1,3,5,7', '19-22' (playoff weeks)
     Raises click.BadParameter for invalid week numbers.
     """
     if weeks_str == "all":
@@ -176,11 +176,10 @@ def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
         except ValueError:
             raise click.BadParameter(f"Invalid week list: '{weeks_str}'. Use format: '1,3,5'")
 
-    # Validate range
-    invalid = [w for w in week_nums if w < 1 or w > 18]
+    invalid = [w for w in week_nums if w < 1]
     if invalid:
         raise click.BadParameter(
-            f"Invalid week number(s): {invalid}. Regular season weeks are 1-18."
+            f"Invalid week number(s): {invalid}. Week numbers must be positive."
         )
 
     return week_nums
@@ -201,7 +200,8 @@ def main():
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def demo(sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.pass_context
+def demo(ctx, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Run a demo simulation with synthetic team data."""
     season_yaml_path = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml_path=season_yaml_path)
@@ -231,6 +231,8 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
     team_map = {"HOME": "HOME", "AWAY": "AWAY"}
     dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
     kicker_projs = build_kicker_projections(results.games, scoring_config, team_map=team_map)
+
+    output_format = _infer_format(output_format, output_path, ctx)
 
     if output_format == "table":
         qbs = [p for p in player_projs if p["position"] == "QB"]
@@ -281,6 +283,109 @@ def demo(sims, scoring, output_format, output_path, overrides, config_path, scor
         else:
             export_json(all_projs, Path(output_path))
         click.echo(f"Exported to {output_path}")
+
+
+def _infer_format(output_format: str, output_path: str | None, ctx: click.Context) -> str:
+    """Infer output format from file extension if --format was not explicitly set."""
+    source = ctx.get_parameter_source("output_format")
+    if source != click.core.ParameterSource.DEFAULT:
+        return output_format  # User explicitly set --format
+    if output_path is None:
+        return output_format
+    ext = Path(output_path).suffix.lower()
+    if ext == ".json":
+        return "json"
+    elif ext == ".csv":
+        return "csv"
+    return output_format
+
+
+# Stat fields to sum during season aggregation
+_PLAYER_SUM_FIELDS = [
+    "fpts", "pass_yards", "pass_tds", "interceptions", "sacks",
+    "rush_yards", "rush_tds", "targets", "receptions",
+    "receiving_yards", "receiving_tds", "fumbles_lost",
+]
+
+_DST_SUM_FIELDS = [
+    "fpts", "sacks", "interceptions", "fumble_recoveries",
+    "dst_tds", "safeties", "points_allowed",
+]
+
+_KICKER_SUM_FIELDS = [
+    "fpts", "fg_attempts", "fg_made", "fg_50_plus",
+    "xp_attempts", "xp_made",
+]
+
+
+def _aggregate_projections(
+    projs: list[dict],
+    key_fn,
+    identity_fn,
+    sum_fields: list[str],
+) -> list[dict]:
+    """Aggregate per-game projections into season totals.
+
+    Groups by key_fn(row), initializes identity fields via identity_fn(row),
+    sums sum_fields, re-ranks by fpts. Rounds once at the end.
+    """
+    grouped: dict[str, dict] = {}
+    for p in projs:
+        key = key_fn(p)
+        if key not in grouped:
+            grouped[key] = identity_fn(p)
+            for field in sum_fields:
+                grouped[key][field] = 0.0
+        for field in sum_fields:
+            if field in p:
+                grouped[key][field] += p[field]
+
+    result = list(grouped.values())
+    for row in result:
+        for field in sum_fields:
+            row[field] = round(row[field], 1)
+    result.sort(key=lambda p: p["fpts"], reverse=True)
+    for i, p in enumerate(result, 1):
+        p["rank"] = i
+    return result
+
+
+def _aggregate_player_projections(projs: list[dict]) -> list[dict]:
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p["player_id"],
+        identity_fn=lambda p: {
+            "player_id": p["player_id"], "name": p["name"],
+            "position": p["position"], "team": p["team"],
+        },
+        sum_fields=_PLAYER_SUM_FIELDS,
+    )
+
+
+def _aggregate_dst_projections(projs: list[dict]) -> list[dict]:
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p["team"],
+        identity_fn=lambda p: {"team": p["team"]},
+        sum_fields=_DST_SUM_FIELDS,
+    )
+
+
+def _aggregate_kicker_projections(projs: list[dict]) -> list[dict]:
+    def _kicker_identity(p):
+        result = {"name": p["name"], "team": p["team"]}
+        if "player_id" in p:
+            result["player_id"] = p["player_id"]
+        if "position" in p:
+            result["position"] = p["position"]
+        return result
+
+    return _aggregate_projections(
+        projs,
+        key_fn=lambda p: p.get("player_id", p["name"]),
+        identity_fn=_kicker_identity,
+        sum_fields=_KICKER_SUM_FIELDS,
+    )
 
 
 def _display_projections(player_projs, output_format, output_path, detail=False,
@@ -340,7 +445,8 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def week(week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.pass_context
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -428,6 +534,7 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
     player_projs = all_player_projs
     click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
 
+    output_format = _infer_format(output_format, output_path, ctx)
     _display_projections(player_projs, output_format, output_path, detail=detail,
                          kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
@@ -443,7 +550,9 @@ def week(week_num, season, sims, scoring, output_format, output_path, overrides,
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
-def season(season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+@click.option("--by-week", is_flag=True, help="Output per-week breakdowns instead of season totals")
+@click.pass_context
+def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
@@ -465,10 +574,18 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
     schedules = loader.load_schedules([season_year])
 
     if not parsed_weeks:
-        # "all" — get from schedule data
-        week_nums = sorted(schedules.filter(pl.col("season") == season_year)["week"].unique().to_list())
+        # "all" — regular season only
+        game_schedule = schedules.filter(
+            (pl.col("season") == season_year) & (pl.col("game_type") == "REG")
+        )
+        week_nums = sorted(game_schedule["week"].unique().to_list())
     else:
         week_nums = parsed_weeks
+        game_schedule = schedules.filter(pl.col("season") == season_year)
+
+    if not week_nums:
+        click.echo(f"No regular-season games found for {season_year}.", err=True)
+        raise SystemExit(1)
 
     click.echo(f"Simulating {season_year} season, weeks {week_nums[0]}-{week_nums[-1]} ({sims} sims/game)...\n")
 
@@ -486,9 +603,7 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
         task = progress.add_task("Simulating season...", total=len(week_nums))
         for wk in week_nums:
             progress.update(task, description=f"Week {wk}")
-            week_games = schedules.filter(
-                (pl.col("week") == wk) & (pl.col("season") == season_year)
-            )
+            week_games = game_schedule.filter(pl.col("week") == wk)
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 home_dists, away_dists, home_roster, away_roster = builder.build_game(
@@ -507,30 +622,80 @@ def season(season_year, weeks, sims, scoring, output_format, output_path, overri
                 team_map = {"HOME": home, "AWAY": away}
                 if detail:
                     from fantasy_sim.scoring.projections import build_detailed_projections
-                    all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
+                    player_batch = build_detailed_projections(results.games, scoring_config)
                 else:
-                    all_player_projs.extend(build_player_projections(results.games, scoring_config))
-                all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
-                all_kicker_projs.extend(build_kicker_projections(
+                    player_batch = build_player_projections(results.games, scoring_config)
+                dst_batch = build_dst_projections(results.games, scoring_config, team_map=team_map)
+                kicker_batch = build_kicker_projections(
                     results.games, scoring_config, team_map=team_map,
                     home_roster=home_roster, away_roster=away_roster,
-                ))
+                )
+                for proj in player_batch:
+                    proj["week"] = wk
+                for proj in dst_batch:
+                    proj["week"] = wk
+                for proj in kicker_batch:
+                    proj["week"] = wk
+
+                all_player_projs.extend(player_batch)
+                all_dst_projs.extend(dst_batch)
+                all_kicker_projs.extend(kicker_batch)
             progress.advance(task)
 
-    all_player_projs.sort(key=lambda p: p["fpts"], reverse=True)
-    for i, p in enumerate(all_player_projs, 1):
-        p["rank"] = i
-    all_dst_projs.sort(key=lambda p: p["fpts"], reverse=True)
-    for i, p in enumerate(all_dst_projs, 1):
-        p["rank"] = i
-    all_kicker_projs.sort(key=lambda p: p["fpts"], reverse=True)
-    for i, p in enumerate(all_kicker_projs, 1):
-        p["rank"] = i
+    output_format = _infer_format(output_format, output_path, ctx)
 
-    player_projs = all_player_projs
-    click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
-    _display_projections(player_projs, output_format, output_path, detail=detail,
-                         kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
+    if by_week:
+        # Sort by week, then fpts within each week
+        all_player_projs.sort(key=lambda p: (p["week"], -p["fpts"]))
+        all_dst_projs.sort(key=lambda p: (p["week"], -p["fpts"]))
+        all_kicker_projs.sort(key=lambda p: (p["week"], -p["fpts"]))
+
+        if output_format == "table":
+            for wk in week_nums:
+                wk_players = [p for p in all_player_projs if p["week"] == wk]
+                wk_dst = [p for p in all_dst_projs if p["week"] == wk]
+                wk_kickers = [p for p in all_kicker_projs if p["week"] == wk]
+                # Re-rank within week
+                for i, p in enumerate(wk_players, 1):
+                    p["rank"] = i
+                for i, p in enumerate(wk_dst, 1):
+                    p["rank"] = i
+                for i, p in enumerate(wk_kickers, 1):
+                    p["rank"] = i
+                click.echo(f"\n{season_year} Week {wk} Projections ({scoring.upper()}, {sims} sims/game)\n")
+                _display_projections(wk_players, "table", None, detail=detail,
+                                     kicker_projs=wk_kickers, dst_projs=wk_dst)
+        else:
+            # Rank within each week before export
+            for proj_list in (all_player_projs, all_dst_projs, all_kicker_projs):
+                for wk in week_nums:
+                    wk_projs = [p for p in proj_list if p["week"] == wk]
+                    for i, p in enumerate(wk_projs, 1):
+                        p["rank"] = i
+            all_projs = all_player_projs + all_kicker_projs + all_dst_projs
+            if output_path is None:
+                output_path = f"projections.{output_format}"
+            if output_format == "csv":
+                export_csv(all_projs, Path(output_path))
+            else:
+                export_json(all_projs, Path(output_path))
+            click.echo(f"Exported to {output_path}")
+    else:
+        # Aggregate into season totals
+        all_player_projs = _aggregate_player_projections(all_player_projs)
+        all_dst_projs = _aggregate_dst_projections(all_dst_projs)
+        all_kicker_projs = _aggregate_kicker_projections(all_kicker_projs)
+
+        if detail:
+            click.echo(
+                "Note: floor/ceiling/stddev are not available for aggregated season totals. "
+                "Use --by-week --detail for weekly distributions."
+            )
+            detail = False
+
+        click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
+        _display_projections(all_player_projs, output_format, output_path, detail=detail,
+                             kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
 
 @main.command()

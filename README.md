@@ -97,7 +97,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - `game` command: single-game deep dive with per-team breakdowns, win percentages, `--demo` and `--detail` support
 - `player` command: single-player projection via fuzzy name matching with detailed stat card
 - Kicker attribution: `build_kicker_projections()` uses roster kicker names when available
-- Week validation: `--weeks` values validated to 1-18 range with helpful error messages
+- Week validation: `--weeks` values validated as positive integers with helpful error messages; regular season games filtered by `game_type`
 - CLI defaults from `defaults.yaml`: `num_sims` and `historical_seasons` drive default behavior
 
 **Phase 7C: Polish + Tests + CI** — Complete (87 tests, 505 total)
@@ -198,8 +198,14 @@ uv run fantasy-sim demo --sims 100 --format json --output projections.json
 # Simulate a real NFL week (requires network for nflverse data)
 uv run fantasy-sim week 1 --season 2024 --sims 100
 
-# Simulate a full season
+# Simulate a full season (regular season only by default)
 uv run fantasy-sim season --season 2024 --sims 50
+
+# Season with per-week breakdowns
+uv run fantasy-sim season --season 2024 --sims 50 --by-week
+
+# Season export (format auto-inferred from extension)
+uv run fantasy-sim season --season 2024 --sims 50 --output rankings.json
 
 # Backtest against historical actuals
 uv run fantasy-sim backtest --season 2024 --sims 50
