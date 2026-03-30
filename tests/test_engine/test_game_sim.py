@@ -159,3 +159,29 @@ class TestSimulateGameWithPlayers:
         result = simulate_game(make_team_dists(), make_team_dists(), rng)
         assert len(result.player_stats) == 0
         assert result.total_plays > 50
+
+
+class TestQBFumbleAttribution:
+    def test_pre_throw_fumble_attributed_to_qb(self):
+        from fantasy_sim.engine.game_sim import _update_player_stats
+        from fantasy_sim.engine.types import PlayResult
+        from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+
+        qb = PlayerModel("QB1", "QB", "QB", "T",
+                         PlayerUsage(snap_share=1.0), PlayerOutcomes())
+        wr = PlayerModel("WR1", "WR", "WR", "T",
+                         PlayerUsage(target_share=1.0), PlayerOutcomes())
+        roster = TeamRoster(team="T", players=[qb, wr])
+
+        player_stats = {}
+        # Simulate a pre-throw fumble: pass play, fumble, not sack, not complete, no receiver
+        result = PlayResult(
+            play_type="pass", yards=0, is_fumble=True,
+            is_sack=False, is_complete=False,
+            passer_id="QB1", receiver_id=None,
+        )
+        _update_player_stats(player_stats, result, roster)
+
+        assert "QB1" in player_stats
+        assert player_stats["QB1"].fumbles_lost == 1
+        assert player_stats["QB1"].pass_attempts == 1
