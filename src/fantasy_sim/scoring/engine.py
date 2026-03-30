@@ -13,6 +13,7 @@ def score_player(box: PlayerBoxScore, config: dict) -> float:
     points += box.receiving_yards * config.get("receiving_yard", 0)
     points += box.receiving_tds * config.get("receiving_td", 0)
     points += box.fumbles_lost * config.get("fumble_lost", 0)
+    # two_point not yet tracked in PlayerBoxScore (future enhancement)
     return points
 
 
@@ -20,6 +21,7 @@ def score_dst(box: TeamBoxScore, opponent_score: int, config: dict) -> float:
     """Calculate fantasy points for a team defense/special teams."""
     points = 0.0
     points += box.sacks_made * config.get("dst_sack", 0)
+    # dst_td not yet tracked in TeamBoxScore (no defensive TD attribution in engine)
     points += box.interceptions_caught * config.get("dst_interception", 0)
     points += box.fumbles_recovered * config.get("dst_fumble_recovery", 0)
     points += box.safeties * config.get("dst_safety", 0)

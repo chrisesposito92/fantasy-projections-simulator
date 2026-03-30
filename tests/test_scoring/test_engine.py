@@ -1,5 +1,5 @@
 import pytest
-from fantasy_sim.scoring.engine import score_player, score_dst
+from fantasy_sim.scoring.engine import score_player, score_dst, score_kicker
 from fantasy_sim.engine.types import PlayerBoxScore, TeamBoxScore
 
 
@@ -114,7 +114,7 @@ class TestScoreDST:
 
 class TestScoreKicker:
     def test_kicker_fg_and_xp(self, kicker_config):
-        from fantasy_sim.scoring.engine import score_kicker
+
         box = TeamBoxScore(
             fg_made=2, fg_made_0_39=1, fg_made_40_49=1, fg_made_50_plus=0,
             fg_missed=0, xp_made=3, xp_attempts=3,
@@ -124,7 +124,7 @@ class TestScoreKicker:
         assert points == pytest.approx(expected)
 
     def test_kicker_with_miss(self, kicker_config):
-        from fantasy_sim.scoring.engine import score_kicker
+
         box = TeamBoxScore(
             fg_made=1, fg_made_0_39=1, fg_made_40_49=0, fg_made_50_plus=0,
             fg_missed=1, xp_made=2, xp_attempts=2,
@@ -134,7 +134,7 @@ class TestScoreKicker:
         assert points == pytest.approx(expected)
 
     def test_kicker_long_fg(self, kicker_config):
-        from fantasy_sim.scoring.engine import score_kicker
+
         box = TeamBoxScore(
             fg_made=1, fg_made_0_39=0, fg_made_40_49=0, fg_made_50_plus=1,
             fg_missed=0, xp_made=1, xp_attempts=1,
