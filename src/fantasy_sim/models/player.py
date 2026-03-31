@@ -19,10 +19,12 @@ class PlayerUsage:
 class PlayerOutcomes:
     """What happens when a player is involved in a play."""
     catch_rate: float = 0.0
+    red_zone_catch_rate: float = 0.0
     receiving_yards_dist: np.ndarray | None = None
     rushing_yards_dist: np.ndarray | None = None
     scramble_yards_dist: np.ndarray | None = None
     fumble_rate: float = 0.0
+    pass_fumble_rate: float = 0.0
 
 
 @dataclass

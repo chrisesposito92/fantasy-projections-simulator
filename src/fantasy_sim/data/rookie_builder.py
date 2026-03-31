@@ -84,6 +84,7 @@ def build_rookie_model(
         usage.scramble_rate = archetype["scramble_rate"]
         outcomes.scramble_yards_dist = np.array(archetype["scramble_yards"])
         outcomes.fumble_rate = archetype["fumble_rate"]
+        outcomes.pass_fumble_rate = 0.0034  # League average
     elif position == "RB":
         usage.carry_share = archetype["carry_share"]
         usage.target_share = archetype["target_share"]
@@ -91,12 +92,14 @@ def build_rookie_model(
         outcomes.receiving_yards_dist = np.array(archetype["rec_yards"])
         outcomes.catch_rate = archetype["catch_rate"]
         outcomes.fumble_rate = archetype["fumble_rate"]
+        outcomes.red_zone_catch_rate = archetype["catch_rate"] * 0.85
     elif position in ("WR", "TE"):
         usage.target_share = archetype["target_share"]
         usage.red_zone_target_share = archetype.get("red_zone_target_share", 0.0)
         outcomes.receiving_yards_dist = np.array(archetype["rec_yards"])
         outcomes.catch_rate = archetype["catch_rate"]
         outcomes.fumble_rate = archetype["fumble_rate"]
+        outcomes.red_zone_catch_rate = archetype["catch_rate"] * 0.85
 
     return PlayerModel(
         player_id=player_id, name=name, position=position, team=team,
