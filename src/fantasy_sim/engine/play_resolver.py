@@ -130,11 +130,7 @@ def _resolve_pass(
                 raw_yards = int(rng.choice(scramble_yards_dist))
             else:
                 # Fall back to team run distribution
-                bucket = bucket_play(
-                    state.down, state.distance, state.score_differential,
-                    state.quarter, state.yard_line,
-                )
-                raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+                raw_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
             raw_yards = _apply_home_field(raw_yards, is_home, rng)
             is_safety = (state.yard_line - raw_yards) >= 100
             if is_safety:
@@ -214,11 +210,7 @@ def _resolve_pass(
                 player_yards = int(rng.choice(full_dist)) + boost
             else:
                 # Fallback: sample from team distribution (only when player lacks personal dist)
-                bucket = bucket_play(
-                    state.down, state.distance, state.score_differential,
-                    state.quarter, state.yard_line,
-                )
-                team_yards = play_outcomes.sample_yards("pass", bucket, rng)
+                team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
                 player_yards = (team_yards if team_yards > 0 else int(rng.integers(3, 12))) + boost
 
             yards = _apply_home_field(player_yards, is_home, rng)
@@ -229,28 +221,16 @@ def _resolve_pass(
         # TD determination with red zone gate
         if is_complete and state.yard_line <= 20 and (state.yard_line - yards) <= 0:
             if _red_zone_td_gate(state.yard_line, "pass", rng):
-                yards = _clamp_yards(state.yard_line, yards)
                 is_td = True
             else:
-                # Tackled short of goal line
-                short_amount = int(rng.integers(1, max(2, state.yard_line // 3)))
-                yards = max(0, state.yard_line - short_amount)
-                # Ensure receiver doesn't reach the goal line
-                if yards >= state.yard_line:
-                    yards = max(0, state.yard_line - 1)
+                yards = _tackled_short(state.yard_line, rng)
                 is_td = False
         else:
             is_td = is_complete and (state.yard_line - yards) <= 0
 
-        # No RZ yards blending needed — _clamp_yards() prevents exceeding
-        # yard_line, and the TD gate controls scoring probability.
-
-        # Fumble check on completions — use player fumble rate, fall back to team rate
         is_fumble = False
         if is_complete:
-            player_fumble = receiver.outcomes.fumble_rate
-            effective_rate = player_fumble if player_fumble > 0 else turnover_rates.fumble_rate
-            is_fumble = rng.random() < effective_rate
+            is_fumble = _check_fumble(receiver.outcomes.fumble_rate, turnover_rates.fumble_rate, rng)
 
         return PlayResult(
             play_type="pass", yards=yards,
@@ -263,11 +243,7 @@ def _resolve_pass(
         )
 
     # Legacy path (no roster) — sample from team distribution
-    bucket = bucket_play(
-        state.down, state.distance, state.score_differential,
-        state.quarter, state.yard_line,
-    )
-    team_yards = play_outcomes.sample_yards("pass", bucket, rng)
+    team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
     team_yards = _apply_home_field(team_yards, is_home, rng)
     yards = _clamp_yards(state.yard_line, team_yards)
 
@@ -310,11 +286,7 @@ def _resolve_run(
             player_yards = int(rng.choice(rusher.outcomes.rushing_yards_dist))
         else:
             # Fall back to team distribution
-            bucket = bucket_play(
-                state.down, state.distance, state.score_differential,
-                state.quarter, state.yard_line,
-            )
-            player_yards = play_outcomes.sample_yards("run", bucket, rng)
+            player_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
 
         raw_yards = _apply_home_field(player_yards, is_home, rng)
         is_safety = (state.yard_line - raw_yards) >= 100
@@ -325,22 +297,12 @@ def _resolve_run(
             if _red_zone_td_gate(state.yard_line, "run", rng):
                 is_td = True
             else:
-                # Tackled short of goal line
-                short_amount = int(rng.integers(1, max(2, state.yard_line // 3)))
-                yards = max(0, state.yard_line - short_amount)
-                if yards >= state.yard_line:
-                    yards = max(0, state.yard_line - 1)
+                yards = _tackled_short(state.yard_line, rng)
                 is_td = False
         else:
             is_td = (state.yard_line - yards) <= 0
 
-        # No RZ yards blending needed — _clamp_yards() prevents exceeding
-        # yard_line, and the TD gate controls scoring probability.
-
-        # Use player fumble rate, fall back to team rate if unset
-        player_fumble = rusher.outcomes.fumble_rate
-        effective_rate = player_fumble if player_fumble > 0 else turnover_rates.fumble_rate
-        is_fumble = rng.random() < effective_rate
+        is_fumble = _check_fumble(rusher.outcomes.fumble_rate, turnover_rates.fumble_rate, rng)
 
         return PlayResult(
             play_type="run", yards=yards,
@@ -351,12 +313,8 @@ def _resolve_run(
             rusher_id=rusher_id,
         )
 
-    # Legacy path (no roster) — identical to Phase 2 behavior
-    bucket = bucket_play(
-        state.down, state.distance, state.score_differential,
-        state.quarter, state.yard_line,
-    )
-    raw_yards = play_outcomes.sample_yards("run", bucket, rng)
+    # Legacy path (no roster)
+    raw_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
     raw_yards = _apply_home_field(raw_yards, is_home, rng)
 
     # Check safety on raw yards before clamping (ball pushed past own end zone)
@@ -374,6 +332,33 @@ def _resolve_run(
         is_safety=is_safety,
         clock_runoff=_scale_clock_runoff(CLOCK_RUN, pace_factor),
     )
+
+
+def _bucket_from_state(state: GameState):
+    """Build a GameStateBucket from the current game state."""
+    return bucket_play(
+        state.down, state.distance, state.score_differential,
+        state.quarter, state.yard_line,
+    )
+
+
+def _tackled_short(yard_line: int, rng: np.random.Generator) -> int:
+    """Determine yards gained when a player is tackled short of the goal line."""
+    short_amount = int(rng.integers(1, max(2, yard_line // 3)))
+    yards = max(0, yard_line - short_amount)
+    if yards >= yard_line:
+        yards = max(0, yard_line - 1)
+    return yards
+
+
+def _check_fumble(
+    player_fumble_rate: float,
+    team_fumble_rate: float,
+    rng: np.random.Generator,
+) -> bool:
+    """Roll for fumble using player rate, falling back to team rate."""
+    rate = player_fumble_rate if player_fumble_rate > 0 else team_fumble_rate
+    return rng.random() < rate
 
 
 def _clamp_yards(yard_line: int, yards: int) -> int:

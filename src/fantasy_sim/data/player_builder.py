@@ -6,6 +6,7 @@ import polars as pl
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
+from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
 
 MIN_PLAYER_PLAYS = 5
 MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
@@ -388,7 +389,7 @@ def _assemble_models(
             if rs["rz_targets"] >= MIN_RZ_TARGETS:
                 outcomes.red_zone_catch_rate = rs["rz_catches"] / rs["rz_targets"]
             elif outcomes.catch_rate > 0:
-                outcomes.red_zone_catch_rate = outcomes.catch_rate * 0.85
+                outcomes.red_zone_catch_rate = outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
             if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
                 outcomes.receiving_yards_dist = np.array(rs["yards"])
             # Red zone receiving yards distribution (catches inside the 20)
