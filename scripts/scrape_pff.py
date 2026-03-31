@@ -324,6 +324,8 @@ def process_season(base_dir: Path, season: int) -> None:
                         player_rows = v
                         break
                 for player_row in player_rows:
+                    if not isinstance(player_row, dict):
+                        continue
                     player_row["season"] = season
                     player_row["week"] = week_num
                     player_row["game_id"] = game_id
