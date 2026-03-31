@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import polars as pl
 import numpy as np
-from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster, MIN_QB_CARRY_SHARE
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
 
@@ -473,6 +473,63 @@ def build_player_models(
 
 
 def build_team_roster(team: str, models: dict[str, PlayerModel]) -> TeamRoster:
-    """Build a TeamRoster from a dict of PlayerModels."""
-    team_players = [m for m in models.values() if m.team == team]
-    return TeamRoster(team=team, players=team_players)
+    """Build a TeamRoster from a dict of PlayerModels.
+
+    Players are deepcopied to prevent mutations (e.g. from overrides) from
+    bleeding back into the shared model cache.  After copying, carry_shares
+    and target_shares are normalized to sum to 1.0 among eligible players
+    so that override values map directly to selection probability.
+    """
+    team_players = [deepcopy(m) for m in models.values() if m.team == team]
+    roster = TeamRoster(team=team, players=team_players)
+    _normalize_roster_shares(roster)
+    return roster
+
+
+def _normalize_roster_shares(roster: TeamRoster) -> None:
+    """Normalize carry/target shares to sum to 1.0 among eligible players.
+
+    Without this, shares computed from multi-season PBP data don't sum to 1.0
+    (former players had carries/targets but aren't on the current roster).
+    The gap causes ``select_rusher``/``select_receiver`` to amplify each
+    player's selection probability beyond the intended share value.
+    """
+    # --- Carry shares ---
+    eligible_rushers = [
+        p for p in roster.players
+        if p.usage.carry_share > 0
+        and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+    ]
+    _scale_shares(eligible_rushers, "carry_share")
+
+    # --- Red zone carry shares ---
+    eligible_rz_rushers = [
+        p for p in roster.players
+        if p.usage.red_zone_carry_share > 0
+        and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+    ]
+    _scale_shares(eligible_rz_rushers, "red_zone_carry_share")
+
+    # --- Target shares ---
+    eligible_receivers = [
+        p for p in roster.players if p.usage.target_share > 0
+    ]
+    _scale_shares(eligible_receivers, "target_share")
+
+    # --- Red zone target shares ---
+    eligible_rz_receivers = [
+        p for p in roster.players if p.usage.red_zone_target_share > 0
+    ]
+    _scale_shares(eligible_rz_receivers, "red_zone_target_share")
+
+
+def _scale_shares(players: list[PlayerModel], attr: str) -> None:
+    """Scale a usage share attribute so the values sum to 1.0."""
+    if not players:
+        return
+    total = sum(getattr(p.usage, attr) for p in players)
+    if total <= 0 or abs(total - 1.0) < 1e-9:
+        return
+    factor = 1.0 / total
+    for p in players:
+        setattr(p.usage, attr, getattr(p.usage, attr) * factor)

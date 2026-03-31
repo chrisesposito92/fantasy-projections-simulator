@@ -87,6 +87,56 @@ class TestBuildTeamRoster:
         assert roster.select_receiver(rng) is not None
         assert roster.select_rusher(rng) is not None
 
+    def test_roster_normalizes_carry_shares(self):
+        """Carry shares must sum to 1.0 after roster construction.
+
+        Regression: when former players had carries in training data but
+        aren't on the current roster, raw carry_shares summed to <1.0.
+        select_rusher normalizes weights, amplifying each player's actual
+        selection probability beyond the intended share value.
+        """
+        models = {
+            "RB1": PlayerModel("RB1", "Back One", "RB", "T1",
+                               PlayerUsage(carry_share=0.35), PlayerOutcomes()),
+            "RB2": PlayerModel("RB2", "Back Two", "RB", "T1",
+                               PlayerUsage(carry_share=0.25), PlayerOutcomes()),
+            # Raw shares sum to 0.60 — simulates missing 0.40 from former players
+        }
+        roster = build_team_roster("T1", models)
+        total = sum(p.usage.carry_share for p in roster.players if p.usage.carry_share > 0)
+        assert total == pytest.approx(1.0, abs=0.01)
+        # Relative proportions preserved
+        rb1 = next(p for p in roster.players if p.player_id == "RB1")
+        rb2 = next(p for p in roster.players if p.player_id == "RB2")
+        assert rb1.usage.carry_share == pytest.approx(0.35 / 0.60, abs=0.01)
+        assert rb2.usage.carry_share == pytest.approx(0.25 / 0.60, abs=0.01)
+
+    def test_roster_normalizes_target_shares(self):
+        """Target shares must sum to 1.0 after roster construction."""
+        models = {
+            "WR1": PlayerModel("WR1", "Wideout One", "WR", "T1",
+                               PlayerUsage(target_share=0.20), PlayerOutcomes()),
+            "WR2": PlayerModel("WR2", "Wideout Two", "WR", "T1",
+                               PlayerUsage(target_share=0.15), PlayerOutcomes()),
+            "RB1": PlayerModel("RB1", "Back One", "RB", "T1",
+                               PlayerUsage(target_share=0.08, carry_share=0.50), PlayerOutcomes()),
+        }
+        roster = build_team_roster("T1", models)
+        total = sum(p.usage.target_share for p in roster.players if p.usage.target_share > 0)
+        assert total == pytest.approx(1.0, abs=0.01)
+
+    def test_roster_deepcopies_players(self):
+        """Roster players must be independent copies — overrides must not mutate the cache."""
+        models = {
+            "RB1": PlayerModel("RB1", "Back One", "RB", "T1",
+                               PlayerUsage(carry_share=0.50), PlayerOutcomes()),
+        }
+        roster = build_team_roster("T1", models)
+        # Mutate the roster copy
+        roster.players[0].usage.carry_share = 0.99
+        # Original must be unchanged
+        assert models["RB1"].usage.carry_share == 0.50
+
 
 class TestRedZoneMetrics:
     def test_red_zone_target_share_computed(self, rz_pbp, sample_rosters):
