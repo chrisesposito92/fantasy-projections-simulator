@@ -61,6 +61,28 @@ ALL_FACETS: list[tuple[str, str]] = [
 console = Console()
 
 
+class ProgressTracker:
+    """Tracks which (season, week, game, facet) combos have been scraped."""
+
+    def __init__(self, path: Path = PROGRESS_FILE):
+        self.path = path
+        self.data: dict = {}
+        if path.exists():
+            self.data = json.loads(path.read_text())
+
+    def is_done(self, season: str, week: str, game_id: str, facet: str) -> bool:
+        return facet in self.data.get(season, {}).get(week, {}).get(game_id, [])
+
+    def mark_done(self, season: str, week: str, game_id: str, facet: str) -> None:
+        self.data.setdefault(season, {}).setdefault(week, {}).setdefault(game_id, [])
+        if facet not in self.data[season][week][game_id]:
+            self.data[season][week][game_id].append(facet)
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.data, indent=2))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="PFF Premium Data Scraper",

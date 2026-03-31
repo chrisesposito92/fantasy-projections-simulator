@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 import pytest
 from unittest.mock import patch, MagicMock
-from scrape_pff import parse_weeks, load_cookie
+from scrape_pff import parse_weeks, load_cookie, ProgressTracker
 
 
 class TestParseWeeks:
@@ -47,3 +47,32 @@ class TestLoadCookie:
         env_file.write_text("OTHER_KEY=value\n")
         cookie = load_cookie(env_file)
         assert cookie is None
+
+
+class TestProgressTracker:
+    def test_new_tracker_is_empty(self, tmp_path):
+        tracker = ProgressTracker(tmp_path / "progress.json")
+        assert not tracker.is_done("2024", "week_01", "28418", "passing_summary")
+
+    def test_mark_done_and_check(self, tmp_path):
+        tracker = ProgressTracker(tmp_path / "progress.json")
+        tracker.mark_done("2024", "week_01", "28418", "passing_summary")
+        assert tracker.is_done("2024", "week_01", "28418", "passing_summary")
+        assert not tracker.is_done("2024", "week_01", "28418", "rushing_summary")
+
+    def test_persists_to_disk(self, tmp_path):
+        path = tmp_path / "progress.json"
+        tracker = ProgressTracker(path)
+        tracker.mark_done("2024", "week_01", "28418", "passing_summary")
+        tracker.save()
+
+        tracker2 = ProgressTracker(path)
+        assert tracker2.is_done("2024", "week_01", "28418", "passing_summary")
+
+    def test_multiple_facets_per_game(self, tmp_path):
+        tracker = ProgressTracker(tmp_path / "progress.json")
+        tracker.mark_done("2024", "week_01", "28418", "passing_summary")
+        tracker.mark_done("2024", "week_01", "28418", "rushing_summary")
+        assert tracker.is_done("2024", "week_01", "28418", "passing_summary")
+        assert tracker.is_done("2024", "week_01", "28418", "rushing_summary")
+        assert not tracker.is_done("2024", "week_01", "28418", "defense_summary")
