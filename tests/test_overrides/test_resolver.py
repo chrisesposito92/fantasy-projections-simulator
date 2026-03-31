@@ -48,3 +48,59 @@ class TestPlayerResolver:
     def test_case_insensitive(self, resolver):
         pid = resolver.resolve("TRAVIS KELCE")
         assert pid == "TK87"
+
+
+class TestResolveExact:
+    """Test resolve_exact (steps 1-3 only, no fuzzy matching)."""
+
+    def test_exact_id(self, resolver):
+        assert resolver.resolve_exact("PM15") == "PM15"
+
+    def test_exact_name(self, resolver):
+        assert resolver.resolve_exact("Patrick Mahomes") == "PM15"
+
+    def test_underscore_conversion(self, resolver):
+        assert resolver.resolve_exact("patrick_mahomes") == "PM15"
+
+    def test_no_fuzzy_fallback(self, resolver):
+        """resolve_exact should NOT fuzzy-match partial names."""
+        with pytest.raises(KeyError):
+            resolver.resolve_exact("mahomes")
+
+    def test_no_partial_match(self, resolver):
+        """resolve_exact should NOT match 'kelce' to 'Travis Kelce'."""
+        with pytest.raises(KeyError):
+            resolver.resolve_exact("kelce")
+
+
+class TestCrossGameContamination:
+    """Regression tests for the fuzzy matching cross-game contamination bug.
+
+    When applying overrides per-game, 'bijan_robinson' should NOT fuzzy-match
+    to 'Wan'Dale Robinson' or any other 'Robinson' on a different team.
+    """
+
+    def test_no_cross_team_fuzzy_match(self):
+        """resolve_exact prevents 'bijan_robinson' matching 'Wan'Dale Robinson'."""
+        nyg_roster = TeamRoster(team="NYG", players=[
+            PlayerModel("WR99", "Wan'Dale Robinson", "WR", "NYG",
+                        PlayerUsage(), PlayerOutcomes()),
+        ])
+        resolver = PlayerResolver([nyg_roster])
+
+        # Full fuzzy resolve WOULD match (this is the bug)
+        pid = resolver.resolve("bijan_robinson")
+        assert pid == "WR99"  # Bug behavior: wrong player matched
+
+        # Exact resolve correctly rejects
+        with pytest.raises(KeyError):
+            resolver.resolve_exact("bijan_robinson")
+
+    def test_correct_team_exact_match(self):
+        """resolve_exact correctly matches when player IS on roster."""
+        atl_roster = TeamRoster(team="ATL", players=[
+            PlayerModel("BR01", "Bijan Robinson", "RB", "ATL",
+                        PlayerUsage(), PlayerOutcomes()),
+        ])
+        resolver = PlayerResolver([atl_roster])
+        assert resolver.resolve_exact("bijan_robinson") == "BR01"

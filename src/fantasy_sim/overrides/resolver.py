@@ -31,17 +31,15 @@ class PlayerResolver:
                 self._name_map[name_lower] = player.player_id
                 self._all_names.append((player.name, player.player_id))
 
-    def resolve(self, query: str) -> str:
-        """Resolve a player query to a player_id.
+    def resolve_exact(self, query: str) -> str:
+        """Resolve a player query using exact matching only (no fuzzy).
 
         Tries in order:
         1. Exact player_id match
         2. Exact name match (case-insensitive)
         3. Underscore-to-space conversion
-        4. Fuzzy name match with ambiguity detection
 
-        Raises KeyError if no match found.
-        Raises AmbiguousMatchError if 2+ players match within AMBIGUITY_THRESHOLD.
+        Raises KeyError if no exact match found.
         """
         # 1. Exact ID
         if query in self._id_map:
@@ -57,7 +55,28 @@ class PlayerResolver:
         if query_spaces in self._name_map:
             return self._name_map[query_spaces]
 
+        raise KeyError(f"No exact match for '{query}'")
+
+    def resolve(self, query: str) -> str:
+        """Resolve a player query to a player_id.
+
+        Tries in order:
+        1. Exact player_id match
+        2. Exact name match (case-insensitive)
+        3. Underscore-to-space conversion
+        4. Fuzzy name match with ambiguity detection
+
+        Raises KeyError if no match found.
+        Raises AmbiguousMatchError if 2+ players match within AMBIGUITY_THRESHOLD.
+        """
+        # 1-3. Exact matching
+        try:
+            return self.resolve_exact(query)
+        except KeyError:
+            pass
+
         # 4. Fuzzy match with ambiguity detection
+        query_lower = query.lower()
         scored_matches: list[tuple[int, str, str]] = []
         for name, pid in self._all_names:
             score = max(

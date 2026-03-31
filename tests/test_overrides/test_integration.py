@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from fantasy_sim.overrides.engine import apply_player_override, apply_team_override
 from fantasy_sim.overrides.parser import OverrideSet
-from fantasy_sim.data.game_context import apply_overrides
+from fantasy_sim.data.game_context import apply_overrides, pre_resolve_overrides
 from fantasy_sim.models.player import (
     PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster,
 )
@@ -111,3 +111,58 @@ class TestOverrideIntegration:
         assert away_dists.play_calling.default["pass"] == pytest.approx(0.62)
         # KC pass rate should be unchanged
         assert home_dists.play_calling.default["pass"] == pytest.approx(0.57)
+
+    def test_pre_resolve_prevents_cross_game_contamination(self):
+        """Regression: 'bijan_robinson' override must NOT apply to Wan'Dale Robinson.
+
+        The bug: apply_overrides called per-game uses fuzzy matching. When
+        Bijan Robinson (ATL) isn't in a game, partial_ratio('bijan_robinson',
+        "wan'dale robinson") scores high, applying the RB carry_share override
+        to a WR — causing 2600+ rushing yard projections.
+        """
+        atl_roster = TeamRoster(team="ATL", players=[
+            PlayerModel("BR01", "Bijan Robinson", "RB", "ATL",
+                        PlayerUsage(carry_share=0.50), PlayerOutcomes()),
+        ])
+        nyg_roster = TeamRoster(team="NYG", players=[
+            PlayerModel("WR99", "Wan'Dale Robinson", "WR", "NYG",
+                        PlayerUsage(carry_share=0.0), PlayerOutcomes()),
+        ])
+
+        overrides = OverrideSet(
+            players={"bijan_robinson": {"carry_share": 0.72}},
+        )
+
+        # Pre-resolve against ALL rosters — should resolve to BR01
+        resolved = pre_resolve_overrides(overrides, [atl_roster, nyg_roster])
+        assert "BR01" in resolved.players
+        assert "bijan_robinson" not in resolved.players
+
+        # Apply to NYG game — should NOT affect Wan'Dale Robinson
+        nyg_dists = make_dists("NYG")
+        other_dists = make_dists("OTH")
+        other_roster = TeamRoster(team="OTH", players=[])
+        apply_overrides(resolved, nyg_dists, other_dists, nyg_roster, other_roster)
+
+        wandale = next(p for p in nyg_roster.players if p.player_id == "WR99")
+        assert wandale.usage.carry_share == pytest.approx(0.0)  # Unchanged!
+
+    def test_pre_resolve_applies_to_correct_player(self):
+        """Pre-resolved override applies correctly to the intended player."""
+        atl_roster = TeamRoster(team="ATL", players=[
+            PlayerModel("BR01", "Bijan Robinson", "RB", "ATL",
+                        PlayerUsage(carry_share=0.50), PlayerOutcomes()),
+        ])
+
+        overrides = OverrideSet(
+            players={"bijan_robinson": {"carry_share": 0.72}},
+        )
+
+        resolved = pre_resolve_overrides(overrides, [atl_roster])
+        atl_dists = make_dists("ATL")
+        other_dists = make_dists("OTH")
+        other_roster = TeamRoster(team="OTH", players=[])
+        apply_overrides(resolved, atl_dists, other_dists, atl_roster, other_roster)
+
+        bijan = next(p for p in atl_roster.players if p.player_id == "BR01")
+        assert bijan.usage.carry_share == pytest.approx(0.72)

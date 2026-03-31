@@ -22,7 +22,7 @@ from fantasy_sim.output.export import export_csv, export_json
 from fantasy_sim.validation.backtester import Backtester
 from fantasy_sim.validation.report import format_backtest_report
 from fantasy_sim.overrides.parser import parse_override_config, parse_cli_override, OverrideSet
-from fantasy_sim.data.game_context import apply_overrides as apply_overrides_fn
+from fantasy_sim.data.game_context import apply_overrides as apply_overrides_fn, pre_resolve_overrides
 
 
 def _make_demo_dists(team: str) -> TeamDistributions:
@@ -126,6 +126,23 @@ def _resolve_config_chain(
         scoring_config = load_custom_scoring(Path(scoring_config_path), scoring_presets)
 
     return scoring_config
+
+
+def _effective_scoring_name(
+    scoring_format: str,
+    season_yaml_path: str | None = None,
+) -> str:
+    """Return the effective scoring format name after config chain resolution."""
+    effective = scoring_format
+    if season_yaml_path:
+        season_path = Path(season_yaml_path)
+        if season_path.exists():
+            import yaml
+            with open(season_path) as f:
+                season_config = yaml.safe_load(f) or {}
+            if "scoring_format" in season_config:
+                effective = season_config["scoring_format"]
+    return effective
 
 
 def _get_training_seasons(season: int) -> list[int]:
@@ -235,6 +252,8 @@ def demo(ctx, sims, scoring, output_format, output_path, overrides, config_path,
     away_roster = _make_demo_roster("AWAY")
 
     override_set = _build_overrides(overrides, config_path)
+    if override_set.players:
+        override_set = pre_resolve_overrides(override_set, [home_roster, away_roster])
     if override_set.players or override_set.teams:
         apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
 
@@ -474,6 +493,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         meta = _read_season_yaml_metadata(season_yaml)
         if "season" in meta:
             season = meta["season"]
+    effective_scoring = _effective_scoring_name(scoring, season_yaml)
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season)
 
@@ -502,22 +522,34 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
     all_kicker_projs = []
     override_set = _build_overrides(overrides, config_path)
 
+    # Build all game data first so we can pre-resolve overrides against all rosters
+    game_data = []
+    all_rosters = []
+    for game in week_games.iter_rows(named=True):
+        home = game["home_team"]
+        away = game["away_team"]
+        home_dists, away_dists, home_roster, away_roster = builder.build_game(
+            home_team=home, away_team=away, training_seasons=training_seasons,
+            target_season=season, week=week_num,
+        )
+        all_rosters.extend([home_roster, away_roster])
+        game_data.append((home_dists, away_dists, home_roster, away_roster, game))
+
+    # Pre-resolve player override names to exact IDs against all rosters
+    if override_set.players:
+        override_set = pre_resolve_overrides(override_set, all_rosters)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
     ) as progress:
-        task = progress.add_task("Simulating games...", total=week_games.shape[0])
-        for game in week_games.iter_rows(named=True):
+        task = progress.add_task("Simulating games...", total=len(game_data))
+        for home_dists, away_dists, home_roster, away_roster, game in game_data:
             home = game["home_team"]
             away = game["away_team"]
             progress.update(task, description=f"{away} @ {home}")
-
-            home_dists, away_dists, home_roster, away_roster = builder.build_game(
-                home_team=home, away_team=away, training_seasons=training_seasons,
-                target_season=season, week=week_num,
-            )
 
             if override_set.players or override_set.teams:
                 apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
@@ -557,7 +589,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         p["rank"] = i
 
     player_projs = all_player_projs
-    click.echo(f"\n{season} Week {week_num} Projections ({scoring.upper()}, {sims} sims/game)\n")
+    click.echo(f"\n{season} Week {week_num} Projections ({effective_scoring.upper()}, {sims} sims/game)\n")
 
     output_format = _infer_format(output_format, output_path, ctx)
     _display_projections(player_projs, output_format, output_path, detail=detail,
@@ -587,6 +619,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
     if ctx.get_parameter_source("weeks") == click.core.ParameterSource.DEFAULT:
         if "weeks" in meta:
             weeks = meta["weeks"]
+    effective_scoring = _effective_scoring_name(scoring, season_yaml)
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season_year)
 
@@ -625,6 +658,19 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
     all_dst_projs = []
     all_kicker_projs = []
     override_set = _build_overrides(overrides, config_path)
+
+    # Pre-resolve player override names to exact IDs using first week's rosters
+    if override_set.players:
+        first_week_games = game_schedule.filter(pl.col("week") == week_nums[0])
+        first_week_rosters = []
+        for game in first_week_games.iter_rows(named=True):
+            home, away = game["home_team"], game["away_team"]
+            _, _, hr, ar = builder.build_game(
+                home_team=home, away_team=away, training_seasons=training_seasons,
+                target_season=season_year, week=week_nums[0],
+            )
+            first_week_rosters.extend([hr, ar])
+        override_set = pre_resolve_overrides(override_set, first_week_rosters)
 
     with Progress(
         SpinnerColumn(),
@@ -694,7 +740,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     p["rank"] = i
                 for i, p in enumerate(wk_kickers, 1):
                     p["rank"] = i
-                click.echo(f"\n{season_year} Week {wk} Projections ({scoring.upper()}, {sims} sims/game)\n")
+                click.echo(f"\n{season_year} Week {wk} Projections ({effective_scoring.upper()}, {sims} sims/game)\n")
                 _display_projections(wk_players, "table", None, detail=detail,
                                      kicker_projs=wk_kickers, dst_projs=wk_dst)
         else:
@@ -725,7 +771,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
             )
             detail = False
 
-        click.echo(f"\n{season_year} Season Projections ({scoring.upper()})\n")
+        click.echo(f"\n{season_year} Season Projections ({effective_scoring.upper()})\n")
         _display_projections(all_player_projs, output_format, output_path, detail=detail,
                              kicker_projs=all_kicker_projs, dst_projs=all_dst_projs)
 
@@ -781,6 +827,8 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         )
 
     override_set = _build_overrides(overrides, effective_config_path)
+    if override_set.players:
+        override_set = pre_resolve_overrides(override_set, [home_roster, away_roster])
     if override_set.players or override_set.teams:
         apply_overrides_fn(override_set, home_dists, away_dists, home_roster, away_roster)
 
@@ -953,6 +1001,8 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
     hd, ad, hr, ar, home_name, away_name = target_game
 
     override_set = _build_overrides(overrides, effective_config_path)
+    if override_set.players:
+        override_set = pre_resolve_overrides(override_set, all_rosters)
     if override_set.players or override_set.teams:
         apply_overrides_fn(override_set, hd, ad, hr, ar)
 

@@ -208,6 +208,36 @@ class GameContextBuilder:
         return home_dists, away_dists, home_roster, away_roster
 
 
+def pre_resolve_overrides(
+    overrides: OverrideSet,
+    all_rosters: list[TeamRoster],
+) -> OverrideSet:
+    """Resolve player override keys to exact player_ids using all rosters.
+
+    This prevents fuzzy matching from accidentally applying overrides
+    to wrong players when applied per-game (e.g. 'bijan_robinson'
+    matching 'Wan'Dale Robinson' via partial_ratio).
+    """
+    if not overrides.players:
+        return overrides
+
+    resolver = PlayerResolver(all_rosters)
+    resolved_players: dict[str, dict] = {}
+
+    for player_query, player_overrides in overrides.players.items():
+        try:
+            player_id = resolver.resolve(player_query)
+            resolved_players[player_id] = player_overrides
+        except KeyError:
+            import click
+            click.echo(
+                f"Warning: Could not resolve player override '{player_query}'. Skipping.",
+                err=True,
+            )
+
+    return OverrideSet(players=resolved_players, teams=overrides.teams)
+
+
 def apply_overrides(
     overrides: OverrideSet,
     home_dists: TeamDistributions,
@@ -215,7 +245,11 @@ def apply_overrides(
     home_roster: TeamRoster,
     away_roster: TeamRoster,
 ) -> None:
-    """Apply player and team overrides to distributions and rosters. Mutates in place."""
+    """Apply player and team overrides to distributions and rosters. Mutates in place.
+
+    Uses exact matching only (no fuzzy) to prevent cross-game contamination.
+    Call pre_resolve_overrides() first to resolve fuzzy names to exact IDs.
+    """
     # Build resolver from both rosters
     resolver = PlayerResolver([home_roster, away_roster])
 
@@ -226,12 +260,12 @@ def apply_overrides(
         elif team == away_roster.team:
             apply_team_override(away_dists, team_overrides)
 
-    # Apply player overrides
+    # Apply player overrides (exact matching only)
     for player_query, player_overrides in overrides.players.items():
         try:
-            player_id = resolver.resolve(player_query)
+            player_id = resolver.resolve_exact(player_query)
         except KeyError:
-            continue  # Skip unresolvable players
+            continue  # Player not on either team in this game
 
         # Find which roster the player is on
         for roster in [home_roster, away_roster]:
