@@ -89,11 +89,76 @@ def ensure_directories() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
-if __name__ == "__main__":
+def load_cookie(env_path: Path = ENV_FILE) -> str | None:
+    """Load PFF_COOKIE from .env file."""
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("PFF_COOKIE="):
+            value = line[len("PFF_COOKIE="):]
+            return value.strip().strip('"').strip("'")
+    return None
+
+
+def build_client(cookie: str) -> httpx.Client:
+    """Create an httpx client with PFF auth headers."""
+    return httpx.Client(
+        base_url=PFF_BASE_URL,
+        headers={
+            "Cookie": cookie,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": f"{PFF_BASE_URL}/nfl/games",
+        },
+        timeout=30.0,
+    )
+
+
+def validate_cookie(client: httpx.Client, season: int) -> bool:
+    """Validate the cookie by making a lightweight API request."""
+    try:
+        resp = client.get(f"/api/v1/teams?league=nfl&season={season}")
+        if resp.status_code in (401, 403):
+            return False
+        resp.raise_for_status()
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+def main() -> None:
     args = parse_args()
     weeks = parse_weeks(args.weeks)
-    console.print(f"[bold]PFF Scraper[/bold] — Season {args.season}")
+    ensure_directories()
+
+    console.print(f"\n[bold]PFF Scraper[/bold] — Season {args.season}")
     if weeks:
         console.print(f"  Weeks: {weeks}")
-    console.print(f"  Delay: {args.delay}s")
-    ensure_directories()
+    console.print(f"  Delay: {args.delay}s\n")
+
+    if args.process_only:
+        console.print("[bold]Process-only mode[/bold] — skipping scrape\n")
+        return
+
+    # Load and validate cookie
+    cookie = load_cookie()
+    if cookie is None:
+        console.print("[bold red]Error:[/bold red] No PFF cookie found.")
+        console.print("Create ~/.fantasy-sim/pff/.env with your PFF_COOKIE.")
+        console.print("See docs/pff-setup.md for instructions.")
+        sys.exit(1)
+
+    client = build_client(cookie)
+    if not validate_cookie(client, args.season):
+        console.print("[bold red]Error:[/bold red] PFF cookie is invalid or expired.")
+        console.print("Refresh your cookie — see docs/pff-setup.md")
+        client.close()
+        sys.exit(1)
+
+    console.print("[green]Cookie validated[/green]\n")
+    client.close()
+
+
+if __name__ == "__main__":
+    main()
