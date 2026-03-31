@@ -194,76 +194,83 @@ def scrape_season(
         console.print("[yellow]No weeks found with games.[/yellow]")
         return stats
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        week_task = progress.add_task("Weeks", total=len(weeks))
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            week_task = progress.add_task("Weeks", total=len(weeks))
 
-        for week in weeks:
-            week_str = f"week_{week:02d}"
-            progress.update(week_task, description=f"Week {week}")
+            for week in weeks:
+                week_str = f"week_{week:02d}"
+                progress.update(week_task, description=f"Week {week}")
 
-            games = fetch_games_for_week(client, season, week, delay)
-            if not games:
-                progress.advance(week_task)
-                continue
+                games = fetch_games_for_week(client, season, week, delay)
+                if not games:
+                    progress.advance(week_task)
+                    continue
 
-            # Ensure week directory exists
-            week_dir = RAW_DIR / "facets" / str(season) / week_str
-            week_dir.mkdir(parents=True, exist_ok=True)
+                # Ensure week directory exists
+                week_dir = RAW_DIR / "facets" / str(season) / week_str
+                week_dir.mkdir(parents=True, exist_ok=True)
 
-            game_task = progress.add_task(f"  Games (wk {week})", total=len(games))
+                game_task = progress.add_task(f"  Games (wk {week})", total=len(games))
 
-            for game in games:
-                game_id = game["id"]
-                game_id_str = str(game_id)
+                for game in games:
+                    game_id = game["id"]
+                    game_id_str = str(game_id)
 
-                facet_task = progress.add_task(f"    Facets (g{game_id})", total=len(ALL_FACETS))
+                    facet_task = progress.add_task(f"    Facets (g{game_id})", total=len(ALL_FACETS))
 
-                for category, subfacet in ALL_FACETS:
-                    facet_key = f"{category}_{subfacet}"
+                    for category, subfacet in ALL_FACETS:
+                        facet_key = f"{category}_{subfacet}"
 
-                    if tracker.is_done(season_str, week_str, game_id_str, facet_key):
-                        stats["skipped_done"] += 1
+                        if tracker.is_done(season_str, week_str, game_id_str, facet_key):
+                            stats["skipped_done"] += 1
+                            progress.advance(facet_task)
+                            continue
+
+                        try:
+                            data = fetch_json(
+                                client,
+                                f"/api/v1/facet/{category}/{subfacet}?game_id={game_id}",
+                                delay=delay,
+                            )
+                        except AuthError:
+                            console.print("\n[bold red]Auth error — cookie expired. Stopping.[/bold red]")
+                            console.print("Refresh your cookie — see docs/pff-setup.md")
+                            tracker.save()
+                            sys.exit(1)
+
+                        if data is _NOT_FOUND:
+                            stats["skipped_404"] += 1
+                        elif data is None:
+                            stats["failures"] += 1
+                        else:
+                            out_path = week_dir / f"{game_id}_{facet_key}.json"
+                            out_path.write_text(json.dumps(data, indent=2))
+                            stats["requests"] += 1
+
+                        tracker.mark_done(season_str, week_str, game_id_str, facet_key)
                         progress.advance(facet_task)
-                        continue
 
-                    try:
-                        data = fetch_json(
-                            client,
-                            f"/api/v1/facet/{category}/{subfacet}?game_id={game_id}",
-                            delay=delay,
-                        )
-                    except AuthError:
-                        console.print("\n[bold red]Auth error — cookie expired. Stopping.[/bold red]")
-                        console.print("Refresh your cookie — see docs/pff-setup.md")
-                        tracker.save()
-                        sys.exit(1)
+                    # Save progress after each game
+                    tracker.save()
+                    progress.remove_task(facet_task)
+                    progress.advance(game_task)
 
-                    if data is _NOT_FOUND:
-                        stats["skipped_404"] += 1
-                    elif data is None:
-                        stats["failures"] += 1
-                    else:
-                        out_path = week_dir / f"{game_id}_{facet_key}.json"
-                        out_path.write_text(json.dumps(data, indent=2))
-                        stats["requests"] += 1
+                progress.remove_task(game_task)
+                progress.advance(week_task)
 
-                    tracker.mark_done(season_str, week_str, game_id_str, facet_key)
-                    progress.advance(facet_task)
-
-                # Save progress after each game
-                tracker.save()
-                progress.remove_task(facet_task)
-                progress.advance(game_task)
-
-            progress.remove_task(game_task)
-            progress.advance(week_task)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted — saving progress...[/yellow]")
+        tracker.save()
+        console.print("[green]Progress saved. Re-run to resume.[/green]")
+        return stats
 
     tracker.save()
     return stats
