@@ -325,7 +325,7 @@ def process_season(base_dir: Path, season: int) -> None:
                     rows.append(player_row)
 
         if rows:
-            df = pl.DataFrame(rows)
+            df = pl.DataFrame(rows, infer_schema_length=None)
             out_path = processed_dir / f"{facet_key}_{season}.parquet"
             df.write_parquet(out_path)
             console.print(f"  [green]{facet_key}[/green]: {len(rows)} rows -> {out_path.name}")
