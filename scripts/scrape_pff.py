@@ -315,8 +315,14 @@ def process_season(base_dir: Path, season: int) -> None:
                 game_id = int(json_file.name.split("_")[0])
                 data = json.loads(json_file.read_text())
 
-                # The API wraps data in a key like "rushing_summary": [...]
-                player_rows = data.get(facet_key, [])
+                # The API wraps data in a key that doesn't always match our
+                # facet naming (e.g., defense_coverage -> "coverage_summary").
+                # Grab the first list value from the response.
+                player_rows = []
+                for v in data.values():
+                    if isinstance(v, list):
+                        player_rows = v
+                        break
                 for player_row in player_rows:
                     player_row["season"] = season
                     player_row["week"] = week_num
