@@ -148,7 +148,7 @@ else:
 
 Same pattern in `_resolve_run()` using `RUN_TD_GATE`.
 
-When the gate fails: receiver/rusher is tackled short. Shortfall is randomized — from the 15, they might end up anywhere from the 10 to the 1. This creates realistic goal-to-go situations that may convert on subsequent plays or end in FG attempts.
+When the gate fails: receiver/rusher is tackled short. Shortfall is randomized with a cap of roughly one-third of the starting yard line (e.g., from the 15, they typically end up around the 11-14). This creates realistic goal-to-go situations that may convert on subsequent plays or end in FG attempts.
 
 ### Change 4: QB Non-Sack Fumble Check
 

@@ -169,13 +169,8 @@ def _resolve_pass(
 
     # QB pre-throw fumble check (botched snap, strip while throwing)
     if roster is not None and passer_id is not None:
-        passer_model = None
-        for p in roster.players:
-            if p.player_id == passer_id:
-                passer_model = p
-                break
-        if passer_model is not None and passer_model.outcomes.pass_fumble_rate > 0:
-            if rng.random() < passer_model.outcomes.pass_fumble_rate:
+        if passer.outcomes.pass_fumble_rate > 0:
+            if rng.random() < passer.outcomes.pass_fumble_rate:
                 return PlayResult(
                     play_type="pass", yards=0, is_fumble=True,
                     clock_runoff=_scale_clock_runoff(CLOCK_PASS_INCOMPLETE, pace_factor),
@@ -199,7 +194,8 @@ def _resolve_pass(
         # Use red zone catch rate when inside the 20
         if state.yard_line <= 20:
             effective_catch_rate = receiver.outcomes.red_zone_catch_rate
-            if effective_catch_rate <= 0:
+            if effective_catch_rate <= 0 and receiver.outcomes.catch_rate > 0:
+                # Only fallback when RZ rate was never computed (not a valid 0.0 from data)
                 effective_catch_rate = receiver.outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
         else:
             effective_catch_rate = receiver.outcomes.catch_rate

@@ -228,7 +228,8 @@ def _aggregate_pbp_stats(
         qb_stats[pid]["game_ids"].add(row["game_id"])
         if row["sack"] != 1:
             qb_stats[pid]["non_sack_attempts"] += 1
-            if row["fumble_lost"] == 1:
+            # Only count pre-throw fumbles (not receiver fumbles after catch)
+            if row["fumble_lost"] == 1 and row["complete_pass"] != 1 and row["interception"] != 1:
                 qb_stats[pid]["non_sack_fumbles"] += 1
 
     # --- QB scramble separation ---
@@ -385,12 +386,11 @@ def _assemble_models(
 
         if pid in rushing_stats:
             rs = rushing_stats[pid]
-            if position == "QB" and outcomes.scramble_yards_dist is None:
-                # QB rush yards -> scramble_yards_dist (not rushing_yards_dist)
-                # Only used in fallback path; qb_scramble path sets this below.
+            if position == "QB" and not has_qb_scramble and outcomes.scramble_yards_dist is None:
+                # Fallback: no qb_scramble column, use all QB rush yards
                 if len(rs["yards"]) >= 1:
                     outcomes.scramble_yards_dist = np.array(rs["yards"])
-            else:
+            elif position != "QB":
                 if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
                     outcomes.rushing_yards_dist = np.array(rs["yards"])
 

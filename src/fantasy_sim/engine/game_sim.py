@@ -269,7 +269,7 @@ def _update_player_stats(
                 if result.is_touchdown:
                     qb.pass_tds += 1
             # QB pre-throw fumble (not sack, not complete, not INT)
-            if result.is_fumble and not result.is_sack and not result.is_complete:
+            if result.is_fumble and not result.is_sack and not result.is_complete and not result.is_interception:
                 qb.fumbles_lost += 1
 
     if result.receiver_id is not None:
