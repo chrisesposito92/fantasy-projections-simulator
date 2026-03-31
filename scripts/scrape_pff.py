@@ -83,6 +83,52 @@ class ProgressTracker:
         self.path.write_text(json.dumps(self.data, indent=2))
 
 
+class AuthError(Exception):
+    """Raised when PFF returns 401/403 — cookie is invalid or expired."""
+    pass
+
+
+def fetch_json(
+    client: httpx.Client,
+    path: str,
+    delay: float = DEFAULT_DELAY,
+    max_retries: int = MAX_RETRIES,
+) -> dict | None:
+    """Fetch JSON from PFF API with retry logic.
+
+    Returns None for 404 (expected) or exhausted retries.
+    Raises AuthError for 401/403.
+    """
+    for attempt in range(max_retries):
+        try:
+            resp = client.get(path)
+
+            if resp.status_code in (401, 403):
+                raise AuthError(f"Authentication failed: {resp.status_code}")
+
+            if resp.status_code == 404:
+                return None
+
+            if resp.status_code == 429:
+                backoff = 2 ** attempt
+                time.sleep(backoff)
+                continue
+
+            resp.raise_for_status()
+            time.sleep(delay)
+            return resp.json()
+
+        except httpx.HTTPError as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
+                raise AuthError(f"Authentication failed: {e.response.status_code}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return None
+
+    return None
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="PFF Premium Data Scraper",

@@ -7,7 +7,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 import pytest
 from unittest.mock import patch, MagicMock
-from scrape_pff import parse_weeks, load_cookie, ProgressTracker
+import httpx
+from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError
 
 
 class TestParseWeeks:
@@ -76,3 +77,73 @@ class TestProgressTracker:
         assert tracker.is_done("2024", "week_01", "28418", "passing_summary")
         assert tracker.is_done("2024", "week_01", "28418", "rushing_summary")
         assert not tracker.is_done("2024", "week_01", "28418", "defense_summary")
+
+
+class TestFetchJson:
+    def test_successful_fetch(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": [1, 2, 3]}
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = fetch_json(mock_client, "/api/v1/test", delay=0)
+        assert result == {"data": [1, 2, 3]}
+
+    def test_404_returns_none(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = fetch_json(mock_client, "/api/v1/test", delay=0)
+        assert result is None
+
+    def test_401_raises_auth_error(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        with pytest.raises(AuthError):
+            fetch_json(mock_client, "/api/v1/test", delay=0)
+
+    def test_403_raises_auth_error(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        with pytest.raises(AuthError):
+            fetch_json(mock_client, "/api/v1/test", delay=0)
+
+    def test_429_retries(self):
+        resp_429 = MagicMock()
+        resp_429.status_code = 429
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.json.return_value = {"ok": True}
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [resp_429, resp_200]
+
+        result = fetch_json(mock_client, "/api/v1/test", delay=0)
+        assert result == {"ok": True}
+        assert mock_client.get.call_count == 2
+
+    def test_network_error_retries(self):
+        resp_200 = MagicMock()
+        resp_200.status_code = 200
+        resp_200.json.return_value = {"ok": True}
+        mock_client = MagicMock()
+        mock_client.get.side_effect = [httpx.ConnectError("fail"), resp_200]
+
+        result = fetch_json(mock_client, "/api/v1/test", delay=0)
+        assert result == {"ok": True}
+
+    def test_exhausted_retries_returns_none(self):
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.ConnectError("fail")
+
+        result = fetch_json(mock_client, "/api/v1/test", delay=0, max_retries=2)
+        assert result is None
+        assert mock_client.get.call_count == 2
