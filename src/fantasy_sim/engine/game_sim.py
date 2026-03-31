@@ -268,7 +268,9 @@ def _update_player_stats(
                 qb.pass_yards += result.yards
                 if result.is_touchdown:
                     qb.pass_tds += 1
-            # QB fumble: sack-fumble or pre-throw fumble (not complete, not INT)
+            # QB fumble: sack-fumble or pre-throw fumble (not complete, not INT).
+            # Guarded by play_type=="pass" to avoid double-counting on scrambles,
+            # where the rusher block handles fumble attribution instead.
             if result.is_fumble and not result.is_complete and not result.is_interception:
                 qb.fumbles_lost += 1
 

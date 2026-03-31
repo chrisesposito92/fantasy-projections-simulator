@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from fantasy_sim.engine.types import GameState, PlayResult
 from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates, PenaltyRates
-from fantasy_sim.models.game_state import bucket_play
+from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 
 # Avoid circular imports — TYPE_CHECKING is compile-time only
 from typing import TYPE_CHECKING
@@ -334,7 +334,7 @@ def _resolve_run(
     )
 
 
-def _bucket_from_state(state: GameState):
+def _bucket_from_state(state: GameState) -> GameStateBucket:
     """Build a GameStateBucket from the current game state."""
     return bucket_play(
         state.down, state.distance, state.score_differential,
@@ -345,10 +345,7 @@ def _bucket_from_state(state: GameState):
 def _tackled_short(yard_line: int, rng: np.random.Generator) -> int:
     """Determine yards gained when a player is tackled short of the goal line."""
     short_amount = int(rng.integers(1, max(2, yard_line // 3)))
-    yards = max(0, yard_line - short_amount)
-    if yards >= yard_line:
-        yards = max(0, yard_line - 1)
-    return yards
+    return max(0, yard_line - short_amount)
 
 
 def _check_fumble(

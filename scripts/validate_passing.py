@@ -80,7 +80,6 @@ def make_demo_dists(team: str) -> TeamDistributions:
 
 def extract_team_stats(games: list[GameResult], side: str) -> dict[str, float]:
     """Extract per-team-per-game averages from sim results."""
-    n = len(games)
     box_attr = "home_box" if side == "home" else "away_box"
 
     pass_att = np.mean([getattr(g, box_attr).pass_attempts for g in games])
