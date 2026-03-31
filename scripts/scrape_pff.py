@@ -401,6 +401,9 @@ def main() -> None:
 
     if args.process_only:
         console.print("[bold]Process-only mode[/bold] — skipping scrape\n")
+        console.print(f"[bold]Processing raw data for {args.season}...[/bold]")
+        process_season(PFF_DIR, args.season)
+        console.print("\n[bold green]Done.[/bold green]")
         return
 
     # Load and validate cookie
@@ -428,7 +431,9 @@ def main() -> None:
         console.print(f"  Skipped (404): {stats['skipped_404']}")
         console.print(f"  Failures: {stats['failures']}")
 
-        console.print(f"\n[bold]Processing raw data...[/bold]")
+        console.print(f"\n[bold]Processing raw data for {args.season}...[/bold]")
+        process_season(PFF_DIR, args.season)
+        console.print("\n[bold green]Done.[/bold green]")
     finally:
         client.close()
 
