@@ -266,6 +266,63 @@ def scrape_season(
     return stats
 
 
+def build_team_lookup(base_dir: Path, season: int) -> dict[int, str]:
+    """Build franchise_id -> abbreviation mapping from teams JSON."""
+    teams_path = base_dir / "raw" / "teams" / f"{season}.json"
+    if not teams_path.exists():
+        return {}
+    data = json.loads(teams_path.read_text())
+    return {t["franchise_id"]: t["abbreviation"] for t in data.get("teams", [])}
+
+
+def process_season(base_dir: Path, season: int) -> None:
+    """Process raw JSON files into per-facet parquet files for a season."""
+    team_lookup = build_team_lookup(base_dir, season)
+    facets_dir = base_dir / "raw" / "facets" / str(season)
+    processed_dir = base_dir / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    if not facets_dir.exists():
+        console.print(f"[yellow]No raw data found for {season}[/yellow]")
+        return
+
+    facet_keys = set()
+    for category, subfacet in ALL_FACETS:
+        facet_keys.add(f"{category}_{subfacet}")
+
+    for facet_key in sorted(facet_keys):
+        rows: list[dict] = []
+
+        # Glob all matching files across weeks
+        for week_dir in sorted(facets_dir.iterdir()):
+            if not week_dir.is_dir():
+                continue
+            # Extract week number from directory name (week_01 -> 1)
+            week_num = int(week_dir.name.replace("week_", ""))
+
+            for json_file in sorted(week_dir.glob(f"*_{facet_key}.json")):
+                # Extract game_id from filename (28418_passing_summary.json -> 28418)
+                game_id = int(json_file.name.split("_")[0])
+                data = json.loads(json_file.read_text())
+
+                # The API wraps data in a key like "rushing_summary": [...]
+                player_rows = data.get(facet_key, [])
+                for player_row in player_rows:
+                    player_row["season"] = season
+                    player_row["week"] = week_num
+                    player_row["game_id"] = game_id
+                    player_row["team"] = team_lookup.get(player_row.get("franchise_id"), "UNK")
+                    rows.append(player_row)
+
+        if rows:
+            df = pl.DataFrame(rows)
+            out_path = processed_dir / f"{facet_key}_{season}.parquet"
+            df.write_parquet(out_path)
+            console.print(f"  [green]{facet_key}[/green]: {len(rows)} rows -> {out_path.name}")
+        else:
+            console.print(f"  [dim]{facet_key}[/dim]: no data")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="PFF Premium Data Scraper",

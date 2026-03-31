@@ -1,14 +1,16 @@
 """Tests for PFF scraper utilities."""
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
+import polars as pl
 import pytest
 from unittest.mock import patch, MagicMock
 import httpx
-from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError
+from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError, process_season, build_team_lookup
 
 
 class TestParseWeeks:
@@ -147,3 +149,82 @@ class TestFetchJson:
         result = fetch_json(mock_client, "/api/v1/test", delay=0, max_retries=2)
         assert result is None
         assert mock_client.get.call_count == 2
+
+
+class TestBuildTeamLookup:
+    def test_builds_lookup_from_teams_json(self, tmp_path):
+        teams_dir = tmp_path / "raw" / "teams"
+        teams_dir.mkdir(parents=True)
+        teams_data = {
+            "teams": [
+                {"franchise_id": 9, "abbreviation": "DAL"},
+                {"franchise_id": 24, "abbreviation": "PHI"},
+            ]
+        }
+        (teams_dir / "2024.json").write_text(json.dumps(teams_data))
+        lookup = build_team_lookup(tmp_path, 2024)
+        assert lookup == {9: "DAL", 24: "PHI"}
+
+
+class TestProcessSeason:
+    def _setup_raw_data(self, tmp_path):
+        """Create minimal raw JSON fixture data."""
+        # Teams
+        teams_dir = tmp_path / "raw" / "teams"
+        teams_dir.mkdir(parents=True)
+        teams_data = {"teams": [{"franchise_id": 9, "abbreviation": "DAL"}]}
+        (teams_dir / "2024.json").write_text(json.dumps(teams_data))
+
+        # Facet data
+        week_dir = tmp_path / "raw" / "facets" / "2024" / "week_01"
+        week_dir.mkdir(parents=True)
+
+        rushing_data = {
+            "rushing_summary": [
+                {
+                    "player": "Saquon Barkley",
+                    "player_id": 45791,
+                    "franchise_id": 9,
+                    "position": "HB",
+                    "attempts": 18,
+                    "yards": 60,
+                    "grades_run": 58.4,
+                },
+            ]
+        }
+        (week_dir / "28418_rushing_summary.json").write_text(json.dumps(rushing_data))
+        return tmp_path
+
+    def test_produces_parquet_file(self, tmp_path):
+        base = self._setup_raw_data(tmp_path)
+        processed_dir = tmp_path / "processed"
+        processed_dir.mkdir(parents=True)
+        process_season(base, 2024)
+        parquet_path = processed_dir / "rushing_summary_2024.parquet"
+        assert parquet_path.exists()
+
+    def test_parquet_has_metadata_columns(self, tmp_path):
+        base = self._setup_raw_data(tmp_path)
+        processed_dir = tmp_path / "processed"
+        processed_dir.mkdir(parents=True)
+        process_season(base, 2024)
+        df = pl.read_parquet(processed_dir / "rushing_summary_2024.parquet")
+        assert "season" in df.columns
+        assert "week" in df.columns
+        assert "game_id" in df.columns
+        assert "team" in df.columns
+
+    def test_parquet_has_correct_data(self, tmp_path):
+        base = self._setup_raw_data(tmp_path)
+        processed_dir = tmp_path / "processed"
+        processed_dir.mkdir(parents=True)
+        process_season(base, 2024)
+        df = pl.read_parquet(processed_dir / "rushing_summary_2024.parquet")
+        assert len(df) == 1
+        row = df.row(0, named=True)
+        assert row["player"] == "Saquon Barkley"
+        assert row["season"] == 2024
+        assert row["week"] == 1
+        assert row["game_id"] == 28418
+        assert row["team"] == "DAL"
+        assert row["grades_run"] == 58.4
