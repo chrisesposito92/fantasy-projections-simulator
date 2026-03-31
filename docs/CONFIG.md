@@ -45,14 +45,15 @@ The simulator uses three config files, each serving a different purpose:
 Configuration merges through 5 layers. Higher layers override lower:
 
 ```
-5. CLI --override "name.field=value"       (highest priority)
-4. season.yaml  players: / teams:
-3. --scoring-config  custom_scoring.yaml
-2. season.yaml  scoring_format:
+6. CLI --override "name.field=value"       (highest — always wins)
+5. season.yaml  players: / teams:
+4. --scoring-config  custom_scoring.yaml
+3. season.yaml  scoring_format:            (overrides CLI --scoring)
+2. season.yaml  season: / weeks:           (used when CLI flag not explicitly set)
 1. config/defaults.yaml                    (lowest priority)
 ```
 
-**Important:** `scoring_format` in season.yaml overrides the CLI `--scoring` flag. If your results look wrong, check whether your season.yaml sets `scoring_format`.
+**Important:** `scoring_format` in season.yaml **always overrides** the CLI `--scoring` flag. The `season` and `weeks` keys are different — they only apply when the CLI flag is not explicitly passed (they act as defaults, not overrides).
 
 ---
 
@@ -60,22 +61,21 @@ Configuration merges through 5 layers. Higher layers override lower:
 
 ### Parsed Keys
 
-These keys are actually read by the simulator:
+All of these keys are read by the simulator:
 
 | Key | Type | Description |
 |-----|------|-------------|
+| `season` | int | NFL season year. Used as default when `--season` is not explicitly passed on the CLI. |
+| `weeks` | string | Weeks to simulate (`'all'`, `'1-5'`, or `'1,3,5'`). Used as default when `--weeks` is not explicitly passed (season command only). |
 | `scoring_format` | string | `ppr`, `half_ppr`, or `standard`. Overrides CLI `--scoring`. |
 | `players` | mapping | Player overrides keyed by name or nflverse player_id. |
 | `teams` | mapping | Team overrides keyed by team code (e.g., `KC`, `BUF`). |
 
-### Documentation-Only Keys
+### Precedence
 
-These keys appear in the example file but are **not parsed** by the simulator. Use CLI flags instead:
+`season` and `weeks` from the config file act as **defaults** — they are used only when the corresponding CLI flag is not explicitly passed. An explicit `--season 2024` on the CLI always wins over `season: 2025` in the config file.
 
-| Key | CLI Equivalent | Notes |
-|-----|---------------|-------|
-| `season` | `--season` | For human reference only. Must pass via CLI. |
-| `weeks` | `--weeks` | For human reference only. Must pass via CLI. |
+`scoring_format` works differently — it **always overrides** the CLI `--scoring` flag when present.
 
 ### Auto-Detection
 
@@ -657,4 +657,5 @@ The CLI override for Kelce takes precedence over any value in the config file.
 | Player override silently skipped | Player name can't be resolved (typo, not on roster) | Check output — missing player means override didn't apply |
 | Team override silently ignored | Team code doesn't match any team in the current matchup | Verify team code matches nflverse abbreviation (e.g., `KC` not `KCC`) |
 | `scoring_format` silently overrides CLI `--scoring` | season.yaml has `scoring_format: standard` but you passed `--scoring ppr` | Remove `scoring_format` from season.yaml or don't use `--scoring` |
+| `season`/`weeks` only apply when CLI flag not set | You passed `--season 2024` explicitly, so `season: 2025` in config is ignored | Omit `--season` from CLI to use the config file value |
 | Config file not auto-detected | File is not named exactly `config/season.yaml` | Use `--config path/to/your/file.yaml` explicitly |

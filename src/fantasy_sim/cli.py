@@ -148,6 +148,27 @@ def _auto_detect_season_yaml() -> str | None:
     return None
 
 
+def _read_season_yaml_metadata(season_yaml_path: str | None) -> dict:
+    """Read season and weeks from a season.yaml config file.
+
+    Returns dict with optional 'season' (int) and 'weeks' (str) keys.
+    """
+    if not season_yaml_path:
+        return {}
+    path = Path(season_yaml_path)
+    if not path.exists():
+        return {}
+    import yaml
+    with open(path) as f:
+        config = yaml.safe_load(f) or {}
+    result = {}
+    if "season" in config:
+        result["season"] = int(config["season"])
+    if "weeks" in config:
+        result["weeks"] = str(config["weeks"])
+    return result
+
+
 def _parse_and_validate_weeks(weeks_str: str) -> list[int]:
     """Parse --weeks string and validate all week numbers are positive.
 
@@ -449,6 +470,10 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
+    if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
+        meta = _read_season_yaml_metadata(season_yaml)
+        if "season" in meta:
+            season = meta["season"]
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season)
 
@@ -555,6 +580,13 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
 def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
+    meta = _read_season_yaml_metadata(season_yaml)
+    if ctx.get_parameter_source("season_year") == click.core.ParameterSource.DEFAULT:
+        if "season" in meta:
+            season_year = meta["season"]
+    if ctx.get_parameter_source("weeks") == click.core.ParameterSource.DEFAULT:
+        if "weeks" in meta:
+            weeks = meta["weeks"]
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season_year)
 
@@ -710,12 +742,17 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
-def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path):
+@click.pass_context
+def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path):
     """Simulate a single game with deep-dive projections.
 
     Example: fantasy-sim game KC BUF --week 5
     """
     effective_config_path = config_path or _auto_detect_season_yaml()
+    if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
+        meta = _read_season_yaml_metadata(effective_config_path)
+        if "season" in meta:
+            season = meta["season"]
     scoring_config = _resolve_config_chain(
         scoring_format=scoring,
         scoring_config_path=scoring_config_path,
@@ -837,12 +874,17 @@ def game(home_team, away_team, week_num, season, sims, scoring, scoring_config_p
 @click.option("--demo", is_flag=True, help="Use synthetic data (no network needed)")
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
-def player(player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path):
+@click.pass_context
+def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path):
     """Show projection for a single player.
 
     Uses fuzzy name matching. Example: fantasy-sim player "nico_collins" --week 5
     """
     effective_config_path = config_path or _auto_detect_season_yaml()
+    if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
+        meta = _read_season_yaml_metadata(effective_config_path)
+        if "season" in meta:
+            season = meta["season"]
     scoring_config = _resolve_config_chain(
         scoring_format=scoring,
         scoring_config_path=scoring_config_path,

@@ -2,8 +2,8 @@
 # Copy to config/season.yaml and customize for your league.
 
 season: 2025
-weeks: all
-scoring_format: ppr
+weeks: 1-18
+scoring_format: half_ppr
 
 # Team-level overrides
 teams:
@@ -14,8 +14,6 @@ teams:
 
 # Player-level overrides (use player names or nflverse player_id)
 players:
-  patrick_mahomes:
-    games_missed: [4, 5, 6]
   nico_collins:
     target_share: 0.28
   bijan_robinson:
