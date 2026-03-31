@@ -2,6 +2,11 @@
 from dataclasses import dataclass, field
 import numpy as np
 
+# Minimum carry_share for a QB to be included in the designed-run rusher pool.
+# Distinguishes dual-threat QBs (Allen ~0.22, Hurts ~0.18) from pocket passers
+# (Herbert ~0.05, Mahomes ~0.07) who get rushing yards only via scrambles.
+MIN_QB_CARRY_SHARE = 0.10
+
 
 @dataclass
 class PlayerUsage:
@@ -21,6 +26,7 @@ class PlayerOutcomes:
     catch_rate: float = 0.0
     red_zone_catch_rate: float = 0.0
     receiving_yards_dist: np.ndarray | None = None
+    rz_receiving_yards_dist: np.ndarray | None = None
     rushing_yards_dist: np.ndarray | None = None
     scramble_yards_dist: np.ndarray | None = None
     fumble_rate: float = 0.0
@@ -97,7 +103,11 @@ class TeamRoster:
         all RBs are eligible with uniform probability.
         Raises ValueError if no eligible rushers exist.
         """
-        eligible = [p for p in self.players if p.usage.carry_share > 0]
+        eligible = [
+            p for p in self.players
+            if p.usage.carry_share > 0
+            and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+        ]
         if not eligible:
             # Fallback: any RB with uniform weights
             eligible = [p for p in self.players if p.position == "RB"]
