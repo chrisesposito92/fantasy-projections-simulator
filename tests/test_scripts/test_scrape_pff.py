@@ -10,7 +10,7 @@ import polars as pl
 import pytest
 from unittest.mock import patch, MagicMock
 import httpx
-from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError, process_season, build_team_lookup
+from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError, _NOT_FOUND, process_season, build_team_lookup
 
 
 class TestParseWeeks:
@@ -25,6 +25,14 @@ class TestParseWeeks:
 
     def test_single_digit_range(self):
         assert parse_weeks("3-5") == [3, 4, 5]
+
+    def test_invalid_string_exits(self):
+        with pytest.raises(SystemExit):
+            parse_weeks("foo")
+
+    def test_reversed_range_exits(self):
+        with pytest.raises(SystemExit):
+            parse_weeks("8-3")
 
 
 class TestLoadCookie:
@@ -92,14 +100,14 @@ class TestFetchJson:
         result = fetch_json(mock_client, "/api/v1/test", delay=0)
         assert result == {"data": [1, 2, 3]}
 
-    def test_404_returns_none(self):
+    def test_404_returns_not_found_sentinel(self):
         mock_response = MagicMock()
         mock_response.status_code = 404
         mock_client = MagicMock()
         mock_client.get.return_value = mock_response
 
         result = fetch_json(mock_client, "/api/v1/test", delay=0)
-        assert result is None
+        assert result is _NOT_FOUND
 
     def test_401_raises_auth_error(self):
         mock_response = MagicMock()

@@ -88,15 +88,18 @@ class AuthError(Exception):
     pass
 
 
+_NOT_FOUND = object()  # sentinel for 404 responses
+
+
 def fetch_json(
     client: httpx.Client,
     path: str,
     delay: float = DEFAULT_DELAY,
     max_retries: int = MAX_RETRIES,
-) -> dict | None:
+) -> dict | object | None:
     """Fetch JSON from PFF API with retry logic.
 
-    Returns None for 404 (expected) or exhausted retries.
+    Returns dict on success, _NOT_FOUND sentinel for 404, None for exhausted retries.
     Raises AuthError for 401/403.
     """
     for attempt in range(max_retries):
@@ -107,7 +110,7 @@ def fetch_json(
                 raise AuthError(f"Authentication failed: {resp.status_code}")
 
             if resp.status_code == 404:
-                return None
+                return _NOT_FOUND
 
             if resp.status_code == 429:
                 backoff = 2 ** attempt
@@ -118,9 +121,7 @@ def fetch_json(
             time.sleep(delay)
             return resp.json()
 
-        except httpx.HTTPError as e:
-            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
-                raise AuthError(f"Authentication failed: {e.response.status_code}")
+        except httpx.HTTPError:
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
                 continue
@@ -135,7 +136,7 @@ def fetch_teams(client: httpx.Client, season: int, delay: float) -> dict:
     if cache_path.exists():
         return json.loads(cache_path.read_text())
     data = fetch_json(client, f"/api/v1/teams?league=nfl&season={season}", delay=delay)
-    if data is None:
+    if not isinstance(data, dict):
         console.print(f"[bold red]Error:[/bold red] Could not fetch teams for {season}")
         sys.exit(1)
     cache_path.write_text(json.dumps(data, indent=2))
@@ -149,7 +150,7 @@ def fetch_games_for_week(client: httpx.Client, season: int, week: int, delay: fl
         data = json.loads(cache_path.read_text())
     else:
         data = fetch_json(client, f"/api/v1/games?league=nfl&season={season}&week={week}", delay=delay)
-        if data is None:
+        if not isinstance(data, dict):
             return []
         cache_path.write_text(json.dumps(data, indent=2))
     return data.get("games", [])
@@ -244,8 +245,10 @@ def scrape_season(
                         tracker.save()
                         sys.exit(1)
 
-                    if data is None:
+                    if data is _NOT_FOUND:
                         stats["skipped_404"] += 1
+                    elif data is None:
+                        stats["failures"] += 1
                     else:
                         out_path = week_dir / f"{game_id}_{facet_key}.json"
                         out_path.write_text(json.dumps(data, indent=2))
@@ -339,10 +342,16 @@ def parse_weeks(weeks_str: str | None) -> list[int] | None:
     """Parse --weeks argument into a list of week numbers, or None for all."""
     if weeks_str is None:
         return None
-    if "-" in weeks_str:
-        start, end = weeks_str.split("-", 1)
-        return list(range(int(start), int(end) + 1))
-    return [int(weeks_str)]
+    try:
+        if "-" in weeks_str:
+            start, end = weeks_str.split("-", 1)
+            start_int, end_int = int(start), int(end)
+            if start_int > end_int:
+                raise ValueError(f"start ({start_int}) > end ({end_int})")
+            return list(range(start_int, end_int + 1))
+        return [int(weeks_str)]
+    except ValueError as e:
+        raise SystemExit(f"Invalid --weeks value '{weeks_str}': {e}")
 
 
 def ensure_directories() -> None:
