@@ -129,6 +129,143 @@ def fetch_json(
     return None
 
 
+def fetch_teams(client: httpx.Client, season: int, delay: float) -> dict:
+    """Fetch and cache team metadata for a season."""
+    cache_path = RAW_DIR / "teams" / f"{season}.json"
+    if cache_path.exists():
+        return json.loads(cache_path.read_text())
+    data = fetch_json(client, f"/api/v1/teams?league=nfl&season={season}", delay=delay)
+    if data is None:
+        console.print(f"[bold red]Error:[/bold red] Could not fetch teams for {season}")
+        sys.exit(1)
+    cache_path.write_text(json.dumps(data, indent=2))
+    return data
+
+
+def fetch_games_for_week(client: httpx.Client, season: int, week: int, delay: float) -> list[dict]:
+    """Fetch game list for a specific week. Returns empty list if no games."""
+    cache_path = RAW_DIR / "games" / f"{season}_week{week:02d}.json"
+    if cache_path.exists():
+        data = json.loads(cache_path.read_text())
+    else:
+        data = fetch_json(client, f"/api/v1/games?league=nfl&season={season}&week={week}", delay=delay)
+        if data is None:
+            return []
+        cache_path.write_text(json.dumps(data, indent=2))
+    return data.get("games", [])
+
+
+def discover_weeks(client: httpx.Client, season: int, delay: float) -> list[int]:
+    """Find all weeks that have games for a season."""
+    weeks_with_games = []
+    for week in range(1, MAX_WEEK + 1):
+        games = fetch_games_for_week(client, season, week, delay)
+        if games:
+            weeks_with_games.append(week)
+    return weeks_with_games
+
+
+def scrape_season(
+    client: httpx.Client,
+    season: int,
+    weeks: list[int] | None,
+    delay: float,
+) -> dict:
+    """Scrape all facets for all games in the given season/weeks.
+
+    Returns stats dict with counts of requests, skips, failures.
+    """
+    stats = {"requests": 0, "skipped_done": 0, "skipped_404": 0, "failures": 0}
+    tracker = ProgressTracker()
+    season_str = str(season)
+
+    # Fetch teams
+    console.print("Fetching teams...")
+    fetch_teams(client, season, delay)
+
+    # Determine weeks
+    if weeks is None:
+        console.print("Discovering weeks with games...")
+        weeks = discover_weeks(client, season, delay)
+    console.print(f"Weeks to scrape: {weeks}\n")
+
+    if not weeks:
+        console.print("[yellow]No weeks found with games.[/yellow]")
+        return stats
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        week_task = progress.add_task("Weeks", total=len(weeks))
+
+        for week in weeks:
+            week_str = f"week_{week:02d}"
+            progress.update(week_task, description=f"Week {week}")
+
+            games = fetch_games_for_week(client, season, week, delay)
+            if not games:
+                progress.advance(week_task)
+                continue
+
+            # Ensure week directory exists
+            week_dir = RAW_DIR / "facets" / str(season) / week_str
+            week_dir.mkdir(parents=True, exist_ok=True)
+
+            game_task = progress.add_task(f"  Games (wk {week})", total=len(games))
+
+            for game in games:
+                game_id = game["id"]
+                game_id_str = str(game_id)
+
+                facet_task = progress.add_task(f"    Facets (g{game_id})", total=len(ALL_FACETS))
+
+                for category, subfacet in ALL_FACETS:
+                    facet_key = f"{category}_{subfacet}"
+
+                    if tracker.is_done(season_str, week_str, game_id_str, facet_key):
+                        stats["skipped_done"] += 1
+                        progress.advance(facet_task)
+                        continue
+
+                    try:
+                        data = fetch_json(
+                            client,
+                            f"/api/v1/facet/{category}/{subfacet}?game_id={game_id}",
+                            delay=delay,
+                        )
+                    except AuthError:
+                        console.print("\n[bold red]Auth error — cookie expired. Stopping.[/bold red]")
+                        console.print("Refresh your cookie — see docs/pff-setup.md")
+                        tracker.save()
+                        sys.exit(1)
+
+                    if data is None:
+                        stats["skipped_404"] += 1
+                    else:
+                        out_path = week_dir / f"{game_id}_{facet_key}.json"
+                        out_path.write_text(json.dumps(data, indent=2))
+                        stats["requests"] += 1
+
+                    tracker.mark_done(season_str, week_str, game_id_str, facet_key)
+                    progress.advance(facet_task)
+
+                # Save progress after each game
+                tracker.save()
+                progress.remove_task(facet_task)
+                progress.advance(game_task)
+
+            progress.remove_task(game_task)
+            progress.advance(week_task)
+
+    tracker.save()
+    return stats
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="PFF Premium Data Scraper",
@@ -225,7 +362,18 @@ def main() -> None:
         sys.exit(1)
 
     console.print("[green]Cookie validated[/green]\n")
-    client.close()
+
+    try:
+        stats = scrape_season(client, args.season, weeks, args.delay)
+        console.print(f"\n[bold]Scrape complete:[/bold]")
+        console.print(f"  Requests made: {stats['requests']}")
+        console.print(f"  Skipped (already done): {stats['skipped_done']}")
+        console.print(f"  Skipped (404): {stats['skipped_404']}")
+        console.print(f"  Failures: {stats['failures']}")
+
+        console.print(f"\n[bold]Processing raw data...[/bold]")
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
