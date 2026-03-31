@@ -252,6 +252,8 @@ print(results.summary())
 
 ## Docs
 
+- [Configuration Reference](docs/CONFIG.md) — Every override field, scoring key, and config option
+- [CLI Commands](docs/CLI-COMMANDS.md) — Full command reference
 - [Design Spec](docs/superpowers/specs/2026-03-29-fantasy-projections-simulator-design.md)
 - [Phase 1 Plan](docs/superpowers/plans/2026-03-29-phase1-data-pipeline.md)
 - [Phase 2 Plan](docs/superpowers/plans/2026-03-29-phase2-game-state-machine.md)
