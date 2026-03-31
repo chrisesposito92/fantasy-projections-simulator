@@ -2,6 +2,7 @@
 
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes
+from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
 
 # Positional archetypes by draft round tier
 # Tier 1: Rounds 1-2, Tier 2: Rounds 3-4, Tier 3: Rounds 5-7
@@ -92,14 +93,14 @@ def build_rookie_model(
         outcomes.receiving_yards_dist = np.array(archetype["rec_yards"])
         outcomes.catch_rate = archetype["catch_rate"]
         outcomes.fumble_rate = archetype["fumble_rate"]
-        outcomes.red_zone_catch_rate = archetype["catch_rate"] * 0.85
+        outcomes.red_zone_catch_rate = archetype["catch_rate"] * RZ_CATCH_RATE_MODIFIER
     elif position in ("WR", "TE"):
         usage.target_share = archetype["target_share"]
         usage.red_zone_target_share = archetype.get("red_zone_target_share", 0.0)
         outcomes.receiving_yards_dist = np.array(archetype["rec_yards"])
         outcomes.catch_rate = archetype["catch_rate"]
         outcomes.fumble_rate = archetype["fumble_rate"]
-        outcomes.red_zone_catch_rate = archetype["catch_rate"] * 0.85
+        outcomes.red_zone_catch_rate = archetype["catch_rate"] * RZ_CATCH_RATE_MODIFIER
 
     return PlayerModel(
         player_id=player_id, name=name, position=position, team=team,

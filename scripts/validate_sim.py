@@ -58,8 +58,18 @@ def main():
         for g in results.games
     ])
 
+    avg_completions = np.mean([g.home_box.completions + g.away_box.completions for g in results.games])
+    avg_sacks = np.mean([g.home_box.sacks_taken + g.away_box.sacks_taken for g in results.games])
+    nfl_att = avg_pass_att - avg_sacks  # NFL convention excludes sacks
+    avg_comp_rate = avg_completions / nfl_att if nfl_att > 0 else 0
+    avg_ypc = avg_pass_yds / avg_completions if avg_completions > 0 else 0
+
     print(f"\n--- Detailed Stats ---")
     print(f"  Avg pass attempts:   {avg_pass_att:.0f}")
+    print(f"  Avg completions:     {avg_completions:.0f}")
+    print(f"  Avg sacks:           {avg_sacks:.0f}")
+    print(f"  Completion rate:     {avg_comp_rate:.1%}")
+    print(f"  Yards/completion:    {avg_ypc:.1f}")
     print(f"  Avg rush attempts:   {avg_rush_att:.0f}")
     print(f"  Avg pass yards:      {avg_pass_yds:.0f}")
     print(f"  Avg rush yards:      {avg_rush_yds:.0f}")

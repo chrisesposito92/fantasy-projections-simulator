@@ -6,6 +6,7 @@ import polars as pl
 import numpy as np
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
+from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
 
 MIN_PLAYER_PLAYS = 5
 MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
@@ -173,7 +174,8 @@ def _aggregate_pbp_stats(
         if rid not in receiving_stats:
             receiving_stats[rid] = {
                 "targets": 0, "catches": 0, "yards": [],
-                "rz_targets": 0, "rz_catches": 0, "air_yards": 0.0,
+                "rz_targets": 0, "rz_catches": 0, "rz_yards": [],
+                "air_yards": 0.0,
                 "team": row["posteam"], "game_ids": set(),
             }
         receiving_stats[rid]["targets"] += 1
@@ -184,6 +186,7 @@ def _aggregate_pbp_stats(
             receiving_stats[rid]["rz_targets"] += 1
             if row["complete_pass"] == 1:
                 receiving_stats[rid]["rz_catches"] += 1
+                receiving_stats[rid]["rz_yards"].append(row["yards_gained"])
 
         # Air yards
         if has_air_yards and row.get("air_yards") is not None:
@@ -363,7 +366,13 @@ def _assemble_models(
             rs = rushing_stats[pid]
             hist_team = rs["team"]
             team_ra = team_rush_attempts.get(hist_team, 0)
-            usage.carry_share = rs["carries"] / max(team_ra, 1)
+            carries = rs["carries"]
+            # For QBs, exclude scramble carries — scrambles are modeled
+            # separately in _resolve_pass(), so including them here
+            # double-counts QB rushing (designed runs + scrambles).
+            if position == "QB" and has_qb_scramble and pid in qb_scrambles:
+                carries = max(0, carries - qb_scrambles[pid]["scramble_count"])
+            usage.carry_share = carries / max(team_ra, 1)
 
             team_rz_ra = team_rz_rush_attempts.get(hist_team, 0)
             if team_rz_ra > 0:
@@ -380,9 +389,12 @@ def _assemble_models(
             if rs["rz_targets"] >= MIN_RZ_TARGETS:
                 outcomes.red_zone_catch_rate = rs["rz_catches"] / rs["rz_targets"]
             elif outcomes.catch_rate > 0:
-                outcomes.red_zone_catch_rate = outcomes.catch_rate * 0.85
+                outcomes.red_zone_catch_rate = outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
             if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
                 outcomes.receiving_yards_dist = np.array(rs["yards"])
+            # Red zone receiving yards distribution (catches inside the 20)
+            if len(rs["rz_yards"]) >= MIN_PLAYER_PLAYS:
+                outcomes.rz_receiving_yards_dist = np.array(rs["rz_yards"])
 
         if pid in rushing_stats:
             rs = rushing_stats[pid]

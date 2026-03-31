@@ -309,19 +309,19 @@ class TestRookieArchetypeDefaults:
         from fantasy_sim.data.rookie_builder import build_rookie_model
         model = build_rookie_model("WR1", "Rookie WR", "WR", "KC", draft_round=1)
         arch_catch = POSITIONAL_ARCHETYPES["WR"]["tier1"]["catch_rate"]
-        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.92, abs=0.01)
 
     def test_te_archetype_has_red_zone_catch_rate(self):
         from fantasy_sim.data.rookie_builder import build_rookie_model
         model = build_rookie_model("TE1", "Rookie TE", "TE", "KC", draft_round=3)
         arch_catch = POSITIONAL_ARCHETYPES["TE"]["tier2"]["catch_rate"]
-        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.92, abs=0.01)
 
     def test_rb_archetype_has_red_zone_catch_rate(self):
         from fantasy_sim.data.rookie_builder import build_rookie_model
         model = build_rookie_model("RB1", "Rookie RB", "RB", "KC", draft_round=5)
         arch_catch = POSITIONAL_ARCHETYPES["RB"]["tier3"]["catch_rate"]
-        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.85, abs=0.01)
+        assert model.outcomes.red_zone_catch_rate == pytest.approx(arch_catch * 0.92, abs=0.01)
 
 
 class TestAssembleModelsExtra:
@@ -377,19 +377,19 @@ class TestScrambleRateFix:
 class TestRedZoneCatchRate:
     def test_rz_catch_rate_computed_with_enough_samples(self, rz_pbp, sample_rosters):
         """RE11 has 5 RZ targets and 5 RZ catches -> rz_catch_rate = 1.0.
-        But 5 < 10 threshold, so should fall back to catch_rate * 0.85."""
+        But 5 < 10 threshold, so should fall back to catch_rate * 0.92."""
         models = build_player_models(rz_pbp, sample_rosters, training_seasons=[2024])
         re = models.get("RE11")
         assert re is not None
-        assert re.outcomes.red_zone_catch_rate == pytest.approx(re.outcomes.catch_rate * 0.85, abs=0.01)
+        assert re.outcomes.red_zone_catch_rate == pytest.approx(re.outcomes.catch_rate * 0.92, abs=0.01)
 
     def test_rz_catch_rate_fallback_below_threshold(self, expanded_pbp, sample_rosters):
-        """Players with < 10 RZ targets use catch_rate * 0.85 fallback."""
+        """Players with < 10 RZ targets use catch_rate * 0.92 fallback."""
         models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
         tk = models.get("TK87")
         assert tk is not None
         if tk.outcomes.catch_rate > 0:
-            assert tk.outcomes.red_zone_catch_rate == pytest.approx(tk.outcomes.catch_rate * 0.85, abs=0.01)
+            assert tk.outcomes.red_zone_catch_rate == pytest.approx(tk.outcomes.catch_rate * 0.92, abs=0.01)
 
     def test_rz_catch_rate_data_driven_with_enough_targets(self):
         """With >= 10 RZ targets, use actual RZ catch rate."""

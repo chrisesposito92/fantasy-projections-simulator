@@ -91,3 +91,38 @@ class TestStatisticalValidation:
         total_fumbles = sum(g.home_box.fumbles_lost + g.away_box.fumbles_lost for g in sim_results.games)
         avg_turnovers = (total_ints + total_fumbles) / total_games
         assert 1.0 <= avg_turnovers <= 8.0, f"Avg turnovers {avg_turnovers:.1f} out of range"
+
+    def test_completion_rate_reasonable(self, sim_results):
+        """Team-level completion rate (yards > 0 from distribution).
+
+        Without per-player rosters, completion is determined by the
+        team pass distribution having ~27% zeros, yielding ~73% rate
+        before sack/INT dilution.  Wide range to accommodate both
+        team-level and player-level sims.
+        """
+        total_comp = sum(g.home_box.completions + g.away_box.completions for g in sim_results.games)
+        total_att = sum(g.home_box.pass_attempts + g.away_box.pass_attempts for g in sim_results.games)
+        total_sacks = sum(g.home_box.sacks_taken + g.away_box.sacks_taken for g in sim_results.games)
+        nfl_att = total_att - total_sacks
+        rate = total_comp / nfl_att if nfl_att > 0 else 0
+        assert 0.50 <= rate <= 0.85, f"Completion rate {rate:.1%} out of range"
+
+    def test_yards_per_completion_reasonable(self, sim_results):
+        """Team-level yd/comp is higher (~14-17) than player-level (~10-12)
+        because the distribution includes only non-zero values for completions.
+        """
+        total_yards = sum(g.home_box.pass_yards + g.away_box.pass_yards for g in sim_results.games)
+        total_comp = sum(g.home_box.completions + g.away_box.completions for g in sim_results.games)
+        ypc = total_yards / total_comp if total_comp > 0 else 0
+        assert 8.0 <= ypc <= 20.0, f"Yards/completion {ypc:.1f} out of range"
+
+    def test_pass_yards_per_team_reasonable(self, sim_results):
+        """Team-level pass yards can be higher than player-level due to
+        distribution shape (non-zero values average ~16 yards).
+        """
+        per_team = []
+        for g in sim_results.games:
+            per_team.append(g.home_box.pass_yards)
+            per_team.append(g.away_box.pass_yards)
+        mean = np.mean(per_team)
+        assert 150 <= mean <= 450, f"Pass yards/team {mean:.0f} out of range"
