@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fantasy_sim.models.player import TeamRoster
 
-# Average clock runoff in seconds
-CLOCK_RUN = 38
-CLOCK_PASS_COMPLETE = 35
-CLOCK_PASS_INCOMPLETE = 7
-CLOCK_SACK = 38
+# Average clock runoff in seconds — calibrated for ~65 plays/team/game
+CLOCK_RUN = 35
+CLOCK_PASS_COMPLETE = 30
+CLOCK_PASS_INCOMPLETE = 5
+CLOCK_SACK = 35
 
 # Sack yardage loss distribution
 SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
@@ -22,22 +22,23 @@ SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
 # Home-field advantage: 50% chance of +1 yard per play
 HOME_FIELD_YARDS_BONUS = 0.5
 
-# Red zone TD gate probabilities — calibrated from 2024 NFL data.
-# Given a play with enough yards to score, probability it actually results in a TD.
+# Red zone TD gate probabilities — per-play probability that a would-be TD
+# actually scores. Calibrated so that drive-level TD rates match NFL averages
+# (~55% of RZ drives end in TD) given realistic RZ drive progression.
 PASS_TD_GATE = {
-    (1, 3): 0.90,
-    (4, 5): 0.90,
-    (6, 10): 0.80,
-    (11, 15): 0.50,
-    (16, 20): 0.30,
+    (1, 3): 0.55,
+    (4, 5): 0.50,
+    (6, 10): 0.45,
+    (11, 15): 0.25,
+    (16, 20): 0.15,
 }
 
 RUN_TD_GATE = {
-    (1, 3): 0.65,
-    (4, 5): 0.55,
-    (6, 10): 0.40,
-    (11, 15): 0.25,
-    (16, 20): 0.15,
+    (1, 3): 0.35,
+    (4, 5): 0.30,
+    (6, 10): 0.20,
+    (11, 15): 0.12,
+    (16, 20): 0.08,
 }
 
 # League-average red zone catch rate modifier (RZ completion % / overall %)
@@ -207,7 +208,8 @@ def _resolve_pass(
             if receiver.outcomes.receiving_yards_dist is not None and len(receiver.outcomes.receiving_yards_dist) > 0:
                 player_yards = int(rng.choice(receiver.outcomes.receiving_yards_dist))
             else:
-                player_yards = max(team_yards, 1)  # Complete pass must gain at least 1 yard
+                # Fallback: use team sample if positive, otherwise random completion yards
+                player_yards = team_yards if team_yards > 0 else int(rng.integers(3, 12))
 
             yards = _apply_home_field(player_yards, is_home, rng)
             yards = _clamp_yards(state.yard_line, yards)
@@ -230,9 +232,8 @@ def _resolve_pass(
         else:
             is_td = is_complete and (state.yard_line - yards) <= 0
 
-        # Red zone yards blending: cap non-TD catches by team-level distribution
-        if is_complete and not is_td and state.yard_line <= 20:
-            yards = min(yards, max(team_yards, 1))
+        # No RZ yards blending needed — _clamp_yards() prevents exceeding
+        # yard_line, and the TD gate controls scoring probability.
 
         # Fumble check on completions — use player fumble rate, fall back to team rate
         is_fumble = False
@@ -318,14 +319,8 @@ def _resolve_run(
         else:
             is_td = (state.yard_line - yards) <= 0
 
-        # Red zone yards blending: cap non-TD runs by team-level distribution
-        if not is_td and state.yard_line <= 20 and yards > 0:
-            bucket = bucket_play(
-                state.down, state.distance, state.score_differential,
-                state.quarter, state.yard_line,
-            )
-            team_run_yards = play_outcomes.sample_yards("run", bucket, rng)
-            yards = min(yards, max(team_run_yards, 1))
+        # No RZ yards blending needed — _clamp_yards() prevents exceeding
+        # yard_line, and the TD gate controls scoring probability.
 
         # Use player fumble rate, fall back to team rate if unset
         player_fumble = rusher.outcomes.fumble_rate

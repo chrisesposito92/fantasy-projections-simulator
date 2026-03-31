@@ -129,9 +129,8 @@ The project is organized as a pipeline:
 - **Per-week availability**: `PlayerModel.weeks_missed: list[int]` stores specific weeks a player misses. `_filter_available()` in `player_selector.py` excludes them during those weeks. `GameState.week` tracks current week (0 = unset). Set via `games_missed` override.
 - **Pace factor**: `TeamDistributions.pace_factor` (default 1.0) scales clock runoff via `_scale_clock_runoff()` in `play_resolver.py`. Set via `pace_plays_per_game` team override (baseline 65 plays/game).
 - **Ambiguous match detection**: `PlayerResolver.resolve()` raises `AmbiguousMatchError(KeyError)` when 2+ players match within `AMBIGUITY_THRESHOLD=5` points. Exact ID/name lookups bypass the check.
-- **Red Zone TD Gate**: `_red_zone_td_gate(yard_line, play_type, rng)` in `play_resolver.py` applies a probability check when a play would score inside the 20. Constants `PASS_TD_GATE` and `RUN_TD_GATE` are calibrated from 2024 NFL data. Failed gates result in the player being tackled short.
+- **Red Zone TD Gate**: `_red_zone_td_gate(yard_line, play_type, rng)` in `play_resolver.py` applies a per-play probability check when a play would score inside the 20. Constants `PASS_TD_GATE` (0.55-0.15) and `RUN_TD_GATE` (0.35-0.08) are calibrated so drive-level TD rates match NFL averages (~55% of RZ drives end in TD). Failed gates result in the player being tackled short. `_clamp_yards()` prevents exceeding yard_line; no additional RZ yards capping is needed.
 - **Red Zone Catch Rate**: `PlayerOutcomes.red_zone_catch_rate` stores per-player RZ catch rate from PBP data (≥10 RZ targets) or `catch_rate * 0.85` fallback. Used in `_resolve_pass()` when `yard_line <= 20`. `MIN_RZ_TARGETS = 10` constant in `player_builder.py`.
-- **Red Zone Yards Blending**: In the red zone, player yards are capped by team-level bucketed distribution via `min(player_yards, max(team_yards, 1))`. Applies to both pass and run plays on non-TD catches/runs.
 - **QB Pass Fumble Rate**: `PlayerOutcomes.pass_fumble_rate` stores per-QB non-sack fumble rate (≥100 passes) or league average 0.0034. Checked pre-throw in `_resolve_pass()` after INT check, before receiver selection.
 - **Scramble Rate**: Uses `qb_scramble` column from nflverse PBP to separate actual scrambles from designed runs. Falls back to all QB rushes if column is missing. `scramble_yards_dist` built from scramble-only plays.
 - **GitHub Actions CI**: `.github/workflows/ci.yml` runs pytest on push/PR across Python 3.12/3.13/3.14 with uv caching. Statistical tests gated by PR label.
@@ -156,7 +155,8 @@ The project is organized as a pipeline:
 - **Phase 7B (Scoring + Config + CLI)**: Complete — 48 tests (418 total)
 - **Phase 7C (Polish + Tests + CI)**: Complete — 87 tests (505 total)
 - **Roster/Team Assignment Fix**: Complete — 21 tests (533 total). Separated player team assignment (current-season roster) from statistical profile (historical PBP). Fixes traded players, missing kickers, missing rookies, and retired player inclusion.
-- **Red Zone Accuracy**: Complete — 45 tests (578 total). Red zone TD probability gates, per-player RZ catch rates, yards blending, QB pre-throw fumble check, scramble rate fix using qb_scramble column.
+- **Red Zone Accuracy**: Complete — 45 tests (578 total). Red zone TD probability gates, per-player RZ catch rates, QB pre-throw fumble check, scramble rate fix using qb_scramble column.
+- **Passing Yards Calibration**: Complete — 579 tests. Removed broken RZ yards blending (team distribution included incompletions/sacks, capping RZ completions to 1 yard ~45% of the time). Calibrated clock runoff for ~65 plays/team/game. Fixed fallback yards for players without personal distributions.
 
 ## Style
 

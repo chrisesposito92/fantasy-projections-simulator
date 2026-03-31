@@ -86,19 +86,14 @@ class TestScaleClockRunoff:
 
     def test_fast_pace_reduces_runoff(self):
         """pace_factor > 1.0 means faster pace, less clock per play."""
-        # 38 / 1.3 = 29.23 -> 29
-        assert _scale_clock_runoff(CLOCK_RUN, 1.3) == round(38 / 1.3)
-        # 35 / 1.3 = 26.92 -> 27
-        assert _scale_clock_runoff(CLOCK_PASS_COMPLETE, 1.3) == round(35 / 1.3)
-        # 7 / 1.3 = 5.38 -> 5
-        assert _scale_clock_runoff(CLOCK_PASS_INCOMPLETE, 1.3) == round(7 / 1.3)
+        assert _scale_clock_runoff(CLOCK_RUN, 1.3) == round(CLOCK_RUN / 1.3)
+        assert _scale_clock_runoff(CLOCK_PASS_COMPLETE, 1.3) == round(CLOCK_PASS_COMPLETE / 1.3)
+        assert _scale_clock_runoff(CLOCK_PASS_INCOMPLETE, 1.3) == round(CLOCK_PASS_INCOMPLETE / 1.3)
 
     def test_slow_pace_increases_runoff(self):
         """pace_factor < 1.0 means slower pace, more clock per play."""
-        # 38 / 0.8 = 47.5 -> 48
-        assert _scale_clock_runoff(CLOCK_RUN, 0.8) == round(38 / 0.8)
-        # 7 / 0.8 = 8.75 -> 9
-        assert _scale_clock_runoff(CLOCK_PASS_INCOMPLETE, 0.8) == round(7 / 0.8)
+        assert _scale_clock_runoff(CLOCK_RUN, 0.8) == round(CLOCK_RUN / 0.8)
+        assert _scale_clock_runoff(CLOCK_PASS_INCOMPLETE, 0.8) == round(CLOCK_PASS_INCOMPLETE / 0.8)
 
     def test_minimum_is_one(self):
         """Clock runoff never goes below 1 second."""

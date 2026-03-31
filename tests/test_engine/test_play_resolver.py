@@ -441,10 +441,10 @@ class TestRedZonePassResolution:
                 completions += 1
                 if result.is_touchdown:
                     tds += 1
-        # TD gate at 6-10 is 0.80, so ~80% of completions should be TDs
+        # TD gate at 6-10 is 0.45, so ~45% of completions should be TDs
         if completions > 0:
             td_rate = tds / completions
-            assert 0.65 <= td_rate <= 0.95
+            assert 0.30 <= td_rate <= 0.60
 
     def test_failed_td_gate_gives_short_yardage(self):
         """When TD gate fails, receiver should be tackled short (yards < yard_line)."""
@@ -462,10 +462,9 @@ class TestRedZonePassResolution:
         for y in short_catches:
             assert 1 <= y < 15  # Tackled short of goal line
 
-    def test_rz_yards_blending_caps_player_yards(self):
-        """In the red zone, non-TD catch yards should be capped by team distribution."""
+    def test_rz_non_td_catch_preserves_player_yards(self):
+        """In the red zone, non-TD completions use player distribution (clamped by _clamp_yards)."""
         rng = np.random.default_rng(42)
-        # Roster with very high player yards dist
         qb = PlayerModel("QB1", "QB", "QB", "T",
                          PlayerUsage(snap_share=1.0), PlayerOutcomes())
         wr = PlayerModel("WR1", "WR1", "WR", "T",
@@ -473,12 +472,12 @@ class TestRedZonePassResolution:
                          PlayerOutcomes(
                              catch_rate=1.0,
                              red_zone_catch_rate=1.0,
-                             receiving_yards_dist=np.array([30, 30, 30]),  # Always 30 yards
+                             receiving_yards_dist=np.array([12, 12, 12]),  # Always 12 yards
                              fumble_rate=0.0,
                          ))
         roster = TeamRoster(team="T", players=[qb, wr])
-        # Team dist returns small values (realistic RZ)
-        outcomes = make_outcomes(pass_yards=[5, 6, 7])
+        # Team dist includes zeros (like real data) — should NOT cap player yards
+        outcomes = make_outcomes(pass_yards=[0, 0, 5, 6, 7])
         rates = make_turnover_rates()
         non_td_yards = []
         for _ in range(2000):
@@ -486,10 +485,40 @@ class TestRedZonePassResolution:
             result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
             if result.is_complete and not result.is_touchdown:
                 non_td_yards.append(result.yards)
-        if non_td_yards:
-            avg = sum(non_td_yards) / len(non_td_yards)
-            # Should be capped by team dist (~5-7), not player dist (30)
-            assert avg < 15
+        assert len(non_td_yards) > 0
+        avg = sum(non_td_yards) / len(non_td_yards)
+        # Player dist is 12, should average close to 12 (not capped to ~3 by team dist)
+        assert avg >= 10
+
+    def test_no_dist_fallback_gives_positive_yards(self):
+        """Receiver with no yards dist should still get reasonable yards on completions."""
+        rng = np.random.default_rng(42)
+        qb = PlayerModel("QB1", "QB", "QB", "T",
+                         PlayerUsage(snap_share=1.0), PlayerOutcomes())
+        wr = PlayerModel("WR1", "WR1", "WR", "T",
+                         PlayerUsage(target_share=1.0),
+                         PlayerOutcomes(
+                             catch_rate=1.0,
+                             receiving_yards_dist=None,  # No personal distribution
+                             fumble_rate=0.0,
+                         ))
+        roster = TeamRoster(team="T", players=[qb, wr])
+        # Team dist with zeros and negatives (like real PBP data)
+        outcomes = make_outcomes(pass_yards=[0, 0, -3, 0, 5, 8, 10, 12, 15, 20])
+        rates = make_turnover_rates()
+        completion_yards = []
+        for _ in range(500):
+            state = make_state(yard_line=50)
+            result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
+            if result.is_complete:
+                completion_yards.append(result.yards)
+        assert len(completion_yards) > 0
+        # All completions should have positive yards
+        for y in completion_yards:
+            assert y >= 1
+        # Average should be reasonable (not dominated by 1-yard catches)
+        avg = sum(completion_yards) / len(completion_yards)
+        assert avg >= 3
 
 
 class TestRedZoneTDGate:
@@ -504,15 +533,15 @@ class TestRedZoneTDGate:
         from fantasy_sim.engine.play_resolver import _red_zone_td_gate
         rng = np.random.default_rng(42)
         tds = sum(_red_zone_td_gate(2, "pass", rng) for _ in range(1000))
-        # 90% gate -> expect ~900, allow ±50
-        assert 840 <= tds <= 960
+        # 55% gate -> expect ~550, allow ±50
+        assert 490 <= tds <= 610
 
     def test_far_red_zone_low_probability(self):
         from fantasy_sim.engine.play_resolver import _red_zone_td_gate
         rng = np.random.default_rng(42)
         tds = sum(_red_zone_td_gate(18, "pass", rng) for _ in range(1000))
-        # 30% gate -> expect ~300, allow ±50
-        assert 240 <= tds <= 360
+        # 15% gate -> expect ~150, allow ±50
+        assert 100 <= tds <= 210
 
     def test_run_gate_lower_than_pass(self):
         from fantasy_sim.engine.play_resolver import _red_zone_td_gate
@@ -601,18 +630,19 @@ class TestRedZoneRunResolution:
             if result.is_touchdown:
                 tds += 1
         td_rate = tds / n
-        # RUN_TD_GATE at 1-3 is 0.65, so ~65% should be TDs
-        assert 0.50 <= td_rate <= 0.80
+        # RUN_TD_GATE at 1-3 is 0.35, so ~35% should be TDs
+        assert 0.20 <= td_rate <= 0.50
 
-    def test_rz_run_yards_blending(self):
-        """In the red zone, non-TD run yards capped by team dist."""
+    def test_rz_non_td_run_preserves_player_yards(self):
+        """In the red zone, non-TD runs use player distribution (clamped by _clamp_yards)."""
         rng = np.random.default_rng(42)
         rb = PlayerModel("RB1", "RB1", "RB", "T",
                          PlayerUsage(carry_share=1.0),
-                         PlayerOutcomes(rushing_yards_dist=np.array([25, 25, 25]),
+                         PlayerOutcomes(rushing_yards_dist=np.array([10, 10, 10]),
                                         fumble_rate=0.0))
         roster = TeamRoster(team="T", players=[rb])
-        outcomes = make_outcomes(run_yards=[4, 5, 6])  # Team dist: 4-6 yards
+        # Team dist includes zeros — should NOT cap player yards
+        outcomes = make_outcomes(run_yards=[0, 0, 4, 5, 6])
         rates = make_turnover_rates()
         non_td_yards = []
         for _ in range(2000):
@@ -620,6 +650,7 @@ class TestRedZoneRunResolution:
             result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
             if not result.is_touchdown and not result.is_fumble and not result.is_safety:
                 non_td_yards.append(result.yards)
-        if non_td_yards:
-            avg = sum(non_td_yards) / len(non_td_yards)
-            assert avg < 12  # Should be capped, not 25
+        assert len(non_td_yards) > 0
+        avg = sum(non_td_yards) / len(non_td_yards)
+        # Player dist is 10, should average close to 10 (not capped by team dist)
+        assert avg >= 8

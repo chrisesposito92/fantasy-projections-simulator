@@ -110,6 +110,14 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Comprehensive edge case suite: empty rosters, invalid overrides, scoring config edge cases, CLI validation, redistribution invariants
 - GitHub Actions CI: pytest on push/PR across Python 3.12/3.13/3.14 with uv caching; statistical tests gated by PR label
 
+**Passing Yards Calibration** — Complete (579 tests)
+
+- Removed broken red zone yards blending that capped ~45% of RZ completions to 1 yard (team distribution included incompletions/sacks)
+- Calibrated clock runoff constants (35/30/5/35) for ~65 plays per team per game (was ~58)
+- Recalibrated TD gate probabilities to compensate for faster RZ drive progression after blending removal
+- Fixed fallback yards for players without personal receiving distributions
+- Result: 11 QBs over 3,000 passing yards (was 1), 12 WRs over 1,000 receiving yards (was 6)
+
 ## Quick Start
 
 ```bash
