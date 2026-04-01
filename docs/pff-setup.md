@@ -46,6 +46,10 @@ PFF session cookies expire periodically. If the scraper reports a 401/403 error,
 
 ## Usage
 
+The `--league` flag selects between NFL (default) and NCAA data. Storage (raw, processed, and resume state) is separated by league: e.g. `~/.fantasy-sim/pff/raw/nfl/...` vs `~/.fantasy-sim/pff/raw/ncaa/...`, `~/.fantasy-sim/pff/processed/nfl/...` vs `~/.fantasy-sim/pff/processed/ncaa/...`.
+
+### NFL (default)
+
 ```bash
 # Scrape a full season
 uv run python scripts/scrape_pff.py --season 2024
@@ -61,4 +65,19 @@ uv run python scripts/scrape_pff.py --season 2024 --process-only
 
 # Custom rate limit delay (default 0.3s)
 uv run python scripts/scrape_pff.py --season 2024 --delay 0.5
+```
+
+### NCAA
+
+NCAA weeks are 0-16 (vs NFL 1-18 + postseason).
+
+```bash
+# Scrape a full NCAA season
+uv run python scripts/scrape_pff.py --league ncaa --season 2024
+
+# Scrape specific weeks
+uv run python scripts/scrape_pff.py --league ncaa --season 2025 --weeks 0-8
+
+# Re-process existing NCAA raw data into parquet (no network)
+uv run python scripts/scrape_pff.py --league ncaa --season 2024 --process-only
 ```
