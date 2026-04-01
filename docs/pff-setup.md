@@ -46,7 +46,7 @@ PFF session cookies expire periodically. If the scraper reports a 401/403 error,
 
 ## Usage
 
-The `--league` flag selects between NFL (default) and NCAA data. Storage is separated by league: `~/.fantasy-sim/pff/raw/nfl/...` vs `~/.fantasy-sim/pff/raw/ncaa/...`.
+The `--league` flag selects between NFL (default) and NCAA data. Storage (raw, processed, and resume state) is separated by league: e.g. `~/.fantasy-sim/pff/raw/nfl/...` vs `~/.fantasy-sim/pff/raw/ncaa/...`, `~/.fantasy-sim/pff/processed/nfl/...` vs `~/.fantasy-sim/pff/processed/ncaa/...`.
 
 ### NFL (default)
 
