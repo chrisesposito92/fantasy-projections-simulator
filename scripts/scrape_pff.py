@@ -298,6 +298,27 @@ def build_team_lookup(base_dir: Path, season: int) -> dict[int, str]:
     return {t["franchise_id"]: t["abbreviation"] for t in data.get("teams", [])}
 
 
+def _extract_player_rows(data: dict) -> list[dict]:
+    """Extract player rows from an API response, handling nested structures.
+
+    Most facets return {"key": [player_dicts...]}.
+    Coverage matchup facets return {"key": {"defenders": [...], "receivers": [...], "versus": [...]}}.
+    """
+    rows: list[dict] = []
+    for v in data.values():
+        if isinstance(v, list):
+            rows.extend(v)
+            return rows
+        if isinstance(v, dict):
+            # Nested structure — collect all sub-lists
+            for sub_v in v.values():
+                if isinstance(sub_v, list):
+                    rows.extend(sub_v)
+            if rows:
+                return rows
+    return rows
+
+
 def process_season(base_dir: Path, season: int) -> None:
     """Process raw JSON files into per-facet parquet files for a season."""
     team_lookup = build_team_lookup(base_dir, season)
@@ -328,14 +349,11 @@ def process_season(base_dir: Path, season: int) -> None:
                 game_id = int(json_file.name.split("_")[0])
                 data = json.loads(json_file.read_text())
 
-                # The API wraps data in a key that doesn't always match our
-                # facet naming (e.g., defense_coverage -> "coverage_summary").
-                # Grab the first list value from the response.
-                player_rows = []
-                for v in data.values():
-                    if isinstance(v, list):
-                        player_rows = v
-                        break
+                # Extract player rows from API response. The response shape
+                # varies: sometimes a flat list, sometimes nested dicts
+                # with sub-lists (e.g., coverage matchups have defenders/
+                # receivers/versus sub-keys).
+                player_rows = _extract_player_rows(data)
                 for player_row in player_rows:
                     if not isinstance(player_row, dict):
                         continue
