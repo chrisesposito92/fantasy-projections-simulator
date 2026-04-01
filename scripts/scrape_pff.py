@@ -58,6 +58,10 @@ ALL_FACETS: list[tuple[str, str]] = [
     ("punting", "summary"),
 ]
 
+# Premium responses have 20+ fields per player row. If a response has
+# fewer than this, the cookie likely expired and PFF returned public-only data.
+MIN_PREMIUM_FIELDS = 15
+
 console = Console()
 
 
@@ -251,6 +255,15 @@ def scrape_season(
                         elif data is None:
                             stats["failures"] += 1
                         else:
+                            # Check for degraded (non-premium) data
+                            for v in data.values():
+                                if isinstance(v, list) and v and isinstance(v[0], dict):
+                                    if len(v[0]) < MIN_PREMIUM_FIELDS:
+                                        console.print(f"\n[bold red]Cookie expired — got public-only data ({len(v[0])} fields). Stopping.[/bold red]")
+                                        console.print("Refresh your cookie — see docs/pff-setup.md")
+                                        tracker.save()
+                                        sys.exit(1)
+                                    break
                             out_path = week_dir / f"{game_id}_{facet_key}.json"
                             out_path.write_text(json.dumps(data, indent=2))
                             stats["requests"] += 1
