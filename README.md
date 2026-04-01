@@ -252,13 +252,17 @@ print(results.summary())
 
 ### PFF Data Scraper
 
-Extracts game-level player data from PFF Premium. Requires an active subscription.
+Extracts game-level player data from PFF Premium. Supports NFL (default) and NCAA via `--league`. Requires an active subscription.
 
 ```bash
 # Setup: See docs/pff-setup.md for cookie extraction
+# NFL (default)
 uv run python scripts/scrape_pff.py --season 2024
 uv run python scripts/scrape_pff.py --season 2026 --weeks 1-8
 uv run python scripts/scrape_pff.py --season 2024 --process-only
+# NCAA (weeks 0-16)
+uv run python scripts/scrape_pff.py --league ncaa --season 2024
+uv run python scripts/scrape_pff.py --league ncaa --season 2025 --weeks 0-8
 ```
 
 ## Docs

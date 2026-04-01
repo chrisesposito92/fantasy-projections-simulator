@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -32,7 +33,20 @@ PROGRESS_FILE = STATE_DIR / "progress.json"
 
 DEFAULT_DELAY = 0.3
 MAX_RETRIES = 3
-MAX_WEEK = 22  # reg season (1-18) + postseason (19-22)
+
+
+@dataclass(frozen=True)
+class LeagueConfig:
+    """League-specific configuration for scraping."""
+    name: str       # "nfl" or "ncaa"
+    min_week: int   # first week number (NFL: 1, NCAA: 0)
+    max_week: int   # last week number (NFL: 22, NCAA: 16)
+
+
+LEAGUES: dict[str, LeagueConfig] = {
+    "nfl": LeagueConfig(name="nfl", min_week=1, max_week=22),
+    "ncaa": LeagueConfig(name="ncaa", min_week=0, max_week=16),
+}
 
 ALL_FACETS: list[tuple[str, str]] = [
     ("offense", "summary"),
@@ -65,11 +79,11 @@ console = Console()
 class ProgressTracker:
     """Tracks which (season, week, game, facet) combos have been scraped."""
 
-    def __init__(self, path: Path = PROGRESS_FILE):
-        self.path = path
+    def __init__(self, path: Path | None = None):
+        self.path = path or PROGRESS_FILE
         self.data: dict = {}
-        if path.exists():
-            self.data = json.loads(path.read_text())
+        if self.path.exists():
+            self.data = json.loads(self.path.read_text())
 
     def is_done(self, season: str, week: str, game_id: str, facet: str) -> bool:
         return facet in self.data.get(season, {}).get(week, {}).get(game_id, [])
@@ -131,12 +145,13 @@ def fetch_json(
     return None
 
 
-def fetch_teams(client: httpx.Client, season: int, delay: float) -> dict:
+def fetch_teams(client: httpx.Client, season: int, delay: float, league: LeagueConfig) -> dict:
     """Fetch and cache team metadata for a season."""
-    cache_path = RAW_DIR / "teams" / f"{season}.json"
+    cache_path = RAW_DIR / league.name / "teams" / f"{season}.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists():
         return json.loads(cache_path.read_text())
-    data = fetch_json(client, f"/api/v1/teams?league=nfl&season={season}", delay=delay)
+    data = fetch_json(client, f"/api/v1/teams?league={league.name}&season={season}", delay=delay)
     if not isinstance(data, dict):
         console.print(f"[bold red]Error:[/bold red] Could not fetch teams for {season}")
         sys.exit(1)
@@ -144,24 +159,25 @@ def fetch_teams(client: httpx.Client, season: int, delay: float) -> dict:
     return data
 
 
-def fetch_games_for_week(client: httpx.Client, season: int, week: int, delay: float) -> list[dict]:
+def fetch_games_for_week(client: httpx.Client, season: int, week: int, delay: float, league: LeagueConfig) -> list[dict]:
     """Fetch game list for a specific week. Returns empty list if no games."""
-    cache_path = RAW_DIR / "games" / f"{season}_week{week:02d}.json"
+    cache_path = RAW_DIR / league.name / "games" / f"{season}_week{week:02d}.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
     if cache_path.exists():
         data = json.loads(cache_path.read_text())
     else:
-        data = fetch_json(client, f"/api/v1/games?league=nfl&season={season}&week={week}", delay=delay)
+        data = fetch_json(client, f"/api/v1/games?league={league.name}&season={season}&week={week}", delay=delay)
         if not isinstance(data, dict):
             return []
         cache_path.write_text(json.dumps(data, indent=2))
     return data.get("games", [])
 
 
-def discover_weeks(client: httpx.Client, season: int, delay: float) -> list[int]:
+def discover_weeks(client: httpx.Client, season: int, delay: float, league: LeagueConfig) -> list[int]:
     """Find all weeks that have games for a season."""
     weeks_with_games = []
-    for week in range(1, MAX_WEEK + 1):
-        games = fetch_games_for_week(client, season, week, delay)
+    for week in range(league.min_week, league.max_week + 1):
+        games = fetch_games_for_week(client, season, week, delay, league)
         if games:
             weeks_with_games.append(week)
     return weeks_with_games
@@ -172,19 +188,21 @@ def scrape_season(
     season: int,
     weeks: list[int] | None,
     delay: float,
+    league: LeagueConfig,
 ) -> dict:
     """Scrape all facets for all games in the given season/weeks.
 
     Returns stats dict with counts of requests, skips, failures.
     """
     stats = {"requests": 0, "skipped_done": 0, "skipped_404": 0, "failures": 0}
-    tracker = ProgressTracker()
+    progress_path = STATE_DIR / f"progress_{league.name}.json"
+    tracker = ProgressTracker(progress_path)
     season_str = str(season)
 
     # Fetch teams
     console.print("Fetching teams...")
     try:
-        fetch_teams(client, season, delay)
+        fetch_teams(client, season, delay, league)
     except AuthError:
         console.print("[bold red]Auth error fetching teams — cookie expired. Stopping.[/bold red]")
         console.print("Refresh your cookie — see docs/pff-setup.md")
@@ -195,7 +213,7 @@ def scrape_season(
     if weeks is None:
         console.print("Discovering weeks with games...")
         try:
-            weeks = discover_weeks(client, season, delay)
+            weeks = discover_weeks(client, season, delay, league)
         except AuthError:
             console.print("[bold red]Auth error discovering weeks — cookie expired. Stopping.[/bold red]")
             console.print("Refresh your cookie — see docs/pff-setup.md")
@@ -222,13 +240,13 @@ def scrape_season(
                 week_str = f"week_{week:02d}"
                 progress.update(week_task, description=f"Week {week}")
 
-                games = fetch_games_for_week(client, season, week, delay)
+                games = fetch_games_for_week(client, season, week, delay, league)
                 if not games:
                     progress.advance(week_task)
                     continue
 
                 # Ensure week directory exists
-                week_dir = RAW_DIR / "facets" / str(season) / week_str
+                week_dir = RAW_DIR / league.name / "facets" / str(season) / week_str
                 week_dir.mkdir(parents=True, exist_ok=True)
 
                 game_task = progress.add_task(f"  Games (wk {week})", total=len(games))
@@ -297,9 +315,9 @@ def scrape_season(
     return stats
 
 
-def build_team_lookup(base_dir: Path, season: int) -> dict[int, str]:
+def build_team_lookup(base_dir: Path, season: int, league: LeagueConfig) -> dict[int, str]:
     """Build franchise_id -> abbreviation mapping from teams JSON."""
-    teams_path = base_dir / "raw" / "teams" / f"{season}.json"
+    teams_path = base_dir / "raw" / league.name / "teams" / f"{season}.json"
     if not teams_path.exists():
         return {}
     data = json.loads(teams_path.read_text())
@@ -327,11 +345,11 @@ def _extract_player_rows(data: dict) -> list[dict]:
     return rows
 
 
-def process_season(base_dir: Path, season: int) -> None:
+def process_season(base_dir: Path, season: int, league: LeagueConfig) -> None:
     """Process raw JSON files into per-facet parquet files for a season."""
-    team_lookup = build_team_lookup(base_dir, season)
-    facets_dir = base_dir / "raw" / "facets" / str(season)
-    processed_dir = base_dir / "processed"
+    team_lookup = build_team_lookup(base_dir, season, league)
+    facets_dir = base_dir / "raw" / league.name / "facets" / str(season)
+    processed_dir = base_dir / "processed" / league.name
     processed_dir.mkdir(parents=True, exist_ok=True)
 
     if not facets_dir.exists():
@@ -385,7 +403,8 @@ def parse_args() -> argparse.Namespace:
         description="PFF Premium Data Scraper",
         epilog="Setup: See docs/pff-setup.md for cookie extraction instructions.",
     )
-    parser.add_argument("--season", type=int, required=True, help="NFL season year (e.g., 2024)")
+    parser.add_argument("--season", type=int, required=True, help="Season year (e.g., 2024)")
+    parser.add_argument("--league", type=str, choices=list(LEAGUES.keys()), default="nfl", help="League to scrape (default: nfl)")
     parser.add_argument("--weeks", type=str, default=None, help="Week range (e.g., '1-8' or '12')")
     parser.add_argument("--process-only", action="store_true", help="Re-process raw JSON to parquet without scraping")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help=f"Delay between API requests in seconds (default: {DEFAULT_DELAY})")
@@ -409,8 +428,8 @@ def parse_weeks(weeks_str: str | None) -> list[int] | None:
 
 
 def ensure_directories() -> None:
-    """Create the PFF data directory structure."""
-    for d in [RAW_DIR / "teams", RAW_DIR / "games", PROCESSED_DIR, STATE_DIR]:
+    """Create the PFF base directory structure."""
+    for d in [RAW_DIR, PROCESSED_DIR, STATE_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -426,7 +445,7 @@ def load_cookie(env_path: Path = ENV_FILE) -> str | None:
     return None
 
 
-def build_client(cookie: str) -> httpx.Client:
+def build_client(cookie: str, league: LeagueConfig) -> httpx.Client:
     """Create an httpx client with PFF auth headers."""
     return httpx.Client(
         base_url=PFF_BASE_URL,
@@ -434,16 +453,16 @@ def build_client(cookie: str) -> httpx.Client:
             "Cookie": cookie,
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Accept": "application/json",
-            "Referer": f"{PFF_BASE_URL}/nfl/games",
+            "Referer": f"{PFF_BASE_URL}/{league.name}/games",
         },
         timeout=30.0,
     )
 
 
-def validate_cookie(client: httpx.Client, season: int) -> bool:
+def validate_cookie(client: httpx.Client, season: int, league: LeagueConfig) -> bool:
     """Validate the cookie by making a lightweight API request."""
     try:
-        resp = client.get(f"/api/v1/teams?league=nfl&season={season}")
+        resp = client.get(f"/api/v1/teams?league={league.name}&season={season}")
         if resp.status_code in (401, 403):
             return False
         resp.raise_for_status()
@@ -454,10 +473,11 @@ def validate_cookie(client: httpx.Client, season: int) -> bool:
 
 def main() -> None:
     args = parse_args()
+    league = LEAGUES[args.league]
     weeks = parse_weeks(args.weeks)
     ensure_directories()
 
-    console.print(f"\n[bold]PFF Scraper[/bold] — Season {args.season}")
+    console.print(f"\n[bold]PFF Scraper[/bold] — {league.name.upper()} Season {args.season}")
     if weeks:
         console.print(f"  Weeks: {weeks}")
     console.print(f"  Delay: {args.delay}s\n")
@@ -465,7 +485,7 @@ def main() -> None:
     if args.process_only:
         console.print("[bold]Process-only mode[/bold] — skipping scrape\n")
         console.print(f"[bold]Processing raw data for {args.season}...[/bold]")
-        process_season(PFF_DIR, args.season)
+        process_season(PFF_DIR, args.season, league)
         console.print("\n[bold green]Done.[/bold green]")
         return
 
@@ -477,8 +497,8 @@ def main() -> None:
         console.print("See docs/pff-setup.md for instructions.")
         sys.exit(1)
 
-    client = build_client(cookie)
-    if not validate_cookie(client, args.season):
+    client = build_client(cookie, league)
+    if not validate_cookie(client, args.season, league):
         console.print("[bold red]Error:[/bold red] PFF cookie is invalid or expired.")
         console.print("Refresh your cookie — see docs/pff-setup.md")
         client.close()
@@ -487,7 +507,7 @@ def main() -> None:
     console.print("[green]Cookie validated[/green]\n")
 
     try:
-        stats = scrape_season(client, args.season, weeks, args.delay)
+        stats = scrape_season(client, args.season, weeks, args.delay, league)
         console.print(f"\n[bold]Scrape complete:[/bold]")
         console.print(f"  Requests made: {stats['requests']}")
         console.print(f"  Skipped (already done): {stats['skipped_done']}")
@@ -495,7 +515,7 @@ def main() -> None:
         console.print(f"  Failures: {stats['failures']}")
 
         console.print(f"\n[bold]Processing raw data for {args.season}...[/bold]")
-        process_season(PFF_DIR, args.season)
+        process_season(PFF_DIR, args.season, league)
         console.print("\n[bold green]Done.[/bold green]")
     finally:
         client.close()

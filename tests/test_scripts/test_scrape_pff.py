@@ -10,7 +10,10 @@ import polars as pl
 import pytest
 from unittest.mock import patch, MagicMock
 import httpx
-from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError, _NOT_FOUND, process_season, build_team_lookup
+from scrape_pff import parse_weeks, load_cookie, ProgressTracker, fetch_json, AuthError, _NOT_FOUND, process_season, build_team_lookup, LeagueConfig, LEAGUES
+
+NFL_LEAGUE = LEAGUES["nfl"]
+NCAA_LEAGUE = LEAGUES["ncaa"]
 
 
 class TestParseWeeks:
@@ -159,9 +162,25 @@ class TestFetchJson:
         assert mock_client.get.call_count == 2
 
 
+class TestLeagueConfig:
+    def test_nfl_config(self):
+        assert NFL_LEAGUE.name == "nfl"
+        assert NFL_LEAGUE.min_week == 1
+        assert NFL_LEAGUE.max_week == 22
+
+    def test_ncaa_config(self):
+        assert NCAA_LEAGUE.name == "ncaa"
+        assert NCAA_LEAGUE.min_week == 0
+        assert NCAA_LEAGUE.max_week == 16
+
+    def test_leagues_dict_has_both(self):
+        assert "nfl" in LEAGUES
+        assert "ncaa" in LEAGUES
+
+
 class TestBuildTeamLookup:
     def test_builds_lookup_from_teams_json(self, tmp_path):
-        teams_dir = tmp_path / "raw" / "teams"
+        teams_dir = tmp_path / "raw" / "nfl" / "teams"
         teams_dir.mkdir(parents=True)
         teams_data = {
             "teams": [
@@ -170,21 +189,22 @@ class TestBuildTeamLookup:
             ]
         }
         (teams_dir / "2024.json").write_text(json.dumps(teams_data))
-        lookup = build_team_lookup(tmp_path, 2024)
+        lookup = build_team_lookup(tmp_path, 2024, NFL_LEAGUE)
         assert lookup == {9: "DAL", 24: "PHI"}
 
 
 class TestProcessSeason:
-    def _setup_raw_data(self, tmp_path):
+    def _setup_raw_data(self, tmp_path, league=None):
         """Create minimal raw JSON fixture data."""
+        league = league or NFL_LEAGUE
         # Teams
-        teams_dir = tmp_path / "raw" / "teams"
+        teams_dir = tmp_path / "raw" / league.name / "teams"
         teams_dir.mkdir(parents=True)
         teams_data = {"teams": [{"franchise_id": 9, "abbreviation": "DAL"}]}
         (teams_dir / "2024.json").write_text(json.dumps(teams_data))
 
         # Facet data
-        week_dir = tmp_path / "raw" / "facets" / "2024" / "week_01"
+        week_dir = tmp_path / "raw" / league.name / "facets" / "2024" / "week_01"
         week_dir.mkdir(parents=True)
 
         rushing_data = {
@@ -205,18 +225,14 @@ class TestProcessSeason:
 
     def test_produces_parquet_file(self, tmp_path):
         base = self._setup_raw_data(tmp_path)
-        processed_dir = tmp_path / "processed"
-        processed_dir.mkdir(parents=True)
-        process_season(base, 2024)
-        parquet_path = processed_dir / "rushing_summary_2024.parquet"
+        process_season(base, 2024, NFL_LEAGUE)
+        parquet_path = tmp_path / "processed" / "nfl" / "rushing_summary_2024.parquet"
         assert parquet_path.exists()
 
     def test_parquet_has_metadata_columns(self, tmp_path):
         base = self._setup_raw_data(tmp_path)
-        processed_dir = tmp_path / "processed"
-        processed_dir.mkdir(parents=True)
-        process_season(base, 2024)
-        df = pl.read_parquet(processed_dir / "rushing_summary_2024.parquet")
+        process_season(base, 2024, NFL_LEAGUE)
+        df = pl.read_parquet(tmp_path / "processed" / "nfl" / "rushing_summary_2024.parquet")
         assert "season" in df.columns
         assert "week" in df.columns
         assert "game_id" in df.columns
@@ -224,10 +240,8 @@ class TestProcessSeason:
 
     def test_parquet_has_correct_data(self, tmp_path):
         base = self._setup_raw_data(tmp_path)
-        processed_dir = tmp_path / "processed"
-        processed_dir.mkdir(parents=True)
-        process_season(base, 2024)
-        df = pl.read_parquet(processed_dir / "rushing_summary_2024.parquet")
+        process_season(base, 2024, NFL_LEAGUE)
+        df = pl.read_parquet(tmp_path / "processed" / "nfl" / "rushing_summary_2024.parquet")
         assert len(df) == 1
         row = df.row(0, named=True)
         assert row["player"] == "Saquon Barkley"
@@ -236,3 +250,11 @@ class TestProcessSeason:
         assert row["game_id"] == 28418
         assert row["team"] == "DAL"
         assert row["grades_run"] == 58.4
+
+    def test_ncaa_uses_separate_paths(self, tmp_path):
+        base = self._setup_raw_data(tmp_path, league=NCAA_LEAGUE)
+        process_season(base, 2024, NCAA_LEAGUE)
+        parquet_path = tmp_path / "processed" / "ncaa" / "rushing_summary_2024.parquet"
+        assert parquet_path.exists()
+        # NFL path should not exist
+        assert not (tmp_path / "processed" / "nfl" / "rushing_summary_2024.parquet").exists()
