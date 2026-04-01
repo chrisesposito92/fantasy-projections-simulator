@@ -183,12 +183,24 @@ def scrape_season(
 
     # Fetch teams
     console.print("Fetching teams...")
-    fetch_teams(client, season, delay)
+    try:
+        fetch_teams(client, season, delay)
+    except AuthError:
+        console.print("[bold red]Auth error fetching teams — cookie expired. Stopping.[/bold red]")
+        console.print("Refresh your cookie — see docs/pff-setup.md")
+        tracker.save()
+        return stats
 
     # Determine weeks
     if weeks is None:
         console.print("Discovering weeks with games...")
-        weeks = discover_weeks(client, season, delay)
+        try:
+            weeks = discover_weeks(client, season, delay)
+        except AuthError:
+            console.print("[bold red]Auth error discovering weeks — cookie expired. Stopping.[/bold red]")
+            console.print("Refresh your cookie — see docs/pff-setup.md")
+            tracker.save()
+            return stats
     console.print(f"Weeks to scrape: {weeks}\n")
 
     if not weeks:
@@ -249,7 +261,9 @@ def scrape_season(
 
                         if data is _NOT_FOUND:
                             stats["skipped_404"] += 1
+                            tracker.mark_done(season_str, week_str, game_id_str, facet_key)
                         elif data is None:
+                            # Transient failure — do NOT mark done so it retries next run
                             stats["failures"] += 1
                         else:
                             # PFF returns a "restricted" key listing premium
@@ -262,8 +276,7 @@ def scrape_season(
                             out_path = week_dir / f"{game_id}_{facet_key}.json"
                             out_path.write_text(json.dumps(data, indent=2))
                             stats["requests"] += 1
-
-                        tracker.mark_done(season_str, week_str, game_id_str, facet_key)
+                            tracker.mark_done(season_str, week_str, game_id_str, facet_key)
                         progress.advance(facet_task)
 
                     # Save progress after each game
