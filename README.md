@@ -250,6 +250,17 @@ results = run_simulations(home_dists, away_dists, n_sims=1000, seed=42)
 print(results.summary())
 ```
 
+### PFF Data Scraper
+
+Extracts game-level player data from PFF Premium. Requires an active subscription.
+
+```bash
+# Setup: See docs/pff-setup.md for cookie extraction
+uv run python scripts/scrape_pff.py --season 2024
+uv run python scripts/scrape_pff.py --season 2026 --weeks 1-8
+uv run python scripts/scrape_pff.py --season 2024 --process-only
+```
+
 ## Docs
 
 - [Configuration Reference](docs/CONFIG.md) — Every override field, scoring key, and config option
