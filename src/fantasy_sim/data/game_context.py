@@ -61,6 +61,24 @@ class GameContextBuilder:
                 self._matchup_engine = MatchupEngine(self._pff_config, pff_loader)
                 logger.info("PFF matchup engine enabled")
 
+        # Talent stabilizer
+        self._talent_stabilizer = None
+        self._pff_crosswalk: dict[int, str] = {}
+        self._pff_loader = None
+        if self._pff_config.enabled and self._pff_config.talent.enabled:
+            from fantasy_sim.data.pff.loader import PffLoader
+            from fantasy_sim.data.pff.talent import TalentStabilizer
+            pff_dir = Path(self._pff_config.data_dir) if self._pff_config.data_dir else None
+            # Reuse loader if matchup engine already created one
+            if self._matchup_engine is not None:
+                pff_loader = self._matchup_engine._loader
+            else:
+                pff_loader = PffLoader(pff_dir)
+            if pff_loader.is_available():
+                self._talent_stabilizer = TalentStabilizer(self._pff_config, pff_loader)
+                self._pff_loader = pff_loader
+                logger.info("PFF talent stabilizer enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -263,6 +281,30 @@ class GameContextBuilder:
                         player.outcomes.rushing_yards_dist + shift
                     )
 
+    def _ensure_pff_crosswalk(
+        self,
+        training_seasons: list[int],
+        target_season: int | None = None,
+    ) -> None:
+        """Build PFF crosswalk if not already cached."""
+        if self._pff_crosswalk or self._pff_loader is None:
+            return
+
+        frames = []
+        for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
+            df = self._pff_loader.load_facet(facet, training_seasons)
+            if not df.is_empty():
+                frames.append(df.select(["player_id", "player", "team"]))
+        if not frames:
+            return
+
+        pff_data = pl.concat(frames).unique(subset=["player_id"])
+        roster_season = target_season or max(training_seasons)
+        nfl_roster = self.loader.load_rosters([roster_season])
+        self._pff_crosswalk = self._pff_loader.build_crosswalk(
+            pff_data, nfl_roster, roster_season
+        )
+
     def build_game(
         self,
         home_team: str,
@@ -306,6 +348,19 @@ class GameContextBuilder:
             )
             self._apply_matchup(home_dists, home_roster, home_ctx)
             self._apply_matchup(away_dists, away_roster, away_ctx)
+
+        # PFF talent stabilization
+        if self._talent_stabilizer is not None:
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            self._talent_stabilizer.stabilize_roster(
+                home_roster, self._pff_crosswalk, training_seasons,
+            )
+            self._talent_stabilizer.stabilize_roster(
+                away_roster, self._pff_crosswalk, training_seasons,
+            )
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
 
         return home_dists, away_dists, home_roster, away_roster
 
