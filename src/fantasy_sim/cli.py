@@ -7,6 +7,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.models.distributions import (
@@ -91,6 +92,18 @@ def _build_overrides(overrides: tuple[str, ...], config_path: str | None) -> Ove
             result.players[entity][field_name] = value
 
     return result
+
+
+def _make_builder(pff_flag: bool | None = None) -> GameContextBuilder:
+    """Create GameContextBuilder, optionally with PFF enabled."""
+    defaults = load_defaults()
+    pff_config = load_pff_config(defaults)
+    if pff_flag is True:
+        pff_config.enabled = True
+    elif pff_flag is False:
+        pff_config.enabled = False
+    loader = DataLoader()
+    return GameContextBuilder(cache_dir=loader.cache_dir, pff_config=pff_config)
 
 
 def _resolve_config_chain(
@@ -485,8 +498,9 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
+@click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.pass_context
-def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
@@ -501,8 +515,8 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
+    builder = _make_builder(pff)
     loader = DataLoader()
-    builder = GameContextBuilder(cache_dir=loader.cache_dir)
 
     click.echo(f"Loading schedule for {season} Week {week_num}...")
     schedules = loader.load_schedules([season])
@@ -608,8 +622,9 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 @click.option("--by-week", is_flag=True, help="Output per-week breakdowns instead of season totals")
+@click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.pass_context
-def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week):
+def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week, pff):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     meta = _read_season_yaml_metadata(season_yaml)
@@ -633,8 +648,8 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         click.echo(f"Error: {e.format_message()}", err=True)
         raise SystemExit(1)
 
+    builder = _make_builder(pff)
     loader = DataLoader()
-    builder = GameContextBuilder(cache_dir=loader.cache_dir)
 
     schedules = loader.load_schedules([season_year])
 
@@ -788,8 +803,9 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+@click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.pass_context
-def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path):
+def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path, pff):
     """Simulate a single game with deep-dive projections.
 
     Example: fantasy-sim game KC BUF --week 5
@@ -819,8 +835,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         away_roster = _make_demo_roster(away_team)
     else:
         training_seasons = _get_training_seasons(season)
-        loader = DataLoader()
-        builder = GameContextBuilder(cache_dir=loader.cache_dir)
+        builder = _make_builder(pff)
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
             home_team=home_team, away_team=away_team, training_seasons=training_seasons,
             target_season=season, week=week_num,
@@ -922,8 +937,9 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
 @click.option("--demo", is_flag=True, help="Use synthetic data (no network needed)")
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
+@click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.pass_context
-def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path):
+def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path, pff):
     """Show projection for a single player.
 
     Uses fuzzy name matching. Example: fantasy-sim player "nico_collins" --week 5
@@ -952,8 +968,8 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         game_configs = [(home_dists, away_dists, home_roster, away_roster, "HOME", "AWAY")]
     else:
         training_seasons = _get_training_seasons(season)
+        builder = _make_builder(pff)
         loader = DataLoader()
-        builder = GameContextBuilder(cache_dir=loader.cache_dir)
 
         click.echo(f"Loading schedule for {season} Week {week_num}...")
         schedules = loader.load_schedules([season])
