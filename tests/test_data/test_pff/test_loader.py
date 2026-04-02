@@ -3,7 +3,7 @@
 import polars as pl
 import pytest
 
-from fantasy_sim.data.pff_loader import (
+from fantasy_sim.data.pff.loader import (
     FANTASY_POSITIONS,
     PFF_TO_FANTASY_POSITION,
     PFF_TO_NFL_TEAM,
