@@ -39,6 +39,8 @@ def load_actual_scores(
 
     actuals = []
     for row in filtered.iter_rows(named=True):
+        if row.get("position") is None:
+            continue
         fumbles = (
             (row.get("receiving_fumbles_lost", 0) or 0) +
             (row.get("rushing_fumbles_lost", 0) or 0) +
