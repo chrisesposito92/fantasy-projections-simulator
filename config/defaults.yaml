@@ -55,18 +55,18 @@ positions:
   dst: {}
 
 pff:
-  enabled: false
+  enabled: true
   data_dir: null  # defaults to ~/.fantasy-sim/pff/processed/nfl/
 
   matchup:
-    enabled: true
-    pass_defense_sensitivity: 0.08
-    pass_rush_sensitivity: 0.10
-    run_defense_sensitivity: 0.08
-    int_rate_sensitivity: 0.06
-    ol_pass_sensitivity: 0.08
-    ol_run_sensitivity: 0.06
-    factor_clamp: [0.80, 1.20]
+    enabled: false
+    pass_defense_sensitivity: 0.04
+    pass_rush_sensitivity: 0.05
+    run_defense_sensitivity: 0.04
+    int_rate_sensitivity: 0.03
+    ol_pass_sensitivity: 0.04
+    ol_run_sensitivity: 0.03
+    factor_clamp: [0.90, 1.10]
     min_games: 4
 
   talent:
