@@ -5,7 +5,6 @@ import pytest
 
 from fantasy_sim.data.pff.loader import PffLoader
 from fantasy_sim.data.pff.matchup import (
-    GRADE_SENSITIVITY_DISCOUNT,
     MatchupEngine,
     compute_factor,
 )

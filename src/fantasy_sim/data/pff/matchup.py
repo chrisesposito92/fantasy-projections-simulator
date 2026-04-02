@@ -7,7 +7,6 @@ centered on 1.0 that shift simulation parameters (catch rate, sack rate, etc.).
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 
 import polars as pl
 
@@ -239,7 +238,7 @@ class MatchupEngine:
             or game_count < config.min_games
         )
 
-        if not use_fallback:
+        if not use_fallback and team_val is not None:
             league_avg, league_std = self._compute_league_stats(df, primary)
             factor = compute_factor(team_val, league_avg, league_std, sensitivity, clamp)
         else:
@@ -279,6 +278,7 @@ class MatchupEngine:
         Returns:
             MatchupContext with all factors populated.
         """
+        _ = season_weights  # reserved for future recency weighting
         if not self._config.enabled:
             return MatchupContext()
 
