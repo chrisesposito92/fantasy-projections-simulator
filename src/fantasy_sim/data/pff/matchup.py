@@ -238,7 +238,8 @@ class MatchupEngine:
             or game_count < config.min_games
         )
 
-        if not use_fallback and team_val is not None:
+        if not use_fallback:
+            assert team_val is not None  # guaranteed by use_fallback check
             league_avg, league_std = self._compute_league_stats(df, primary)
             factor = compute_factor(team_val, league_avg, league_std, sensitivity, clamp)
         else:
