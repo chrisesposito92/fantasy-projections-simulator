@@ -455,6 +455,88 @@ positions:
 
 ---
 
+## PFF Intelligence Layer
+
+The simulator can optionally use PFF (Pro Football Focus) data to improve projections through two independent layers:
+
+1. **Matchup Engine** — Adjusts offensive parameters per-game based on the opposing defense's quality (coverage grades, pass rush, run defense) and the team's own OL quality.
+2. **Talent Stabilizer** — Identifies players whose PBP stats likely misrepresent their true talent using PFF process metrics (route grades, drop rates, yards after contact). Applies Bayesian blending weighted by sample size.
+
+### Enabling PFF
+
+PFF data must be scraped first (see `docs/pff-setup.md`). Then enable via config or CLI:
+
+```yaml
+# config/defaults.yaml
+pff:
+  enabled: true
+```
+
+```bash
+# Or per-command via CLI flag
+uv run fantasy-sim week 1 --season 2024 --pff
+uv run fantasy-sim week 1 --season 2024 --no-pff  # override config
+```
+
+### PFF Configuration
+
+The full configuration with default values (set `enabled: true` to activate):
+
+```yaml
+pff:
+  enabled: false
+  data_dir: null  # defaults to ~/.fantasy-sim/pff/processed/nfl/
+
+  matchup:
+    enabled: true
+    # Sensitivity per z-score unit (higher = more matchup impact)
+    pass_defense_sensitivity: 0.08
+    pass_rush_sensitivity: 0.10
+    run_defense_sensitivity: 0.08
+    int_rate_sensitivity: 0.06
+    ol_pass_sensitivity: 0.08
+    ol_run_sensitivity: 0.06
+    # Maximum adjustment bounds
+    factor_clamp: [0.80, 1.20]
+    # Minimum games for stat-based factors (below this, uses grade fallback)
+    min_games: 4
+
+  talent:
+    enabled: true
+    prior_strength: 40       # PFF grade = equivalent of N PBP observations
+    min_divergence: 0.03     # minimum PBP-PFF gap before adjusting
+    # Regression coefficients for computing PFF priors
+    catch_rate_coefficients:
+      drop_rate: -0.15
+      contested_catch_rate: 0.10
+      qb_accuracy: 0.08
+    rushing_yards_coefficients:
+      yco_attempt: 0.6
+      elusive_rating: 0.008
+    receiving_yards_coefficients:
+      yprr: 0.5
+      avg_depth_of_target: 0.03
+```
+
+### Override Interaction
+
+PFF adjustments are applied **before** user overrides. User overrides always win:
+
+```
+Base model (nflverse PBP)
+  → PFF matchup adjustments (per-game, based on opponent)
+  → PFF talent stabilization (season-level, based on process metrics)
+  → Share re-normalization
+  → User overrides (season.yaml + CLI --override) ← always last
+  → Share re-normalization
+```
+
+If you override a parameter (e.g., `catch_rate=0.68`), that exact value is used regardless of PFF. PFF matchup adjustments on that parameter are effectively bypassed for that player.
+
+**Migration note**: When enabling PFF for the first time, review existing season.yaml overrides. Many schedule-strength and talent-based adjustments may now be redundant.
+
+---
+
 ## CLI Override Syntax
 
 Override individual fields from the command line without a config file:
