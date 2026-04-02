@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 
-import numpy as np
 import polars as pl
 
 from fantasy_sim.data.pff.loader import PffLoader
@@ -125,8 +124,6 @@ class TalentStabilizer:
         # Build PFF lookup dicts keyed by PFF player_id
         recv_lookup = self._build_lookup(receiving)
         rush_lookup = self._build_lookup(rushing)
-        pass_lookup = self._build_lookup(passing)
-
         # Compute league averages
         recv_avgs = self._compute_league_averages(
             receiving,
