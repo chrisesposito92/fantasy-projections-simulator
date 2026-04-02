@@ -1,5 +1,6 @@
 """Build game context (TeamDistributions + TeamRoster) from nflverse data."""
 
+import logging
 from pathlib import Path
 import polars as pl
 import numpy as np
@@ -9,6 +10,7 @@ from fantasy_sim.data.player_builder import (
     build_team_roster,
     _aggregate_pbp_stats, _assemble_models,
 )
+from fantasy_sim.data.pff.models import PffConfig, MatchupContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -17,6 +19,8 @@ from fantasy_sim.models.player import TeamRoster, PlayerModel, PlayerUsage, Play
 from fantasy_sim.overrides.parser import OverrideSet
 from fantasy_sim.overrides.engine import apply_player_override, apply_team_override
 from fantasy_sim.overrides.resolver import PlayerResolver
+
+logger = logging.getLogger(__name__)
 
 
 # League average fallbacks for teams with no data
@@ -32,7 +36,11 @@ _DEFAULT_TURNOVER_RATES = TurnoverRates(
 class GameContextBuilder:
     """Builds TeamDistributions + TeamRoster from real nflverse data."""
 
-    def __init__(self, cache_dir: Path = DEFAULT_CACHE_DIR):
+    def __init__(
+        self,
+        cache_dir: Path = DEFAULT_CACHE_DIR,
+        pff_config: PffConfig | None = None,
+    ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
         self._pipeline_cache: dict | None = None
@@ -40,6 +48,18 @@ class GameContextBuilder:
         self._pbp_stats_cache: dict | None = None
         self._player_models_cache: dict | None = None
         self._player_cache_key: tuple | None = None
+
+        # PFF matchup engine (optional)
+        self._pff_config = pff_config or PffConfig()
+        self._matchup_engine = None
+        if self._pff_config.enabled and self._pff_config.matchup.enabled:
+            from fantasy_sim.data.pff.loader import PffLoader
+            from fantasy_sim.data.pff.matchup import MatchupEngine
+            pff_dir = Path(self._pff_config.data_dir) if self._pff_config.data_dir else None
+            pff_loader = PffLoader(pff_dir)
+            if pff_loader.is_available():
+                self._matchup_engine = MatchupEngine(self._pff_config, pff_loader)
+                logger.info("PFF matchup engine enabled")
 
     def _ensure_pipeline(
         self,
@@ -178,6 +198,71 @@ class GameContextBuilder:
             ])
         return roster
 
+    @staticmethod
+    def _apply_matchup(
+        dists: TeamDistributions,
+        roster: TeamRoster,
+        ctx: MatchupContext,
+    ) -> None:
+        """Apply MatchupContext factors to TeamDistributions and TeamRoster in-place.
+
+        Factors are centered on 1.0 (neutral).  Only non-neutral factors
+        (i.e. != 1.0) are applied to avoid unnecessary mutation.
+        """
+        # --- Receivers: catch_rate and red_zone_catch_rate ---
+        if ctx.catch_rate_factor != 1.0:
+            for player in roster.players:
+                if player.usage.target_share > 0 and player.outcomes.catch_rate > 0:
+                    player.outcomes.catch_rate = max(
+                        0.0, min(1.0, player.outcomes.catch_rate * ctx.catch_rate_factor)
+                    )
+                    player.outcomes.red_zone_catch_rate = max(
+                        0.0,
+                        min(
+                            1.0,
+                            player.outcomes.red_zone_catch_rate * ctx.catch_rate_factor,
+                        ),
+                    )
+
+        # --- Turnover rates ---
+        combined_sack = ctx.sack_rate_factor * ctx.ol_pass_block_factor
+        if combined_sack != 1.0:
+            dists.turnover_rates.sack_rate = (
+                dists.turnover_rates.sack_rate * combined_sack
+            )
+
+        if ctx.int_rate_factor != 1.0:
+            dists.turnover_rates.int_rate = (
+                dists.turnover_rates.int_rate * ctx.int_rate_factor
+            )
+
+        # --- Receiving yards: additive shift on each receiver's distribution ---
+        if ctx.pass_yards_factor != 1.0:
+            shift = (ctx.pass_yards_factor - 1.0) * 10.0
+            for player in roster.players:
+                if (
+                    player.usage.target_share > 0
+                    and player.outcomes.receiving_yards_dist is not None
+                    and len(player.outcomes.receiving_yards_dist) > 0
+                ):
+                    player.outcomes.receiving_yards_dist = (
+                        player.outcomes.receiving_yards_dist + shift
+                    )
+
+        # --- Rushing yards: additive shift on each rusher's distribution ---
+        combined_rush = ctx.rush_yards_factor * ctx.ol_run_block_factor
+        if combined_rush != 1.0:
+            shift = (combined_rush - 1.0) * 10.0
+            for player in roster.players:
+                if (
+                    player.usage.carry_share > 0
+                    and player.outcomes.rushing_yards_dist is not None
+                    and len(player.outcomes.rushing_yards_dist) > 0
+                ):
+                    player.outcomes.rushing_yards_dist = (
+                        player.outcomes.rushing_yards_dist + shift
+                    )
+
     def build_game(
         self,
         home_team: str,
@@ -189,6 +274,7 @@ class GameContextBuilder:
         rosters: pl.DataFrame | None = None,
     ) -> tuple[TeamDistributions, TeamDistributions, TeamRoster, TeamRoster]:
         """Build all context needed to simulate one game."""
+        training_seasons = training_seasons or [2022, 2023, 2024]
         home_dists = self.build_team_distributions(
             home_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
@@ -205,6 +291,22 @@ class GameContextBuilder:
             away_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
         )
+
+        # PFF matchup adjustments: away D → home offense, home D → away offense
+        if self._matchup_engine is not None:
+            home_ctx = self._matchup_engine.compute(
+                defense_team=away_team,
+                offense_team=home_team,
+                training_seasons=training_seasons,
+            )
+            away_ctx = self._matchup_engine.compute(
+                defense_team=home_team,
+                offense_team=away_team,
+                training_seasons=training_seasons,
+            )
+            self._apply_matchup(home_dists, home_roster, home_ctx)
+            self._apply_matchup(away_dists, away_roster, away_ctx)
+
         return home_dists, away_dists, home_roster, away_roster
 
 
