@@ -229,17 +229,23 @@ class TalentStabilizer:
         if qbs.is_empty():
             return {}
 
-        # Weight by dropbacks if available, else by games
-        weight_col = "dropbacks" if "dropbacks" in qbs.columns else "games"
-        if weight_col not in qbs.columns:
+        # Weight by total dropbacks (dropbacks_per_game * games) if available,
+        # else by games. aggregate_player_stats returns per-game means, so
+        # multiply dropbacks by games to get total volume for proper weighting.
+        if "dropbacks" in qbs.columns and "games" in qbs.columns:
+            result = qbs.group_by("team").agg(
+                (pl.col("accuracy_percent") * pl.col("dropbacks") * pl.col("games")).sum()
+                / (pl.col("dropbacks") * pl.col("games")).sum()
+            )
+        elif "games" in qbs.columns:
+            result = qbs.group_by("team").agg(
+                (pl.col("accuracy_percent") * pl.col("games")).sum()
+                / pl.col("games").sum()
+            )
+        else:
             # Unweighted fallback
             result = qbs.group_by("team").agg(
                 pl.col("accuracy_percent").mean()
-            )
-        else:
-            result = qbs.group_by("team").agg(
-                (pl.col("accuracy_percent") * pl.col(weight_col)).sum()
-                / pl.col(weight_col).sum()
             )
 
         team_acc: dict[str, float] = {}
@@ -281,11 +287,11 @@ class TalentStabilizer:
         # Clamp prior to valid range
         prior = max(CATCH_RATE_PRIOR_MIN, min(CATCH_RATE_PRIOR_MAX, prior))
 
-        # n_observations = games * targets_per_game
+        # n_observations = total targets = targets_per_game * games
+        # (aggregate_player_stats returns per-game means, so multiply by games)
         games = pff_row.get("games", 0) or 0
         targets = pff_row.get("targets", 0) or 0
-        targets_per_game = targets / games if games > 0 else 0
-        n_obs = int(games * targets_per_game)
+        n_obs = int(targets * games) if games > 0 else 0
 
         old_catch = player.outcomes.catch_rate
         new_catch = stabilize_value(

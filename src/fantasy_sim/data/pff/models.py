@@ -9,15 +9,21 @@ from dataclasses import dataclass, field
 class MatchupContext:
     """Per-game adjustment factors derived from PFF defensive + OL data.
 
-    All factors are centered on 1.0 (neutral). Values < 1.0 mean the
-    defense/OL is worse than average (easier matchup for the offense),
-    values > 1.0 mean tougher matchup.
+    All factors are centered on 1.0 (neutral), but the direction of a
+    tougher/easier matchup depends on the specific factor.
 
-    For catch_rate_factor and pass_yards_factor, LOWER values mean tougher
-    secondary (reduces opposing offense).
-    For sack_rate_factor and int_rate_factor, HIGHER values mean tougher
-    pass rush / better secondary (increases sacks/INTs for opposing offense).
-    For rush_yards_factor, LOWER values mean tougher run defense.
+    Lower values mean tougher defense for the offense for:
+    - catch_rate_factor
+    - pass_yards_factor
+    - rush_yards_factor
+
+    Higher values mean tougher defense for the offense for:
+    - sack_rate_factor
+    - int_rate_factor
+
+    Offensive line factors represent blocking quality for the offense:
+    - Higher ol_pass_block_factor / ol_run_block_factor = better blocking
+    - Lower ol_pass_block_factor / ol_run_block_factor = worse blocking
     """
     catch_rate_factor: float = 1.0
     pass_yards_factor: float = 1.0

@@ -49,35 +49,29 @@ class GameContextBuilder:
         self._player_models_cache: dict | None = None
         self._player_cache_key: tuple | None = None
 
-        # PFF matchup engine (optional)
+        # PFF setup: create loader once, share it across matchup + talent engines
         self._pff_config = pff_config or PffConfig()
         self._matchup_engine = None
-        if self._pff_config.enabled and self._pff_config.matchup.enabled:
+        self._talent_stabilizer = None
+        self._pff_crosswalk: dict[int, str] | None = None
+        self._pff_loader = None
+
+        if self._pff_config.enabled:
             from fantasy_sim.data.pff.loader import PffLoader
-            from fantasy_sim.data.pff.matchup import MatchupEngine
             pff_dir = Path(self._pff_config.data_dir) if self._pff_config.data_dir else None
             pff_loader = PffLoader(pff_dir)
             if pff_loader.is_available():
-                self._matchup_engine = MatchupEngine(self._pff_config, pff_loader)
-                logger.info("PFF matchup engine enabled")
-
-        # Talent stabilizer
-        self._talent_stabilizer = None
-        self._pff_crosswalk: dict[int, str] = {}
-        self._pff_loader = None
-        if self._pff_config.enabled and self._pff_config.talent.enabled:
-            from fantasy_sim.data.pff.loader import PffLoader
-            from fantasy_sim.data.pff.talent import TalentStabilizer
-            pff_dir = Path(self._pff_config.data_dir) if self._pff_config.data_dir else None
-            # Reuse loader if matchup engine already created one
-            if self._matchup_engine is not None:
-                pff_loader = self._matchup_engine._loader
-            else:
-                pff_loader = PffLoader(pff_dir)
-            if pff_loader.is_available():
-                self._talent_stabilizer = TalentStabilizer(self._pff_config, pff_loader)
                 self._pff_loader = pff_loader
-                logger.info("PFF talent stabilizer enabled")
+
+        if self._pff_config.enabled and self._pff_config.matchup.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.matchup import MatchupEngine
+            self._matchup_engine = MatchupEngine(self._pff_config, self._pff_loader)
+            logger.info("PFF matchup engine enabled")
+
+        if self._pff_config.enabled and self._pff_config.talent.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.talent import TalentStabilizer
+            self._talent_stabilizer = TalentStabilizer(self._pff_config, self._pff_loader)
+            logger.info("PFF talent stabilizer enabled")
 
     def _ensure_pipeline(
         self,
@@ -287,7 +281,7 @@ class GameContextBuilder:
         target_season: int | None = None,
     ) -> None:
         """Build PFF crosswalk if not already cached."""
-        if self._pff_crosswalk or self._pff_loader is None:
+        if self._pff_crosswalk is not None or self._pff_loader is None:
             return
 
         frames = []

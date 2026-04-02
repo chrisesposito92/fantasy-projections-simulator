@@ -480,6 +480,8 @@ uv run fantasy-sim week 1 --season 2024 --no-pff  # override config
 
 ### PFF Configuration
 
+The full configuration with default values (set `enabled: true` to activate):
+
 ```yaml
 pff:
   enabled: false

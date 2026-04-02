@@ -65,10 +65,10 @@ class TestTalentIntegration:
         builder = GameContextBuilder(pff_config=config)
         assert builder._talent_stabilizer is None
 
-    def test_pff_crosswalk_starts_empty(self):
-        """_pff_crosswalk is empty dict by default."""
+    def test_pff_crosswalk_starts_none(self):
+        """_pff_crosswalk is None by default (None sentinel used for caching)."""
         builder = GameContextBuilder()
-        assert builder._pff_crosswalk == {}
+        assert builder._pff_crosswalk is None
 
     def test_pff_loader_starts_none(self):
         """_pff_loader is None when PFF is disabled."""
