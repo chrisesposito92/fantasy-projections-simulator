@@ -827,6 +827,13 @@ class TierEngine:
 
         tier = self._assign_tier(primary_grade, position)
 
+        # Fall back to nearest available tier if the assigned tier was merged
+        position_pools = self._pools.get(position, {})
+        if tier not in position_pools:
+            if not position_pools:
+                return None
+            tier = min(position_pools.keys(), key=lambda t: abs(t - tier))
+
         if secondary_grade is not None:
             secondary_pct = self._within_tier_percentile(secondary_grade, position, tier)
         else:
@@ -843,7 +850,180 @@ class TierEngine:
             reliability=0.5,
         )
 
-        pool = self._pools[position][tier]
+        pool = position_pools[tier]
         dists = self._interpolate_scalars(pool, secondary_pct)
 
         return assignment, dists
+
+    # ------------------------------------------------------------------
+    # Team-change detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_team_changes(
+        roster: "TeamRoster",
+        nfl_roster: "pl.DataFrame",
+    ) -> set[str]:
+        """Detect players who changed teams compared to historical roster data.
+
+        Compares each player's current team (from the roster) against the
+        most recent team recorded in ``nfl_roster`` (columns: ``player_id``
+        or ``gsis_id``, ``team``, ``season``).
+
+        Args:
+            roster: Current TeamRoster with player models.
+            nfl_roster: Historical nflverse roster DataFrame.
+
+        Returns:
+            Set of player_ids that changed teams.
+        """
+        changed: set[str] = set()
+
+        if nfl_roster.is_empty():
+            return changed
+
+        # Determine player ID column name
+        pid_col = "gsis_id" if "gsis_id" in nfl_roster.columns else "player_id"
+
+        # Get the most recent team per player from historical data
+        if "season" in nfl_roster.columns:
+            latest = (
+                nfl_roster
+                .sort("season", descending=True)
+                .unique(subset=[pid_col], keep="first")
+            )
+        else:
+            latest = nfl_roster.unique(subset=[pid_col], keep="first")
+
+        # Build lookup: player_id -> historical team
+        hist_teams: dict[str, str] = {}
+        for row in latest.iter_rows(named=True):
+            pid = row.get(pid_col)
+            team = row.get("team")
+            if pid is not None and team is not None:
+                hist_teams[str(pid)] = str(team)
+
+        for player in roster.players:
+            hist_team = hist_teams.get(player.player_id)
+            if hist_team is not None and hist_team != player.team:
+                changed.add(player.player_id)
+
+        return changed
+
+    # ------------------------------------------------------------------
+    # Roster-level entry point
+    # ------------------------------------------------------------------
+
+    def apply_tiers(
+        self,
+        roster: "TeamRoster",
+        crosswalk: dict[int, str],
+        training_seasons: list[int],
+        pbp: "pl.DataFrame | None" = None,
+        nfl_roster: "pl.DataFrame | None" = None,
+        target_season: int | None = None,
+    ) -> None:
+        """Apply tier-based distribution adjustments to all players in a roster.
+
+        Mutates player models in place.  Players without PFF data are
+        unchanged.
+
+        Args:
+            roster: TeamRoster to mutate.
+            crosswalk: PFF player_id (int) -> nflverse player_id (str).
+            training_seasons: Seasons used for pool building and PBP stats.
+            pbp: Optional PBP DataFrame.  If ``None``, pools must already
+                be built via a prior call.
+            nfl_roster: Optional nflverse roster DataFrame for team-change
+                detection.
+            target_season: Target season for PFF grade lookups.  Falls back
+                to ``max(training_seasons)`` when ``None``.
+        """
+        if pbp is not None:
+            self._ensure_pools(pbp, training_seasons, crosswalk)
+
+        if self._pools is None:
+            logger.warning("Tier pools not built — skipping apply_tiers")
+            return
+
+        # Reverse crosswalk: nfl_id -> pff_id
+        reverse_cw: dict[str, int] = {v: k for k, v in crosswalk.items()}
+
+        # Detect team changes
+        changed_teams: set[str] = set()
+        if nfl_roster is not None and not nfl_roster.is_empty():
+            changed_teams = self._detect_team_changes(roster, nfl_roster)
+
+        # Per-season PBP aggregation for weekly share variance
+        pbp_per_season: dict[int, dict[str, dict]] = {}
+        if pbp is not None:
+            for season in training_seasons:
+                pbp_per_season[season] = self._aggregate_pbp_per_season(pbp, season)
+
+        rng = np.random.default_rng(42)
+        target_s = target_season or max(training_seasons)
+
+        for player in roster.players:
+            pff_id = reverse_cw.get(player.player_id)
+            if pff_id is None:
+                continue
+
+            position = player.position
+            if position not in self._pools:
+                continue
+
+            # Load PFF grades: try target season first, fall back to earlier
+            pff_grades: dict[str, float] | None = None
+            seasons_to_try = sorted(
+                [s for s in training_seasons if s <= target_s] + (
+                    [target_s] if target_s not in training_seasons else []
+                ),
+                reverse=True,
+            )
+            for s in seasons_to_try:
+                season_grades = self._load_season_grades(s, position)
+                if pff_id in season_grades:
+                    pff_grades = season_grades[pff_id]
+                    break
+
+            if pff_grades is None:
+                continue
+
+            # Select distributions from tier pool
+            result = self.select_distributions(pff_grades, position)
+            if result is None:
+                continue
+
+            assignment, tier_dists = result
+
+            # Gather weekly shares from PBP data for reliability scoring
+            weekly_shares_list: list[float] = []
+            for season in training_seasons:
+                season_stats = pbp_per_season.get(season, {})
+                player_stats = season_stats.get(player.player_id)
+                if player_stats is not None:
+                    weekly_shares_list.extend(player_stats.get("weekly_share_values", []))
+
+            weekly_shares = (
+                np.array(weekly_shares_list, dtype=np.float64)
+                if weekly_shares_list else None
+            )
+
+            # Compute reliability
+            reliability = self.compute_reliability(
+                games_played=player.games_played,
+                changed_teams=player.player_id in changed_teams,
+                weekly_shares=weekly_shares,
+            )
+
+            # Blend player model with tier distributions
+            self._blend_player(player, tier_dists, reliability, rng)
+
+            logger.info(
+                "Tier %d assigned to %s (%s) — reliability=%.2f, pct=%.2f",
+                assignment.tier,
+                player.player_id,
+                position,
+                reliability,
+                assignment.primary_percentile,
+            )

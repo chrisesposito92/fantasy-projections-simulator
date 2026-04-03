@@ -414,7 +414,7 @@ class TestReliability:
 # Helper: build a PlayerModel for blending tests
 # ---------------------------------------------------------------------------
 
-from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 
 
 def _make_player(
@@ -767,3 +767,86 @@ class TestPoolBuilding:
         # _merge_thin_tiers should collapse them, resulting in fewer than 5 tiers.
         n_tiers = len(engine._pools["WR"])
         assert n_tiers < 5, f"Expected fewer than 5 tiers after merging, got {n_tiers}"
+
+
+# ---------------------------------------------------------------------------
+# TestApplyTiers
+# ---------------------------------------------------------------------------
+
+class TestApplyTiers:
+    """Tests for TierEngine.apply_tiers (roster-level entry point)."""
+
+    def _make_engine(self, loader):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        return TierEngine(config=TierConfig(enabled=True), pff_loader=loader)
+
+    def test_apply_tiers_modifies_roster(self, pff_dir, loader):
+        """Two WRs: elite PFF + low PBP share should go up;
+        replacement PFF + high PBP share should come down."""
+        seasons = [2023, 2024]
+        for s in seasons:
+            _mock_wr_pff_data(pff_dir, s)
+        pbp = _build_mock_pbp(seasons)
+        crosswalk = _build_crosswalk()
+
+        # WR0 has elite PFF grade (92) but low PBP target_share
+        # WR9 has replacement PFF grade (22) but high PBP target_share
+        wr_elite = _make_player(
+            player_id="nfl_wr_0", position="WR",
+            target_share=0.08, catch_rate=0.55,
+        )
+        wr_replacement = _make_player(
+            player_id="nfl_wr_9", position="WR",
+            target_share=0.35, catch_rate=0.80,
+        )
+        roster = TeamRoster(team="KC", players=[wr_elite, wr_replacement])
+
+        original_elite_ts = wr_elite.usage.target_share
+        original_repl_ts = wr_replacement.usage.target_share
+
+        engine = self._make_engine(loader)
+        engine.apply_tiers(
+            roster, crosswalk, seasons,
+            pbp=pbp, nfl_roster=None, target_season=2024,
+        )
+
+        # Elite WR's target_share should increase (tier pool pushes up)
+        assert wr_elite.usage.target_share > original_elite_ts, (
+            f"Elite WR target_share should increase: {original_elite_ts} -> {wr_elite.usage.target_share}"
+        )
+        # Replacement WR's target_share should decrease (tier pool pulls down)
+        assert wr_replacement.usage.target_share < original_repl_ts, (
+            f"Replacement WR target_share should decrease: {original_repl_ts} -> {wr_replacement.usage.target_share}"
+        )
+
+    def test_apply_tiers_skips_missing_pff(self, pff_dir, loader):
+        """Player not in crosswalk should be unchanged after apply_tiers."""
+        seasons = [2023, 2024]
+        for s in seasons:
+            _mock_wr_pff_data(pff_dir, s)
+        pbp = _build_mock_pbp(seasons)
+        # Crosswalk only includes WR0-WR9, not "unknown_wr"
+        crosswalk = _build_crosswalk()
+
+        wr_known = _make_player(
+            player_id="nfl_wr_0", position="WR",
+            target_share=0.20, catch_rate=0.65,
+        )
+        wr_unknown = _make_player(
+            player_id="unknown_wr", position="WR",
+            target_share=0.18, catch_rate=0.62,
+        )
+        roster = TeamRoster(team="KC", players=[wr_known, wr_unknown])
+
+        original_unknown_ts = wr_unknown.usage.target_share
+        original_unknown_cr = wr_unknown.outcomes.catch_rate
+
+        engine = self._make_engine(loader)
+        engine.apply_tiers(
+            roster, crosswalk, seasons,
+            pbp=pbp, nfl_roster=None, target_season=2024,
+        )
+
+        # Unknown player should be completely unchanged
+        assert wr_unknown.usage.target_share == pytest.approx(original_unknown_ts)
+        assert wr_unknown.outcomes.catch_rate == pytest.approx(original_unknown_cr)
