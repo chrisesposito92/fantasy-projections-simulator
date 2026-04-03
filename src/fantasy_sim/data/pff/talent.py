@@ -194,6 +194,23 @@ class TalentStabilizer:
             p for p in roster.players if p.player_id in reverse_cw
         ]
         if not players_with_pff:
+            # Still check NCAA priors even if no NFL PFF matches — rookies
+            # won't be in the NFL crosswalk by definition
+            if self._config.ncaa_priors.enabled and nfl_roster is not None and target_season is not None:
+                ncaa_dir = (
+                    Path(self._config.ncaa_priors.ncaa_data_dir)
+                    if self._config.ncaa_priors.ncaa_data_dir
+                    else None
+                )
+                rookies = [
+                    p for p in roster.players
+                    if p.player_id not in reverse_cw
+                ]
+                if rookies:
+                    self._apply_ncaa_priors(
+                        rookies, training_seasons, ncaa_dir,
+                        nfl_roster, target_season,
+                    )
             return
 
         # Load PFF facets
@@ -322,10 +339,12 @@ class TalentStabilizer:
                 if self._config.ncaa_priors.ncaa_data_dir
                 else None
             )
-            # Rookies: players NOT in PFF NFL crosswalk with low games_played
+            # Rookies: players NOT in PFF NFL crosswalk (rookies won't have
+            # NFL PFF data regardless of games_played — build_rookie_model
+            # sets games_played=17 by default)
             rookies = [
                 p for p in roster.players
-                if p.player_id not in reverse_cw and p.games_played <= 4
+                if p.player_id not in reverse_cw
             ]
             if rookies and nfl_roster is not None and target_season is not None:
                 ncaa_adj = self._apply_ncaa_priors(

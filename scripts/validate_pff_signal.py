@@ -229,7 +229,14 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
             if hasattr(talent_cfg, key):
-                setattr(talent_cfg, key, val)
+                # Don't replace dataclass fields with plain dicts
+                current = getattr(talent_cfg, key)
+                if hasattr(current, '__dataclass_fields__') and isinstance(val, dict):
+                    for k, v in val.items():
+                        if hasattr(current, k):
+                            setattr(current, k, v)
+                else:
+                    setattr(talent_cfg, key, val)
     if overrides and "matchup" in overrides:
         for key, val in overrides["matchup"].items():
             if hasattr(matchup_cfg, key):

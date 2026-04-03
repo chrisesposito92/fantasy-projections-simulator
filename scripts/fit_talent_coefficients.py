@@ -691,7 +691,7 @@ def main() -> int:
 
   Replace each <fitted value> with the coefficient printed above.
   The intercept is absorbed into the BASELINE_CATCH_RATE constant
-  in src/fantasy_sim/data/pff/talent.py (currently 0.64).
+  in src/fantasy_sim/data/pff/talent.py (currently 0.70).
 """)
 
     return 0

@@ -1614,7 +1614,7 @@ class TestNcaaRookiePriorsIntegration:
 
         # Elite rookie should get catch rate adjusted upward from 0.60
         # (the exact value depends on the prior computation, but it should increase)
-        assert wr.outcomes.catch_rate != 0.60 or True  # Adjustment may or may not pass min_divergence
+        assert wr.outcomes.catch_rate > 0.60  # Elite NCAA profile should push catch rate above starting value
 
     def test_ncaa_priors_no_ncaa_data_no_crash(self, tmp_path):
         """If NCAA data directory is empty, no crash and no adjustments."""
