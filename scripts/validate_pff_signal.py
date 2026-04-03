@@ -8,6 +8,9 @@ Usage:
     uv run python scripts/validate_pff_signal.py --mode all --sims 50
     uv run python scripts/validate_pff_signal.py --mode matchup --seasons 2023 2024
     uv run python scripts/validate_pff_signal.py --mode talent --sims 30 --training-years 3
+    uv run python scripts/validate_pff_signal.py --label "baseline-v1" --mode all --sims 50
+    uv run python scripts/validate_pff_signal.py --show-ledger
+    uv run python scripts/validate_pff_signal.py --config-override '{"talent": {"prior_strength": 30}}'
 """
 
 from __future__ import annotations
@@ -21,7 +24,6 @@ from datetime import datetime
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
-from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
@@ -121,7 +123,7 @@ class LedgerEntry:
 # Ledger I/O
 # ---------------------------------------------------------------------------
 
-def load_ledger(path: Path) -> list[LedgerEntry]:
+def load_ledger(path: Path = LEDGER_PATH) -> list[LedgerEntry]:
     """Load ledger entries from JSON. Returns empty list if file doesn't exist."""
     if not Path(path).exists():
         return []
@@ -206,26 +208,34 @@ class ComparisonResult:
 # PFF config factory
 # ---------------------------------------------------------------------------
 
-def _build_pff_config(mode: str) -> PffConfig:
-    """Build a PffConfig with the appropriate layers enabled."""
+def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
+    """Build a PffConfig with the appropriate layers enabled.
+
+    Args:
+        mode: One of "matchup", "talent", or "all".
+        overrides: Optional dict with "talent" and/or "matchup" sub-dicts
+            of attribute overrides to apply via setattr.
+    """
     if mode == "matchup":
-        return PffConfig(
-            enabled=True,
-            matchup=MatchupConfig(enabled=True),
-            talent=TalentConfig(enabled=False),
-        )
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
     elif mode == "talent":
-        return PffConfig(
-            enabled=True,
-            matchup=MatchupConfig(enabled=False),
-            talent=TalentConfig(enabled=True),
-        )
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=True)
     else:  # "all"
-        return PffConfig(
-            enabled=True,
-            matchup=MatchupConfig(enabled=True),
-            talent=TalentConfig(enabled=True),
-        )
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=True)
+
+    if overrides and "talent" in overrides:
+        for key, val in overrides["talent"].items():
+            if hasattr(talent_cfg, key):
+                setattr(talent_cfg, key, val)
+    if overrides and "matchup" in overrides:
+        for key, val in overrides["matchup"].items():
+            if hasattr(matchup_cfg, key):
+                setattr(matchup_cfg, key, val)
+
+    return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +247,7 @@ def run_backtest_pair(
     n_sims: int,
     scoring_config: dict,
     num_training_seasons: int,
-    mode: str,
+    pff_config: PffConfig,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
 
@@ -255,17 +265,18 @@ def run_backtest_pair(
           f"season_mae={result_off.season_mae:.3f}  "
           f"rank_corr={_format_rank_corr(result_off)}")
 
-    print(f"  [Season {test_season}] Running PFF-ON ({mode})...")
+    mode_label = (
+        "matchup" if pff_config.matchup.enabled and not pff_config.talent.enabled
+        else "talent" if pff_config.talent.enabled and not pff_config.matchup.enabled
+        else "all"
+    )
+    print(f"  [Season {test_season}] Running PFF-ON ({mode_label})...")
     t0 = time.time()
     bt_on = Backtester(
         test_season=test_season,
         n_sims=n_sims,
         num_training_seasons=num_training_seasons,
-    )
-    # Inject the PFF-enabled builder into the backtester
-    bt_on.builder = GameContextBuilder(
-        cache_dir=bt_on.loader.cache_dir,
-        pff_config=_build_pff_config(mode),
+        pff_config=pff_config,
     )
     result_on = bt_on.run(scoring_config)
     elapsed_on = time.time() - t0
@@ -281,10 +292,12 @@ def run_backtest_pair(
 # Evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_kill_point(results: list[ComparisonResult]) -> bool:
+def evaluate_kill_point(results: list[ComparisonResult]) -> str:
     """Evaluate kill-point criteria across all seasons.
 
-    Returns True (PASS) if:
+    Returns verdict string: "PASS", "SOFT_PASS", or "FAIL".
+
+    PASS if:
       - At least one season improved avg rank_corr by >= RANK_CORR_MIN_IMPROVEMENT
       - No season regressed avg rank_corr by > RANK_CORR_MAX_REGRESSION
       - No season increased weekly MAE by > MAE_MAX_REGRESSION
@@ -368,7 +381,7 @@ def evaluate_kill_point(results: list[ComparisonResult]) -> bool:
     print(f"  {detail}")
     print("=" * 68)
 
-    return verdict in ("PASS", "SOFT_PASS")
+    return verdict
 
 
 # ---------------------------------------------------------------------------
@@ -438,8 +451,38 @@ def main() -> int:
         choices=["ppr", "half_ppr", "standard"],
         help="Scoring format to use (default: ppr).",
     )
+    parser.add_argument(
+        "--label",
+        type=str,
+        default=None,
+        help="Label for this run in the ledger (required for ledger recording).",
+    )
+    parser.add_argument(
+        "--show-ledger",
+        action="store_true",
+        help="Print the ledger progression table and exit.",
+    )
+    parser.add_argument(
+        "--config-override",
+        type=str,
+        default=None,
+        dest="config_override",
+        metavar="JSON",
+        help='PFF config overrides as JSON string. Example: \'{"talent": {"prior_strength": 30}}\'',
+    )
 
     args = parser.parse_args()
+
+    if args.show_ledger:
+        entries = load_ledger()
+        print(format_progression_table(entries))
+        return 0
+
+    # Parse config overrides
+    overrides = json.loads(args.config_override) if args.config_override else None
+
+    # Build PFF config once from mode + overrides
+    pff_config = _build_pff_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  PFF SIGNAL A/B VALIDATION")
@@ -449,6 +492,10 @@ def main() -> int:
     print(f"  seasons       : {args.seasons}")
     print(f"  training_years: {args.training_years}")
     print(f"  scoring       : {args.scoring}")
+    if args.label:
+        print(f"  label         : {args.label}")
+    if overrides:
+        print(f"  config_override: {overrides}")
     print("=" * 68)
 
     # Load scoring config
@@ -465,7 +512,7 @@ def main() -> int:
             n_sims=args.sims,
             scoring_config=scoring_config,
             num_training_seasons=args.training_years,
-            mode=args.mode,
+            pff_config=pff_config,
         )
         results.append(comparison)
 
@@ -473,7 +520,40 @@ def main() -> int:
     print(f"\nTotal time: {total_elapsed:.1f}s")
 
     # Evaluate kill-point
-    passed = evaluate_kill_point(results)
+    verdict = evaluate_kill_point(results)
+    passed = verdict in ("PASS", "SOFT_PASS")
+
+    # Append to ledger if label provided
+    if args.label:
+        season_results = []
+        for r in results:
+            season_results.append(SeasonResult(
+                test_season=r.test_season,
+                off_weekly_mae=r.off.weekly_mae,
+                off_season_mae=r.off.season_mae,
+                off_rank_corr=r.off.rank_correlations,
+                off_calibration=r.off.boom_bust_calibration,
+                on_weekly_mae=r.on.weekly_mae,
+                on_season_mae=r.on.season_mae,
+                on_rank_corr=r.on.rank_correlations,
+                on_calibration=r.on.boom_bust_calibration,
+            ))
+        entry = LedgerEntry(
+            label=args.label,
+            timestamp=datetime.now().isoformat(timespec="seconds"),
+            mode=args.mode,
+            sims=args.sims,
+            test_seasons=args.seasons,
+            training_years=args.training_years,
+            pff_config=asdict(pff_config),
+            season_results=season_results,
+            verdict=verdict,
+        )
+        ledger = load_ledger()
+        ledger.append(entry)
+        save_ledger(LEDGER_PATH, ledger)
+        print(f"\n  Appended to ledger as #{len(ledger)}: {args.label}")
+        print(format_progression_table(ledger))
 
     return 0 if passed else 1
 

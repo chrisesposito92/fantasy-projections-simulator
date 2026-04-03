@@ -13,3 +13,7 @@ htmlcov/
 *.so
 .omc/
 .omx/
+
+# A/B test results (machine-specific)
+results/
+!results/.gitkeep
