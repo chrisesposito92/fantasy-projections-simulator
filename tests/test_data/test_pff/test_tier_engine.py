@@ -1,9 +1,33 @@
 """Tests for TierConfig types and YAML config parsing."""
 
+import numpy as np
 import pytest
 
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.pff.models import PffConfig, TierConfig, PositionGradeConfig
+
+
+# ---------------------------------------------------------------------------
+# Helper factory used by interpolation / selection tests
+# ---------------------------------------------------------------------------
+
+def _make_pool_entry(**overrides):
+    """Create a _TierPoolEntry with sensible WR-like defaults."""
+    from fantasy_sim.data.pff.tier_engine import _TierPoolEntry
+    defaults = dict(
+        target_share=(0.15, 0.20, 0.25),
+        carry_share=(0.0, 0.0, 0.0),
+        catch_rate=(0.60, 0.65, 0.70),
+        air_yards_share=(0.10, 0.15, 0.20),
+        fumble_rate=(0.010, 0.015, 0.020),
+        scramble_rate=(0.0, 0.0, 0.0),
+        receiving_yards_dist=np.array([5, 8, 10, 12, 15, 20, 25, 30, 40, 50]),
+        rushing_yards_dist=None,
+        secondary_grades=np.array([1.2, 1.5, 1.7, 1.9, 2.1, 2.3]),
+        n_player_seasons=60,
+    )
+    defaults.update(overrides)
+    return _TierPoolEntry(**defaults)
 
 
 class TestTierConfig:
@@ -137,3 +161,174 @@ class TestTierAssignment:
         """Grade below the 20th-percentile boundary maps to Tier 5."""
         engine = self._make_engine()
         assert engine._assign_tier(40.0, "WR") == 5
+
+
+# ---------------------------------------------------------------------------
+# Fixture shared across interpolation / selection tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def tier_config():
+    return TierConfig(enabled=True)
+
+
+# ---------------------------------------------------------------------------
+# TestWithinTierPercentile
+# ---------------------------------------------------------------------------
+
+class TestWithinTierPercentile:
+    """Tests for TierEngine._within_tier_percentile."""
+
+    _BOUNDARIES = {"WR": [82.0, 72.0, 60.0, 48.0]}
+
+    def _make_engine(self, tier_config):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        engine = TierEngine(config=tier_config, pff_loader=None)
+        engine._boundaries = self._BOUNDARIES
+        entry = _make_pool_entry()
+        engine._pools = {"WR": {3: entry}}
+        return engine
+
+    def test_median_secondary_grade(self, tier_config):
+        """A grade at the median of the secondary_grades array returns ~0.5."""
+        engine = self._make_engine(tier_config)
+        # secondary_grades = [1.2, 1.5, 1.7, 1.9, 2.1, 2.3]; median ~1.8
+        grade = 1.85  # just above median
+        pct = engine._within_tier_percentile(grade, "WR", 3)
+        assert 0.4 <= pct <= 0.7
+
+    def test_high_secondary_grade(self, tier_config):
+        """A grade above the max of the secondary_grades array returns >= 0.9."""
+        engine = self._make_engine(tier_config)
+        # secondary_grades max = 2.3; passing a value above it means searchsorted
+        # returns len(grades) → percentile = 1.0
+        pct = engine._within_tier_percentile(2.5, "WR", 3)
+        assert pct >= 0.9
+
+    def test_low_secondary_grade(self, tier_config):
+        """A grade at the min of the secondary_grades array returns <= 0.1."""
+        engine = self._make_engine(tier_config)
+        # 1.2 is the lowest value; searchsorted gives index 0 → 0/6 = 0.0
+        pct = engine._within_tier_percentile(1.2, "WR", 3)
+        assert pct <= 0.1
+
+    def test_empty_grades_returns_half(self, tier_config):
+        """When secondary_grades is None or empty, returns 0.5 as default."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        engine = TierEngine(config=tier_config, pff_loader=None)
+        engine._boundaries = self._BOUNDARIES
+        entry = _make_pool_entry(secondary_grades=None)
+        engine._pools = {"WR": {3: entry}}
+        pct = engine._within_tier_percentile(99.0, "WR", 3)
+        assert pct == 0.5
+
+
+# ---------------------------------------------------------------------------
+# TestInterpolateScalars
+# ---------------------------------------------------------------------------
+
+class TestInterpolateScalars:
+    """Tests for TierEngine._interpolate_scalars (and _interp_scalar)."""
+
+    _BOUNDARIES = {"WR": [82.0, 72.0, 60.0, 48.0]}
+
+    def _make_engine(self, tier_config):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        engine = TierEngine(config=tier_config, pff_loader=None)
+        engine._boundaries = self._BOUNDARIES
+        entry = _make_pool_entry()
+        engine._pools = {"WR": {3: entry}}
+        return engine
+
+    def test_low_secondary_gets_p25(self, tier_config):
+        """pct=0.0 → each scalar equals the p25 value of its tuple."""
+        engine = self._make_engine(tier_config)
+        pool = engine._pools["WR"][3]
+        dists = engine._interpolate_scalars(pool, 0.0)
+        assert dists.target_share == pytest.approx(0.15)
+        assert dists.catch_rate == pytest.approx(0.60)
+
+    def test_median_secondary_gets_p50(self, tier_config):
+        """pct=0.5 → each scalar equals the median (p50) of its tuple."""
+        engine = self._make_engine(tier_config)
+        pool = engine._pools["WR"][3]
+        dists = engine._interpolate_scalars(pool, 0.5)
+        assert dists.target_share == pytest.approx(0.20)
+        assert dists.catch_rate == pytest.approx(0.65)
+
+    def test_high_secondary_gets_p75(self, tier_config):
+        """pct=1.0 → each scalar equals the p75 value of its tuple."""
+        engine = self._make_engine(tier_config)
+        pool = engine._pools["WR"][3]
+        dists = engine._interpolate_scalars(pool, 1.0)
+        assert dists.target_share == pytest.approx(0.25)
+        assert dists.catch_rate == pytest.approx(0.70)
+
+    def test_interpolation_midpoint(self, tier_config):
+        """pct=0.75 → halfway between p50 and p75."""
+        engine = self._make_engine(tier_config)
+        pool = engine._pools["WR"][3]
+        dists = engine._interpolate_scalars(pool, 0.75)
+        # target_share: med=0.20, high=0.25; midpoint = 0.225
+        assert dists.target_share == pytest.approx(0.225)
+        # catch_rate: med=0.65, high=0.70; midpoint = 0.675
+        assert dists.catch_rate == pytest.approx(0.675)
+
+    def test_yards_dist_passed_through(self, tier_config):
+        """Yards arrays are passed through unchanged, not interpolated."""
+        engine = self._make_engine(tier_config)
+        pool = engine._pools["WR"][3]
+        dists = engine._interpolate_scalars(pool, 0.5)
+        assert dists.receiving_yards_dist is pool.receiving_yards_dist
+        assert dists.rushing_yards_dist is None
+
+
+# ---------------------------------------------------------------------------
+# TestSelectDistributions
+# ---------------------------------------------------------------------------
+
+class TestSelectDistributions:
+    """Tests for TierEngine.select_distributions (full pipeline)."""
+
+    _BOUNDARIES = {"WR": [82.0, 72.0, 60.0, 48.0]}
+
+    def _make_engine(self, tier_config):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        engine = TierEngine(config=tier_config, pff_loader=None)
+        engine._boundaries = self._BOUNDARIES
+        # Populate all five tiers so _assign_tier always finds a pool entry
+        entry = _make_pool_entry()
+        engine._pools = {"WR": {t: entry for t in range(1, 6)}}
+        return engine
+
+    def test_select_returns_tier_and_distributions(self, tier_config):
+        """Full flow: valid grades → (TierAssignment, TierDistributions) tuple."""
+        from fantasy_sim.data.pff.tier_engine import TierAssignment, TierDistributions
+        engine = self._make_engine(tier_config)
+        # primary grade 75.0 → Tier 2 (72.0 <= grade < 82.0)
+        # secondary (yprr) = 1.9 (within secondary_grades array)
+        pff_grades = {"grades_pass_route": 75.0, "yprr": 1.9}
+        result = engine.select_distributions(pff_grades, "WR")
+        assert result is not None
+        assignment, dists = result
+        assert isinstance(assignment, TierAssignment)
+        assert isinstance(dists, TierDistributions)
+        assert assignment.tier == 2
+        assert 0.0 <= assignment.secondary_percentile <= 1.0
+        assert 0.15 <= dists.target_share <= 0.25
+        assert 0.60 <= dists.catch_rate <= 0.70
+
+    def test_select_missing_grades_returns_none(self, tier_config):
+        """Missing required primary grade → returns None."""
+        engine = self._make_engine(tier_config)
+        # grades_pass_route key is absent
+        pff_grades = {"yprr": 1.9}
+        result = engine.select_distributions(pff_grades, "WR")
+        assert result is None
+
+    def test_select_unconfigured_position_returns_none(self, tier_config):
+        """Position not in position_grades config → returns None."""
+        engine = self._make_engine(tier_config)
+        pff_grades = {"grades_pass_route": 75.0, "yprr": 1.9}
+        result = engine.select_distributions(pff_grades, "K")
+        assert result is None

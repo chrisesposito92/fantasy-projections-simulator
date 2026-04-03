@@ -166,3 +166,144 @@ class TierEngine:
             if primary_grade >= boundary:
                 return tier_idx + 1
         return 5
+
+    # ------------------------------------------------------------------
+    # Within-tier percentile
+    # ------------------------------------------------------------------
+
+    def _within_tier_percentile(
+        self, secondary_grade: float, position: str, tier: int
+    ) -> float:
+        """Compute percentile of a secondary grade within a tier's grade array.
+
+        Uses ``np.searchsorted`` on the sorted array so that the result is the
+        fraction of historical secondary grades *below* the supplied value.
+
+        Args:
+            secondary_grade: The player's secondary PFF grade value.
+            position: Position key (e.g. ``"WR"``).
+            tier: Tier number 1–5.
+
+        Returns:
+            Percentile in [0.0, 1.0].  Returns 0.5 when the grades array is
+            missing or empty.
+        """
+        pool = self._pools[position][tier]
+        grades = pool.secondary_grades
+        if grades is None or len(grades) == 0:
+            return 0.5
+        return float(np.searchsorted(np.sort(grades), secondary_grade) / len(grades))
+
+    # ------------------------------------------------------------------
+    # Piecewise linear scalar interpolation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _interp_scalar(low_med_high: tuple[float, float, float], pct: float) -> float:
+        """Piecewise linear interpolation through (p25, p50, p75).
+
+        The interpolation is split at pct=0.5:
+          - pct in [0, 0.5]: linearly from p25 to p50
+          - pct in (0.5, 1.0]: linearly from p50 to p75
+
+        Args:
+            low_med_high: Tuple of (p25, median, p75) values.
+            pct: Percentile in [0.0, 1.0].
+
+        Returns:
+            Interpolated scalar value.
+        """
+        low, med, high = low_med_high
+        if pct <= 0.5:
+            return low + (pct / 0.5) * (med - low)
+        return med + ((pct - 0.5) / 0.5) * (high - med)
+
+    # ------------------------------------------------------------------
+    # Full scalar interpolation across all TierDistributions fields
+    # ------------------------------------------------------------------
+
+    def _interpolate_scalars(
+        self, pool: _TierPoolEntry, secondary_pct: float
+    ) -> "TierDistributions":
+        """Build a TierDistributions by interpolating each scalar field.
+
+        Scalar fields (target_share, carry_share, etc.) are interpolated via
+        :meth:`_interp_scalar`.  Yards arrays are passed through unchanged
+        from the pool entry.
+
+        Args:
+            pool: The tier pool entry for a (position, tier) pair.
+            secondary_pct: Within-tier percentile on the secondary grade.
+
+        Returns:
+            A :class:`TierDistributions` instance ready for downstream use.
+        """
+        interp = self._interp_scalar
+        return TierDistributions(
+            target_share=interp(pool.target_share, secondary_pct),
+            carry_share=interp(pool.carry_share, secondary_pct),
+            catch_rate=interp(pool.catch_rate, secondary_pct),
+            air_yards_share=interp(pool.air_yards_share, secondary_pct),
+            fumble_rate=interp(pool.fumble_rate, secondary_pct),
+            scramble_rate=interp(pool.scramble_rate, secondary_pct),
+            receiving_yards_dist=pool.receiving_yards_dist,
+            rushing_yards_dist=pool.rushing_yards_dist,
+        )
+
+    # ------------------------------------------------------------------
+    # Public entry point: full distribution selection pipeline
+    # ------------------------------------------------------------------
+
+    def select_distributions(
+        self, pff_grades: dict[str, float], position: str
+    ) -> "tuple[TierAssignment, TierDistributions] | None":
+        """Select tier distributions for a player based on their PFF grades.
+
+        Pipeline:
+          1. Look up grade column names for the position.
+          2. Extract primary and secondary grades from ``pff_grades``.
+          3. Assign to a tier via :meth:`_assign_tier`.
+          4. Compute within-tier percentile via :meth:`_within_tier_percentile`.
+          5. Interpolate scalars via :meth:`_interpolate_scalars`.
+          6. Return ``(TierAssignment, TierDistributions)``.
+
+        Args:
+            pff_grades: Mapping from PFF grade column name to numeric value.
+            position: Position key (e.g. ``"WR"``).
+
+        Returns:
+            A ``(TierAssignment, TierDistributions)`` tuple, or ``None`` when
+            the position is not configured or the primary grade is missing.
+        """
+        grade_cfg = self._config.position_grades.get(position)
+        if grade_cfg is None:
+            return None
+
+        primary_grade = pff_grades.get(grade_cfg.primary)
+        if primary_grade is None:
+            return None
+
+        secondary_grade = pff_grades.get(grade_cfg.secondary)
+
+        tier = self._assign_tier(primary_grade, position)
+
+        if secondary_grade is not None:
+            secondary_pct = self._within_tier_percentile(secondary_grade, position, tier)
+        else:
+            secondary_pct = 0.5
+
+        # Approximate primary_percentile from tier number (tier 1 = top, tier 5 = bottom)
+        # Map tier 1→0.9, 2→0.7, 3→0.5, 4→0.3, 5→0.1
+        primary_pct = max(0.0, min(1.0, 1.0 - (tier - 1) * 0.2))
+
+        assignment = TierAssignment(
+            tier=tier,
+            primary_percentile=primary_pct,
+            secondary_percentile=secondary_pct,
+            reliability=0.5,
+        )
+
+        pool = self._pools[position][tier]
+        dists = self._interpolate_scalars(pool, secondary_pct)
+
+        return assignment, dists
