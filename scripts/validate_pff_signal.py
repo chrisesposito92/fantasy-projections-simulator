@@ -518,19 +518,45 @@ def main() -> int:
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
 
-    # Run A/B pairs for each season
+    # Run A/B pairs for each season (parallel when multiple seasons)
     total_start = time.time()
     results: list[ComparisonResult] = []
-    for season in args.seasons:
-        print(f"\nBacktesting season {season}...")
-        comparison = run_backtest_pair(
-            test_season=season,
-            n_sims=args.sims,
-            scoring_config=scoring_config,
-            num_training_seasons=args.training_years,
-            pff_config=pff_config,
-        )
-        results.append(comparison)
+
+    if len(args.seasons) > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        print(f"\nRunning {len(args.seasons)} seasons in parallel...")
+        with ProcessPoolExecutor(max_workers=len(args.seasons)) as pool:
+            futures = {
+                pool.submit(
+                    run_backtest_pair,
+                    test_season=season,
+                    n_sims=args.sims,
+                    scoring_config=scoring_config,
+                    num_training_seasons=args.training_years,
+                    pff_config=pff_config,
+                ): season
+                for season in args.seasons
+            }
+            for future in as_completed(futures):
+                season = futures[future]
+                comparison = future.result()
+                results.append(comparison)
+                print(f"\n  Season {season} complete.")
+
+        # Sort by season so output is deterministic
+        results.sort(key=lambda r: r.test_season)
+    else:
+        for season in args.seasons:
+            print(f"\nBacktesting season {season}...")
+            comparison = run_backtest_pair(
+                test_season=season,
+                n_sims=args.sims,
+                scoring_config=scoring_config,
+                num_training_seasons=args.training_years,
+                pff_config=pff_config,
+            )
+            results.append(comparison)
 
     total_elapsed = time.time() - total_start
     print(f"\nTotal time: {total_elapsed:.1f}s")
