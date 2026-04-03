@@ -65,6 +65,8 @@ fantasy-sim week WEEK_NUM [OPTIONS]
 | `--override "X.Y=Z"` | — | Player/team override (repeatable) |
 | `--config PATH` | — | Path to season.yaml with overrides |
 | `--scoring-config PATH` | — | Path to custom scoring YAML |
+| `--pff/--no-pff` | from config | Enable/disable PFF adjustments |
+| `--training-years N` | from config | Number of historical seasons for training data |
 
 **Examples:**
 ```bash
@@ -103,6 +105,8 @@ fantasy-sim season [OPTIONS]
 | `--override "X.Y=Z"` | — | Player/team override (repeatable) |
 | `--config PATH` | — | Path to season.yaml with overrides |
 | `--scoring-config PATH` | — | Path to custom scoring YAML |
+| `--pff/--no-pff` | from config | Enable/disable PFF adjustments |
+| `--training-years N` | from config | Number of historical seasons for training data |
 
 **Examples:**
 ```bash
@@ -142,6 +146,8 @@ fantasy-sim game HOME_TEAM AWAY_TEAM [OPTIONS]
 | `--detail` | off | Show floor/ceiling/stddev |
 | `--override "X.Y=Z"` | — | Player/team override (repeatable) |
 | `--config PATH` | — | Path to season.yaml with overrides |
+| `--pff/--no-pff` | from config | Enable/disable PFF adjustments |
+| `--training-years N` | from config | Number of historical seasons for training data |
 
 **Examples:**
 ```bash
@@ -184,6 +190,8 @@ fantasy-sim player PLAYER_QUERY [OPTIONS]
 | `--demo` | off | Use synthetic data |
 | `--override "X.Y=Z"` | — | Player/team override (repeatable) |
 | `--config PATH` | — | Path to season.yaml with overrides |
+| `--pff/--no-pff` | from config | Enable/disable PFF adjustments |
+| `--training-years N` | from config | Number of historical seasons for training data |
 
 **Examples:**
 ```bash
