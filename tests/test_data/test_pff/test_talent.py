@@ -1283,6 +1283,7 @@ class TestStabilizeScrambleRate:
             talent=TalentConfig(
                 enabled=True,
                 scramble_rate_enabled=True,
+                prior_strength=60.0,  # Higher strength to ensure shift exceeds MIN_SCRAMBLE_RATE_SHIFT
             ),
         )
         mobile_qb = {

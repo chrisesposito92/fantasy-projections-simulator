@@ -81,8 +81,8 @@ class NcaaPriorsConfig:
 class TalentConfig:
     """Configuration for the talent stabilizer."""
     enabled: bool = True
-    prior_strength: float | dict[str, float] = 40.0
-    min_divergence: float = 0.03
+    prior_strength: float | dict[str, float] = 30.0
+    min_divergence: float = 0.01
     team_change_factor: float = 1.0
     catch_rate_coefficients: dict[str, float] = field(default_factory=lambda: {
         "drop_rate": 0.21,
