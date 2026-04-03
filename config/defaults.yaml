@@ -71,8 +71,8 @@ pff:
 
   talent:
     enabled: true
-    prior_strength: 40
-    min_divergence: 0.03
+    prior_strength: 30
+    min_divergence: 0.01
     team_change_factor: 0.5
     catch_rate_coefficients:
       drop_rate: 0.21
