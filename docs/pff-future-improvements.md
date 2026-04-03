@@ -1,8 +1,25 @@
 # PFF Intelligence Layer — Future Improvements
 
-Status as of 2026-04-02:
-- **Talent Stabilizer**: Shipping (SOFT_PASS backtest, all metrics improved directionally)
+Status as of 2026-04-02 (updated during tuning session):
+- **Talent Stabilizer**: All 7 improvements implemented — SOFT_PASS maintained, sweep pending
 - **Matchup Engine**: Parked (rank_corr regressed with historical training data)
+
+### Completed Improvements (this session)
+1. Empirically Fit Regression Coefficients — DONE (found 2 sign errors in catch_rate coefficients)
+2. Sensitivity Sweep — DONE (script built, sweep #1 running)
+3. Stabilize Additional Parameters — DONE (target_share, fumble_rate, scramble_rate)
+4. Position-Specific prior_strength — DONE (QB:60, WR:40, TE:35, RB:30)
+5. Team-Change Boost — DONE (team_change_factor=0.5)
+6. NCAA Rookie Priors — DONE (college PFF grades → catch_rate priors)
+7. Schedule-Adjusted Talent — DONE (architecture in place, needs per-game opponent tracking for full effect)
+
+### A/B Progression
+| # | Label | rank_corr | wk_mae | szn_mae | calibr | Verdict |
+|---|-------|-----------|--------|---------|--------|---------|
+| 1 | baseline-v0 | +0.0067 | -0.017 | -0.075 | -0.0046 | SOFT_PASS |
+| 2 | phase1-fitted+teamchange | +0.0036 | -0.033 | -0.271 | +0.0007 | SOFT_PASS |
+| 3 | +additional-params | +0.0069 | +0.000 | -0.441 | +0.0003 | SOFT_PASS |
+| 4 | +schedule-adjusted | +0.0037 | +0.003 | -0.162 | -0.0029 | SOFT_PASS |
 
 ## Talent Stabilizer Improvements
 

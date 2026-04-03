@@ -46,6 +46,19 @@ uv run python scripts/scrape_pff.py --season 2024 --process-only
 uv run python scripts/scrape_pff.py --league ncaa --season 2024
 uv run python scripts/scrape_pff.py --league ncaa --season 2025 --weeks 0-8
 
+# PFF talent coefficient fitting (requires network + PFF data)
+uv run python scripts/fit_talent_coefficients.py
+uv run python scripts/fit_talent_coefficients.py --apply
+
+# PFF talent hyperparameter sweep (requires network + PFF data, ~40-60 min)
+uv run python scripts/sweep_talent_params.py --sims 30
+uv run python scripts/sweep_talent_params.py --sims 30 --apply
+
+# PFF A/B validation (requires network + PFF data)
+uv run python scripts/validate_pff_signal.py --mode talent --sims 50 --label "run-name"
+uv run python scripts/validate_pff_signal.py --show-ledger
+uv run python scripts/validate_pff_signal.py --mode talent --config-override '{"talent": {"prior_strength": 30}}'
+
 # Install dependencies
 uv pip install -e ".[dev]"
 
@@ -148,7 +161,7 @@ The project is organized as a pipeline:
 - **RZ Receiving Yards**: `PlayerOutcomes.rz_receiving_yards_dist` stores per-player catch yards from PBP plays inside the 20 (≥5 RZ catches). Built in `player_builder.py`. Currently populated but not used in play resolution (field-position clamping + boost is the active approach).
 - **QB Pass Fumble Rate**: `PlayerOutcomes.pass_fumble_rate` stores per-QB non-sack fumble rate (≥100 passes) or league average 0.0034. Checked pre-throw in `_resolve_pass()` after INT check, before receiver selection.
 - **Scramble Rate**: Uses `qb_scramble` column from nflverse PBP to separate actual scrambles from designed runs. Falls back to all QB rushes if column is missing. `scramble_yards_dist` built from scramble-only plays.
-- **PFF Intelligence Layer**: Two independent layers in `data/pff/`. **MatchupEngine** (`matchup.py`) computes per-game `MatchupContext` from PFF defensive + OL data via z-scores clamped to `factor_clamp` range. Factors: `catch_rate_factor`, `pass_yards_factor`, `sack_rate_factor`, `int_rate_factor`, `rush_yards_factor`, `ol_pass_block_factor`, `ol_run_block_factor`. Applied in `GameContextBuilder.build_game()` — away D adjusts home O and vice versa. **TalentStabilizer** (`talent.py`) uses Bayesian blending: `stabilize_value(pbp, prior, n_obs, prior_strength, min_divergence)`. Only adjusts when PBP-PFF divergence exceeds threshold. Stabilizes: catch_rate, receiving/rushing yards distributions. Config in `defaults.yaml` under `pff:` section. CLI `--pff/--no-pff` flag overrides config. Ordering: base model → matchup → talent → normalize → user overrides → normalize.
+- **PFF Intelligence Layer**: Two independent layers in `data/pff/`. **MatchupEngine** (`matchup.py`) computes per-game `MatchupContext` from PFF defensive + OL data via z-scores clamped to `factor_clamp` range. Factors: `catch_rate_factor`, `pass_yards_factor`, `sack_rate_factor`, `int_rate_factor`, `rush_yards_factor`, `ol_pass_block_factor`, `ol_run_block_factor`. Applied in `GameContextBuilder.build_game()` — away D adjusts home O and vice versa. **TalentStabilizer** (`talent.py`) uses Bayesian blending: `stabilize_value(pbp, prior, n_obs, prior_strength, min_divergence)`. Only adjusts when PBP-PFF divergence exceeds threshold. Stabilizes: catch_rate, receiving/rushing yards distributions, target_share, fumble_rate, scramble_rate. Config in `defaults.yaml` under `pff:` section. CLI `--pff/--no-pff` flag overrides config. Ordering: base model → matchup → schedule-adjust → talent → normalize → user overrides → normalize. Position-specific `prior_strength` (QB:60, WR:40, TE:35, RB:30). Team-change boost: `team_change_factor=0.5` doubles PFF weight for traded players. Schedule-adjusted: PBP values adjusted for opponent defensive quality before divergence check. NCAA rookie priors: college PFF grades → catch_rate priors for rookies with no NFL PBP data, weighted by draft capital. Coefficients fitted via OLS regression (`scripts/fit_talent_coefficients.py`). Hyperparameters optimized via grid sweep (`scripts/sweep_talent_params.py`). A/B validation with persistent results ledger (`scripts/validate_pff_signal.py --show-ledger`).
 - **GitHub Actions CI**: `.github/workflows/ci.yml` runs pytest on push/PR across Python 3.12/3.13/3.14 with uv caching. Statistical tests gated by PR label.
 
 ## Testing
@@ -179,6 +192,7 @@ The project is organized as a pipeline:
 - **Share Normalization Fix**: Complete — 594 tests. Fixed carry_share/target_share amplification bug: shares from multi-season PBP data didn't sum to 1.0 on the current roster (former players had carries/targets but aren't on roster). `select_rusher`/`select_receiver` normalize weights, so a 0.72 carry_share override became 87% actual selection probability. Fix: `build_team_roster()` now deepcopies players (preventing cache mutation from overrides) and normalizes all share types (carry, target, RZ carry, RZ target) to sum to 1.0 among eligible players. `_normalize_roster_shares()` and `_scale_shares()` in `player_builder.py`.
 - **PFF Data Scraper**: Complete — 619 tests. Standalone script (`scripts/scrape_pff.py`) extracts game-level player data from PFF's premium REST API (21 facets per game). Supports NFL and NCAA via `--league` flag (`nfl` default, `ncaa`). Stores raw JSON as immutable archive at `~/.fantasy-sim/pff/raw/<league>/`, processes into per-facet-per-season parquet at `~/.fantasy-sim/pff/processed/<league>/`. NCAA weeks are 0-16 (vs NFL 1-18 + postseason). Cookie-based auth, per-league resume via `state/progress_<league>.json`, exponential backoff on rate limits. See `docs/pff-setup.md` for setup.
 - **PFF Intelligence Layer**: Complete — 101 tests. Defensive matchup engine (z-score based per-game adjustments from PFF defensive + OL data) and talent stabilizer (Bayesian blending with divergence detection). Replaces failed modifier approach.
+- **PFF Talent Tuning Pipeline**: Complete — 178 tests (837 total). Seven improvements to push talent stabilizer from SOFT_PASS toward PASS. Fitted OLS regression coefficients (found 2 sign errors in hand-tuned catch_rate coefficients, 13x underweight on ADOT). Added target_share, fumble_rate, and QB scramble_rate stabilization. Position-specific prior_strength (QB:60, WR:40, TE:35, RB:30). Team-change boost (prior_strength × 0.5 for traded players). Schedule-adjusted talent evaluation (architecture in place, needs per-game opponent tracking). NCAA rookie priors from college PFF grades. Persistent A/B results ledger. Sensitivity sweep script. Best A/B result: rank_corr +0.0069, season_mae -0.441 (run #3 with additional params).
 
 ## Style
 
