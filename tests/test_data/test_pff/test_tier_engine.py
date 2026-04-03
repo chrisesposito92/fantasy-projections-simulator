@@ -535,3 +535,235 @@ class TestBlendPlayer:
 
         assert player.usage.red_zone_target_share == pytest.approx(0.30)
         assert player.outcomes.red_zone_catch_rate == pytest.approx(0.62)
+
+
+# ---------------------------------------------------------------------------
+# Pool Building tests
+# ---------------------------------------------------------------------------
+
+import polars as pl
+from fantasy_sim.data.pff.loader import PffLoader
+
+
+def _write_pff_parquet(pff_dir, facet, season, rows):
+    """Write a PFF facet parquet file with given rows (list of dicts)."""
+    df = pl.DataFrame(rows)
+    path = pff_dir / f"{facet}_{season}.parquet"
+    df.write_parquet(path)
+
+
+def _mock_wr_pff_data(pff_dir, season):
+    """Write receiving_summary with 10 WRs spanning grade range."""
+    rows = []
+    grades = [92, 88, 78, 74, 62, 58, 52, 42, 36, 22]
+    yprrs = [2.8, 2.4, 2.0, 1.8, 1.6, 1.4, 1.3, 1.1, 0.9, 0.7]
+    for i, (g, y) in enumerate(zip(grades, yprrs)):
+        rows.append({
+            "player_id": 1000 + i,
+            "player": f"WR{i}",
+            "team": "KC" if i < 5 else "BUF",
+            "position": "WR",
+            "season": season,
+            "week": 1,
+            "grades_pass_route": float(g),
+            "yprr": float(y),
+            "targets": 80 + i * 5,
+            "receptions": 50 + i * 3,
+            "yards": 600 + i * 50,
+            "touchdowns": 5,
+            "drop_rate": 0.05,
+            "contested_catch_rate": 0.50,
+            "avg_depth_of_target": 10.0,
+        })
+    _write_pff_parquet(pff_dir, "receiving_summary", season, rows)
+    return rows
+
+
+def _build_mock_pbp(seasons, n_players=10, seed=42):
+    """Build a mock PBP DataFrame with standard nflverse columns.
+
+    Each of 10 "players" gets ~80 pass plays (some complete, some incomplete)
+    and ~30 rush plays to generate realistic target/catch/yards data.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    play_id = 0
+    for season in seasons:
+        for week in range(1, 18):
+            game_id = f"{season}_{week:02d}_KC_BUF"
+            for i in range(n_players):
+                player_id = f"nfl_wr_{i}"
+                team = "KC" if i < 5 else "BUF"
+
+                # ~5 pass plays per week per player
+                for _ in range(5):
+                    play_id += 1
+                    is_complete = int(rng.random() < 0.65)
+                    yards = int(rng.integers(1, 30)) if is_complete else 0
+                    air_yds = float(rng.integers(3, 15))
+                    rows.append({
+                        "season": season,
+                        "week": week,
+                        "game_id": game_id,
+                        "play_type": "pass",
+                        "passer_player_id": f"nfl_qb_{0 if i < 5 else 1}",
+                        "receiver_player_id": player_id if (is_complete or rng.random() < 0.7) else None,
+                        "passing_yards": yards if is_complete else 0,
+                        "yards_gained": yards if is_complete else 0,
+                        "complete_pass": is_complete,
+                        "posteam": team,
+                        "air_yards": air_yds,
+                        "yardline_100": int(rng.integers(20, 80)),
+                        "rusher_player_id": None,
+                        "rushing_yards": None,
+                        "interception": 0,
+                        "fumble_lost": 0,
+                        "sack": 0,
+                    })
+
+                # ~2 rush plays per week per player
+                for _ in range(2):
+                    play_id += 1
+                    rush_yards = int(rng.integers(-2, 15))
+                    rows.append({
+                        "season": season,
+                        "week": week,
+                        "game_id": game_id,
+                        "play_type": "run",
+                        "passer_player_id": None,
+                        "receiver_player_id": None,
+                        "passing_yards": None,
+                        "yards_gained": rush_yards,
+                        "complete_pass": 0,
+                        "posteam": team,
+                        "air_yards": None,
+                        "yardline_100": int(rng.integers(20, 80)),
+                        "rusher_player_id": player_id,
+                        "rushing_yards": rush_yards,
+                        "interception": 0,
+                        "fumble_lost": 0,
+                        "sack": 0,
+                    })
+
+    return pl.DataFrame(rows)
+
+
+def _build_crosswalk(n_players=10):
+    """Build PFF player_id -> nflverse player_id crosswalk."""
+    return {1000 + i: f"nfl_wr_{i}" for i in range(n_players)}
+
+
+@pytest.fixture
+def pff_dir(tmp_path):
+    d = tmp_path / "pff" / "processed" / "nfl"
+    d.mkdir(parents=True)
+    return d
+
+
+@pytest.fixture
+def loader(pff_dir):
+    return PffLoader(pff_dir)
+
+
+class TestPoolBuilding:
+    """Tests for TierEngine pool building from PFF grades + PBP data."""
+
+    def _make_engine(self, loader):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        return TierEngine(config=TierConfig(enabled=True), pff_loader=loader)
+
+    def test_build_pools_creates_tiers(self, pff_dir, loader):
+        """10 WRs across 2 seasons -> pools have tiers for WR position."""
+        seasons = [2023, 2024]
+        for s in seasons:
+            _mock_wr_pff_data(pff_dir, s)
+        pbp = _build_mock_pbp(seasons)
+        crosswalk = _build_crosswalk()
+
+        engine = self._make_engine(loader)
+        engine._build_tier_pools(pbp, seasons, crosswalk)
+
+        assert engine._pools is not None
+        assert "WR" in engine._pools
+        # At least one tier should exist
+        assert len(engine._pools["WR"]) >= 1
+        # Each tier entry should be a _TierPoolEntry
+        from fantasy_sim.data.pff.tier_engine import _TierPoolEntry
+        for tier, entry in engine._pools["WR"].items():
+            assert isinstance(entry, _TierPoolEntry)
+            assert 1 <= tier <= 5
+            assert entry.n_player_seasons > 0
+
+    def test_boundaries_computed(self, pff_dir, loader):
+        """Boundaries exist for WR, are 4 values, descending."""
+        seasons = [2023, 2024]
+        for s in seasons:
+            _mock_wr_pff_data(pff_dir, s)
+        pbp = _build_mock_pbp(seasons)
+        crosswalk = _build_crosswalk()
+
+        engine = self._make_engine(loader)
+        engine._build_tier_pools(pbp, seasons, crosswalk)
+
+        assert engine._boundaries is not None
+        assert "WR" in engine._boundaries
+        bounds = engine._boundaries["WR"]
+        assert len(bounds) == 4
+        # Boundaries should be in descending order (Tier 1 cutoff > Tier 2 > ...)
+        for j in range(len(bounds) - 1):
+            assert bounds[j] >= bounds[j + 1], f"Boundary {j} ({bounds[j]}) not >= {j+1} ({bounds[j+1]})"
+
+    def test_pool_entry_has_yards_array(self, pff_dir, loader):
+        """At least one tier has receiving_yards_dist with values."""
+        seasons = [2023, 2024]
+        for s in seasons:
+            _mock_wr_pff_data(pff_dir, s)
+        pbp = _build_mock_pbp(seasons)
+        crosswalk = _build_crosswalk()
+
+        engine = self._make_engine(loader)
+        engine._build_tier_pools(pbp, seasons, crosswalk)
+
+        found_yards = False
+        for tier, entry in engine._pools["WR"].items():
+            if entry.receiving_yards_dist is not None and len(entry.receiving_yards_dist) > 0:
+                found_yards = True
+                break
+        assert found_yards, "No tier pool has a non-empty receiving_yards_dist"
+
+    def test_thin_tier_merged(self, pff_dir, loader):
+        """5 players in 1 season -> thin tiers get merged -> fewer than 5 tiers."""
+        seasons = [2023]
+        # Only write 5 WRs (half the normal set) in a single season
+        rows = []
+        grades = [92, 78, 62, 42, 22]
+        yprrs = [2.8, 2.0, 1.6, 1.1, 0.7]
+        for i, (g, y) in enumerate(zip(grades, yprrs)):
+            rows.append({
+                "player_id": 1000 + i,
+                "player": f"WR{i}",
+                "team": "KC" if i < 3 else "BUF",
+                "position": "WR",
+                "season": 2023,
+                "week": 1,
+                "grades_pass_route": float(g),
+                "yprr": float(y),
+                "targets": 80 + i * 10,
+                "receptions": 50 + i * 5,
+                "yards": 600 + i * 100,
+                "touchdowns": 5,
+                "drop_rate": 0.05,
+                "contested_catch_rate": 0.50,
+                "avg_depth_of_target": 10.0,
+            })
+        _write_pff_parquet(pff_dir, "receiving_summary", 2023, rows)
+        pbp = _build_mock_pbp(seasons, n_players=5)
+        crosswalk = {1000 + i: f"nfl_wr_{i}" for i in range(5)}
+
+        engine = self._make_engine(loader)
+        engine._build_tier_pools(pbp, seasons, crosswalk)
+
+        # With only 5 player-seasons, initial assignment gives ~1 per tier.
+        # _merge_thin_tiers should collapse them, resulting in fewer than 5 tiers.
+        n_tiers = len(engine._pools["WR"])
+        assert n_tiers < 5, f"Expected fewer than 5 tiers after merging, got {n_tiers}"
