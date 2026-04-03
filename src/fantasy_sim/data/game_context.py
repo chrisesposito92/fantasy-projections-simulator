@@ -355,10 +355,10 @@ class GameContextBuilder:
             from fantasy_sim.data.player_builder import _normalize_roster_shares
             self._ensure_pff_crosswalk(training_seasons, target_season)
             roster_season = target_season or max(training_seasons)
-            nfl_roster_df = self.loader.load_rosters([roster_season])
-            # Load PBP for pool building
-            self._ensure_pipeline(training_seasons, pbp=pbp, rosters=rosters)
-            pbp_df = self.loader.load_pbp(training_seasons)
+            all_roster_seasons = training_seasons + [roster_season]
+            nfl_roster_df = self.loader.load_rosters(all_roster_seasons)
+            # Use passed PBP or load if not provided
+            pbp_df = pbp if pbp is not None else self.loader.load_pbp(training_seasons)
             self._tier_engine.apply_tiers(
                 home_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
@@ -374,7 +374,8 @@ class GameContextBuilder:
             from fantasy_sim.data.player_builder import _normalize_roster_shares
             self._ensure_pff_crosswalk(training_seasons, target_season)
             roster_season = target_season or max(training_seasons)
-            nfl_roster_df = self.loader.load_rosters([roster_season])
+            all_roster_seasons = training_seasons + [roster_season]
+            nfl_roster_df = self.loader.load_rosters(all_roster_seasons)
             self._talent_stabilizer.stabilize_roster(
                 home_roster, self._pff_crosswalk, training_seasons,
                 nfl_roster=nfl_roster_df, target_season=roster_season,

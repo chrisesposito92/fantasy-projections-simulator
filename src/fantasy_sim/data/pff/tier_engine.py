@@ -140,9 +140,13 @@ class TierEngine:
         # Grades >= boundary_tier1 → Tier 1; ...; grades < boundary_tier4 → Tier 5
         self._boundaries: dict[str, list[float]] | None = None
 
-        # Cache key: tuple of (data_dir, cutoffs, blend_pool_size) that the
-        # current pools were built from.  Stale when config changes.
+        # Cache key: tuple(training_seasons) that the current pools were built
+        # from.  Stale when training seasons change.
         self._cache_key: tuple | None = None
+
+        # Per-season PBP aggregation cache (avoids recomputing for home + away)
+        self._pbp_season_cache: dict[int, dict[str, dict]] | None = None
+        self._pbp_season_cache_key: tuple | None = None
 
     # ------------------------------------------------------------------
     # PBP aggregation (per-season)
@@ -178,6 +182,7 @@ class TierEngine:
         team_air_yards: dict[str, float] = {}
 
         has_air_yards = "air_yards" in plays.columns
+        has_fumble_lost = "fumble_lost" in plays.columns
 
         for team in plays["posteam"].unique().to_list():
             tp = plays.filter(pl.col("posteam") == team)
@@ -202,6 +207,7 @@ class TierEngine:
                 "yards_list": [],
                 "carries": 0,
                 "rushing_yards_list": [],
+                "fumbles": 0,
                 "team": team,
                 "games": set(),
                 "air_yards": 0.0,
@@ -227,6 +233,8 @@ class TierEngine:
             if row["complete_pass"] == 1:
                 p["catches"] += 1
                 p["yards_list"].append(row["yards_gained"])
+            if has_fumble_lost and row.get("fumble_lost") == 1:
+                p["fumbles"] += 1
 
         # -- Run plays (rushing) --
         rush_plays = plays.filter(pl.col("play_type") == "run")
@@ -241,6 +249,8 @@ class TierEngine:
             p["carries"] += 1
             p["games"].add(row["game_id"])
             p["rushing_yards_list"].append(row["yards_gained"])
+            if has_fumble_lost and row.get("fumble_lost") == 1:
+                p["fumbles"] += 1
 
         # --- Compute derived share/rate stats ---
         # Team-level weekly pass attempts for weekly share calculation
@@ -262,6 +272,8 @@ class TierEngine:
             p["carry_share"] = p["carries"] / max(tra, 1)
             p["catch_rate"] = p["catches"] / max(p["targets"], 1)
             p["air_yards_share"] = p["air_yards"] / max(tay, 1.0)
+            total_touches = p["catches"] + p["carries"]
+            p["fumble_rate"] = p["fumbles"] / max(total_touches, 1) if total_touches > 0 else 0.015
 
             # Weekly target shares for reliability scoring
             weekly_shares = []
@@ -352,7 +364,7 @@ class TierEngine:
         """Merge tiers with fewer than MIN_TIER_POOL_SIZE player-seasons.
 
         Strategy: merge extremes first (1->2, 5->4), then inner (2->3, 4->3).
-        Continues until no thin tiers remain or further merging is impossible.
+        Loops until convergence (no merges occur in a full pass).
 
         Args:
             tier_buckets: dict[tier_number -> list of player-season dicts]
@@ -365,18 +377,20 @@ class TierEngine:
         # Merge pairs: (source, destination)
         merge_order = [(1, 2), (5, 4), (2, 3), (4, 3)]
 
-        for src, dst in merge_order:
-            if src in result and len(result[src]) < MIN_TIER_POOL_SIZE:
-                if dst in result:
-                    logger.info(
-                        "Merging thin tier %d (%d members) into tier %d",
-                        src, len(result[src]), dst,
-                    )
-                    result[dst].extend(result[src])
-                    del result[src]
-                elif src in result:
-                    # dst doesn't exist; keep src as-is
-                    pass
+        while True:
+            merged_any = False
+            for src, dst in merge_order:
+                if src in result and len(result[src]) < MIN_TIER_POOL_SIZE:
+                    if dst in result:
+                        logger.info(
+                            "Merging thin tier %d (%d members) into tier %d",
+                            src, len(result[src]), dst,
+                        )
+                        result[dst].extend(result[src])
+                        del result[src]
+                        merged_any = True
+            if not merged_any:
+                break
 
         # Remove any remaining empty tiers
         return {k: v for k, v in result.items() if v}
@@ -420,6 +434,7 @@ class TierEngine:
         carry_shares = [m["carry_share"] for m in members if m.get("carry_share") is not None]
         catch_rates = [m["catch_rate"] for m in members if m.get("catch_rate") is not None]
         air_yards_shares = [m["air_yards_share"] for m in members if m.get("air_yards_share") is not None]
+        fumble_rates = [m["fumble_rate"] for m in members if m.get("fumble_rate") is not None]
 
         # Concatenate all play-level yards into pool arrays
         all_recv_yards = []
@@ -444,7 +459,7 @@ class TierEngine:
             carry_share=_pct(carry_shares),
             catch_rate=_pct(catch_rates),
             air_yards_share=_pct(air_yards_shares),
-            fumble_rate=(0.0, 0.0, 0.0),  # not computed from PBP in pool building
+            fumble_rate=_pct(fumble_rates) if fumble_rates else (0.015, 0.015, 0.015),
             scramble_rate=(0.0, 0.0, 0.0),
             receiving_yards_dist=recv_dist,
             rushing_yards_dist=rush_dist,
@@ -826,6 +841,11 @@ class TierEngine:
             A ``(TierAssignment, TierDistributions)`` tuple, or ``None`` when
             the position is not configured or the primary grade is missing.
         """
+        if self._pools is None or self._boundaries is None:
+            return None
+        if position not in self._boundaries:
+            return None
+
         grade_cfg = self._config.position_grades.get(position)
         if grade_cfg is None:
             return None
@@ -965,11 +985,15 @@ class TierEngine:
         if nfl_roster is not None and not nfl_roster.is_empty():
             changed_teams = self._detect_team_changes(roster, nfl_roster)
 
-        # Per-season PBP aggregation for weekly share variance
-        pbp_per_season: dict[int, dict[str, dict]] = {}
+        # Per-season PBP aggregation for weekly share variance (cached across home/away calls)
         if pbp is not None:
-            for season in training_seasons:
-                pbp_per_season[season] = self._aggregate_pbp_per_season(pbp, season)
+            season_key = (tuple(training_seasons), id(pbp))
+            if self._pbp_season_cache_key != season_key:
+                self._pbp_season_cache = {}
+                for season in training_seasons:
+                    self._pbp_season_cache[season] = self._aggregate_pbp_per_season(pbp, season)
+                self._pbp_season_cache_key = season_key
+        pbp_per_season: dict[int, dict[str, dict]] = self._pbp_season_cache or {}
 
         rng = np.random.default_rng(42)
         target_s = target_season or max(training_seasons)

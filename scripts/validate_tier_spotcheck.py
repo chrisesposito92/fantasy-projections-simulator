@@ -42,9 +42,11 @@ def run_projections(pff_config: PffConfig, season: int, n_sims: int) -> dict:
     4. Build player projections via build_player_projections
     5. Return ranked results as {player_id: (position_rank, avg_fpts)}
     """
-    print(f"  [stub] Would run {n_sims} sims for {season} with "
-          f"tier_engine={'ON' if pff_config.tier_engine.enabled else 'OFF'}")
-    return {}
+    raise NotImplementedError(
+        f"run_projections() is a stub — implement the backtest pipeline "
+        f"(season={season}, n_sims={n_sims}, "
+        f"tier_engine={'ON' if pff_config.tier_engine.enabled else 'OFF'})"
+    )
 
 
 def main():

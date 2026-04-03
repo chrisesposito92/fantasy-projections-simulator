@@ -94,13 +94,18 @@ def load_pff_config(config: dict) -> PffConfig:
     }
     raw_pos_grades = tier_raw.get("position_grades", {})
     if raw_pos_grades:
-        position_grades = {
-            pos: PositionGradeConfig(
-                primary=spec["primary"],
-                secondary=spec["secondary"],
+        pos_grades: dict[str, PositionGradeConfig] = {}
+        for pos, spec in raw_pos_grades.items():
+            missing = [k for k in ("primary", "secondary") if k not in spec]
+            if missing:
+                raise ValueError(
+                    f"Invalid tier_engine.position_grades config for {pos!r}: "
+                    f"missing required keys: {', '.join(missing)}"
+                )
+            pos_grades[pos] = PositionGradeConfig(
+                primary=spec["primary"], secondary=spec["secondary"],
             )
-            for pos, spec in raw_pos_grades.items()
-        }
+        position_grades = pos_grades
     else:
         position_grades = _default_position_grades
 
