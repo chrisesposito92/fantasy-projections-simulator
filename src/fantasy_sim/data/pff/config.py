@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fantasy_sim.data.pff.models import (
     MatchupConfig,
+    NcaaPriorsConfig,
     PffConfig,
+    ScheduleAdjustmentConfig,
     TalentConfig,
 )
 
@@ -41,21 +43,44 @@ def load_pff_config(config: dict) -> PffConfig:
 
     talent = TalentConfig(
         enabled=talent_raw.get("enabled", True),
-        prior_strength=talent_raw.get("prior_strength", 40.0),
-        min_divergence=talent_raw.get("min_divergence", 0.03),
+        prior_strength=talent_raw.get("prior_strength", 30.0),
+        min_divergence=talent_raw.get("min_divergence", 0.01),
+        team_change_factor=talent_raw.get("team_change_factor", 0.5),
         catch_rate_coefficients=talent_raw.get("catch_rate_coefficients", {
-            "drop_rate": -0.15,
-            "contested_catch_rate": 0.10,
-            "qb_accuracy": 0.08,
+            "drop_rate": 0.21,
+            "contested_catch_rate": -0.25,
+            "qb_accuracy": 0.03,
         }),
         rushing_yards_coefficients=talent_raw.get("rushing_yards_coefficients", {
-            "yco_attempt": 0.6,
-            "elusive_rating": 0.008,
+            "yco_attempt": 0.02,
+            "elusive_rating": 0.0005,
         }),
         receiving_yards_coefficients=talent_raw.get("receiving_yards_coefficients", {
-            "yprr": 0.5,
-            "avg_depth_of_target": 0.03,
+            "yprr": 0.43,
+            "avg_depth_of_target": 0.41,
         }),
+        target_share_coefficients=talent_raw.get("target_share_coefficients", {
+            "route_grade": 0.5,
+            "yprr": 0.3,
+        }),
+        fumble_rate_coefficients=talent_raw.get("fumble_rate_coefficients", {
+            "grades_hands_fumble": -0.002,
+        }),
+        scramble_rate_enabled=talent_raw.get("scramble_rate_enabled", True),
+        schedule_adjustment=ScheduleAdjustmentConfig(
+            **{
+                k: v
+                for k, v in talent_raw.get("schedule_adjustment", {}).items()
+                if k in ("enabled", "weight", "catch_rate_sensitivity", "rush_yards_sensitivity")
+            }
+        ),
+        ncaa_priors=NcaaPriorsConfig(
+            **{
+                k: v
+                for k, v in talent_raw.get("ncaa_priors", {}).items()
+                if k in ("enabled", "draft_weight", "ncaa_data_dir")
+            }
+        ),
     )
 
     return PffConfig(

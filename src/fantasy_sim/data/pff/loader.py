@@ -14,6 +14,7 @@ import polars as pl
 logger = logging.getLogger(__name__)
 
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
+DEFAULT_NCAA_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "ncaa"
 
 # PFF uses non-standard team abbreviations for 4 teams
 PFF_TO_NFL_TEAM: dict[str, str] = {
@@ -241,4 +242,108 @@ class PffLoader:
         )
 
         self._crosswalk_cache[season] = crosswalk
+        return crosswalk
+
+    def load_ncaa_facet(
+        self,
+        facet: str,
+        seasons: list[int],
+        ncaa_dir: Path | None = None,
+    ) -> pl.DataFrame:
+        """Load NCAA PFF facet data from the NCAA directory.
+
+        Unlike :meth:`load_facet`, this does **not** normalise team
+        abbreviations or map positions (NCAA teams/positions are different
+        from NFL).
+
+        Args:
+            facet: PFF facet name (e.g. ``"receiving_summary"``).
+            seasons: List of seasons to load.
+            ncaa_dir: Override directory; defaults to
+                ``~/.fantasy-sim/pff/processed/ncaa/``.
+
+        Returns:
+            Concatenated DataFrame, or empty DataFrame if no data found.
+        """
+        target_dir = ncaa_dir or DEFAULT_NCAA_DIR
+        frames: list[pl.DataFrame] = []
+        for season in seasons:
+            path = target_dir / f"{facet}_{season}.parquet"
+            if not path.exists():
+                logger.warning("NCAA PFF file not found: %s", path)
+                continue
+            frames.append(pl.read_parquet(path))
+
+        if not frames:
+            return pl.DataFrame()
+
+        return pl.concat(frames, how="diagonal_relaxed")
+
+    def build_ncaa_crosswalk(
+        self,
+        ncaa_data: pl.DataFrame,
+        nfl_roster: pl.DataFrame,
+        rookie_season: int,
+    ) -> dict[int, str]:
+        """Map NCAA PFF player_id -> NFL player_id.
+
+        Matches by player name + college name for players whose
+        ``rookie_year`` (or ``season``) equals *rookie_season*.
+
+        Args:
+            ncaa_data: NCAA PFF DataFrame with ``player_id``, ``player``,
+                ``team`` (college name) columns.
+            nfl_roster: nflverse roster DataFrame with ``player_id``,
+                ``player_name``, ``college_name``, and optionally
+                ``rookie_year`` / ``season`` columns.
+            rookie_season: Target NFL season year — only roster entries
+                whose ``rookie_year`` (or ``season``) matches are
+                considered.
+
+        Returns:
+            Dict mapping NCAA PFF player_id (int) to nflverse player_id
+            (str).
+        """
+        crosswalk: dict[int, str] = {}
+
+        ncaa_players = ncaa_data.select(
+            ["player_id", "player", "team"]
+        ).unique(subset=["player_id"])
+
+        if ncaa_players.is_empty() or nfl_roster.is_empty():
+            return crosswalk
+
+        # Filter roster to target season
+        rookies = nfl_roster
+        if "rookie_year" in rookies.columns:
+            rookies = rookies.filter(pl.col("rookie_year") == rookie_season)
+        elif "season" in rookies.columns:
+            rookies = rookies.filter(pl.col("season") == rookie_season)
+
+        if rookies.is_empty():
+            return crosswalk
+
+        if "college_name" not in rookies.columns:
+            logger.warning("No college_name column in roster — cannot build NCAA crosswalk")
+            return crosswalk
+
+        # Match by name + college
+        roster_lookup = rookies.select([
+            "player_id", "player_name", "college_name",
+        ]).unique(subset=["player_id"])
+
+        matched = ncaa_players.join(
+            roster_lookup,
+            left_on=["player", "team"],
+            right_on=["player_name", "college_name"],
+            how="inner",
+        )
+
+        for row in matched.iter_rows(named=True):
+            crosswalk[row["player_id"]] = row["player_id_right"]
+
+        logger.info(
+            "NCAA crosswalk: %d/%d matched",
+            len(crosswalk), ncaa_players.height,
+        )
         return crosswalk

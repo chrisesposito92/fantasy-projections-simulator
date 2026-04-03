@@ -61,24 +61,56 @@ class MatchupConfig:
 
 
 @dataclass
+class ScheduleAdjustmentConfig:
+    """Configuration for schedule-adjusted talent evaluation."""
+    enabled: bool = True
+    weight: float = 0.3
+    catch_rate_sensitivity: float = 0.005
+    rush_yards_sensitivity: float = 0.3
+
+
+@dataclass
+class NcaaPriorsConfig:
+    """Configuration for NCAA-based rookie priors."""
+    enabled: bool = True
+    draft_weight: float = 0.6
+    ncaa_data_dir: str | None = None
+
+
+@dataclass
 class TalentConfig:
     """Configuration for the talent stabilizer."""
     enabled: bool = True
-    prior_strength: float = 40.0
-    min_divergence: float = 0.03
+    prior_strength: float | dict[str, float] = 30.0
+    min_divergence: float = 0.01
+    team_change_factor: float = 1.0
     catch_rate_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "drop_rate": -0.15,
-        "contested_catch_rate": 0.10,
-        "qb_accuracy": 0.08,
+        "drop_rate": 0.21,
+        "contested_catch_rate": -0.25,
+        "qb_accuracy": 0.03,
     })
     rushing_yards_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "yco_attempt": 0.6,
-        "elusive_rating": 0.008,
+        "yco_attempt": 0.02,
+        "elusive_rating": 0.0005,
     })
     receiving_yards_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "yprr": 0.5,
-        "avg_depth_of_target": 0.03,
+        "yprr": 0.43,
+        "avg_depth_of_target": 0.41,
     })
+    target_share_coefficients: dict[str, float] = field(default_factory=lambda: {
+        "route_grade": 0.5,
+        "yprr": 0.3,
+    })
+    fumble_rate_coefficients: dict[str, float] = field(default_factory=lambda: {
+        "grades_hands_fumble": -0.002,
+    })
+    scramble_rate_enabled: bool = True
+    schedule_adjustment: ScheduleAdjustmentConfig = field(
+        default_factory=ScheduleAdjustmentConfig
+    )
+    ncaa_priors: NcaaPriorsConfig = field(
+        default_factory=NcaaPriorsConfig
+    )
 
 
 @dataclass

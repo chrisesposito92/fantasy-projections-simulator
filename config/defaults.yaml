@@ -71,15 +71,31 @@ pff:
 
   talent:
     enabled: true
-    prior_strength: 40
-    min_divergence: 0.03
+    prior_strength: 30
+    min_divergence: 0.01
+    team_change_factor: 0.5
     catch_rate_coefficients:
-      drop_rate: -0.15
-      contested_catch_rate: 0.10
-      qb_accuracy: 0.08
+      drop_rate: 0.21
+      contested_catch_rate: -0.25
+      qb_accuracy: 0.03
     rushing_yards_coefficients:
-      yco_attempt: 0.6
-      elusive_rating: 0.008
+      yco_attempt: 0.02
+      elusive_rating: 0.0005
     receiving_yards_coefficients:
-      yprr: 0.5
-      avg_depth_of_target: 0.03
+      yprr: 0.43
+      avg_depth_of_target: 0.41
+    target_share_coefficients:
+      route_grade: 0.5
+      yprr: 0.3
+    fumble_rate_coefficients:
+      grades_hands_fumble: -0.002
+    scramble_rate_enabled: true
+    schedule_adjustment:
+      enabled: true
+      weight: 0.3
+      catch_rate_sensitivity: 0.005
+      rush_yards_sensitivity: 0.3
+    ncaa_priors:
+      enabled: true
+      draft_weight: 0.6
+      ncaa_data_dir: null

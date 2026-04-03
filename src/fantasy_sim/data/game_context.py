@@ -347,11 +347,15 @@ class GameContextBuilder:
         if self._talent_stabilizer is not None:
             from fantasy_sim.data.player_builder import _normalize_roster_shares
             self._ensure_pff_crosswalk(training_seasons, target_season)
+            roster_season = target_season or max(training_seasons)
+            nfl_roster_df = self.loader.load_rosters([roster_season])
             self._talent_stabilizer.stabilize_roster(
                 home_roster, self._pff_crosswalk, training_seasons,
+                nfl_roster=nfl_roster_df, target_season=roster_season,
             )
             self._talent_stabilizer.stabilize_roster(
                 away_roster, self._pff_crosswalk, training_seasons,
+                nfl_roster=nfl_roster_df, target_season=roster_season,
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
