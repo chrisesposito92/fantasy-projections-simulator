@@ -1,4 +1,4 @@
-# Tier Engine Tuning — Next Steps
+# PFF Improvement Roadmap
 
 Status as of 2026-04-03:
 - **tier-v1-4yr-3szn**: PASS (rank_corr +0.0255, season_mae -2.714) — first PASS ever
@@ -63,3 +63,69 @@ Run each override independently against the baseline (tier-v2-qbfix-4yr) to isol
 Priority order: B (reliability) > A (WR secondary) > C (tier count) > D (pool size)
 
 Reliability tuning has the broadest impact across all positions. WR secondary grade is targeted at the one position with inconsistent results. Tier count and pool size are refinements.
+
+---
+
+## PFF Feature Roadmap (ordered by expected backtest impact)
+
+### 1. Re-enable Matchup Engine with Same-Season Rolling Window (HIGH)
+
+**What:** The matchup engine was parked because cross-season defensive data (2022-2023 predicting 2024) didn't work. Fix: use same-season rolling data. For a week 8 game, use PFF defensive grades from weeks 1-7 of the current season. Early weeks (1-2) fall back to previous season.
+
+**Why highest priority:** The tier engine answers "who is this player?" The matchup engine answers "who are they playing this week?" These are additive — tier fixes season-level rankings, matchup fixes weekly variance. Weekly MAE and calibration are the metrics this targets.
+
+**Data required:** Already have it. PFF data for test seasons (2023-2025) includes week-by-week defensive grades. The existing `MatchupEngine` code (`matchup.py`) just needs the data strategy changed.
+
+**Implementation:** Modify `MatchupEngine.compute()` to accept a `max_week` parameter. Filter PFF defensive data to `week <= max_week` for the current season. Reuse all existing factor computation and application code.
+
+**PFF facets used:** defense_coverage, defense_pass_rush, defense_run, offense_pass_blocking, offense_run_blocking
+
+### 2. Team Context Layer — Tier Engine v2 (MEDIUM-HIGH)
+
+**What:** Adjust tier distributions for the player's own team context: team pass rate scales target volume, OL grade shifts rushing yards, QB quality scales WR/TE catch rate.
+
+**Why:** A Tier 2 RB behind the league's best OL projects differently than one behind the worst. Currently, two Tier 2 RBs on different teams get the same distributions. Team context differentiates them.
+
+**Data required:** offense_pass_blocking, offense_run_blocking (OL grades), passing_summary (QB quality). All already scraped.
+
+**Implementation:** New step between tier selection and blending. After `select_distributions()` returns tier-level values, apply team context multipliers before blending with PBP. Complements the matchup engine: team context = season-level ("what team does he play for"), matchup = week-level ("what defense is he facing").
+
+### 3. NCAA Tier Assignment for Rookies (MEDIUM)
+
+**What:** Use college PFF grades (2022-2025 NCAA data) to place rookies directly into NFL talent tiers instead of relying on draft-capital archetypes from `rookie_builder.py`.
+
+**Why:** Rookies have zero NFL PBP history, so the tier engine assigns them based on the 15% tier floor. An elite college route runner should be placed in Tier 1-2 with NFL-caliber distributions, regardless of draft round. ~50-60 rookies per season, disproportionately misranked.
+
+**Data required:** NCAA PFF data at `~/.fantasy-sim/pff/processed/ncaa/`. Already scraped (2022-2025). Need NCAA-to-NFL player crosswalk via draft picks.
+
+**Implementation:** Extend `TierEngine` with a `_assign_rookie_tier()` method. Map college grades to the NFL tier percentile scale (college grades are on the same 0-100 PFF scale but distribution differs). Weight by draft capital — a 1st-round pick's college grades carry more than a 5th-rounder's.
+
+### 4. Depth-of-Target Archetypes Within Tiers (MEDIUM)
+
+**What:** Use the `receiving_depth` PFF facet to create sub-pools within WR tiers based on target depth profile (deep threat vs slot vs possession).
+
+**Why:** Currently, all Tier 2 WRs share one yards distribution pool. A deep-threat WR and a slot WR in the same tier have genuinely different yards-per-catch distributions. This is the one case where secondary grade interpolation on yards distributions makes sense — but via archetype sub-pooling, not continuous interpolation.
+
+**Data required:** receiving_depth facet (already scraped). Contains per-player breakdowns by short/medium/deep targets.
+
+**Implementation:** Cluster WRs within each tier into 2-3 archetypes by depth profile. Assign each player to an archetype. Use the archetype's sub-pool for yards distributions instead of the full tier pool. Only applies to WR — other positions don't have the same depth variance.
+
+### 5. Coverage Matchup Adjustments (LOW for backtest / HIGH for weekly)
+
+**What:** Use `defense_coverage_matchup` data for receiver-vs-defender matchup adjustments. When a WR1 faces a shadow CB, adjust target_share and catch_rate for that specific game.
+
+**Why:** The most granular matchup signal PFF offers. Less useful for season-level backtesting (matchup effects average out over 17 games) but very high value for weekly projection accuracy.
+
+**Data required:** defense_coverage_matchup facet (already scraped). Contains receiver-defender pairing data.
+
+**Implementation:** Per-game overlay on top of the matchup engine. After the team-level defensive adjustment, apply a player-specific modifier based on the expected CB matchup. Requires mapping WR alignment to likely CB assignment.
+
+### 6. Kicker/DST from PFF Grades (LOW)
+
+**What:** Use `field_goal_summary` and defensive facets to improve kicker and DST projections. Currently kickers are placeholder models and DST uses team-level aggregates.
+
+**Why:** Small component of overall backtest metrics, but easy wins. PFF kicker grades + accuracy by distance could replace the placeholder. Defensive grades could improve DST scoring projections.
+
+**Data required:** field_goal_summary, defense_summary (both already scraped).
+
+**Implementation:** Extend `build_kicker_model()` to use PFF FG accuracy data by distance bucket. Extend DST projections with PFF defensive grades for sack rate, INT rate, fumble recovery rate.
