@@ -30,10 +30,10 @@ uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --training-ye
 **Try:**
 ```bash
 # Less tier influence on established players
---config-override '{"tier_engine": {"reliability": {"floor": 0.10, "cap": 0.90}}}'
+--config-override '{"tier_engine": {"reliability_floor": 0.10, "reliability_cap": 0.90}}'
 
 # More tier influence (if we think tiers are underweighted)
---config-override '{"tier_engine": {"reliability": {"floor": 0.20, "cap": 0.80}}}'
+--config-override '{"tier_engine": {"reliability_floor": 0.20, "reliability_cap": 0.80}}'
 ```
 
 ### C. Tier Count

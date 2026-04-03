@@ -249,6 +249,25 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         for key, val in overrides["matchup"].items():
             if hasattr(matchup_cfg, key):
                 setattr(matchup_cfg, key, val)
+    if overrides and "tier_engine" in overrides:
+        for key, val in overrides["tier_engine"].items():
+            if not hasattr(tier_cfg, key):
+                continue
+            if key == "position_grades" and isinstance(val, dict):
+                # Merge per-position: only update specified positions/fields
+                for pos, grade_overrides in val.items():
+                    if pos in tier_cfg.position_grades and isinstance(grade_overrides, dict):
+                        for gk, gv in grade_overrides.items():
+                            if hasattr(tier_cfg.position_grades[pos], gk):
+                                setattr(tier_cfg.position_grades[pos], gk, gv)
+            else:
+                current = getattr(tier_cfg, key)
+                if hasattr(current, '__dataclass_fields__') and isinstance(val, dict):
+                    for k, v in val.items():
+                        if hasattr(current, k):
+                            setattr(current, k, v)
+                else:
+                    setattr(tier_cfg, key, val)
 
     return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg, tier_engine=tier_cfg)
 
@@ -484,7 +503,8 @@ def main() -> int:
         default=None,
         dest="config_override",
         metavar="JSON",
-        help='PFF config overrides as JSON string. Example: \'{"talent": {"prior_strength": 30}}\'',
+        help='PFF config overrides as JSON string. Keys: "talent", "matchup", "tier_engine". '
+             'Example: \'{"tier_engine": {"reliability_floor": 0.10, "reliability_cap": 0.90}}\'',
     )
 
     args = parser.parse_args()
