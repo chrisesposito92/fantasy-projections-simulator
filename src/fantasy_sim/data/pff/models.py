@@ -114,9 +114,38 @@ class TalentConfig:
 
 
 @dataclass
+class PositionGradeConfig:
+    """Primary and secondary PFF grade columns for one position."""
+    primary: str
+    secondary: str
+
+
+@dataclass
+class TierConfig:
+    """Configuration for the PFF Talent-Tier Distribution Engine."""
+    enabled: bool = False
+    cutoffs: list[float] = field(default_factory=lambda: [0.85, 0.65, 0.40, 0.20])
+    position_grades: dict[str, PositionGradeConfig] = field(
+        default_factory=lambda: {
+            "QB": PositionGradeConfig(primary="grades_pass", secondary="accuracy_percent"),
+            "RB": PositionGradeConfig(primary="grades_run", secondary="elusive_rating"),
+            "WR": PositionGradeConfig(primary="grades_pass_route", secondary="yprr"),
+            "TE": PositionGradeConfig(primary="grades_pass_route", secondary="recv_grade"),
+        }
+    )
+    reliability_max_games: int = 32
+    reliability_team_change_penalty: float = 0.5
+    reliability_variance_weight: float = 0.3
+    reliability_floor: float = 0.15
+    reliability_cap: float = 0.85
+    blend_pool_size: int = 500
+
+
+@dataclass
 class PffConfig:
     """Top-level PFF configuration."""
     enabled: bool = False
     data_dir: str | None = None
     matchup: MatchupConfig = field(default_factory=MatchupConfig)
     talent: TalentConfig = field(default_factory=TalentConfig)
+    tier_engine: TierConfig = field(default_factory=TierConfig)
