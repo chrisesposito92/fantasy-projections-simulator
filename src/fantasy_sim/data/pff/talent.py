@@ -23,6 +23,12 @@ BASELINE_CATCH_RATE = 0.70
 # Minimum shift thresholds — skip adjustments smaller than these.
 MIN_RECEIVING_YARDS_SHIFT = 0.3
 MIN_RUSHING_YARDS_SHIFT = 0.2
+MIN_TARGET_SHARE_SHIFT = 0.01
+MIN_FUMBLE_RATE_SHIFT = 0.002
+MIN_SCRAMBLE_RATE_SHIFT = 0.005
+
+# Baseline fumble rate used as the center for the PFF prior computation.
+BASELINE_FUMBLE_RATE = 0.015
 
 # Catch rate prior is clamped to this range.
 CATCH_RATE_PRIOR_MIN = 0.30
@@ -76,8 +82,11 @@ class TalentStabilizer:
       - red_zone_catch_rate (scaled proportionally when catch_rate changes)
       - receiving_yards_dist (shift based on YPRR + ADOT)
       - rushing_yards_dist (shift based on YCO/attempt + elusive_rating)
+      - target_share (WR, TE — multiplicative prior from route_grade + YPRR)
+      - fumble_rate (RB, QB with carries — PFF hands grade)
+      - scramble_rate (QB — PFF scramble/dropback ratio as prior)
 
-    NOT stabilized: carry_share, target_share, red_zone shares, air_yards_share.
+    NOT stabilized: carry_share, red_zone shares, air_yards_share.
     """
 
     def __init__(self, config: PffConfig, pff_loader: PffLoader):
@@ -124,13 +133,15 @@ class TalentStabilizer:
         # Build PFF lookup dicts keyed by PFF player_id
         recv_lookup = self._build_lookup(receiving)
         rush_lookup = self._build_lookup(rushing)
+        pass_lookup = self._build_lookup(passing)
         # Compute league averages
         recv_avgs = self._compute_league_averages(
             receiving,
-            ["drop_rate", "contested_catch_rate", "yprr", "avg_depth_of_target"],
+            ["drop_rate", "contested_catch_rate", "yprr", "avg_depth_of_target",
+             "grades_pass_route"],
         )
         rush_avgs = self._compute_league_averages(
-            rushing, ["yco_attempt", "elusive_rating"]
+            rushing, ["yco_attempt", "elusive_rating", "grades_hands_fumble"]
         )
         pass_avgs = self._compute_league_averages(
             passing, ["accuracy_percent"]
@@ -176,6 +187,44 @@ class TalentStabilizer:
             ):
                 adj = self._stabilize_rushing_yards(
                     player, rush_lookup[pff_id], rush_avgs,
+                )
+                if adj:
+                    adjustments += 1
+
+            # --- Target share stabilization ---
+            if (
+                player.position in ("WR", "TE")
+                and player.usage.target_share > 0
+                and pff_id in recv_lookup
+                and self._config.target_share_coefficients
+            ):
+                adj = self._stabilize_target_share(
+                    player, recv_lookup[pff_id], recv_avgs,
+                )
+                if adj:
+                    adjustments += 1
+
+            # --- Fumble rate stabilization ---
+            if (
+                player.position in ("RB", "QB")
+                and player.usage.carry_share > 0
+                and pff_id in rush_lookup
+                and self._config.fumble_rate_coefficients
+            ):
+                adj = self._stabilize_fumble_rate(
+                    player, rush_lookup[pff_id], rush_avgs,
+                )
+                if adj:
+                    adjustments += 1
+
+            # --- Scramble rate stabilization ---
+            if (
+                player.position == "QB"
+                and pff_id in pass_lookup
+                and self._config.scramble_rate_enabled
+            ):
+                adj = self._stabilize_scramble_rate(
+                    player, pass_lookup[pff_id],
                 )
                 if adj:
                     adjustments += 1
@@ -454,5 +503,147 @@ class TalentStabilizer:
         logger.debug(
             "Rushing yards shift: %s (%s) shift=%.2f (raw=%.2f, conf=%.3f)",
             player.name, player.player_id, adjusted_shift, shift, 1.0 - pff_confidence,
+        )
+        return True
+
+    def _stabilize_target_share(
+        self,
+        player: PlayerModel,
+        pff_row: dict,
+        recv_avgs: dict[str, float],
+    ) -> bool:
+        """Stabilize target_share using route grade and YPRR signals. Returns True if adjusted."""
+        coeffs = self._config.target_share_coefficients
+
+        # The PFF column for route grade is "grades_pass_route"
+        player_rg = pff_row.get("grades_pass_route", 0.0) or 0.0
+        player_yprr = pff_row.get("yprr", 0.0) or 0.0
+        avg_rg = recv_avgs.get("grades_pass_route", 0.0)
+        avg_yprr = recv_avgs.get("yprr", 0.0)
+
+        # Avoid division by zero
+        if avg_rg <= 0 or avg_yprr <= 0:
+            return False
+
+        # Compute multiplicative ratio from each signal
+        rg_ratio = player_rg / avg_rg
+        yprr_ratio = player_yprr / avg_yprr
+
+        # Weighted average of ratios using coefficient weights
+        rg_weight = coeffs.get("route_grade", 0.5)
+        yprr_weight = coeffs.get("yprr", 0.3)
+        total_weight = rg_weight + yprr_weight
+        if total_weight <= 0:
+            return False
+
+        blended_ratio = (rg_ratio * rg_weight + yprr_ratio * yprr_weight) / total_weight
+
+        # Prior target_share = current * blended_ratio, clamped
+        old_ts = player.usage.target_share
+        prior_ts = max(0.01, min(0.50, old_ts * blended_ratio))
+
+        # n_observations = targets_per_game * games
+        targets_per_game = pff_row.get("targets", 0) or 0
+        games = pff_row.get("games", 0) or 0
+        n_obs = int(targets_per_game * games) if games > 0 else 0
+
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
+        new_ts = stabilize_value(
+            old_ts, prior_ts, n_obs,
+            strength, self._config.min_divergence,
+        )
+
+        if abs(new_ts - old_ts) < MIN_TARGET_SHARE_SHIFT:
+            return False
+
+        player.usage.target_share = new_ts
+
+        logger.debug(
+            "Target share stabilized: %s (%s) %.3f -> %.3f (prior=%.3f, n=%d)",
+            player.name, player.player_id, old_ts, new_ts, prior_ts, n_obs,
+        )
+        return True
+
+    def _stabilize_fumble_rate(
+        self,
+        player: PlayerModel,
+        pff_row: dict,
+        rush_avgs: dict[str, float],
+    ) -> bool:
+        """Stabilize fumble_rate using PFF hands fumble grade. Returns True if adjusted."""
+        coeffs = self._config.fumble_rate_coefficients
+
+        player_hands = pff_row.get("grades_hands_fumble", 0.0) or 0.0
+        avg_hands = rush_avgs.get("grades_hands_fumble", 0.0)
+
+        # Compute PFF-implied prior:
+        # coeff is negative, so better hands grade (higher) -> lower fumble rate
+        coeff = coeffs.get("grades_hands_fumble", -0.002)
+        prior = BASELINE_FUMBLE_RATE + coeff * (player_hands - avg_hands)
+
+        # Clamp to valid range
+        prior = max(0.001, min(0.05, prior))
+
+        # n_observations = attempts_per_game * games
+        attempts_per_game = pff_row.get("attempts", 0) or 0
+        games = pff_row.get("games", 0) or 0
+        n_obs = int(attempts_per_game * games) if games > 0 else 0
+
+        old_fr = player.outcomes.fumble_rate
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
+        new_fr = stabilize_value(
+            old_fr, prior, n_obs,
+            strength, self._config.min_divergence,
+        )
+
+        if abs(new_fr - old_fr) < MIN_FUMBLE_RATE_SHIFT:
+            return False
+
+        player.outcomes.fumble_rate = new_fr
+
+        logger.debug(
+            "Fumble rate stabilized: %s (%s) %.4f -> %.4f (prior=%.4f, n=%d)",
+            player.name, player.player_id, old_fr, new_fr, prior, n_obs,
+        )
+        return True
+
+    def _stabilize_scramble_rate(
+        self,
+        player: PlayerModel,
+        pff_row: dict,
+    ) -> bool:
+        """Stabilize scramble_rate using PFF scramble/dropback ratio. Returns True if adjusted."""
+        scrambles = pff_row.get("scrambles", 0) or 0
+        dropbacks = pff_row.get("dropbacks", 0) or 0
+
+        # Skip if insufficient dropback data
+        if dropbacks < 10:
+            return False
+
+        # PFF rate IS the prior directly
+        prior = scrambles / dropbacks
+
+        # n_observations = dropbacks * games (total dropbacks across all games)
+        games = pff_row.get("games", 0) or 0
+        n_obs = int(dropbacks * games) if games > 0 else 0
+
+        old_sr = player.usage.scramble_rate
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
+        new_sr = stabilize_value(
+            old_sr, prior, n_obs,
+            strength, self._config.min_divergence,
+        )
+
+        if abs(new_sr - old_sr) < MIN_SCRAMBLE_RATE_SHIFT:
+            return False
+
+        player.usage.scramble_rate = new_sr
+
+        logger.debug(
+            "Scramble rate stabilized: %s (%s) %.4f -> %.4f (prior=%.4f, n=%d)",
+            player.name, player.player_id, old_sr, new_sr, prior, n_obs,
         )
         return True

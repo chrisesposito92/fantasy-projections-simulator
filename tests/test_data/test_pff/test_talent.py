@@ -8,10 +8,14 @@ from fantasy_sim.data.pff.loader import PffLoader
 from fantasy_sim.data.pff.models import PffConfig, TalentConfig
 from fantasy_sim.data.pff.talent import (
     BASELINE_CATCH_RATE,
+    BASELINE_FUMBLE_RATE,
     CATCH_RATE_PRIOR_MAX,
     CATCH_RATE_PRIOR_MIN,
+    MIN_FUMBLE_RATE_SHIFT,
     MIN_RECEIVING_YARDS_SHIFT,
     MIN_RUSHING_YARDS_SHIFT,
+    MIN_SCRAMBLE_RATE_SHIFT,
+    MIN_TARGET_SHARE_SHIFT,
     TalentStabilizer,
     stabilize_value,
 )
@@ -242,6 +246,8 @@ def _make_player(
     receiving_yards_dist: np.ndarray | None = None,
     rushing_yards_dist: np.ndarray | None = None,
     games_played: int = 17,
+    scramble_rate: float = 0.0,
+    fumble_rate: float = 0.0,
 ) -> PlayerModel:
     """Create a PlayerModel with specified parameters."""
     return PlayerModel(
@@ -252,12 +258,14 @@ def _make_player(
         usage=PlayerUsage(
             target_share=target_share,
             carry_share=carry_share,
+            scramble_rate=scramble_rate,
         ),
         outcomes=PlayerOutcomes(
             catch_rate=catch_rate,
             red_zone_catch_rate=rz_catch_rate,
             receiving_yards_dist=receiving_yards_dist,
             rushing_yards_dist=rushing_yards_dist,
+            fumble_rate=fumble_rate,
         ),
         games_played=games_played,
     )
@@ -986,3 +994,330 @@ class TestTeamChangeBoost:
         stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
         effective = stabilizer._effective_prior_strength("WR", "KC", "BUF")
         assert effective == 40.0
+
+
+class TestStabilizeTargetShare:
+    """Tests for target_share stabilization via stabilize_roster."""
+
+    def test_high_route_grade_increases_target_share(self, pff_dir, loader):
+        """WR with elite route grade + YPRR gets target_share nudged up."""
+        config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                target_share_coefficients={"route_grade": 0.5, "yprr": 0.3},
+            ),
+        )
+        elite_wr = {
+            "player_id": 100,
+            "player": "Elite WR",
+            "team": "KC",
+            "position": "WR",
+            "grades_pass_route": 92.0,  # Elite route grade
+            "yprr": 2.8,               # Elite YPRR
+            "drop_rate": 3.0,
+            "contested_catch_rate": 55.0,
+            "avg_depth_of_target": 12.0,
+            "targets": 8,
+            "n_games": 16,
+        }
+        avg_wr = {
+            "player_id": 200,
+            "player": "Avg WR",
+            "team": "BUF",
+            "position": "WR",
+            "grades_pass_route": 65.0,
+            "yprr": 1.4,
+            "drop_rate": 5.0,
+            "contested_catch_rate": 50.0,
+            "avg_depth_of_target": 10.0,
+            "targets": 6,
+            "n_games": 16,
+        }
+        bad_wr = {
+            "player_id": 300,
+            "player": "Bad WR",
+            "team": "NYJ",
+            "position": "WR",
+            "grades_pass_route": 50.0,
+            "yprr": 0.9,
+            "drop_rate": 8.0,
+            "contested_catch_rate": 40.0,
+            "avg_depth_of_target": 8.0,
+            "targets": 4,
+            "n_games": 16,
+        }
+        _write_receiving_summary(pff_dir, 2024, [elite_wr, avg_wr, bad_wr])
+        _write_passing_summary(pff_dir, 2024, [{
+            "player_id": 500, "player": "QB", "team": "KC",
+            "position": "QB", "accuracy_percent": 75.0,
+            "n_games": 16, "dropbacks": 35,
+        }])
+        _write_rushing_summary(pff_dir, 2024, [])
+
+        player = _make_player(
+            "G001", "Elite WR", "WR", "KC",
+            target_share=0.18, catch_rate=0.65,
+        )
+        original_ts = player.usage.target_share
+
+        roster = TeamRoster(team="KC", players=[player])
+        crosswalk = {100: "G001"}
+
+        stabilizer = TalentStabilizer(config, loader)
+        stabilizer.stabilize_roster(roster, crosswalk, [2024])
+
+        # Elite route grade + YPRR above average -> target share nudged up
+        assert player.usage.target_share > original_ts
+
+    def test_low_route_grade_decreases_target_share(self, pff_dir, loader):
+        """WR with poor route grade + YPRR gets target_share nudged down."""
+        config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                target_share_coefficients={"route_grade": 0.5, "yprr": 0.3},
+            ),
+        )
+        bad_wr = {
+            "player_id": 100,
+            "player": "Bad WR",
+            "team": "KC",
+            "position": "WR",
+            "grades_pass_route": 45.0,  # Poor route grade
+            "yprr": 0.7,               # Poor YPRR
+            "drop_rate": 8.0,
+            "contested_catch_rate": 35.0,
+            "avg_depth_of_target": 8.0,
+            "targets": 4,
+            "n_games": 16,
+        }
+        avg_wr = {
+            "player_id": 200,
+            "player": "Avg WR",
+            "team": "BUF",
+            "position": "WR",
+            "grades_pass_route": 65.0,
+            "yprr": 1.4,
+            "drop_rate": 5.0,
+            "contested_catch_rate": 50.0,
+            "avg_depth_of_target": 10.0,
+            "targets": 6,
+            "n_games": 16,
+        }
+        elite_wr = {
+            "player_id": 300,
+            "player": "Elite WR",
+            "team": "NYJ",
+            "position": "WR",
+            "grades_pass_route": 90.0,
+            "yprr": 2.5,
+            "drop_rate": 2.0,
+            "contested_catch_rate": 60.0,
+            "avg_depth_of_target": 12.0,
+            "targets": 8,
+            "n_games": 16,
+        }
+        _write_receiving_summary(pff_dir, 2024, [bad_wr, avg_wr, elite_wr])
+        _write_passing_summary(pff_dir, 2024, [{
+            "player_id": 500, "player": "QB", "team": "KC",
+            "position": "QB", "accuracy_percent": 75.0,
+            "n_games": 16, "dropbacks": 35,
+        }])
+        _write_rushing_summary(pff_dir, 2024, [])
+
+        player = _make_player(
+            "G001", "Bad WR", "WR", "KC",
+            target_share=0.22, catch_rate=0.60,
+        )
+        original_ts = player.usage.target_share
+
+        roster = TeamRoster(team="KC", players=[player])
+        crosswalk = {100: "G001"}
+
+        stabilizer = TalentStabilizer(config, loader)
+        stabilizer.stabilize_roster(roster, crosswalk, [2024])
+
+        # Poor route grade + YPRR below average -> target share nudged down
+        assert player.usage.target_share < original_ts
+
+
+class TestStabilizeFumbleRate:
+    """Tests for fumble_rate stabilization via stabilize_roster."""
+
+    def test_bad_hands_grade_increases_fumble_rate(self, pff_dir, loader):
+        """RB with poor hands fumble grade gets fumble_rate nudged up."""
+        config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                fumble_rate_coefficients={"grades_hands_fumble": -0.002},
+            ),
+        )
+        bad_hands_rb = {
+            "player_id": 100,
+            "player": "Bad Hands RB",
+            "team": "KC",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 35.0,  # Bad hands grade
+        }
+        avg_rb = {
+            "player_id": 200,
+            "player": "Avg RB",
+            "team": "BUF",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 70.0,  # Average
+        }
+        good_rb = {
+            "player_id": 300,
+            "player": "Good RB",
+            "team": "NYJ",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 90.0,  # Great hands
+        }
+        _write_rushing_summary(pff_dir, 2024, [bad_hands_rb, avg_rb, good_rb])
+        _write_receiving_summary(pff_dir, 2024, [])
+        _write_passing_summary(pff_dir, 2024, [])
+
+        player = _make_player(
+            "G001", "Bad Hands RB", "RB", "KC",
+            carry_share=0.50,
+            fumble_rate=0.015,
+        )
+        original_fr = player.outcomes.fumble_rate
+
+        roster = TeamRoster(team="KC", players=[player])
+        crosswalk = {100: "G001"}
+
+        stabilizer = TalentStabilizer(config, loader)
+        stabilizer.stabilize_roster(roster, crosswalk, [2024])
+
+        # Bad hands grade below average -> fumble rate nudged up
+        assert player.outcomes.fumble_rate > original_fr
+
+    def test_good_hands_grade_decreases_fumble_rate(self, pff_dir, loader):
+        """RB with excellent hands fumble grade gets fumble_rate nudged down."""
+        config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                fumble_rate_coefficients={"grades_hands_fumble": -0.002},
+            ),
+        )
+        good_rb = {
+            "player_id": 100,
+            "player": "Good Hands RB",
+            "team": "KC",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 95.0,  # Excellent hands
+        }
+        avg_rb = {
+            "player_id": 200,
+            "player": "Avg RB",
+            "team": "BUF",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 65.0,
+        }
+        bad_rb = {
+            "player_id": 300,
+            "player": "Bad RB",
+            "team": "NYJ",
+            "position": "HB",
+            "yco_attempt": 2.5,
+            "elusive_rating": 50.0,
+            "attempts": 15,
+            "n_games": 16,
+            "grades_hands_fumble": 40.0,
+        }
+        _write_rushing_summary(pff_dir, 2024, [good_rb, avg_rb, bad_rb])
+        _write_receiving_summary(pff_dir, 2024, [])
+        _write_passing_summary(pff_dir, 2024, [])
+
+        player = _make_player(
+            "G001", "Good Hands RB", "RB", "KC",
+            carry_share=0.50,
+            fumble_rate=0.040,  # High PBP fumble rate (diverges from low prior)
+        )
+        original_fr = player.outcomes.fumble_rate
+
+        roster = TeamRoster(team="KC", players=[player])
+        crosswalk = {100: "G001"}
+
+        stabilizer = TalentStabilizer(config, loader)
+        stabilizer.stabilize_roster(roster, crosswalk, [2024])
+
+        # Good hands grade above average -> fumble rate nudged down
+        assert player.outcomes.fumble_rate < original_fr
+
+
+class TestStabilizeScrambleRate:
+    """Tests for QB scramble_rate stabilization via stabilize_roster."""
+
+    def test_pff_scramble_rate_used_as_prior(self, pff_dir, loader):
+        """QB with higher PFF scramble rate gets scramble_rate nudged up."""
+        config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                scramble_rate_enabled=True,
+            ),
+        )
+        mobile_qb = {
+            "player_id": 100,
+            "player": "Mobile QB",
+            "team": "KC",
+            "position": "QB",
+            "accuracy_percent": 75.0,
+            "scrambles": 5,     # 5 scrambles per game
+            "dropbacks": 35,    # 35 dropbacks per game -> PFF rate ~ 0.143
+            "n_games": 16,
+        }
+        avg_qb = {
+            "player_id": 200,
+            "player": "Avg QB",
+            "team": "BUF",
+            "position": "QB",
+            "accuracy_percent": 75.0,
+            "scrambles": 2,
+            "dropbacks": 35,
+            "n_games": 16,
+        }
+        _write_passing_summary(pff_dir, 2024, [mobile_qb, avg_qb])
+        _write_receiving_summary(pff_dir, 2024, [])
+        _write_rushing_summary(pff_dir, 2024, [])
+
+        player = _make_player(
+            "G001", "Mobile QB", "QB", "KC",
+            scramble_rate=0.06,  # PBP says 6%, PFF says ~14%
+            carry_share=0.15,
+        )
+        original_sr = player.usage.scramble_rate
+
+        roster = TeamRoster(team="KC", players=[player])
+        crosswalk = {100: "G001"}
+
+        stabilizer = TalentStabilizer(config, loader)
+        stabilizer.stabilize_roster(roster, crosswalk, [2024])
+
+        # PFF shows higher scramble rate -> should nudge up from 0.06
+        assert player.usage.scramble_rate > original_sr

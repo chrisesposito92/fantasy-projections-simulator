@@ -57,6 +57,14 @@ def load_pff_config(config: dict) -> PffConfig:
             "yprr": 0.5,
             "avg_depth_of_target": 0.03,
         }),
+        target_share_coefficients=talent_raw.get("target_share_coefficients", {
+            "route_grade": 0.5,
+            "yprr": 0.3,
+        }),
+        fumble_rate_coefficients=talent_raw.get("fumble_rate_coefficients", {
+            "grades_hands_fumble": -0.002,
+        }),
+        scramble_rate_enabled=talent_raw.get("scramble_rate_enabled", True),
     )
 
     return PffConfig(

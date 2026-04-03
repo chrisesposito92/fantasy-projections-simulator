@@ -80,6 +80,14 @@ class TalentConfig:
         "yprr": 0.43,
         "avg_depth_of_target": 0.41,
     })
+    target_share_coefficients: dict[str, float] = field(default_factory=lambda: {
+        "route_grade": 0.5,
+        "yprr": 0.3,
+    })
+    fumble_rate_coefficients: dict[str, float] = field(default_factory=lambda: {
+        "grades_hands_fumble": -0.002,
+    })
+    scramble_rate_enabled: bool = True
 
 
 @dataclass
