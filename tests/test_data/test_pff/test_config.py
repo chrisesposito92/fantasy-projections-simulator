@@ -82,3 +82,20 @@ class TestPffConfig:
     def test_min_games_default(self):
         cfg = load_pff_config({"pff": {}})
         assert cfg.matchup.min_games == 4
+
+
+class TestPositionSpecificStrength:
+    def test_scalar_prior_strength_still_works(self):
+        cfg = load_pff_config({"pff": {"talent": {"prior_strength": 50.0}}})
+        assert cfg.talent.prior_strength == 50.0
+
+    def test_dict_prior_strength_loaded(self):
+        cfg = load_pff_config({"pff": {"talent": {"prior_strength": {
+            "QB": 60, "WR": 40, "TE": 35, "RB": 30, "default": 40,
+        }}}})
+        assert isinstance(cfg.talent.prior_strength, dict)
+        assert cfg.talent.prior_strength["QB"] == 60
+
+    def test_team_change_factor_loaded(self):
+        cfg = load_pff_config({"pff": {"talent": {"team_change_factor": 0.5}}})
+        assert cfg.talent.team_change_factor == 0.5

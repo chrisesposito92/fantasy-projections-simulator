@@ -43,6 +43,7 @@ def load_pff_config(config: dict) -> PffConfig:
         enabled=talent_raw.get("enabled", True),
         prior_strength=talent_raw.get("prior_strength", 40.0),
         min_divergence=talent_raw.get("min_divergence", 0.03),
+        team_change_factor=talent_raw.get("team_change_factor", 1.0),
         catch_rate_coefficients=talent_raw.get("catch_rate_coefficients", {
             "drop_rate": -0.15,
             "contested_catch_rate": 0.10,

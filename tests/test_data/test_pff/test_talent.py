@@ -909,3 +909,27 @@ class TestStabilizeRosterEdgeCases:
 
         new_mean = player.outcomes.rushing_yards_dist.mean()
         assert new_mean > original_mean
+
+
+class TestPositionSpecificStrength:
+    def test_resolve_scalar_returns_same_for_all(self, pff_dir, loader):
+        config = TalentConfig(prior_strength=50.0)
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        assert stabilizer._resolve_prior_strength("QB") == 50.0
+        assert stabilizer._resolve_prior_strength("WR") == 50.0
+
+    def test_resolve_dict_returns_position_value(self, pff_dir, loader):
+        config = TalentConfig(prior_strength={"QB": 60, "WR": 40, "RB": 30, "default": 45})
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        assert stabilizer._resolve_prior_strength("QB") == 60
+        assert stabilizer._resolve_prior_strength("WR") == 40
+
+    def test_resolve_dict_falls_back_to_default(self, pff_dir, loader):
+        config = TalentConfig(prior_strength={"QB": 60, "default": 45})
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        assert stabilizer._resolve_prior_strength("TE") == 45
+
+    def test_resolve_dict_no_default_uses_40(self, pff_dir, loader):
+        config = TalentConfig(prior_strength={"QB": 60})
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        assert stabilizer._resolve_prior_strength("WR") == 40.0

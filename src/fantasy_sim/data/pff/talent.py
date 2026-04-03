@@ -185,6 +185,22 @@ class TalentStabilizer:
             adjustments, roster.team, len(players_with_pff),
         )
 
+    def _resolve_prior_strength(self, position: str) -> float:
+        """Resolve prior_strength for a given position.
+
+        Supports both scalar (float) and position-specific (dict) formats.
+
+        Args:
+            position: Player position string (e.g. "QB", "WR", "RB", "TE").
+
+        Returns:
+            Float prior strength to use for this position.
+        """
+        ps = self._config.prior_strength
+        if isinstance(ps, (int, float)):
+            return float(ps)
+        return float(ps.get(position, ps.get("default", 40.0)))
+
     def _build_lookup(self, df: pl.DataFrame) -> dict[int, dict]:
         """Build a dict keyed by PFF player_id from an aggregated DataFrame."""
         if df.is_empty():
@@ -294,9 +310,10 @@ class TalentStabilizer:
         n_obs = int(targets * games) if games > 0 else 0
 
         old_catch = player.outcomes.catch_rate
+        strength = self._resolve_prior_strength(player.position)
         new_catch = stabilize_value(
             old_catch, prior, n_obs,
-            self._config.prior_strength, self._config.min_divergence,
+            strength, self._config.min_divergence,
         )
 
         if new_catch == old_catch:
@@ -342,7 +359,8 @@ class TalentStabilizer:
         targets_per_game = pff_row.get("targets", 0) or 0
         games = pff_row.get("games", 0) or 0
         n_targets = targets_per_game * games
-        pff_confidence = 1.0 - (n_targets / (n_targets + self._config.prior_strength))
+        strength = self._resolve_prior_strength(player.position)
+        pff_confidence = 1.0 - (n_targets / (n_targets + strength))
 
         # Skip small shifts
         if abs(shift) < MIN_RECEIVING_YARDS_SHIFT:
@@ -391,7 +409,8 @@ class TalentStabilizer:
         attempts_per_game = pff_row.get("attempts", 0) or 0
         games = pff_row.get("games", 0) or 0
         n_attempts = attempts_per_game * games
-        pff_confidence = 1.0 - (n_attempts / (n_attempts + self._config.prior_strength))
+        strength = self._resolve_prior_strength(player.position)
+        pff_confidence = 1.0 - (n_attempts / (n_attempts + strength))
 
         # Skip small shifts
         if abs(shift) < MIN_RUSHING_YARDS_SHIFT:
