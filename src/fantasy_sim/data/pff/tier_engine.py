@@ -289,6 +289,65 @@ class TierEngine:
         return float(np.clip(raw, cfg.reliability_floor, cfg.reliability_cap))
 
     # ------------------------------------------------------------------
+    # Player blending
+    # ------------------------------------------------------------------
+
+    def _blend_player(
+        self,
+        player: "PlayerModel",
+        tier_dists: TierDistributions,
+        reliability: float,
+        rng: np.random.Generator,
+    ) -> None:
+        """Blend tier distributions into a PlayerModel in place.
+
+        Scalars: weighted average (reliability * PBP + tier_weight * tier).
+        Yards: concatenation with proportional resampling.
+        RZ fields, scramble_yards_dist, pass_fumble_rate: untouched.
+        """
+        tier_weight = 1.0 - reliability
+        pool_size = self._config.blend_pool_size
+
+        # --- Scalar blending ---
+        player.usage.target_share = (
+            reliability * player.usage.target_share + tier_weight * tier_dists.target_share
+        )
+        player.usage.carry_share = (
+            reliability * player.usage.carry_share + tier_weight * tier_dists.carry_share
+        )
+        player.usage.air_yards_share = (
+            reliability * player.usage.air_yards_share + tier_weight * tier_dists.air_yards_share
+        )
+        player.usage.scramble_rate = (
+            reliability * player.usage.scramble_rate + tier_weight * tier_dists.scramble_rate
+        )
+        player.outcomes.catch_rate = (
+            reliability * player.outcomes.catch_rate + tier_weight * tier_dists.catch_rate
+        )
+        player.outcomes.fumble_rate = (
+            reliability * player.outcomes.fumble_rate + tier_weight * tier_dists.fumble_rate
+        )
+
+        # --- Yards blending: proportional resampling ---
+        def _blend_yards(personal, tier_pool):
+            if tier_pool is None:
+                return personal
+            if personal is None or len(personal) == 0:
+                return tier_pool
+            n_pbp = max(1, int(reliability * pool_size))
+            n_tier = pool_size - n_pbp
+            pbp_sample = rng.choice(personal, size=n_pbp, replace=True)
+            tier_sample = rng.choice(tier_pool, size=n_tier, replace=True)
+            return np.concatenate([pbp_sample, tier_sample])
+
+        player.outcomes.receiving_yards_dist = _blend_yards(
+            player.outcomes.receiving_yards_dist, tier_dists.receiving_yards_dist,
+        )
+        player.outcomes.rushing_yards_dist = _blend_yards(
+            player.outcomes.rushing_yards_dist, tier_dists.rushing_yards_dist,
+        )
+
+    # ------------------------------------------------------------------
     # Public entry point: full distribution selection pipeline
     # ------------------------------------------------------------------
 

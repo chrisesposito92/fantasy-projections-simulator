@@ -408,3 +408,130 @@ class TestReliability:
             weekly_shares=np.array([0.05, 0.30, 0.50]),
         )
         assert result == pytest.approx(0.15)
+
+
+# ---------------------------------------------------------------------------
+# Helper: build a PlayerModel for blending tests
+# ---------------------------------------------------------------------------
+
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes
+
+
+def _make_player(
+    player_id="test_wr1", position="WR",
+    target_share=0.25, carry_share=0.0, catch_rate=0.68,
+    air_yards_share=0.20, fumble_rate=0.01, scramble_rate=0.0,
+    receiving_yards=None, rushing_yards=None,
+):
+    return PlayerModel(
+        player_id=player_id, name="Test WR", position=position, team="KC",
+        usage=PlayerUsage(
+            target_share=target_share, carry_share=carry_share,
+            air_yards_share=air_yards_share, scramble_rate=scramble_rate,
+        ),
+        outcomes=PlayerOutcomes(
+            catch_rate=catch_rate, fumble_rate=fumble_rate,
+            receiving_yards_dist=receiving_yards if receiving_yards is not None else np.array([8, 10, 12, 15, 20]),
+            rushing_yards_dist=rushing_yards,
+        ),
+        games_played=17,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestBlendPlayer
+# ---------------------------------------------------------------------------
+
+class TestBlendPlayer:
+    """Tests for TierEngine._blend_player."""
+
+    def _make_engine(self):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+        return TierEngine(config=TierConfig(enabled=True), pff_loader=None)
+
+    def _make_tier_dists(self, **overrides):
+        from fantasy_sim.data.pff.tier_engine import TierDistributions
+        defaults = dict(
+            target_share=0.14,
+            carry_share=0.0,
+            catch_rate=0.60,
+            air_yards_share=0.12,
+            fumble_rate=0.02,
+            scramble_rate=0.0,
+            receiving_yards_dist=np.full(100, 8.0),
+            rushing_yards_dist=None,
+        )
+        defaults.update(overrides)
+        return TierDistributions(**defaults)
+
+    def test_high_reliability_favors_pbp(self):
+        """reliability=0.85: blended catch_rate = 0.85*0.70 + 0.15*0.60 = 0.685."""
+        engine = self._make_engine()
+        player = _make_player(catch_rate=0.70)
+        tier_dists = self._make_tier_dists(catch_rate=0.60)
+        rng = np.random.default_rng(42)
+
+        engine._blend_player(player, tier_dists, reliability=0.85, rng=rng)
+
+        expected = 0.85 * 0.70 + 0.15 * 0.60
+        assert player.outcomes.catch_rate == pytest.approx(expected)
+
+    def test_low_reliability_favors_tier(self):
+        """reliability=0.25: blended target_share = 0.25*0.30 + 0.75*0.14 = 0.18."""
+        engine = self._make_engine()
+        player = _make_player(target_share=0.30)
+        tier_dists = self._make_tier_dists(target_share=0.14)
+        rng = np.random.default_rng(42)
+
+        engine._blend_player(player, tier_dists, reliability=0.25, rng=rng)
+
+        expected = 0.25 * 0.30 + 0.75 * 0.14
+        assert player.usage.target_share == pytest.approx(expected)
+
+    def test_yards_blended_by_concatenation(self):
+        """PBP yards all 15.0 (100 samples), tier yards all 8.0, reliability=0.60.
+
+        Result pool should be 500 samples with mean near 0.6*15 + 0.4*8 = 12.2.
+        Accept range [11.0, 13.5] to account for sampling noise.
+        """
+        engine = self._make_engine()
+        player = _make_player(receiving_yards=np.full(100, 15.0))
+        tier_dists = self._make_tier_dists(receiving_yards_dist=np.full(100, 8.0))
+        rng = np.random.default_rng(42)
+
+        engine._blend_player(player, tier_dists, reliability=0.60, rng=rng)
+
+        dist = player.outcomes.receiving_yards_dist
+        assert dist is not None
+        assert len(dist) == engine._config.blend_pool_size
+        mean = float(np.mean(dist))
+        assert 11.0 <= mean <= 13.5
+
+    def test_no_pbp_yards_uses_tier_only(self):
+        """Player with receiving_yards_dist=None → blended result comes from tier pool."""
+        engine = self._make_engine()
+        player = _make_player(receiving_yards=None)
+        # Override the default so it's explicitly None
+        player.outcomes.receiving_yards_dist = None
+        tier_dists = self._make_tier_dists(receiving_yards_dist=np.full(50, 10.0))
+        rng = np.random.default_rng(42)
+
+        engine._blend_player(player, tier_dists, reliability=0.50, rng=rng)
+
+        assert player.outcomes.receiving_yards_dist is not None
+        assert len(player.outcomes.receiving_yards_dist) > 0
+
+    def test_red_zone_fields_untouched(self):
+        """RZ fields must not be modified by _blend_player."""
+        engine = self._make_engine()
+        player = _make_player()
+        player.usage.red_zone_target_share = 0.30
+        player.outcomes.red_zone_catch_rate = 0.62
+        tier_dists = self._make_tier_dists()
+        rng = np.random.default_rng(42)
+
+        engine._blend_player(player, tier_dists, reliability=0.50, rng=rng)
+
+        assert player.usage.red_zone_target_share == pytest.approx(0.30)
+        assert player.outcomes.red_zone_catch_rate == pytest.approx(0.62)
