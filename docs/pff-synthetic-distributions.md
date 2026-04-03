@@ -133,8 +133,8 @@ After tier selection, adjust for team-specific factors:
 
 ## Data Requirements
 
-- PFF NFL data: already have 2022-2025, 21 facets
-- PFF NCAA data: already have 2022-2025 for rookie tier assignment
+- PFF NFL data: already have 2020-2025, 21 facets
+- PFF NCAA data: already have 2020-2025 for rookie tier assignment
 - nflverse PBP: already have, provides distribution pools per tier
 - nflverse rosters: already have, for team change detection
 - 3+ seasons needed for robust tier→distribution mappings (~1500 player-seasons)
