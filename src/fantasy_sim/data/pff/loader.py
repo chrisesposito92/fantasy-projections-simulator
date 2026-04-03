@@ -324,7 +324,7 @@ class PffLoader:
             return crosswalk
 
         if "college_name" not in rookies.columns:
-            logger.warning("No college_name column in roster — cannot build NCAA crosswalk")
+            logger.debug("No college_name column in roster — skipping NCAA crosswalk")
             return crosswalk
 
         # Match by name + college

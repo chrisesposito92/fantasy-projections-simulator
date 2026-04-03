@@ -8,6 +8,7 @@ Usage:
     uv run python scripts/validate_pff_signal.py --mode all --sims 50
     uv run python scripts/validate_pff_signal.py --mode matchup --seasons 2023 2024
     uv run python scripts/validate_pff_signal.py --mode talent --sims 30 --training-years 3
+    uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --label "tier-v1"
     uv run python scripts/validate_pff_signal.py --label "baseline-v1" --mode all --sims 50
     uv run python scripts/validate_pff_signal.py --show-ledger
     uv run python scripts/validate_pff_signal.py --config-override '{"talent": {"prior_strength": 30}}'
@@ -24,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
-from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig
+from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig, TierConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 # ---------------------------------------------------------------------------
@@ -212,19 +213,26 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
     """Build a PffConfig with the appropriate layers enabled.
 
     Args:
-        mode: One of "matchup", "talent", or "all".
+        mode: One of "matchup", "talent", "tier", or "all".
         overrides: Optional dict with "talent" and/or "matchup" sub-dicts
             of attribute overrides to apply via setattr.
     """
     if mode == "matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=False)
     elif mode == "talent":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=True)
+        tier_cfg = TierConfig(enabled=False)
+    elif mode == "tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
+        tier_cfg = TierConfig(enabled=False)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -242,7 +250,7 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
             if hasattr(matchup_cfg, key):
                 setattr(matchup_cfg, key, val)
 
-    return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg)
+    return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg, tier_engine=tier_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -420,13 +428,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["matchup", "talent", "all"],
+        choices=["matchup", "talent", "tier", "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
             "'matchup' = defensive matchup adjustments only, "
             "'talent' = talent stabilizer only, "
-            "'all' = both layers (default: all)."
+            "'tier' = tier distribution engine only, "
+            "'all' = matchup + talent layers (default: all)."
         ),
     )
     parser.add_argument(
@@ -509,19 +518,45 @@ def main() -> int:
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
 
-    # Run A/B pairs for each season
+    # Run A/B pairs for each season (parallel when multiple seasons)
     total_start = time.time()
     results: list[ComparisonResult] = []
-    for season in args.seasons:
-        print(f"\nBacktesting season {season}...")
-        comparison = run_backtest_pair(
-            test_season=season,
-            n_sims=args.sims,
-            scoring_config=scoring_config,
-            num_training_seasons=args.training_years,
-            pff_config=pff_config,
-        )
-        results.append(comparison)
+
+    if len(args.seasons) > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        print(f"\nRunning {len(args.seasons)} seasons in parallel...")
+        with ProcessPoolExecutor(max_workers=len(args.seasons)) as pool:
+            futures = {
+                pool.submit(
+                    run_backtest_pair,
+                    test_season=season,
+                    n_sims=args.sims,
+                    scoring_config=scoring_config,
+                    num_training_seasons=args.training_years,
+                    pff_config=pff_config,
+                ): season
+                for season in args.seasons
+            }
+            for future in as_completed(futures):
+                season = futures[future]
+                comparison = future.result()
+                results.append(comparison)
+                print(f"\n  Season {season} complete.")
+
+        # Sort by season so output is deterministic
+        results.sort(key=lambda r: r.test_season)
+    else:
+        for season in args.seasons:
+            print(f"\nBacktesting season {season}...")
+            comparison = run_backtest_pair(
+                test_season=season,
+                n_sims=args.sims,
+                scoring_config=scoring_config,
+                num_training_seasons=args.training_years,
+                pff_config=pff_config,
+            )
+            results.append(comparison)
 
     total_elapsed = time.time() - total_start
     print(f"\nTotal time: {total_elapsed:.1f}s")

@@ -73,6 +73,13 @@ class GameContextBuilder:
             self._talent_stabilizer = TalentStabilizer(self._pff_config, self._pff_loader)
             logger.info("PFF talent stabilizer enabled")
 
+        self._tier_engine = None
+
+        if self._pff_config.enabled and self._pff_config.tier_engine.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.tier_engine import TierEngine
+            self._tier_engine = TierEngine(self._pff_config.tier_engine, self._pff_loader)
+            logger.info("PFF tier engine enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -343,12 +350,32 @@ class GameContextBuilder:
             self._apply_matchup(home_dists, home_roster, home_ctx)
             self._apply_matchup(away_dists, away_roster, away_ctx)
 
-        # PFF talent stabilization
-        if self._talent_stabilizer is not None:
+        # PFF tier engine (takes precedence over talent stabilizer)
+        if self._tier_engine is not None:
             from fantasy_sim.data.player_builder import _normalize_roster_shares
             self._ensure_pff_crosswalk(training_seasons, target_season)
             roster_season = target_season or max(training_seasons)
-            nfl_roster_df = self.loader.load_rosters([roster_season])
+            all_roster_seasons = training_seasons + [roster_season]
+            nfl_roster_df = self.loader.load_rosters(all_roster_seasons)
+            # Use passed PBP or load if not provided
+            pbp_df = pbp if pbp is not None else self.loader.load_pbp(training_seasons)
+            self._tier_engine.apply_tiers(
+                home_roster, self._pff_crosswalk, training_seasons,
+                pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
+            )
+            self._tier_engine.apply_tiers(
+                away_roster, self._pff_crosswalk, training_seasons,
+                pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
+            )
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
+        elif self._talent_stabilizer is not None:
+            # Keep existing talent stabilizer block as-is
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            roster_season = target_season or max(training_seasons)
+            all_roster_seasons = training_seasons + [roster_season]
+            nfl_roster_df = self.loader.load_rosters(all_roster_seasons)
             self._talent_stabilizer.stabilize_roster(
                 home_roster, self._pff_crosswalk, training_seasons,
                 nfl_roster=nfl_roster_df, target_season=roster_season,

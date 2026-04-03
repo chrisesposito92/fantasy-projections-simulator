@@ -6,8 +6,10 @@ from fantasy_sim.data.pff.models import (
     MatchupConfig,
     NcaaPriorsConfig,
     PffConfig,
+    PositionGradeConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
+    TierConfig,
 )
 
 
@@ -83,9 +85,46 @@ def load_pff_config(config: dict) -> PffConfig:
         ),
     )
 
+    tier_raw = pff.get("tier_engine", {})
+    _default_position_grades = {
+        "QB": PositionGradeConfig(primary="grades_pass", secondary="accuracy_percent"),
+        "RB": PositionGradeConfig(primary="grades_run", secondary="elusive_rating"),
+        "WR": PositionGradeConfig(primary="grades_pass_route", secondary="yprr"),
+        "TE": PositionGradeConfig(primary="grades_pass_route", secondary="recv_grade"),
+    }
+    raw_pos_grades = tier_raw.get("position_grades", {})
+    if raw_pos_grades:
+        pos_grades: dict[str, PositionGradeConfig] = {}
+        for pos, spec in raw_pos_grades.items():
+            missing = [k for k in ("primary", "secondary") if k not in spec]
+            if missing:
+                raise ValueError(
+                    f"Invalid tier_engine.position_grades config for {pos!r}: "
+                    f"missing required keys: {', '.join(missing)}"
+                )
+            pos_grades[pos] = PositionGradeConfig(
+                primary=spec["primary"], secondary=spec["secondary"],
+            )
+        position_grades = pos_grades
+    else:
+        position_grades = _default_position_grades
+
+    tier_engine = TierConfig(
+        enabled=tier_raw.get("enabled", False),
+        cutoffs=tier_raw.get("cutoffs", [0.85, 0.65, 0.40, 0.20]),
+        position_grades=position_grades,
+        reliability_max_games=tier_raw.get("reliability_max_games", 32),
+        reliability_team_change_penalty=tier_raw.get("reliability_team_change_penalty", 0.5),
+        reliability_variance_weight=tier_raw.get("reliability_variance_weight", 0.3),
+        reliability_floor=tier_raw.get("reliability_floor", 0.15),
+        reliability_cap=tier_raw.get("reliability_cap", 0.85),
+        blend_pool_size=tier_raw.get("blend_pool_size", 500),
+    )
+
     return PffConfig(
         enabled=pff.get("enabled", False),
         data_dir=pff.get("data_dir"),
         matchup=matchup,
         talent=talent,
+        tier_engine=tier_engine,
     )

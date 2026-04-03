@@ -158,12 +158,23 @@ def _effective_scoring_name(
     return effective
 
 
-def _get_training_seasons(season: int) -> list[int]:
-    """Get training seasons from defaults.yaml."""
-    defaults = load_defaults()
-    sim_config = defaults.get("simulation", {})
-    num_years = len(sim_config.get("historical_seasons", [1, 2, 3]))
-    return list(range(season - num_years, season))
+def _get_training_seasons(season: int, training_years: int | None = None) -> list[int]:
+    """Get training seasons for a target season.
+
+    Args:
+        season: The target season to project.
+        training_years: Number of historical seasons to use. If None,
+            reads ``simulation.training_years`` from defaults.yaml
+            (falls back to len(historical_seasons) for backwards compat).
+    """
+    if training_years is None:
+        defaults = load_defaults()
+        sim_config = defaults.get("simulation", {})
+        training_years = sim_config.get(
+            "training_years",
+            len(sim_config.get("historical_seasons", [1, 2, 3])),
+        )
+    return list(range(season - training_years, season))
 
 
 def _auto_detect_season_yaml() -> str | None:
@@ -499,8 +510,9 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--scoring-config", "scoring_config_path", default=None, help="Path to custom scoring YAML")
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
+@click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff):
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff, training_years):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
@@ -509,7 +521,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
             season = meta["season"]
     effective_scoring = _effective_scoring_name(scoring, season_yaml)
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
-    training_seasons = _get_training_seasons(season)
+    training_seasons = _get_training_seasons(season, training_years)
 
     if sims is None:
         defaults = load_defaults()
@@ -623,8 +635,9 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
 @click.option("--detail", is_flag=True, help="Show floor/ceiling/stddev distributions")
 @click.option("--by-week", is_flag=True, help="Output per-week breakdowns instead of season totals")
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
+@click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week, pff):
+def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week, pff, training_years):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     meta = _read_season_yaml_metadata(season_yaml)
@@ -636,7 +649,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
             weeks = meta["weeks"]
     effective_scoring = _effective_scoring_name(scoring, season_yaml)
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
-    training_seasons = _get_training_seasons(season_year)
+    training_seasons = _get_training_seasons(season_year, training_years)
 
     if sims is None:
         defaults = load_defaults()
@@ -804,8 +817,9 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
+@click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path, pff):
+def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path, pff, training_years):
     """Simulate a single game with deep-dive projections.
 
     Example: fantasy-sim game KC BUF --week 5
@@ -834,7 +848,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         home_roster = _make_demo_roster(home_team)
         away_roster = _make_demo_roster(away_team)
     else:
-        training_seasons = _get_training_seasons(season)
+        training_seasons = _get_training_seasons(season, training_years)
         builder = _make_builder(pff)
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
             home_team=home_team, away_team=away_team, training_seasons=training_seasons,
@@ -938,8 +952,9 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
 @click.option("--override", "overrides", multiple=True, help="Player/team override: 'name.field=value'")
 @click.option("--config", "config_path", default=None, help="Path to season.yaml with overrides")
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
+@click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path, pff):
+def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path, pff, training_years):
     """Show projection for a single player.
 
     Uses fuzzy name matching. Example: fantasy-sim player "nico_collins" --week 5
@@ -967,7 +982,7 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         all_rosters = [home_roster, away_roster]
         game_configs = [(home_dists, away_dists, home_roster, away_roster, "HOME", "AWAY")]
     else:
-        training_seasons = _get_training_seasons(season)
+        training_seasons = _get_training_seasons(season, training_years)
         builder = _make_builder(pff)
         loader = DataLoader()
 
