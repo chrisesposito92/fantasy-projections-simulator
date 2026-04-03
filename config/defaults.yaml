@@ -73,6 +73,7 @@ pff:
     enabled: true
     prior_strength: 40
     min_divergence: 0.03
+    team_change_factor: 0.5
     catch_rate_coefficients:
       drop_rate: -0.15
       contested_catch_rate: 0.10

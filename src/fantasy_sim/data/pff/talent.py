@@ -201,6 +201,27 @@ class TalentStabilizer:
             return float(ps)
         return float(ps.get(position, ps.get("default", 40.0)))
 
+    def _effective_prior_strength(
+        self, position: str, current_team: str, pff_team: str,
+    ) -> float:
+        """Get effective prior_strength, accounting for position and team change.
+
+        If player changed teams, multiply strength by team_change_factor
+        (lower strength = more PFF weight for team changers).
+
+        Args:
+            position: Player position string (e.g. "QB", "WR", "RB", "TE").
+            current_team: Player's current roster team.
+            pff_team: Team recorded in PFF training data.
+
+        Returns:
+            Effective prior strength to use for Bayesian blending.
+        """
+        strength = self._resolve_prior_strength(position)
+        if current_team != pff_team and self._config.team_change_factor != 1.0:
+            strength *= self._config.team_change_factor
+        return strength
+
     def _build_lookup(self, df: pl.DataFrame) -> dict[int, dict]:
         """Build a dict keyed by PFF player_id from an aggregated DataFrame."""
         if df.is_empty():
@@ -310,7 +331,8 @@ class TalentStabilizer:
         n_obs = int(targets * games) if games > 0 else 0
 
         old_catch = player.outcomes.catch_rate
-        strength = self._resolve_prior_strength(player.position)
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
         new_catch = stabilize_value(
             old_catch, prior, n_obs,
             strength, self._config.min_divergence,
@@ -359,7 +381,8 @@ class TalentStabilizer:
         targets_per_game = pff_row.get("targets", 0) or 0
         games = pff_row.get("games", 0) or 0
         n_targets = targets_per_game * games
-        strength = self._resolve_prior_strength(player.position)
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
         pff_confidence = 1.0 - (n_targets / (n_targets + strength))
 
         # Skip small shifts
@@ -409,7 +432,8 @@ class TalentStabilizer:
         attempts_per_game = pff_row.get("attempts", 0) or 0
         games = pff_row.get("games", 0) or 0
         n_attempts = attempts_per_game * games
-        strength = self._resolve_prior_strength(player.position)
+        pff_team = pff_row.get("team", player.team)
+        strength = self._effective_prior_strength(player.position, player.team, pff_team)
         pff_confidence = 1.0 - (n_attempts / (n_attempts + strength))
 
         # Skip small shifts

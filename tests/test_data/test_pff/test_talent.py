@@ -932,4 +932,40 @@ class TestPositionSpecificStrength:
     def test_resolve_dict_no_default_uses_40(self, pff_dir, loader):
         config = TalentConfig(prior_strength={"QB": 60})
         stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+
         assert stabilizer._resolve_prior_strength("WR") == 40.0
+
+
+class TestTeamChangeBoost:
+    """Tests for _effective_prior_strength — team-change factor logic."""
+
+    def test_same_team_no_boost(self, pff_dir, loader):
+        """Player on same team as PFF data → no strength reduction."""
+        config = TalentConfig(prior_strength=40.0, team_change_factor=0.5)
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        effective = stabilizer._effective_prior_strength("WR", "KC", "KC")
+        assert effective == 40.0
+
+    def test_team_change_applies_factor(self, pff_dir, loader):
+        """Player changed teams → prior_strength multiplied by factor."""
+        config = TalentConfig(prior_strength=40.0, team_change_factor=0.5)
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        effective = stabilizer._effective_prior_strength("WR", "KC", "BUF")
+        assert effective == 20.0  # 40 * 0.5
+
+    def test_team_change_with_position_specific(self, pff_dir, loader):
+        """Team change + position-specific strength stack correctly."""
+        config = TalentConfig(
+            prior_strength={"QB": 60, "WR": 40, "default": 40},
+            team_change_factor=0.5,
+        )
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        assert stabilizer._effective_prior_strength("QB", "KC", "BUF") == 30.0
+        assert stabilizer._effective_prior_strength("WR", "KC", "BUF") == 20.0
+
+    def test_factor_1_means_no_boost(self, pff_dir, loader):
+        """Default factor=1.0 → no change even on team switch."""
+        config = TalentConfig(prior_strength=40.0, team_change_factor=1.0)
+        stabilizer = TalentStabilizer(PffConfig(enabled=True, talent=config), loader)
+        effective = stabilizer._effective_prior_strength("WR", "KC", "BUF")
+        assert effective == 40.0
