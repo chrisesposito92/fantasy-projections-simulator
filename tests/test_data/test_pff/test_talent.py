@@ -508,11 +508,11 @@ class TestStabilizeRosterCatchRate:
         _write_passing_summary(pff_dir, 2024, [qb1, qb2])
         _write_rushing_summary(pff_dir, 2024, [])
 
-        # PBP catch rate near baseline (0.64) — PFF prior will also be ~0.64
+        # PBP catch rate near baseline (0.70) — PFF prior will also be ~0.70
         # since player == avg in all dimensions
         player = _make_player(
             "G001", "Avg Player", "WR", "KC",
-            catch_rate=0.64, rz_catch_rate=0.59,
+            catch_rate=0.70, rz_catch_rate=0.64,
             target_share=0.20,
         )
         original_catch = player.outcomes.catch_rate

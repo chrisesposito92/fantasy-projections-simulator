@@ -18,7 +18,7 @@ from fantasy_sim.models.player import PlayerModel, TeamRoster
 logger = logging.getLogger(__name__)
 
 # Baseline catch rate used as the center for the PFF prior computation.
-BASELINE_CATCH_RATE = 0.64
+BASELINE_CATCH_RATE = 0.70
 
 # Minimum shift thresholds — skip adjustments smaller than these.
 MIN_RECEIVING_YARDS_SHIFT = 0.3
