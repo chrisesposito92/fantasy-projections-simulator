@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.scoring.projections import build_player_projections
@@ -56,6 +57,7 @@ class Backtester:
         num_training_seasons: int = 3,
         scoring_format: str = "ppr",
         cache_dir: Path | None = None,
+        pff_config: PffConfig | None = None,
     ):
         self.test_season = test_season
         self.n_sims = n_sims
@@ -64,7 +66,7 @@ class Backtester:
         ))
         self.scoring_format = scoring_format
         self.loader = DataLoader(cache_dir=cache_dir) if cache_dir else DataLoader()
-        self.builder = GameContextBuilder(cache_dir=self.loader.cache_dir)
+        self.builder = GameContextBuilder(cache_dir=self.loader.cache_dir, pff_config=pff_config)
 
     def run(self, scoring_config: dict) -> BacktestResult:
         """Run the full backtest for one season.

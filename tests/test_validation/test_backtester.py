@@ -73,3 +73,33 @@ class TestBacktesterRosterHandling:
         assert call_kwargs["training_seasons"] == [2021, 2022, 2023]
         assert call_kwargs["target_season"] == 2024
         assert call_kwargs["week"] == 1
+
+
+class TestBacktesterPffConfig:
+    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_pff_config_passed_to_builder(self, mock_loader_cls, mock_builder_cls):
+        from fantasy_sim.data.pff.models import PffConfig, TalentConfig
+        pff_cfg = PffConfig(enabled=True, talent=TalentConfig(enabled=True))
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = "/tmp/test"
+
+        Backtester(test_season=2024, n_sims=10, pff_config=pff_cfg)
+
+        mock_builder_cls.assert_called_once_with(
+            cache_dir="/tmp/test",
+            pff_config=pff_cfg,
+        )
+
+    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_no_pff_config_passes_none(self, mock_loader_cls, mock_builder_cls):
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = "/tmp/test"
+
+        Backtester(test_season=2024, n_sims=10)
+
+        call_kwargs = mock_builder_cls.call_args[1]
+        assert call_kwargs.get("pff_config") is None
