@@ -332,3 +332,79 @@ class TestSelectDistributions:
         pff_grades = {"grades_pass_route": 75.0, "yprr": 1.9}
         result = engine.select_distributions(pff_grades, "K")
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestReliability
+# ---------------------------------------------------------------------------
+
+class TestReliability:
+    """Tests for TierEngine.compute_reliability."""
+
+    def _make_engine(self):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+        # Use default TierConfig which has:
+        #   reliability_max_games=32, reliability_team_change_penalty=0.5
+        #   reliability_variance_weight=0.3, reliability_floor=0.15, reliability_cap=0.85
+        return TierEngine(config=TierConfig(enabled=True), pff_loader=None)
+
+    def test_established_player_capped(self):
+        """48 games, no team change, stable shares → capped at reliability_cap (0.85)."""
+        engine = self._make_engine()
+        shares = np.full(48, 0.20)
+        # sample = min(48/32, 1.0) = 1.0; team = 1.0; cv ≈ 0 → raw ≈ 1.0 → clipped to 0.85
+        result = engine.compute_reliability(
+            games_played=48,
+            changed_teams=False,
+            weekly_shares=shares,
+        )
+        assert result == pytest.approx(0.85)
+
+    def test_new_team_penalty(self):
+        """17 games, team change, stable shares → roughly 0.265 (clipped to [0.15, 0.85])."""
+        engine = self._make_engine()
+        shares = np.full(17, 0.20)
+        # sample = 17/32 ≈ 0.531; team = 0.5; cv ≈ 0 → raw ≈ 0.531 * 0.5 * 1.0 ≈ 0.265
+        result = engine.compute_reliability(
+            games_played=17,
+            changed_teams=True,
+            weekly_shares=shares,
+        )
+        assert 0.20 <= result <= 0.30
+
+    def test_rookie_floor(self):
+        """0 games, no team change, no shares → clamped to reliability_floor (0.15)."""
+        engine = self._make_engine()
+        # sample = 0/32 = 0.0; team = 1.0; no variance → raw = 0.0 → clipped to 0.15
+        result = engine.compute_reliability(
+            games_played=0,
+            changed_teams=False,
+            weekly_shares=None,
+        )
+        assert result == pytest.approx(0.15)
+
+    def test_volatile_shares_penalized(self):
+        """Volatile weekly shares produce a lower reliability than stable shares (17 games)."""
+        engine = self._make_engine()
+        stable = np.full(17, 0.20)
+        volatile = np.tile([0.05, 0.30, 0.10, 0.35], 5)[:17]  # alternating high/low
+        result_stable = engine.compute_reliability(
+            games_played=17, changed_teams=False, weekly_shares=stable
+        )
+        result_volatile = engine.compute_reliability(
+            games_played=17, changed_teams=False, weekly_shares=volatile
+        )
+        assert result_volatile < result_stable
+
+    def test_too_few_weeks_no_variance_penalty(self):
+        """3 games with wild shares → variance penalty skipped; raw clamped to floor 0.15."""
+        engine = self._make_engine()
+        # Only 3 values → len < 4 → variance_penalty = 0.0
+        # sample = 3/32 ≈ 0.094; team = 1.0; raw ≈ 0.094 → clipped to 0.15
+        result = engine.compute_reliability(
+            games_played=3,
+            changed_teams=False,
+            weekly_shares=np.array([0.05, 0.30, 0.50]),
+        )
+        assert result == pytest.approx(0.15)

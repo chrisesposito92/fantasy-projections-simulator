@@ -251,6 +251,44 @@ class TierEngine:
         )
 
     # ------------------------------------------------------------------
+    # Reliability scoring
+    # ------------------------------------------------------------------
+
+    def compute_reliability(
+        self,
+        games_played: int,
+        changed_teams: bool,
+        weekly_shares: "np.ndarray | None",
+    ) -> float:
+        """Compute PBP reliability score.
+
+        Returns PBP weight in [floor, cap]. Tier weight = 1 - reliability.
+
+        Factors:
+            1. Sample size: games_played / max_games (capped at 1.0)
+            2. Team change: penalty multiplier if player changed teams
+            3. Share variance: coefficient of variation of weekly shares (needs >= 4 weeks)
+        """
+        cfg = self._config
+
+        # Factor 1: sample size
+        sample = min(games_played / cfg.reliability_max_games, 1.0)
+
+        # Factor 2: team change
+        team = cfg.reliability_team_change_penalty if changed_teams else 1.0
+
+        # Factor 3: share variance (needs >= 4 weeks)
+        variance_penalty = 0.0
+        if weekly_shares is not None and len(weekly_shares) >= 4:
+            mean = np.mean(weekly_shares)
+            if mean > 0.01:
+                cv = float(np.std(weekly_shares) / mean)
+                variance_penalty = min(cv, 1.0)
+
+        raw = sample * team * (1.0 - variance_penalty * cfg.reliability_variance_weight)
+        return float(np.clip(raw, cfg.reliability_floor, cfg.reliability_cap))
+
+    # ------------------------------------------------------------------
     # Public entry point: full distribution selection pipeline
     # ------------------------------------------------------------------
 
