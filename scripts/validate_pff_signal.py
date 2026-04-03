@@ -13,9 +13,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.game_context import GameContextBuilder
@@ -31,10 +34,140 @@ MAE_MAX_REGRESSION = 0.3           # Weekly MAE may not increase more than this
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
+LEDGER_PATH = Path(__file__).parent.parent / "results" / "pff_ab_ledger.json"
+
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
+@dataclass
+class SeasonResult:
+    """One season's A/B comparison stored in the ledger."""
+    test_season: int
+    off_weekly_mae: float
+    off_season_mae: float
+    off_rank_corr: dict[str, float]
+    off_calibration: float
+    on_weekly_mae: float
+    on_season_mae: float
+    on_rank_corr: dict[str, float]
+    on_calibration: float
+
+    @property
+    def rank_corr_delta(self) -> float:
+        """Average rank correlation improvement (on - off) across QB/RB/WR/TE."""
+        deltas = [
+            self.on_rank_corr.get(pos, 0.0) - self.off_rank_corr.get(pos, 0.0)
+            for pos in POSITIONS
+        ]
+        return sum(deltas) / len(deltas) if deltas else 0.0
+
+    @property
+    def weekly_mae_delta(self) -> float:
+        """Weekly MAE change (on - off). Negative = better."""
+        return self.on_weekly_mae - self.off_weekly_mae
+
+    @property
+    def season_mae_delta(self) -> float:
+        """Season MAE change (on - off). Negative = better."""
+        return self.on_season_mae - self.off_season_mae
+
+    @property
+    def calibration_delta(self) -> float:
+        """Boom/bust calibration change (on - off). Negative = better."""
+        return self.on_calibration - self.off_calibration
+
+
+@dataclass
+class LedgerEntry:
+    """One A/B test run stored in the ledger."""
+    label: str
+    timestamp: str
+    mode: str
+    sims: int
+    test_seasons: list[int]
+    training_years: int
+    pff_config: dict
+    season_results: list[SeasonResult]
+    verdict: str
+
+    @property
+    def avg_rank_corr_delta(self) -> float:
+        if not self.season_results:
+            return 0.0
+        return sum(r.rank_corr_delta for r in self.season_results) / len(self.season_results)
+
+    @property
+    def avg_weekly_mae_delta(self) -> float:
+        if not self.season_results:
+            return 0.0
+        return sum(r.weekly_mae_delta for r in self.season_results) / len(self.season_results)
+
+    @property
+    def avg_season_mae_delta(self) -> float:
+        if not self.season_results:
+            return 0.0
+        return sum(r.season_mae_delta for r in self.season_results) / len(self.season_results)
+
+    @property
+    def avg_calibration_delta(self) -> float:
+        if not self.season_results:
+            return 0.0
+        return sum(r.calibration_delta for r in self.season_results) / len(self.season_results)
+
+
+# ---------------------------------------------------------------------------
+# Ledger I/O
+# ---------------------------------------------------------------------------
+
+def load_ledger(path: Path) -> list[LedgerEntry]:
+    """Load ledger entries from JSON. Returns empty list if file doesn't exist."""
+    if not Path(path).exists():
+        return []
+    with open(path) as f:
+        raw = json.load(f)
+    entries = []
+    for item in raw:
+        season_results = [SeasonResult(**sr) for sr in item.get("season_results", [])]
+        item = dict(item)
+        item["season_results"] = season_results
+        entries.append(LedgerEntry(**item))
+    return entries
+
+
+def save_ledger(path: Path, entries: list[LedgerEntry]) -> None:
+    """Write entries to JSON. Creates parent directories if needed."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump([asdict(e) for e in entries], f, indent=2)
+
+
+def format_progression_table(entries: list[LedgerEntry]) -> str:
+    """Return an ASCII table of ledger entries with key metrics."""
+    if not entries:
+        return "No entries in ledger."
+
+    header = (
+        f"{'#':>3}  {'Label':<30}  {'rank_corr':>9}  {'wk_mae':>7}  "
+        f"{'szn_mae':>8}  {'calibr':>8}  Verdict"
+    )
+    sep = "-" * len(header)
+    lines = [sep, header, sep]
+
+    for i, e in enumerate(entries, start=1):
+        row = (
+            f"{i:>3}  {e.label:<30}  {e.avg_rank_corr_delta:>+.4f}    "
+            f"{e.avg_weekly_mae_delta:>+.3f}  "
+            f"{e.avg_season_mae_delta:>+.3f}    "
+            f"{e.avg_calibration_delta:>+.4f}  {e.verdict}"
+        )
+        lines.append(row)
+
+    lines.append(sep)
+    return "\n".join(lines)
+
 
 @dataclass
 class ComparisonResult:
