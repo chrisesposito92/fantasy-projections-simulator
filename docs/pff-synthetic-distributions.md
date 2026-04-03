@@ -1,138 +1,174 @@
-# PFF Synthetic Distribution Generation
-
-## Concept
-
-Use PFF talent grades to generate full PBP-like statistical distributions for players with thin or misleading play-by-play samples, rather than just nudging the mean via the talent stabilizer.
+# PFF Talent-Tier Distribution Engine
 
 ## Problem
 
-The current talent stabilizer adjusts point estimates (catch_rate, yards distribution means) but the underlying distributions still come from PBP data. This breaks down for:
+The current pipeline builds player models from PBP history: "Pollard had 280 carries for 1000 yards last year, so project similar." This produces obviously wrong rankings because **PBP volume reflects role and opportunity, not talent:**
 
-- **Rookies**: 0-4 NFL games → archetype distributions (generic)
-- **Traded players**: PBP distributions from old scheme/QB/OL
-- **Role changers**: WR3 promoted to WR1 mid-season → thin high-usage data
-- **Injury returners**: Pre-injury PBP may not reflect post-injury talent
+- Tony Pollard → RB5 (got volume because Tennessee had nobody else)
+- Jerry Jeudy → WR2 (high targets from a bad QB throwing short)
+- Raheem Mostert → above Jahmyr Gibbs (one elite scheme-dependent season vs a more talented player in a timeshare)
+- Rachaad White → RB7 (volume-inflated by game script)
+- Jakobi Meyers → WR3 (target hog on a bad offense)
 
-For these players, we're simulating from distributions that don't represent their current situation. Nudging the mean helps, but the shape (variance, skew, tails) stays wrong.
+The talent stabilizer (mean-nudging) can't fix this — shifting a catch rate by +0.008 doesn't change a player's projected tier. The distributions themselves (shape, variance, volume assumptions) are still built from misleading PBP data.
 
-## Proposed Approach
+## Root Cause
 
-Build a mapping from PFF grade profiles to full statistical distributions:
+Two separate issues compound:
 
-### Phase 1: Grade-to-Distribution Templates
+1. **Efficiency distributions** (yards/catch, yards/carry, catch_rate): Built from personal PBP history. A scheme-dependent player's PBP efficiency looks elite even when PFF talent grades say average. Current stabilizer nudges these means but doesn't change the distribution shape.
 
-For each position, cluster NFL players by PFF grade profile and extract their PBP distributions:
+2. **Usage rates** (carry_share, target_share): Taken directly from PBP. This is the bigger problem. A player who got 30% carry share because his team had no alternatives projects 30% again, even when PFF grades say he's not good enough to hold that role. The stabilizer currently touches target_share via route_grade, but the effect is too small.
 
+## Proposed Architecture: Talent-Tier Distribution Selection
+
+Instead of building distributions from a player's OWN PBP history and nudging, use PFF talent grades to SELECT which tier of distributions to draw from.
+
+### Current flow (PBP-first)
 ```
-PFF Profile Cluster → Distribution Template
-─────────────────────────────────────────────
-Elite WR (route_grade > 85, yprr > 2.0)
-  → receiving_yards_dist from top-10 WR PBP outcomes
-  → catch_rate from top-10 WR historical range
-  → target_share range based on snap% + route_grade
-
-Average WR (route_grade 60-75, yprr 1.2-1.8)
-  → receiving_yards_dist from WR15-30 PBP outcomes
-  → catch_rate from that tier
-  ...
+Player's PBP history → personal distributions → nudge means with PFF → simulate
 ```
 
-This gives us empirical distributions for each talent tier, preserving the shape/variance/tails that matter for simulation.
+### Proposed flow (PFF-informed selection)
+```
+Player's PFF grades → identify talent tier → select tier distributions from PBP pool
+                                           → weight with personal PBP where reliable
+                                           → layer team context → simulate
+```
 
-### Phase 2: Continuous Interpolation
+The key difference: **PFF grades drive distribution SELECTION, PBP provides the distribution SHAPE for each tier.**
 
-Instead of discrete clusters, interpolate between distribution templates using PFF grades as continuous features:
+## How It Works
+
+### Step 1: Build Talent-Tier Distribution Pool
+
+For each position, use 3+ seasons of PFF + PBP data to build a mapping:
+
+```
+PFF Grade Profile → PBP Distribution Pool
+──────────────────────────────────────────
+
+RB Tier 1 (PFF rush_grade > 80, elusive_rating top 15%)
+  carry_share: 0.55-0.75 (bellcow role)
+  rushing_yards_dist: sampled from tier-1 RB PBP outcomes
+  catch_rate: from tier-1 RB receiving
+  Expected finish: RB1-RB8
+
+RB Tier 3 (PFF rush_grade 60-70, elusive_rating 30th-60th pct)
+  carry_share: 0.30-0.50 (committee or weak starter)
+  rushing_yards_dist: sampled from tier-3 RB PBP outcomes
+  catch_rate: from tier-3 RB receiving
+  Expected finish: RB15-RB25
+
+WR Tier 1 (route_grade > 85, yprr > 2.0)
+  target_share: 0.22-0.30 (alpha WR)
+  receiving_yards_dist: from tier-1 WR PBP outcomes
+  Expected finish: WR1-WR10
+```
+
+Each tier's distributions come from ACTUAL PBP outcomes of players at that talent level — so the shape, variance, and tails are empirically grounded.
+
+### Step 2: Player-Specific Tier Assignment
+
+For each player, compute their talent tier from PFF grades:
 
 ```python
-def generate_distribution(pff_grades, position):
-    # Find k-nearest players by PFF grade profile
+def assign_talent_tier(player_pff_grades: dict, position: str) -> TalentTier:
+    # Option A: Discrete tiers (simpler)
+    # Map PFF composite to tier 1-5 based on percentile cutoffs
+
+    # Option B: Continuous (better)
+    # Find k-nearest players in PFF grade space
     # Weight their PBP distributions by grade similarity
-    # Return blended distribution
+    # Returns a blended distribution unique to this player
 ```
 
-This produces a unique distribution for each player, scaled by their specific PFF profile.
+### Step 3: Weight with Personal PBP
 
-### Phase 3: Context-Aware Generation
+Don't throw away personal PBP entirely — blend it with the tier distribution based on how RELIABLE the personal data is:
 
-Layer team context onto the PFF-derived distributions:
+```python
+def compute_pbp_reliability(player) -> float:
+    """How much to trust this player's personal PBP data.
 
-- Team pass rate → scales target volume
-- OL grade → shifts rushing yards distribution
-- QB accuracy → scales catch rate
-- Offensive scheme (from PFF formation data) → adjusts route tree and usage patterns
+    High reliability: same team, same role, 2+ seasons, stable coaching
+    Low reliability: new team, role change, 1 season, coaching change
+    """
+    factors = {
+        'same_team': 1.0 if not changed_teams else 0.3,
+        'sample_size': min(games_played / 32, 1.0),  # 2 full seasons = full trust
+        'role_stability': target_share_variance_across_weeks,
+        'scheme_stability': same_oc_flag,
+    }
+    return weighted_average(factors)
 
-## Use Cases
-
-### Weekly Stat Line Projections
-
-With proper distributions, the simulator produces full projected stat lines per week:
-
-```
-Nico Collins (Week 5 vs IND)
-  Targets: 8.2 (6-11)     Receptions: 5.8 (4-8)
-  Rec Yards: 78.4 (42-128) Rec TDs: 0.6 (0-2)
-  Carries: 0.3 (0-1)       Rush Yards: 2.1 (0-8)
-  PPR: 18.6 (9.2-31.4)     Boom%: 22%  Bust%: 15%
-```
-
-Every stat is a distribution, not a point estimate. This enables:
-
-### Prop Bet Coverage
-
-Full stat distributions map directly to prop bet lines:
-
-```
-Nico Collins Receiving Yards: O/U 72.5
-  Simulator: P(over) = 56.2%
-  Edge: +6.2% (line implies 50%)
-
-Nico Collins Receptions: O/U 5.5
-  Simulator: P(over) = 52.8%
-
-Nico Collins Anytime TD: Yes -110
-  Simulator: P(TD) = 48.3%
-  Implied: 52.4%
-  Edge: -4.1% (no bet)
+# Final distribution
+reliability = compute_pbp_reliability(player)
+final_dist = reliability * personal_pbp_dist + (1 - reliability) * tier_dist
 ```
 
-The simulator already produces per-player box scores with all these stats — prop coverage is output formatting, not a modeling change.
+This means:
+- **Davante Adams (stable, 3 years)**: 85% personal PBP, 15% tier distribution
+- **Tony Pollard (new team, scheme change)**: 30% personal PBP, 70% tier distribution
+- **Rookie (0 NFL games)**: 0% personal PBP, 100% tier distribution (from NCAA priors)
 
-### Required Output Changes
+### Step 4: Layer Team Context
 
-The `PlayerBoxScore` already tracks all relevant stats. To support props:
-1. Store per-sim stat lines (not just means) — `build_detailed_projections()` already does percentiles
-2. Add prop-line comparison: `P(stat > line)` for any stat/threshold
-3. Weekly output format with full stat distributions
+After tier selection, adjust for team-specific factors:
+
+- **Team pass rate** → scales target volume (an elite WR on a run-heavy team gets fewer targets than one on a pass-heavy team)
+- **OL grade** → shifts rushing yards distribution (a tier-2 RB behind the best OL plays like a tier-1)
+- **QB quality** → scales catch rate, air yards, TD rate
+- **Coaching scheme** → PFF formation/tendency data adjusts usage patterns
+
+## What This Fixes
+
+| Problem | Current | With Tier Engine |
+|---------|---------|-----------------|
+| Pollard RB5 | PBP says 280 carries | PFF says tier-3 talent → RB15-20 |
+| Jeudy WR2 | PBP says high targets | PFF says average route grade → WR20-30 |
+| Mostert > Gibbs | PBP says elite 2023 | PFF says scheme-dependent vs elite talent |
+| Volume-inflated players | Repeat last year's volume | Project volume for their talent tier |
+| Aging players | PBP still shows peak | PFF grades decline before volume does |
 
 ## Data Requirements
 
-- PFF NFL data (already have 2022-2025, 21 facets)
-- PFF NCAA data (already have 2022-2025 for rookie profiles)
-- nflverse PBP (already have, used for distribution extraction)
-- Enough seasons to build robust grade→distribution mappings (3+ seasons = ~1500 player-seasons)
+- PFF NFL data: already have 2022-2025, 21 facets
+- PFF NCAA data: already have 2022-2025 for rookie tier assignment
+- nflverse PBP: already have, provides distribution pools per tier
+- nflverse rosters: already have, for team change detection
+- 3+ seasons needed for robust tier→distribution mappings (~1500 player-seasons)
 
 ## Implementation Order
 
-1. **Grade-to-distribution templates** — cluster players by PFF profile, extract per-cluster distributions
-2. **Integration point** — in `player_builder.py`, replace archetype blending for thin-sample players with PFF-derived distributions
-3. **Continuous interpolation** — kNN-based blending for smooth grade→distribution mapping
-4. **Prop bet output** — format simulator output for prop line comparison
-5. **Context-aware generation** — layer team/scheme effects onto PFF-derived distributions
+1. **Tier definition + clustering** — Define talent tiers per position from PFF grade profiles. Start with 4-5 tiers per position using percentile cutoffs on composite PFF grades. Validate tiers against actual fantasy finishes.
+
+2. **Distribution pool extraction** — For each tier, extract PBP distributions (carry_share, target_share, yards dists, catch_rate, TD rate) from all players who graded into that tier. These become the tier templates.
+
+3. **PBP reliability scoring** — Compute per-player reliability (team stability, sample size, role stability). This determines the blend weight between personal PBP and tier distributions.
+
+4. **Integration into player_builder.py** — Replace current `_assemble_models()` flow: instead of personal PBP → player model, use PFF tier → tier distribution → blend with personal PBP → player model.
+
+5. **Team context layer** — Adjust tier distributions for team-specific factors (pass rate, OL, QB quality). This replaces and supersedes the current schedule-adjusted talent approach.
+
+6. **Continuous interpolation** — Graduate from discrete tiers to kNN-based continuous blending for smoother, player-specific distributions.
 
 ## Relationship to Current Architecture
 
-This builds on top of the existing talent stabilizer, not replacing it:
+This **replaces** the talent stabilizer for efficiency and usage parameters, but the sim engine stays exactly the same:
 
-- **Current flow**: PBP distributions → talent stabilizer nudges means → simulation
-- **New flow**: PFF grades → generate full distributions (for thin-sample players) → talent stabilizer fine-tunes → simulation
-- **Thick-sample players** (established starters with 2+ seasons of PBP): current flow unchanged
-- **Thin-sample players** (rookies, traded, role changes): PFF-generated distributions replace archetype/thin-PBP distributions
+- `player_builder.py` changes: distribution source shifts from personal-PBP-only to PFF-tier-blended
+- `talent.py` simplifies: no more mean-nudging (the tier engine handles it at the distribution level)
+- `game_sim.py`, `play_resolver.py`, `monte_carlo.py`: **unchanged** — they still sample from distributions, just better ones
+- `game_context.py`: wires the tier engine into the pipeline where the talent stabilizer currently sits
 
-The talent stabilizer still runs on PFF-generated distributions — it validates that the generated distribution aligns with whatever PBP data IS available.
+The matchup engine (parked) could eventually feed into Step 4 as per-game team context adjustments.
 
 ## Open Questions
 
-- How many PFF profile clusters per position? Start with 3-5 tiers, expand if data supports it
-- Should distributions be generated per-season or per-career? Per-season captures development
-- How to handle PFF grade inconsistencies across seasons (grading calibration drift)?
-- Minimum PFF sample size to trust the grade-to-distribution mapping?
+- How many tiers per position? Start with 4-5, validate against historical fantasy finishes
+- Which PFF grades matter most per position? Need feature importance analysis
+- How to handle multi-position players (RB/WR flex types)?
+- How to handle mid-season role changes (monitor weekly PFF grades)?
+- Should tiers be re-computed weekly or locked at season start?
+- How to validate: compare tier-engine rankings vs current rankings vs actual finishes for 2023-2024 seasons
