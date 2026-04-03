@@ -752,18 +752,27 @@ class TierEngine:
         pool_size = self._config.blend_pool_size
 
         # --- Scalar blending ---
+        # QB carry_share and scramble_rate are carefully calibrated by
+        # player_builder (designed runs separated from scrambles, pocket
+        # passers excluded via MIN_QB_CARRY_SHARE).  The tier pool's PBP
+        # aggregation doesn't replicate this separation, and scramble_rate
+        # in pools is zero.  Skip these for QBs to avoid undoing that work.
+        is_qb = player.position == "QB"
+
         player.usage.target_share = (
             reliability * player.usage.target_share + tier_weight * tier_dists.target_share
         )
-        player.usage.carry_share = (
-            reliability * player.usage.carry_share + tier_weight * tier_dists.carry_share
-        )
+        if not is_qb:
+            player.usage.carry_share = (
+                reliability * player.usage.carry_share + tier_weight * tier_dists.carry_share
+            )
         player.usage.air_yards_share = (
             reliability * player.usage.air_yards_share + tier_weight * tier_dists.air_yards_share
         )
-        player.usage.scramble_rate = (
-            reliability * player.usage.scramble_rate + tier_weight * tier_dists.scramble_rate
-        )
+        if not is_qb:
+            player.usage.scramble_rate = (
+                reliability * player.usage.scramble_rate + tier_weight * tier_dists.scramble_rate
+            )
         player.outcomes.catch_rate = (
             reliability * player.outcomes.catch_rate + tier_weight * tier_dists.catch_rate
         )
