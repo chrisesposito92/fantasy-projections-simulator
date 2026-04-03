@@ -53,6 +53,34 @@ uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --training-ye
 --config-override '{"tier_engine": {"blend_pool_size": 800}}'
 ```
 
+### E. Additional Position Grades (3+ per position)
+
+**Current:** 2 grades per position (primary → tier assignment, secondary → within-tier interpolation).
+**Opportunity:** The design supports N grades per position, but `PositionGradeConfig` currently only has `primary` and `secondary` fields. Adding a tertiary grade would require extending the dataclass and interpolation logic — small code change, not just config.
+
+**Candidates for a third grade:**
+
+| Position | Current (primary, secondary) | Tertiary candidate | What it adds |
+|----------|-----------------------------|--------------------|--------------|
+| RB | grades_run, elusive_rating | yards_after_contact | Separates power backs from finesse backs within a tier |
+| WR | grades_pass_route, yprr | avg_depth_of_target | Separates deep threats from slot receivers (addresses the WR archetype gap) |
+| TE | grades_pass_route, recv_grade | yprr | Adds per-route production to the route quality + receiving grade combo |
+| QB | grades_pass, accuracy_percent | (skip — QBs only blend fumble_rate) | N/A |
+
+**Implementation approach:** Extend `PositionGradeConfig` with an optional `tertiary: str | None` field. If present, use it as a second interpolation dimension within the tier (2D interpolation on secondary × tertiary). Or simpler: average the secondary and tertiary percentiles into one composite within-tier percentile.
+
+**Note:** This is a stepping stone toward the kNN approach (future v3), which naturally handles N dimensions without discrete interpolation logic.
+
+### F. Position-Specific Reliability
+
+**Current:** Same reliability formula for all positions.
+**Opportunity:** QBs are more stable year-to-year (larger PBP samples, less role volatility). RBs are the most volatile (committee changes, injuries). Position-specific reliability params could improve per-position accuracy.
+**Try:** Lower floor for QBs (0.05 — minimal tier influence), higher floor for RBs (0.20 — more tier influence):
+```bash
+# Would require a code change to support per-position reliability config
+# For now, can approximate by adjusting max_games (higher = less tier influence)
+```
+
 ## Sweep Strategy
 
 Run each override independently against the baseline (tier-v2-qbfix-4yr) to isolate effects. Use the same params:
@@ -60,7 +88,7 @@ Run each override independently against the baseline (tier-v2-qbfix-4yr) to isol
 --mode tier --sims 50 --training-years 4 --seasons 2023 2024 2025
 ```
 
-Priority order: B (reliability) > A (WR secondary) > C (tier count) > D (pool size)
+Priority order: B (reliability) > A (WR secondary) > E (additional grades) > C (tier count) > F (position-specific reliability) > D (pool size)
 
 Reliability tuning has the broadest impact across all positions. WR secondary grade is targeted at the one position with inconsistent results. Tier count and pool size are refinements.
 
