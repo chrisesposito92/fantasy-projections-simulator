@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fantasy_sim.data.pff.models import (
     MatchupConfig,
+    NcaaPriorsConfig,
     PffConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
@@ -71,6 +72,13 @@ def load_pff_config(config: dict) -> PffConfig:
                 k: v
                 for k, v in talent_raw.get("schedule_adjustment", {}).items()
                 if k in ("enabled", "weight", "catch_rate_sensitivity", "rush_yards_sensitivity")
+            }
+        ),
+        ncaa_priors=NcaaPriorsConfig(
+            **{
+                k: v
+                for k, v in talent_raw.get("ncaa_priors", {}).items()
+                if k in ("enabled", "draft_weight", "ncaa_data_dir")
             }
         ),
     )

@@ -95,3 +95,7 @@ pff:
       weight: 0.3
       catch_rate_sensitivity: 0.005
       rush_yards_sensitivity: 0.3
+    ncaa_priors:
+      enabled: true
+      draft_weight: 0.6
+      ncaa_data_dir: null

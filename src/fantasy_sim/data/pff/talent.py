@@ -8,6 +8,7 @@ PFF-implied talent level; large-sample players mostly keep their PBP stats.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import polars as pl
 
@@ -34,6 +35,11 @@ BASELINE_FUMBLE_RATE = 0.015
 CATCH_RATE_PRIOR_MIN = 0.30
 CATCH_RATE_PRIOR_MAX = 0.90
 
+# Draft round multipliers — scale how much college data influences the prior.
+DRAFT_ROUND_MULTIPLIERS: dict[int, float] = {
+    1: 1.0, 2: 0.85, 3: 0.70, 4: 0.55, 5: 0.40, 6: 0.30, 7: 0.20,
+}
+
 
 def compute_schedule_adjustment(
     opponent_avg_grade: float,
@@ -56,6 +62,47 @@ def compute_schedule_adjustment(
         Adjustment value to add to the raw PBP stat before Bayesian blending.
     """
     return weight * (opponent_avg_grade - league_avg_grade) * sensitivity
+
+
+def compute_rookie_catch_rate_prior(
+    route_grade: float,
+    contested_catch_rate: float,
+    draft_round: int,
+    draft_weight: float,
+    league_avg_route_grade: float,
+    league_avg_contested: float,
+) -> float:
+    """Compute catch_rate prior for a rookie from college PFF grades.
+
+    The prior is centered on :data:`BASELINE_CATCH_RATE` and shifted by
+    how far the player's college route grade and contested catch rate
+    deviate from the NCAA league averages.  The shift is scaled by
+    *draft_weight* and a draft-round multiplier (round 1 = full weight,
+    round 7 = 20% weight, UDFA = 15%).
+
+    Args:
+        route_grade: Player's NCAA PFF route-running grade.
+        contested_catch_rate: Player's NCAA contested-catch percentage.
+        draft_round: NFL draft round (1-7, or >7 for UDFA).
+        draft_weight: Global scaling weight from config.
+        league_avg_route_grade: NCAA league-average route grade.
+        league_avg_contested: NCAA league-average contested catch rate.
+
+    Returns:
+        Catch-rate prior clamped to
+        [CATCH_RATE_PRIOR_MIN, CATCH_RATE_PRIOR_MAX].
+    """
+    round_mult = DRAFT_ROUND_MULTIPLIERS.get(draft_round, 0.15)
+    effective_weight = draft_weight * round_mult
+
+    rg_delta = (route_grade - league_avg_route_grade) * 0.002
+    cc_delta = (contested_catch_rate - league_avg_contested) * 0.003
+
+    raw_adjustment = rg_delta + cc_delta
+    adjustment = raw_adjustment * effective_weight
+
+    prior = BASELINE_CATCH_RATE + adjustment
+    return max(CATCH_RATE_PRIOR_MIN, min(CATCH_RATE_PRIOR_MAX, prior))
 
 
 def stabilize_value(
@@ -121,6 +168,8 @@ class TalentStabilizer:
         roster: TeamRoster,
         crosswalk: dict[int, str],
         training_seasons: list[int],
+        nfl_roster: pl.DataFrame | None = None,
+        target_season: int | None = None,
     ) -> None:
         """Apply PFF talent adjustments to a roster in-place.
 
@@ -128,6 +177,11 @@ class TalentStabilizer:
             roster: TeamRoster to mutate.
             crosswalk: PFF player_id (int) -> nflverse player_id (str).
             training_seasons: Seasons to load PFF data from.
+            nfl_roster: Optional nflverse roster DataFrame (needed for
+                NCAA crosswalk matching).
+            target_season: Optional target NFL season (needed for NCAA
+                crosswalk — rookies are identified as players entering
+                the league in this season).
         """
         if not self._config.enabled:
             return
@@ -260,6 +314,25 @@ class TalentStabilizer:
                 )
                 if adj:
                     adjustments += 1
+
+        # --- NCAA rookie priors ---
+        if self._config.ncaa_priors.enabled:
+            ncaa_dir = (
+                Path(self._config.ncaa_priors.ncaa_data_dir)
+                if self._config.ncaa_priors.ncaa_data_dir
+                else None
+            )
+            # Rookies: players NOT in PFF NFL crosswalk with low games_played
+            rookies = [
+                p for p in roster.players
+                if p.player_id not in reverse_cw and p.games_played <= 4
+            ]
+            if rookies and nfl_roster is not None and target_season is not None:
+                ncaa_adj = self._apply_ncaa_priors(
+                    rookies, training_seasons, ncaa_dir,
+                    nfl_roster, target_season,
+                )
+                adjustments += ncaa_adj
 
         logger.info(
             "TalentStabilizer: %d adjustments applied to %s roster (%d players with PFF)",
@@ -735,3 +808,123 @@ class TalentStabilizer:
             player.name, player.player_id, old_sr, new_sr, prior, n_obs,
         )
         return True
+
+    def _apply_ncaa_priors(
+        self,
+        rookies: list[PlayerModel],
+        training_seasons: list[int],
+        ncaa_dir: Path | None,
+        nfl_roster: pl.DataFrame,
+        target_season: int,
+    ) -> int:
+        """Apply NCAA-derived priors to rookie players.
+
+        Loads the most recent training season's NCAA receiving data,
+        builds a crosswalk to NFL player IDs, and computes catch-rate
+        priors for WR/TE rookies based on college route grades and
+        contested catch rates.
+
+        Args:
+            rookies: List of rookie PlayerModels to consider.
+            training_seasons: PBP training seasons (NCAA data is loaded
+                from the most recent one).
+            ncaa_dir: Override NCAA data directory, or ``None`` for
+                default.
+            nfl_roster: nflverse roster DataFrame for crosswalk matching.
+            target_season: NFL season year for rookie identification.
+
+        Returns:
+            Count of adjustments applied.
+        """
+        # Load NCAA receiving data from most recent training season
+        ncaa_seasons = [max(training_seasons)]
+        ncaa_recv = self._loader.load_ncaa_facet(
+            "receiving_summary", ncaa_seasons, ncaa_dir=ncaa_dir,
+        )
+        if ncaa_recv.is_empty():
+            return 0
+
+        # Build NCAA crosswalk
+        ncaa_data_unique = ncaa_recv.select(
+            ["player_id", "player", "team"]
+        ).unique(subset=["player_id"])
+
+        ncaa_cw = self._loader.build_ncaa_crosswalk(
+            ncaa_data_unique, nfl_roster, target_season,
+        )
+        if not ncaa_cw:
+            return 0
+
+        # Reverse: nfl_id -> ncaa_pff_id
+        reverse_ncaa: dict[str, int] = {v: k for k, v in ncaa_cw.items()}
+
+        # NCAA league averages
+        ncaa_avgs = self._compute_league_averages(
+            ncaa_recv, ["grades_pass_route", "contested_catch_rate"],
+        )
+
+        # Build lookup for NCAA data (aggregate to per-player summaries).
+        # Cannot use aggregate_player_stats() here because it calls
+        # load_facet() which normalises NFL team abbreviations — NCAA
+        # teams are college names and should not be transformed.
+        ncaa_lookup: dict[int, dict] = {}
+        if not ncaa_recv.is_empty():
+            # Simple per-player mean of numeric columns
+            meta = {"player_id", "player", "team", "position", "season", "week", "game_id"}
+            num_cols = [
+                c for c in ncaa_recv.columns
+                if c not in meta and ncaa_recv[c].dtype in (pl.Float64, pl.Int64, pl.Float32, pl.Int32)
+            ]
+            if num_cols:
+                agg_exprs = [pl.col(c).mean() for c in num_cols]
+                agg_exprs.extend([
+                    pl.col("player").first(),
+                    pl.col("team").first(),
+                    pl.len().alias("games"),
+                ])
+                ncaa_summary = ncaa_recv.group_by("player_id").agg(agg_exprs)
+                ncaa_lookup = self._build_lookup(ncaa_summary)
+
+        if not ncaa_lookup:
+            return 0
+
+        # Default draft round (ideally from roster data)
+        draft_round_map: dict[str, int] = {}
+        if "draft_number" in nfl_roster.columns:
+            for row in nfl_roster.iter_rows(named=True):
+                dn = row.get("draft_number")
+                if dn is not None and dn > 0:
+                    # Convert pick number to round (32 picks per round)
+                    draft_round_map[row["player_id"]] = min(7, (int(dn) - 1) // 32 + 1)
+
+        adj_count = 0
+        for player in rookies:
+            if player.player_id not in reverse_ncaa:
+                continue
+            ncaa_id = reverse_ncaa[player.player_id]
+            if ncaa_id not in ncaa_lookup:
+                continue
+            ncaa_row = ncaa_lookup[ncaa_id]
+
+            draft_round = draft_round_map.get(player.player_id, 4)
+
+            if player.position in ("WR", "TE"):
+                prior = compute_rookie_catch_rate_prior(
+                    route_grade=float(ncaa_row.get("grades_pass_route", 65.0) or 65.0),
+                    contested_catch_rate=float(ncaa_row.get("contested_catch_rate", 45.0) or 45.0),
+                    draft_round=draft_round,
+                    draft_weight=self._config.ncaa_priors.draft_weight,
+                    league_avg_route_grade=ncaa_avgs.get("grades_pass_route", 65.0),
+                    league_avg_contested=ncaa_avgs.get("contested_catch_rate", 45.0),
+                )
+                if abs(prior - player.outcomes.catch_rate) > self._config.min_divergence:
+                    player.outcomes.catch_rate = prior
+                    adj_count += 1
+                    logger.debug(
+                        "NCAA rookie prior: %s catch_rate=%.3f",
+                        player.name, prior,
+                    )
+
+        if adj_count > 0:
+            logger.info("NCAA priors: %d rookie adjustments", adj_count)
+        return adj_count

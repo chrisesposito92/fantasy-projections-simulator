@@ -70,6 +70,14 @@ class ScheduleAdjustmentConfig:
 
 
 @dataclass
+class NcaaPriorsConfig:
+    """Configuration for NCAA-based rookie priors."""
+    enabled: bool = True
+    draft_weight: float = 0.6
+    ncaa_data_dir: str | None = None
+
+
+@dataclass
 class TalentConfig:
     """Configuration for the talent stabilizer."""
     enabled: bool = True
@@ -99,6 +107,9 @@ class TalentConfig:
     scramble_rate_enabled: bool = True
     schedule_adjustment: ScheduleAdjustmentConfig = field(
         default_factory=ScheduleAdjustmentConfig
+    )
+    ncaa_priors: NcaaPriorsConfig = field(
+        default_factory=NcaaPriorsConfig
     )
 
 

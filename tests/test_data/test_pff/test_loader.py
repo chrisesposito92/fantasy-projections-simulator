@@ -312,3 +312,179 @@ class TestBuildCrosswalk:
 
         crosswalk = loader.build_crosswalk(pff_data, empty_roster, 2024)
         assert len(crosswalk) == 0
+
+
+# ---------- PffLoader.load_ncaa_facet ----------
+
+
+class TestLoadNcaaFacet:
+    def test_load_ncaa_facet_single_season(self, tmp_path):
+        ncaa_dir = tmp_path / "pff" / "processed" / "ncaa"
+        ncaa_dir.mkdir(parents=True)
+        df = pl.DataFrame({
+            "player_id": [1, 2],
+            "player": ["Player A", "Player B"],
+            "team": ["Alabama", "Ohio State"],
+            "position": ["WR", "RB"],
+            "grades_pass_route": [85.0, 72.0],
+            "season": [2024, 2024],
+        })
+        df.write_parquet(ncaa_dir / "receiving_summary_2024.parquet")
+
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        result = loader.load_ncaa_facet("receiving_summary", [2024], ncaa_dir=ncaa_dir)
+        assert len(result) == 2
+
+    def test_load_ncaa_facet_multiple_seasons(self, tmp_path):
+        ncaa_dir = tmp_path / "pff" / "processed" / "ncaa"
+        ncaa_dir.mkdir(parents=True)
+        for season in [2023, 2024]:
+            df = pl.DataFrame({
+                "player_id": [1],
+                "player": ["Player A"],
+                "team": ["Alabama"],
+                "season": [season],
+            })
+            df.write_parquet(ncaa_dir / f"receiving_summary_{season}.parquet")
+
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        result = loader.load_ncaa_facet("receiving_summary", [2023, 2024], ncaa_dir=ncaa_dir)
+        assert len(result) == 2
+
+    def test_load_ncaa_facet_missing_file_returns_empty(self, tmp_path):
+        ncaa_dir = tmp_path / "pff" / "processed" / "ncaa"
+        ncaa_dir.mkdir(parents=True)
+
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        result = loader.load_ncaa_facet("receiving_summary", [2024], ncaa_dir=ncaa_dir)
+        assert result.is_empty()
+
+    def test_load_ncaa_facet_uses_default_dir(self, tmp_path):
+        """When ncaa_dir is None, uses DEFAULT_NCAA_DIR.
+
+        If the default dir exists with real data, result is non-empty;
+        if it doesn't exist, result is empty. Either way, no crash.
+        """
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        # Use a season that will never have real data
+        result = loader.load_ncaa_facet("receiving_summary", [1900])
+        assert result.is_empty()
+
+
+# ---------- PffLoader.build_ncaa_crosswalk ----------
+
+
+class TestNcaaCrosswalk:
+    def test_match_by_name_and_college(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": [100, 200],
+            "player": ["John Smith", "Jane Doe"],
+            "team": ["Alabama", "Ohio State"],
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL001", "NFL002"],
+            "player_name": ["John Smith", "Jane Doe"],
+            "college_name": ["Alabama", "Ohio State"],
+            "draft_number": [15, 45],
+            "team": ["KC", "BUF"],
+            "position": ["WR", "RB"],
+            "rookie_year": [2025, 2025],
+            "season": [2025, 2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert crosswalk[100] == "NFL001"
+        assert crosswalk[200] == "NFL002"
+
+    def test_no_match_different_college(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": [300],
+            "player": ["Unknown Player"],
+            "team": ["Small College"],
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL003"],
+            "player_name": ["Unknown Player"],
+            "college_name": ["Different College"],
+            "team": ["NYG"],
+            "position": ["WR"],
+            "rookie_year": [2025],
+            "season": [2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert len(crosswalk) == 0
+
+    def test_filters_by_rookie_year(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": [100],
+            "player": ["John Smith"],
+            "team": ["Alabama"],
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL001"],
+            "player_name": ["John Smith"],
+            "college_name": ["Alabama"],
+            "team": ["KC"],
+            "position": ["WR"],
+            "rookie_year": [2024],  # Different year
+            "season": [2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        # Target season is 2025, but player's rookie_year is 2024 -> no match
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert len(crosswalk) == 0
+
+    def test_filters_by_season_when_no_rookie_year(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": [100],
+            "player": ["John Smith"],
+            "team": ["Alabama"],
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL001"],
+            "player_name": ["John Smith"],
+            "college_name": ["Alabama"],
+            "team": ["KC"],
+            "position": ["WR"],
+            "season": [2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert crosswalk[100] == "NFL001"
+
+    def test_empty_ncaa_data_returns_empty(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": pl.Series([], dtype=pl.Int64),
+            "player": pl.Series([], dtype=pl.Utf8),
+            "team": pl.Series([], dtype=pl.Utf8),
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL001"],
+            "player_name": ["John Smith"],
+            "college_name": ["Alabama"],
+            "team": ["KC"],
+            "position": ["WR"],
+            "rookie_year": [2025],
+            "season": [2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert len(crosswalk) == 0
+
+    def test_no_college_name_column_returns_empty(self, tmp_path):
+        ncaa_data = pl.DataFrame({
+            "player_id": [100],
+            "player": ["John Smith"],
+            "team": ["Alabama"],
+        })
+        nfl_roster = pl.DataFrame({
+            "player_id": ["NFL001"],
+            "player_name": ["John Smith"],
+            "team": ["KC"],
+            "position": ["WR"],
+            "season": [2025],
+        })
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        crosswalk = loader.build_ncaa_crosswalk(ncaa_data, nfl_roster, 2025)
+        assert len(crosswalk) == 0
