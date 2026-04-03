@@ -68,17 +68,17 @@ class TalentConfig:
     min_divergence: float = 0.03
     team_change_factor: float = 1.0
     catch_rate_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "drop_rate": -0.15,
-        "contested_catch_rate": 0.10,
-        "qb_accuracy": 0.08,
+        "drop_rate": 0.21,
+        "contested_catch_rate": -0.25,
+        "qb_accuracy": 0.03,
     })
     rushing_yards_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "yco_attempt": 0.6,
-        "elusive_rating": 0.008,
+        "yco_attempt": 0.02,
+        "elusive_rating": 0.0005,
     })
     receiving_yards_coefficients: dict[str, float] = field(default_factory=lambda: {
-        "yprr": 0.5,
-        "avg_depth_of_target": 0.03,
+        "yprr": 0.43,
+        "avg_depth_of_target": 0.41,
     })
 
 

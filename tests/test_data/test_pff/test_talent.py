@@ -668,8 +668,17 @@ class TestStabilizeRosterCrosswalk:
 class TestStabilizeRosterRushingYards:
     """Tests for rushing yards distribution stabilization."""
 
-    def test_elite_rb_rushing_yards_shifted_up(self, pff_dir, loader, default_pff_config):
+    def test_elite_rb_rushing_yards_shifted_up(self, pff_dir, loader):
         """Elite RB (high YCO, high elusive) gets rushing dist shifted upward."""
+        # Use larger coefficients than fitted defaults (R²≈0 for rushing)
+        # to test the mechanism works
+        rush_config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                rushing_yards_coefficients={"yco_attempt": 0.6, "elusive_rating": 0.008},
+            ),
+        )
         elite_rb = {
             "player_id": 100,
             "player": "Elite RB",
@@ -715,7 +724,7 @@ class TestStabilizeRosterRushingYards:
         roster = TeamRoster(team="KC", players=[player])
         crosswalk = {100: "G001"}
 
-        stabilizer = TalentStabilizer(default_pff_config, loader)
+        stabilizer = TalentStabilizer(rush_config, loader)
         stabilizer.stabilize_roster(roster, crosswalk, [2024])
 
         # Rushing dist should be shifted upward (elite YCO + elusive above avg)
@@ -867,8 +876,16 @@ class TestStabilizeRosterEdgeCases:
 
         assert player.outcomes.catch_rate == original
 
-    def test_qb_carry_share_triggers_rushing_stabilization(self, pff_dir, loader, default_pff_config):
+    def test_qb_carry_share_triggers_rushing_stabilization(self, pff_dir, loader):
         """QB with carry_share > 0 gets rushing yards stabilized."""
+        # Use larger rushing coefficients to test the mechanism
+        rush_config = PffConfig(
+            enabled=True,
+            talent=TalentConfig(
+                enabled=True,
+                rushing_yards_coefficients={"yco_attempt": 0.6, "elusive_rating": 0.008},
+            ),
+        )
         mobile_qb = {
             "player_id": 100,
             "player": "Mobile QB",
@@ -904,7 +921,7 @@ class TestStabilizeRosterEdgeCases:
         roster = TeamRoster(team="KC", players=[player])
         crosswalk = {100: "G001"}
 
-        stabilizer = TalentStabilizer(default_pff_config, loader)
+        stabilizer = TalentStabilizer(rush_config, loader)
         stabilizer.stabilize_roster(roster, crosswalk, [2024])
 
         new_mean = player.outcomes.rushing_yards_dist.mean()
