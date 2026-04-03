@@ -93,7 +93,7 @@ pff:
     min_games: 4
 
   talent:
-    enabled: true
+    enabled: false
     prior_strength: 30
     min_divergence: 0.01
     team_change_factor: 0.5
