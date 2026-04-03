@@ -92,3 +92,48 @@ class TestTierConfig:
         })
         assert cfg.talent.enabled is True
         assert cfg.tier_engine.enabled is True
+
+
+class TestTierAssignment:
+    """Tests for TierEngine._assign_tier boundary logic."""
+
+    # Boundaries: Tier 1 >= 82.0, Tier 2 >= 72.0, Tier 3 >= 60.0, Tier 4 >= 48.0, Tier 5 < 48.0
+    _BOUNDARIES = {"WR": [82.0, 72.0, 60.0, 48.0]}
+
+    def _make_engine(self):
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+
+        engine = TierEngine(config=TierConfig(), pff_loader=None)
+        engine._boundaries = self._BOUNDARIES
+        return engine
+
+    def test_assign_tier_elite(self):
+        """Grade above the 85th-percentile boundary maps to Tier 1."""
+        engine = self._make_engine()
+        assert engine._assign_tier(90.0, "WR") == 1
+
+    def test_assign_tier_at_boundary_is_elite(self):
+        """Grade exactly at the Tier 1 boundary maps to Tier 1 (>= semantics)."""
+        engine = self._make_engine()
+        assert engine._assign_tier(82.0, "WR") == 1
+
+    def test_assign_tier_above_average(self):
+        """Grade between 65th and 85th percentile boundaries maps to Tier 2."""
+        engine = self._make_engine()
+        assert engine._assign_tier(75.0, "WR") == 2
+
+    def test_assign_tier_average(self):
+        """Grade between 40th and 65th percentile boundaries maps to Tier 3."""
+        engine = self._make_engine()
+        assert engine._assign_tier(65.0, "WR") == 3
+
+    def test_assign_tier_below_average(self):
+        """Grade between 20th and 40th percentile boundaries maps to Tier 4."""
+        engine = self._make_engine()
+        assert engine._assign_tier(50.0, "WR") == 4
+
+    def test_assign_tier_replacement(self):
+        """Grade below the 20th-percentile boundary maps to Tier 5."""
+        engine = self._make_engine()
+        assert engine._assign_tier(40.0, "WR") == 5
