@@ -35,6 +35,29 @@ CATCH_RATE_PRIOR_MIN = 0.30
 CATCH_RATE_PRIOR_MAX = 0.90
 
 
+def compute_schedule_adjustment(
+    opponent_avg_grade: float,
+    league_avg_grade: float,
+    weight: float,
+    sensitivity: float,
+) -> float:
+    """Compute schedule difficulty adjustment.
+
+    Positive return = tough schedule -> adjust PBP upward.
+    Negative return = easy schedule -> adjust PBP downward.
+
+    Args:
+        opponent_avg_grade: Average PFF defensive grade of opponents faced.
+        league_avg_grade: League-wide average PFF defensive grade.
+        weight: Scaling weight for the adjustment (0 disables it).
+        sensitivity: Per-grade-point sensitivity (e.g. 0.005 for catch rate).
+
+    Returns:
+        Adjustment value to add to the raw PBP stat before Bayesian blending.
+    """
+    return weight * (opponent_avg_grade - league_avg_grade) * sensitivity
+
+
 def stabilize_value(
     pbp_value: float,
     pff_prior: float,
@@ -151,6 +174,14 @@ class TalentStabilizer:
         team_qb_accuracy = self._compute_team_qb_accuracy(passing)
         league_avg_accuracy = pass_avgs.get("accuracy_percent", 75.0)
 
+        # Load defensive grades for schedule adjustment
+        team_def_grades: dict[str, float] = {}
+        league_avg_def_grade = 65.0
+        if self._config.schedule_adjustment.enabled:
+            team_def_grades = self._load_team_defense_grades(training_seasons)
+            if team_def_grades:
+                league_avg_def_grade = sum(team_def_grades.values()) / len(team_def_grades)
+
         adjustments = 0
         for player in players_with_pff:
             pff_id = reverse_cw[player.player_id]
@@ -164,6 +195,7 @@ class TalentStabilizer:
                 adj = self._stabilize_catch_rate(
                     player, recv_lookup[pff_id], recv_avgs,
                     team_qb_accuracy, league_avg_accuracy,
+                    team_def_grades, league_avg_def_grade,
                 )
                 if adj:
                     adjustments += 1
@@ -341,6 +373,40 @@ class TalentStabilizer:
                 team_acc[row["team"]] = float(val)
         return team_acc
 
+    def _load_team_defense_grades(self, training_seasons: list[int]) -> dict[str, float]:
+        """Load PFF defensive coverage grades per team.
+
+        Returns dict of team -> avg defense_coverage grade.
+        Uses defense_coverage facet if available, falls back to defense_summary.
+        """
+        for facet in ("defense_coverage", "defense_summary"):
+            df = self._loader.load_facet(facet, training_seasons)
+            if df.is_empty():
+                continue
+
+            # Look for a coverage grade column
+            grade_col = None
+            for col_name in ("grades_coverage_defense", "coverage_grade", "grade"):
+                if col_name in df.columns:
+                    grade_col = col_name
+                    break
+
+            if grade_col is None:
+                continue
+
+            # Team-level average
+            team_grades = df.group_by("team").agg(
+                pl.col(grade_col).mean().alias("def_grade")
+            )
+            result: dict[str, float] = {}
+            for row in team_grades.iter_rows(named=True):
+                result[row["team"]] = float(row["def_grade"])
+
+            if result:
+                return result
+
+        return {}
+
     def _stabilize_catch_rate(
         self,
         player: PlayerModel,
@@ -348,6 +414,8 @@ class TalentStabilizer:
         recv_avgs: dict[str, float],
         team_qb_accuracy: dict[str, float],
         league_avg_accuracy: float,
+        team_def_grades: dict[str, float] | None = None,
+        league_avg_def_grade: float = 65.0,
     ) -> bool:
         """Stabilize catch_rate using PFF receiving signals. Returns True if adjusted."""
         coeffs = self._config.catch_rate_coefficients
@@ -380,10 +448,30 @@ class TalentStabilizer:
         n_obs = int(targets * games) if games > 0 else 0
 
         old_catch = player.outcomes.catch_rate
+
+        # Schedule adjustment: players who faced tougher defenses get an upward
+        # correction before Bayesian blending.
+        schedule_adj = 0.0
+        sched_cfg = self._config.schedule_adjustment
+        if sched_cfg.enabled and team_def_grades:
+            # Approximate opponent grade: average of all other teams
+            # (per-game opponent tracking is future work)
+            other_grades = [g for t, g in team_def_grades.items() if t != player.team]
+            if other_grades:
+                opp_avg = sum(other_grades) / len(other_grades)
+                schedule_adj = compute_schedule_adjustment(
+                    opp_avg,
+                    league_avg_def_grade,
+                    sched_cfg.weight,
+                    sched_cfg.catch_rate_sensitivity,
+                )
+
+        adjusted_pbp = old_catch + schedule_adj
+
         pff_team = pff_row.get("team", player.team)
         strength = self._effective_prior_strength(player.position, player.team, pff_team)
         new_catch = stabilize_value(
-            old_catch, prior, n_obs,
+            adjusted_pbp, prior, n_obs,
             strength, self._config.min_divergence,
         )
 
@@ -398,8 +486,8 @@ class TalentStabilizer:
         player.outcomes.catch_rate = new_catch
 
         logger.debug(
-            "Catch rate stabilized: %s (%s) %.3f -> %.3f (prior=%.3f, n=%d)",
-            player.name, player.player_id, old_catch, new_catch, prior, n_obs,
+            "Catch rate stabilized: %s (%s) %.3f -> %.3f (prior=%.3f, n=%d, sched_adj=%.4f)",
+            player.name, player.player_id, old_catch, new_catch, prior, n_obs, schedule_adj,
         )
         return True
 

@@ -90,3 +90,8 @@ pff:
     fumble_rate_coefficients:
       grades_hands_fumble: -0.002
     scramble_rate_enabled: true
+    schedule_adjustment:
+      enabled: true
+      weight: 0.3
+      catch_rate_sensitivity: 0.005
+      rush_yards_sensitivity: 0.3

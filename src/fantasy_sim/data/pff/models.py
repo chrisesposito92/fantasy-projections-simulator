@@ -61,6 +61,15 @@ class MatchupConfig:
 
 
 @dataclass
+class ScheduleAdjustmentConfig:
+    """Configuration for schedule-adjusted talent evaluation."""
+    enabled: bool = True
+    weight: float = 0.3
+    catch_rate_sensitivity: float = 0.005
+    rush_yards_sensitivity: float = 0.3
+
+
+@dataclass
 class TalentConfig:
     """Configuration for the talent stabilizer."""
     enabled: bool = True
@@ -88,6 +97,9 @@ class TalentConfig:
         "grades_hands_fumble": -0.002,
     })
     scramble_rate_enabled: bool = True
+    schedule_adjustment: ScheduleAdjustmentConfig = field(
+        default_factory=ScheduleAdjustmentConfig
+    )
 
 
 @dataclass

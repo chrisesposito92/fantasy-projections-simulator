@@ -17,6 +17,7 @@ from fantasy_sim.data.pff.talent import (
     MIN_SCRAMBLE_RATE_SHIFT,
     MIN_TARGET_SHARE_SHIFT,
     TalentStabilizer,
+    compute_schedule_adjustment,
     stabilize_value,
 )
 from fantasy_sim.models.player import (
@@ -1321,3 +1322,93 @@ class TestStabilizeScrambleRate:
 
         # PFF shows higher scramble rate -> should nudge up from 0.06
         assert player.usage.scramble_rate > original_sr
+
+
+# ========== Schedule Adjustment Tests ==========
+
+
+class TestScheduleAdjustment:
+    """Tests for compute_schedule_adjustment pure function."""
+
+    def test_tough_schedule_adjusts_upward(self):
+        """Facing above-average defenses should yield a positive adjustment."""
+        adj = compute_schedule_adjustment(
+            opponent_avg_grade=80.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        assert adj > 0
+
+    def test_easy_schedule_adjusts_downward(self):
+        """Facing below-average defenses should yield a negative adjustment."""
+        adj = compute_schedule_adjustment(
+            opponent_avg_grade=50.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        assert adj < 0
+
+    def test_neutral_schedule_no_adjustment(self):
+        """When opponent grade equals league average, adjustment is zero."""
+        adj = compute_schedule_adjustment(
+            opponent_avg_grade=65.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        assert adj == 0.0
+
+    def test_weight_zero_disables(self):
+        """Weight of 0 should produce zero adjustment regardless of grades."""
+        adj = compute_schedule_adjustment(
+            opponent_avg_grade=80.0,
+            league_avg_grade=65.0,
+            weight=0.0,
+            sensitivity=0.005,
+        )
+        assert adj == 0.0
+
+    def test_magnitude_scales_with_grade_gap(self):
+        """Larger grade differential should produce a larger adjustment."""
+        adj_small = compute_schedule_adjustment(
+            opponent_avg_grade=70.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        adj_large = compute_schedule_adjustment(
+            opponent_avg_grade=85.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        assert adj_large > adj_small > 0
+
+    def test_magnitude_scales_with_sensitivity(self):
+        """Higher sensitivity should produce a proportionally larger adjustment."""
+        adj_low = compute_schedule_adjustment(
+            opponent_avg_grade=80.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.001,
+        )
+        adj_high = compute_schedule_adjustment(
+            opponent_avg_grade=80.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.01,
+        )
+        assert adj_high == pytest.approx(adj_low * 10, rel=1e-6)
+
+    def test_exact_value(self):
+        """Verify the exact arithmetic: weight * (opp - league) * sensitivity."""
+        adj = compute_schedule_adjustment(
+            opponent_avg_grade=80.0,
+            league_avg_grade=65.0,
+            weight=0.3,
+            sensitivity=0.005,
+        )
+        expected = 0.3 * (80.0 - 65.0) * 0.005  # = 0.0225
+        assert adj == pytest.approx(expected, rel=1e-9)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fantasy_sim.data.pff.models import (
     MatchupConfig,
     PffConfig,
+    ScheduleAdjustmentConfig,
     TalentConfig,
 )
 
@@ -65,6 +66,13 @@ def load_pff_config(config: dict) -> PffConfig:
             "grades_hands_fumble": -0.002,
         }),
         scramble_rate_enabled=talent_raw.get("scramble_rate_enabled", True),
+        schedule_adjustment=ScheduleAdjustmentConfig(
+            **{
+                k: v
+                for k, v in talent_raw.get("schedule_adjustment", {}).items()
+                if k in ("enabled", "weight", "catch_rate_sensitivity", "rush_yards_sensitivity")
+            }
+        ),
     )
 
     return PffConfig(
