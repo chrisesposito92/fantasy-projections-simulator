@@ -121,6 +121,17 @@ class PositionGradeConfig:
 
 
 @dataclass
+class NcaaRookieConfig:
+    """Configuration for NCAA-based rookie tier assignment."""
+    enabled: bool = True
+    draft_confidence: dict[int, float] = field(default_factory=lambda: {
+        1: 1.0, 2: 0.95, 3: 0.85, 4: 0.75, 5: 0.65, 6: 0.55, 7: 0.50,
+    })
+    undrafted_confidence: float = 0.40
+    ncaa_lookback_seasons: int = 4
+
+
+@dataclass
 class TierConfig:
     """Configuration for the PFF Talent-Tier Distribution Engine."""
     enabled: bool = False
@@ -139,6 +150,7 @@ class TierConfig:
     reliability_floor: float = 0.15
     reliability_cap: float = 0.85
     blend_pool_size: int = 500
+    ncaa_rookie: NcaaRookieConfig = field(default_factory=NcaaRookieConfig)
 
 
 @dataclass

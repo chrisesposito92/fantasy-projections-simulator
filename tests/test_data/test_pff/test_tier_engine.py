@@ -1010,3 +1010,76 @@ class TestApplyTiers:
         # Unknown player should be completely unchanged
         assert wr_unknown.usage.target_share == pytest.approx(original_unknown_ts)
         assert wr_unknown.outcomes.catch_rate == pytest.approx(original_unknown_cr)
+
+
+class TestNcaaRookieConfig:
+    def test_load_ncaa_rookie_config_from_yaml(self):
+        """Full YAML dict is parsed correctly into NcaaRookieConfig."""
+        cfg = load_pff_config({
+            "pff": {
+                "tier_engine": {
+                    "enabled": True,
+                    "position_grades": {
+                        "QB": {"primary": "grades_pass", "secondary": "accuracy_percent"},
+                        "RB": {"primary": "grades_run", "secondary": "elusive_rating"},
+                        "WR": {"primary": "grades_pass_route", "secondary": "_disabled"},
+                        "TE": {"primary": "grades_pass_route", "secondary": "recv_grade"},
+                    },
+                    "ncaa_rookie": {
+                        "enabled": True,
+                        "draft_confidence": {
+                            1: 1.0, 2: 0.95, 3: 0.85, 4: 0.75,
+                            5: 0.65, 6: 0.55, 7: 0.50,
+                        },
+                        "undrafted_confidence": 0.35,
+                        "ncaa_lookback_seasons": 3,
+                    },
+                }
+            }
+        })
+        ncaa = cfg.tier_engine.ncaa_rookie
+        assert ncaa.enabled is True
+        assert ncaa.draft_confidence[1] == 1.0
+        assert ncaa.draft_confidence[7] == 0.50
+        assert ncaa.undrafted_confidence == 0.35
+        assert ncaa.ncaa_lookback_seasons == 3
+
+    def test_ncaa_rookie_config_defaults(self):
+        """Missing ncaa_rookie section uses sensible defaults."""
+        cfg = load_pff_config({"pff": {"tier_engine": {"enabled": True,
+            "position_grades": {
+                "QB": {"primary": "grades_pass", "secondary": "accuracy_percent"},
+                "RB": {"primary": "grades_run", "secondary": "elusive_rating"},
+                "WR": {"primary": "grades_pass_route", "secondary": "_disabled"},
+                "TE": {"primary": "grades_pass_route", "secondary": "recv_grade"},
+            }}}})
+        ncaa = cfg.tier_engine.ncaa_rookie
+        assert ncaa.enabled is True
+        assert ncaa.undrafted_confidence == 0.40
+        assert ncaa.ncaa_lookback_seasons == 4
+        assert 1 in ncaa.draft_confidence
+
+    def test_ncaa_rookie_config_yaml_string_keys(self):
+        """YAML parses dict keys as strings — config parser converts to int."""
+        cfg = load_pff_config({
+            "pff": {
+                "tier_engine": {
+                    "enabled": True,
+                    "position_grades": {
+                        "QB": {"primary": "grades_pass", "secondary": "accuracy_percent"},
+                        "RB": {"primary": "grades_run", "secondary": "elusive_rating"},
+                        "WR": {"primary": "grades_pass_route", "secondary": "_disabled"},
+                        "TE": {"primary": "grades_pass_route", "secondary": "recv_grade"},
+                    },
+                    "ncaa_rookie": {
+                        "draft_confidence": {
+                            "1": 0.99, "2": 0.90, "3": 0.80,
+                            "4": 0.70, "5": 0.60, "6": 0.50, "7": 0.45,
+                        },
+                    },
+                }
+            }
+        })
+        ncaa = cfg.tier_engine.ncaa_rookie
+        assert ncaa.draft_confidence[1] == 0.99
+        assert ncaa.draft_confidence[7] == 0.45

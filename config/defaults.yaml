@@ -81,6 +81,18 @@ pff:
     reliability_floor: 0.20
     reliability_cap: 0.80
     blend_pool_size: 500
+    ncaa_rookie:
+      enabled: true
+      draft_confidence:
+        1: 1.0
+        2: 0.95
+        3: 0.85
+        4: 0.75
+        5: 0.65
+        6: 0.55
+        7: 0.50
+      undrafted_confidence: 0.40
+      ncaa_lookback_seasons: 4
 
   team_context:
     enabled: true

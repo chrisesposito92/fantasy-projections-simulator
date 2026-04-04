@@ -5,6 +5,7 @@ from __future__ import annotations
 from fantasy_sim.data.pff.models import (
     MatchupConfig,
     NcaaPriorsConfig,
+    NcaaRookieConfig,
     PffConfig,
     PositionGradeConfig,
     ScheduleAdjustmentConfig,
@@ -121,6 +122,19 @@ def load_pff_config(config: dict) -> PffConfig:
         reliability_cap=tier_raw.get("reliability_cap", 0.85),
         blend_pool_size=tier_raw.get("blend_pool_size", 500),
     )
+
+    ncaa_raw = tier_raw.get("ncaa_rookie", {})
+    raw_draft_conf = ncaa_raw.get("draft_confidence", {})
+    # YAML may parse int keys as strings — convert to int
+    draft_confidence = {int(k): float(v) for k, v in raw_draft_conf.items()} if raw_draft_conf else None
+
+    ncaa_rookie = NcaaRookieConfig(
+        enabled=ncaa_raw.get("enabled", True),
+        undrafted_confidence=ncaa_raw.get("undrafted_confidence", 0.40),
+        ncaa_lookback_seasons=ncaa_raw.get("ncaa_lookback_seasons", 4),
+        **({"draft_confidence": draft_confidence} if draft_confidence else {}),
+    )
+    tier_engine.ncaa_rookie = ncaa_rookie
 
     tc_raw = pff.get("team_context", {})
     tc_clamp = tc_raw.get("factor_clamp", [0.90, 1.10])
