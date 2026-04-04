@@ -870,7 +870,7 @@ class TestGradeFallback:
 
         loader_sufficient = PffLoader(pff_dir)
         engine_sufficient = MatchupEngine(config, loader_sufficient)
-        ctx_primary = engine_sufficient.compute("BAL", "KC", [2024])
+        ctx_primary = engine_sufficient.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Now make BAL have insufficient games
         insufficient_teams = [
@@ -910,7 +910,7 @@ class TestGradeFallback:
 
         loader_insuf = PffLoader(pff_dir2)
         engine_insuf = MatchupEngine(config, loader_insuf)
-        ctx_grade = engine_insuf.compute("BAL", "KC", [2024])
+        ctx_grade = engine_insuf.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Both should shift catch_rate_factor away from 1.0,
         # but grade-based should shift less due to GRADE_SENSITIVITY_DISCOUNT
