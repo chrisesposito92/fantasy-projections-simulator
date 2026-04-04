@@ -1,9 +1,11 @@
 # PFF Improvement Roadmap
 
-Status as of 2026-04-03:
-- **tier-tight+wr-nosec** (#15): PASS (rank_corr +0.0353, wk_mae -0.254, szn_mae -3.201) — current default
-- Config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
-- Sweep rounds 1+2 complete (see results below)
+Status as of 2026-04-04:
+- **matchup+tier-med-sens** (#20): PASS (rank_corr +0.0376, wk_mae -0.306, szn_mae -4.331) — current default
+- Tier config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
+- Matchup config: medium sensitivities (0.06-0.075), clamp [0.90, 1.10], min_games=4
+- Same-season rolling window: week < max_week filter, linear ramp blend with previous season
+- Sweep rounds 1+2 (tier) + round 3 (matchup) complete (see results below)
 
 ## Completed Fixes
 
@@ -97,17 +99,20 @@ Priority: E (additional grades) > F (position-specific reliability) > D (pool si
 
 ## PFF Feature Roadmap (ordered by expected backtest impact)
 
-### 1. Re-enable Matchup Engine with Same-Season Rolling Window (HIGH)
+### 1. ~~Re-enable Matchup Engine with Same-Season Rolling Window~~ — COMPLETE
 
-**What:** The matchup engine was parked because cross-season defensive data (2022-2023 predicting 2024) didn't work. Fix: use same-season rolling data. For a week 8 game, use PFF defensive grades from weeks 1-7 of the current season. Early weeks (1-2) fall back to previous season.
+**Result:** matchup+tier-med-sens (#20) is new default. rank_corr +0.0376, wk_mae -0.306, szn_mae -4.331.
 
-**Why highest priority:** The tier engine answers "who is this player?" The matchup engine answers "who are they playing this week?" These are additive — tier fixes season-level rankings, matchup fixes weekly variance. Weekly MAE and calibration are the metrics this targets.
+Same-season rolling window with early-season blend (linear ramp, min_games=4). Medium sensitivities (0.06-0.075) won the sweep — best MAE with negligible rank_corr trade-off vs conservative. High sensitivities showed diminishing returns. Wide clamp didn't help.
 
-**Data required:** Already have it. PFF data for test seasons (2023-2025) includes week-by-week defensive grades. The existing `MatchupEngine` code (`matchup.py`) just needs the data strategy changed.
+Sweep results (all matchup+tier, 4yr training, 3 seasons):
 
-**Implementation:** Modify `MatchupEngine.compute()` to accept a `max_week` parameter. Filter PFF defensive data to `week <= max_week` for the current season. Reuse all existing factor computation and application code.
-
-**PFF facets used:** defense_coverage, defense_pass_rush, defense_run, offense_pass_blocking, offense_run_blocking
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 18 | conservative (0.04-0.05) | +0.0384 | -0.267 | -4.086 | -0.0118 |
+| 19 | high (0.08-0.10) | +0.0370 | -0.268 | -4.169 | -0.0123 |
+| **20** | **medium (0.06-0.075)** | **+0.0376** | **-0.306** | **-4.331** | -0.0108 |
+| 21 | wide clamp (0.85-1.15) | +0.0360 | -0.282 | -4.235 | -0.0122 |
 
 ### 2. Team Context Layer — Tier Engine v2 (MEDIUM-HIGH)
 

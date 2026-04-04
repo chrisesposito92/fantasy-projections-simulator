@@ -83,13 +83,13 @@ pff:
     blend_pool_size: 500
 
   matchup:
-    enabled: false
-    pass_defense_sensitivity: 0.04
-    pass_rush_sensitivity: 0.05
-    run_defense_sensitivity: 0.04
-    int_rate_sensitivity: 0.03
-    ol_pass_sensitivity: 0.04
-    ol_run_sensitivity: 0.03
+    enabled: true
+    pass_defense_sensitivity: 0.06
+    pass_rush_sensitivity: 0.075
+    run_defense_sensitivity: 0.06
+    int_rate_sensitivity: 0.045
+    ol_pass_sensitivity: 0.06
+    ol_run_sensitivity: 0.045
     factor_clamp: [0.90, 1.10]
     min_games: 4
 
