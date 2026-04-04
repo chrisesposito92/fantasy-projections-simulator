@@ -570,6 +570,133 @@ class TestBlendPlayer:
         assert player.outcomes.red_zone_catch_rate == pytest.approx(0.62)
 
 
+class TestApplyTeamContext:
+    """Tests for TierEngine.apply_team_context static method."""
+
+    def _make_tier_dists(self, **overrides):
+        from fantasy_sim.data.pff.tier_engine import TierDistributions
+        defaults = dict(
+            target_share=0.20,
+            carry_share=0.0,
+            catch_rate=0.65,
+            air_yards_share=0.15,
+            fumble_rate=0.015,
+            scramble_rate=0.0,
+            receiving_yards_dist=np.full(100, 10.0),
+            rushing_yards_dist=np.full(100, 4.0),
+        )
+        defaults.update(overrides)
+        return TierDistributions(**defaults)
+
+    def test_wr_target_share_scaled_by_pass_rate(self):
+        """WR target_share multiplied by pass_rate_factor."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(target_share=0.20)
+        ctx = TeamContext(pass_rate_factor=1.10)
+
+        TierEngine.apply_team_context(tier_dists, ctx, "WR")
+
+        assert tier_dists.target_share == pytest.approx(0.22)
+
+    def test_wr_catch_rate_scaled_by_qb_quality(self):
+        """WR catch_rate multiplied by qb_quality_factor."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(catch_rate=0.65)
+        ctx = TeamContext(qb_quality_factor=1.05)
+
+        TierEngine.apply_team_context(tier_dists, ctx, "WR")
+
+        assert tier_dists.catch_rate == pytest.approx(0.65 * 1.05)
+
+    def test_te_gets_same_adjustments_as_wr(self):
+        """TE receives both pass_rate and qb_quality adjustments."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(target_share=0.15, catch_rate=0.60)
+        ctx = TeamContext(pass_rate_factor=1.08, qb_quality_factor=0.95)
+
+        TierEngine.apply_team_context(tier_dists, ctx, "TE")
+
+        assert tier_dists.target_share == pytest.approx(0.15 * 1.08)
+        assert tier_dists.catch_rate == pytest.approx(0.60 * 0.95)
+
+    def test_rb_rushing_yards_shifted(self):
+        """RB rushing_yards_dist shifted by OL factor."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(rushing_yards_dist=np.full(50, 4.0))
+        ctx = TeamContext(ol_run_block_factor=1.06, ol_run_yards_scale=10.0)
+
+        TierEngine.apply_team_context(tier_dists, ctx, "RB")
+
+        expected = 4.0 + 0.6
+        assert tier_dists.rushing_yards_dist is not None
+        np.testing.assert_allclose(tier_dists.rushing_yards_dist, expected)
+
+    def test_rb_no_rushing_yards_dist_no_error(self):
+        """RB with rushing_yards_dist=None doesn't crash."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(rushing_yards_dist=None)
+        ctx = TeamContext(ol_run_block_factor=1.10)
+
+        TierEngine.apply_team_context(tier_dists, ctx, "RB")
+
+    def test_qb_unchanged(self):
+        """QB receives no team context adjustments."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(
+            target_share=0.20, catch_rate=0.65,
+            rushing_yards_dist=np.full(50, 4.0),
+        )
+        original_ts = tier_dists.target_share
+        original_cr = tier_dists.catch_rate
+        original_rush = tier_dists.rushing_yards_dist.copy()
+
+        ctx = TeamContext(
+            pass_rate_factor=1.10,
+            qb_quality_factor=1.10,
+            ol_run_block_factor=1.10,
+        )
+
+        TierEngine.apply_team_context(tier_dists, ctx, "QB")
+
+        assert tier_dists.target_share == original_ts
+        assert tier_dists.catch_rate == original_cr
+        np.testing.assert_array_equal(tier_dists.rushing_yards_dist, original_rush)
+
+    def test_neutral_context_no_changes(self):
+        """All-neutral TeamContext (1.0) leaves tier_dists unchanged."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TeamContext
+
+        tier_dists = self._make_tier_dists(target_share=0.20, catch_rate=0.65)
+        ctx = TeamContext()
+
+        TierEngine.apply_team_context(tier_dists, ctx, "WR")
+
+        assert tier_dists.target_share == pytest.approx(0.20)
+        assert tier_dists.catch_rate == pytest.approx(0.65)
+
+    def test_apply_tiers_with_none_context_unchanged(self):
+        """apply_tiers() with team_context=None behaves like before."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+
+        engine = TierEngine(config=TierConfig(enabled=True), pff_loader=None)
+        roster = TeamRoster(team="KC", players=[_make_player()])
+        engine.apply_tiers(roster, {}, [2024], team_context=None)
+
+
 # ---------------------------------------------------------------------------
 # Pool Building tests
 # ---------------------------------------------------------------------------

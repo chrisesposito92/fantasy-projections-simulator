@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from fantasy_sim.data.pff.models import TierConfig
+from fantasy_sim.data.pff.models import TierConfig, TeamContext
 
 if TYPE_CHECKING:
     from fantasy_sim.models.player import PlayerModel, TeamRoster
@@ -942,6 +942,31 @@ class TierEngine:
         return changed
 
     # ------------------------------------------------------------------
+    # Team context application
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def apply_team_context(
+        tier_dists: "TierDistributions",
+        ctx: "TeamContext",
+        position: str,
+    ) -> None:
+        """Adjust tier distributions for team environment before blending.
+
+        Modifies tier_dists in place:
+        - WR/TE: target_share *= pass_rate_factor, catch_rate *= qb_quality_factor
+        - RB: rushing_yards_dist += (ol_run_block_factor - 1) * ol_run_yards_scale
+        - QB: no adjustments (consistent with QB skip rule)
+        """
+        if position in ("WR", "TE"):
+            tier_dists.target_share *= ctx.pass_rate_factor
+            tier_dists.catch_rate *= ctx.qb_quality_factor
+        elif position == "RB":
+            if tier_dists.rushing_yards_dist is not None:
+                shift = (ctx.ol_run_block_factor - 1.0) * ctx.ol_run_yards_scale
+                tier_dists.rushing_yards_dist = tier_dists.rushing_yards_dist + shift
+
+    # ------------------------------------------------------------------
     # Roster-level entry point
     # ------------------------------------------------------------------
 
@@ -953,6 +978,7 @@ class TierEngine:
         pbp: "pl.DataFrame | None" = None,
         nfl_roster: "pl.DataFrame | None" = None,
         target_season: int | None = None,
+        team_context: "TeamContext | None" = None,
     ) -> None:
         """Apply tier-based distribution adjustments to all players in a roster.
 
@@ -1030,6 +1056,10 @@ class TierEngine:
                 continue
 
             assignment, tier_dists = result
+
+            # Apply team context to tier distributions before blending
+            if team_context is not None:
+                self.apply_team_context(tier_dists, team_context, position)
 
             # Gather weekly shares from PBP data for reliability scoring
             weekly_shares_list: list[float] = []

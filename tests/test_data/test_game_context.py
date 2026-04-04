@@ -181,3 +181,88 @@ class TestGameContextBuilder:
         assert call2.kwargs["defense_team"] == "KC"
         assert call2.kwargs["target_season"] == 2024
         assert call2.kwargs["max_week"] == 8
+
+    def test_team_context_engine_created_when_enabled(self, tmp_path):
+        """team_context.enabled=True creates the engine."""
+        from unittest.mock import patch
+        from fantasy_sim.data.pff.models import PffConfig, TeamContextConfig
+
+        pff_config = PffConfig(
+            enabled=True,
+            team_context=TeamContextConfig(enabled=True),
+        )
+        with patch("fantasy_sim.data.pff.loader.PffLoader") as MockLoader:
+            MockLoader.return_value.is_available.return_value = True
+            builder = GameContextBuilder(cache_dir=tmp_path / "cache", pff_config=pff_config)
+
+        assert builder._team_context_engine is not None
+
+    def test_team_context_engine_not_created_when_disabled(self, tmp_path):
+        """team_context.enabled=False does not create the engine."""
+        from unittest.mock import patch
+        from fantasy_sim.data.pff.models import PffConfig, TeamContextConfig
+
+        pff_config = PffConfig(
+            enabled=True,
+            team_context=TeamContextConfig(enabled=False),
+        )
+        with patch("fantasy_sim.data.pff.loader.PffLoader") as MockLoader:
+            MockLoader.return_value.is_available.return_value = True
+            builder = GameContextBuilder(cache_dir=tmp_path / "cache", pff_config=pff_config)
+
+        assert builder._team_context_engine is None
+
+    def test_team_context_passed_to_apply_tiers(
+        self, builder, expanded_pbp, sample_rosters
+    ):
+        """build_game() computes team context and passes to apply_tiers."""
+        from unittest.mock import MagicMock
+        from fantasy_sim.data.pff.models import TeamContext
+
+        mock_tc_engine = MagicMock()
+        mock_tc_engine.compute.return_value = TeamContext(
+            pass_rate_factor=1.05,
+            ol_run_block_factor=0.97,
+            qb_quality_factor=1.02,
+        )
+
+        mock_tier_engine = MagicMock()
+
+        builder._team_context_engine = mock_tc_engine
+        builder._tier_engine = mock_tier_engine
+        builder._pff_crosswalk = {}
+        builder._pff_loader = MagicMock()
+
+        builder.build_game(
+            home_team="KC", away_team="BUF",
+            pbp=expanded_pbp, rosters=sample_rosters,
+            training_seasons=[2024], target_season=2024, week=8,
+        )
+
+        assert mock_tc_engine.compute.call_count == 2
+        assert mock_tier_engine.apply_tiers.call_count == 2
+        for tier_call in mock_tier_engine.apply_tiers.call_args_list:
+            assert "team_context" in tier_call.kwargs
+
+    def test_team_context_skipped_when_no_target_season(
+        self, builder, expanded_pbp, sample_rosters
+    ):
+        """build_game() without target_season skips team context computation."""
+        from unittest.mock import MagicMock
+
+        mock_tc_engine = MagicMock()
+        mock_tier_engine = MagicMock()
+
+        builder._team_context_engine = mock_tc_engine
+        builder._tier_engine = mock_tier_engine
+        builder._pff_crosswalk = {}
+        builder._pff_loader = MagicMock()
+
+        builder.build_game(
+            home_team="KC", away_team="BUF",
+            pbp=expanded_pbp, rosters=sample_rosters,
+            training_seasons=[2024],
+            target_season=None, week=None,
+        )
+
+        mock_tc_engine.compute.assert_not_called()

@@ -80,6 +80,15 @@ class GameContextBuilder:
             self._tier_engine = TierEngine(self._pff_config.tier_engine, self._pff_loader)
             logger.info("PFF tier engine enabled")
 
+        self._team_context_engine = None
+
+        if self._pff_config.enabled and self._pff_config.team_context.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.team_context import TeamContextEngine
+            self._team_context_engine = TeamContextEngine(
+                self._pff_config.team_context, self._pff_loader
+            )
+            logger.info("PFF team context engine enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -361,13 +370,33 @@ class GameContextBuilder:
             nfl_roster_df = self.loader.load_rosters(all_roster_seasons)
             # Use passed PBP or load if not provided
             pbp_df = pbp if pbp is not None else self.loader.load_pbp(training_seasons)
+
+            # Compute team context (season-level, per-team)
+            home_ctx = None
+            away_ctx = None
+            if self._team_context_engine is not None and target_season and week:
+                home_ctx = self._team_context_engine.compute(
+                    team=home_roster.team,
+                    target_season=target_season,
+                    max_week=week,
+                    pbp=pbp_df,
+                )
+                away_ctx = self._team_context_engine.compute(
+                    team=away_roster.team,
+                    target_season=target_season,
+                    max_week=week,
+                    pbp=pbp_df,
+                )
+
             self._tier_engine.apply_tiers(
                 home_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
+                team_context=home_ctx,
             )
             self._tier_engine.apply_tiers(
                 away_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
+                team_context=away_ctx,
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
