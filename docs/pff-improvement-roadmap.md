@@ -1,11 +1,12 @@
 # PFF Improvement Roadmap
 
 Status as of 2026-04-04:
-- **matchup+tier-med-sens** (#20): PASS (rank_corr +0.0376, wk_mae -0.306, szn_mae -4.331) — current default
+- **tc+matchup-no-passrate** (#24): PASS (rank_corr +0.0381, wk_mae -0.260, szn_mae -4.309, calibr -0.0125) — current default
 - Tier config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
+- Team context config: pass_rate_sensitivity=0.0 (disabled), ol_run_sensitivity=0.06, qb_quality_sensitivity=0.05, clamp [0.90, 1.10], min_games=4
 - Matchup config: medium sensitivities (0.06-0.075), clamp [0.90, 1.10], min_games=4
 - Same-season rolling window: week < max_week filter, linear ramp blend with previous season
-- Sweep rounds 1+2 (tier) + round 3 (matchup) complete (see results below)
+- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) complete (see results below)
 
 ## Completed Fixes
 
@@ -114,15 +115,21 @@ Sweep results (all matchup+tier, 4yr training, 3 seasons):
 | **20** | **medium (0.06-0.075)** | **+0.0376** | **-0.306** | **-4.331** | -0.0108 |
 | 21 | wide clamp (0.85-1.15) | +0.0360 | -0.282 | -4.235 | -0.0122 |
 
-### 2. Team Context Layer — Tier Engine v2 (MEDIUM-HIGH)
+### 2. ~~Team Context Layer — Tier Engine v2~~ — COMPLETE
 
-**What:** Adjust tier distributions for the player's own team context: team pass rate scales target volume, OL grade shifts rushing yards, QB quality scales WR/TE catch rate.
+**Result:** tc+matchup-no-passrate (#24) is new default. rank_corr +0.0381, wk_mae -0.260, szn_mae -4.309, calibr -0.0125.
 
-**Why:** A Tier 2 RB behind the league's best OL projects differently than one behind the worst. Currently, two Tier 2 RBs on different teams get the same distributions. Team context differentiates them.
+Three factors implemented, one disabled after sweep. **OL run blocking → RB rushing_yards** and **QB quality → WR/TE catch_rate** show consistent per-position lift (RB +0.05-0.10, TE +0.02-0.09 across all 3 seasons). **Pass rate → WR/TE target_share** was disabled (sensitivity=0.0) — it diluted rank_corr because target_share is already well-measured from PBP data.
 
-**Data required:** offense_pass_blocking, offense_run_blocking (OL grades), passing_summary (QB quality). All already scraped.
+Sweep results (all tc+tier+matchup, 4yr training, 3 seasons):
 
-**Implementation:** New step between tier selection and blending. After `select_distributions()` returns tier-level values, apply team context multipliers before blending with PBP. Complements the matchup engine: team context = season-level ("what team does he play for"), matchup = week-level ("what defense is he facing").
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 22 | tc+tier default (all 3 factors) | +0.0319 | -0.231 | -3.016 | -0.0095 |
+| 23 | tc+tier+matchup default | +0.0328 | -0.285 | -4.307 | -0.0122 |
+| **24** | **no pass rate, default sens** | **+0.0381** | -0.260 | -4.309 | **-0.0125** |
+| 25 | no pass rate, high OL (0.09) | +0.0354 | -0.269 | -4.288 | -0.0124 |
+| 26 | no pass rate, high QB (0.08) | +0.0376 | -0.264 | -4.338 | -0.0126 |
 
 ### 3. NCAA Tier Assignment for Rookies (MEDIUM)
 

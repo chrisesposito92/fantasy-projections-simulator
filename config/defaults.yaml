@@ -84,7 +84,7 @@ pff:
 
   team_context:
     enabled: true
-    pass_rate_sensitivity: 0.08
+    pass_rate_sensitivity: 0.0
     ol_run_sensitivity: 0.06
     qb_quality_sensitivity: 0.05
     factor_clamp: [0.90, 1.10]
