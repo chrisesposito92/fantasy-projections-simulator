@@ -1,8 +1,9 @@
 # PFF Improvement Roadmap
 
 Status as of 2026-04-03:
-- **tier-v1-4yr-3szn**: PASS (rank_corr +0.0255, season_mae -2.714) — first PASS ever
-- **QB fix v2**: Only blend fumble_rate for QBs, skip all other fields + yards (committed, not yet A/B tested)
+- **tier-tight+wr-nosec** (#15): PASS (rank_corr +0.0353, wk_mae -0.254, szn_mae -3.201) — current default
+- Config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
+- Sweep rounds 1+2 complete (see results below)
 
 ## Completed Fixes
 
@@ -12,46 +13,23 @@ Status as of 2026-04-03:
 
 ## Tuning Candidates (config-override sweeps)
 
-### A. WR Secondary Grade
-**Current:** `yprr` (yards per route run)
-**Issue:** WR improved in 2023/2024 but slightly regressed in 2025 (-0.016). yprr may overcorrect for YAC-dependent receivers who have high catch rates but low yards-per-route-run.
-**Try:**
-```bash
-uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --training-years 4 \
-  --seasons 2023 2024 2025 \
-  --config-override '{"tier_engine": {"position_grades": {"WR": {"secondary": "avg_depth_of_target"}}}}' \
-  --label "tier-wr-adot-secondary"
-```
-**Also try:** Disabling secondary interpolation entirely (set secondary to a non-existent column, falls back to 0.5 percentile = tier median for all WRs).
+### A. WR Secondary Grade — SWEPT
+**Result:** Disabling WR secondary interpolation is best. ADOT is better than yprr but still worse than disabled.
+- **#12 tier-wr-no-secondary**: rank_corr +0.0363 (new best), szn_mae -3.130 — **WINNER**
+- **#14 tier-wr-adot-secondary**: rank_corr +0.0340, szn_mae -3.304 — solid but not best
+- yprr within-tier interpolation was adding noise for WRs, not signal
 
-### B. Reliability Floor/Cap
-**Current:** floor=0.15, cap=0.85 (15% tier weight minimum, 85% PBP weight maximum)
-**Issue:** 15% tier influence on established 3-year players may be too much noise, especially for positions with thin tier pools.
-**Try:**
-```bash
-# Less tier influence on established players
---config-override '{"tier_engine": {"reliability_floor": 0.10, "reliability_cap": 0.90}}'
+### B. Reliability Floor/Cap — SWEPT
+**Result:** More tier influence is better. Tight (0.20/0.80) beats loose (0.10/0.90) on MAE; both beat baseline.
+- **#10 tier-reliability-tight (0.20/0.80)**: rank_corr +0.0335, szn_mae -3.341 (best MAE) — **WINNER**
+- **#11 tier-reliability-loose (0.10/0.90)**: rank_corr +0.0328, szn_mae -2.822 — worse than baseline MAE
 
-# More tier influence (if we think tiers are underweighted)
---config-override '{"tier_engine": {"reliability_floor": 0.20, "reliability_cap": 0.80}}'
-```
+### C. Tier Count — SWEPT, RULED OUT
+**Result:** 4 tiers is worse than 5 tiers on rank_corr. Keep 5 tiers.
+- **#13 tier-4tiers**: rank_corr +0.0287 (below baseline +0.0304) — not adopted
 
-### C. Tier Count
-**Current:** 5 tiers with cutoffs [0.85, 0.65, 0.40, 0.20]
-**Issue:** Some positions may have too few player-seasons per tier, causing thin-tier merging. Fewer tiers = larger pools = more robust distributions.
-**Try:** 4 tiers with cutoffs [0.80, 0.55, 0.30]:
-```bash
---config-override '{"tier_engine": {"cutoffs": [0.80, 0.55, 0.30]}}'
-```
-
-### D. Blend Pool Size
-**Current:** 500 samples
-**Issue:** Might be too small or too large for the yards concatenation blend.
-**Try:** 300 and 800:
-```bash
---config-override '{"tier_engine": {"blend_pool_size": 300}}'
---config-override '{"tier_engine": {"blend_pool_size": 800}}'
-```
+### D. Blend Pool Size — NOT YET TESTED
+**Current:** 500 samples. Lower priority given strong results from A+B sweeps.
 
 ### E. Additional Position Grades (3+ per position)
 
@@ -83,14 +61,37 @@ uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --training-ye
 
 ## Sweep Strategy
 
-Run each override independently against the baseline (tier-v2-qbfix-4yr) to isolate effects. Use the same params:
+Base command for all sweeps:
 ```bash
---mode tier --sims 50 --training-years 4 --seasons 2023 2024 2025
+uv run python scripts/validate_pff_signal.py --mode tier --sims 50 --training-years 4 --seasons 2023 2024 2025
 ```
 
-Priority order: B (reliability) > A (WR secondary) > E (additional grades) > C (tier count) > F (position-specific reliability) > D (pool size)
+### Round 1 Results (2026-04-03)
 
-Reliability tuning has the broadest impact across all positions. WR secondary grade is targeted at the one position with inconsistent results. Tier count and pool size are refinements.
+Each candidate tested independently against baseline #9 (tier-v2-qbfix-4yr):
+
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 9 | baseline (current) | +0.0304 | -0.227 | -2.900 | -0.0085 |
+| 12 | WR secondary disabled | **+0.0363** | -0.235 | -3.130 | -0.0086 |
+| 14 | WR secondary=ADOT | +0.0340 | -0.237 | -3.304 | -0.0076 |
+| 10 | reliability tight (0.20/0.80) | +0.0335 | **-0.243** | **-3.341** | **-0.0092** |
+| 11 | reliability loose (0.10/0.90) | +0.0328 | -0.207 | -2.822 | -0.0082 |
+| 13 | 4 tiers | +0.0287 | -0.214 | -2.926 | -0.0088 |
+
+### Round 2: Combo Sweep (2026-04-03)
+
+Combined tight reliability + WR no-secondary:
+
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 15 | tight + WR no-sec | +0.0353 | **-0.254** | -3.201 | -0.0086 |
+
+Best weekly MAE, second-best rank_corr. Adopted as new default (#15 → defaults.yaml).
+
+### Remaining Candidates
+
+Priority: E (additional grades) > F (position-specific reliability) > D (pool size)
 
 ---
 
