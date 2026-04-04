@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
-from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig, TierConfig
+from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 # ---------------------------------------------------------------------------
@@ -221,22 +221,37 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
     elif mode == "talent":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
     elif mode == "tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
     elif mode == "matchup+tier":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+    elif mode == "team_context+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=True)
+    elif mode == "team_context+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=True)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -272,8 +287,13 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
                             setattr(current, k, v)
                 else:
                     setattr(tier_cfg, key, val)
+    if overrides and "team_context" in overrides:
+        for key, val in overrides["team_context"].items():
+            if hasattr(tc_cfg, key):
+                setattr(tc_cfg, key, val)
 
-    return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg, tier_engine=tier_cfg)
+    return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg,
+                     tier_engine=tier_cfg, team_context=tc_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +323,11 @@ def run_backtest_pair(
           f"season_mae={result_off.season_mae:.3f}  "
           f"rank_corr={_format_rank_corr(result_off)}")
 
-    if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
+    if pff_config.team_context.enabled and pff_config.tier_engine.enabled and pff_config.matchup.enabled:
+        mode_label = "team_context+tier+matchup"
+    elif pff_config.team_context.enabled and pff_config.tier_engine.enabled:
+        mode_label = "team_context+tier"
+    elif pff_config.matchup.enabled and pff_config.tier_engine.enabled:
         mode_label = "matchup+tier"
     elif pff_config.matchup.enabled and not pff_config.talent.enabled:
         mode_label = "matchup"
@@ -456,14 +480,17 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["matchup", "talent", "tier", "matchup+tier", "all"],
+        choices=["matchup", "talent", "tier", "matchup+tier",
+                 "team_context+tier", "team_context+tier+matchup", "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
+            "'team_context+tier' = tier + team context, "
+            "'team_context+tier+matchup' = full stack, "
+            "'matchup+tier' = matchup + tier (current default), "
             "'matchup' = defensive matchup adjustments only, "
             "'talent' = talent stabilizer only, "
             "'tier' = tier distribution engine only, "
-            "'matchup+tier' = matchup + tier (no talent), "
             "'all' = matchup + talent layers (default: all)."
         ),
     )
@@ -513,8 +540,8 @@ def main() -> int:
         default=None,
         dest="config_override",
         metavar="JSON",
-        help='PFF config overrides as JSON string. Keys: "talent", "matchup", "tier_engine". '
-             'Example: \'{"tier_engine": {"reliability_floor": 0.10, "reliability_cap": 0.90}}\'',
+        help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", "team_context". '
+             'Example: \'{"team_context": {"pass_rate_sensitivity": 0.10}}\'',
     )
 
     args = parser.parse_args()
