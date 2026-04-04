@@ -117,6 +117,39 @@ class TestTierConfig:
         assert cfg.talent.enabled is True
         assert cfg.tier_engine.enabled is True
 
+    def test_load_team_context_config_from_yaml(self):
+        """Full YAML team_context section is parsed correctly."""
+        from fantasy_sim.data.pff.models import TeamContextConfig
+        cfg = load_pff_config({
+            "pff": {
+                "team_context": {
+                    "enabled": True,
+                    "pass_rate_sensitivity": 0.10,
+                    "ol_run_sensitivity": 0.08,
+                    "qb_quality_sensitivity": 0.06,
+                    "factor_clamp": [0.85, 1.15],
+                    "min_games": 3,
+                    "ol_run_yards_scale": 12.0,
+                }
+            }
+        })
+        tc = cfg.team_context
+        assert isinstance(tc, TeamContextConfig)
+        assert tc.enabled is True
+        assert tc.pass_rate_sensitivity == 0.10
+        assert tc.ol_run_sensitivity == 0.08
+        assert tc.qb_quality_sensitivity == 0.06
+        assert tc.factor_clamp == (0.85, 1.15)
+        assert tc.min_games == 3
+        assert tc.ol_run_yards_scale == 12.0
+
+    def test_team_context_config_defaults_when_absent(self):
+        """PffConfig.team_context defaults to TeamContextConfig() when section is absent."""
+        from fantasy_sim.data.pff.models import TeamContextConfig
+        cfg = load_pff_config({"pff": {}})
+        assert isinstance(cfg.team_context, TeamContextConfig)
+        assert cfg.team_context.enabled is True
+
 
 class TestTierAssignment:
     """Tests for TierEngine._assign_tier boundary logic."""

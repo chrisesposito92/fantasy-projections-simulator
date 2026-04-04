@@ -9,6 +9,7 @@ from fantasy_sim.data.pff.models import (
     PositionGradeConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
+    TeamContextConfig,
     TierConfig,
 )
 
@@ -121,10 +122,23 @@ def load_pff_config(config: dict) -> PffConfig:
         blend_pool_size=tier_raw.get("blend_pool_size", 500),
     )
 
+    tc_raw = pff.get("team_context", {})
+    tc_clamp = tc_raw.get("factor_clamp", [0.90, 1.10])
+    team_context = TeamContextConfig(
+        enabled=tc_raw.get("enabled", True),
+        pass_rate_sensitivity=tc_raw.get("pass_rate_sensitivity", 0.08),
+        ol_run_sensitivity=tc_raw.get("ol_run_sensitivity", 0.06),
+        qb_quality_sensitivity=tc_raw.get("qb_quality_sensitivity", 0.05),
+        factor_clamp=tuple(tc_clamp),
+        min_games=tc_raw.get("min_games", 4),
+        ol_run_yards_scale=tc_raw.get("ol_run_yards_scale", 10.0),
+    )
+
     return PffConfig(
         enabled=pff.get("enabled", False),
         data_dir=pff.get("data_dir"),
         matchup=matchup,
         talent=talent,
         tier_engine=tier_engine,
+        team_context=team_context,
     )

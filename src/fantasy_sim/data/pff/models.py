@@ -142,6 +142,30 @@ class TierConfig:
 
 
 @dataclass
+class TeamContext:
+    """Season-level team environment factors for tier distribution adjustment.
+
+    All factors centered on 1.0 (neutral).
+    """
+    pass_rate_factor: float = 1.0
+    ol_run_block_factor: float = 1.0
+    qb_quality_factor: float = 1.0
+    ol_run_yards_scale: float = 10.0
+
+
+@dataclass
+class TeamContextConfig:
+    """Configuration for the team context engine."""
+    enabled: bool = True
+    pass_rate_sensitivity: float = 0.08
+    ol_run_sensitivity: float = 0.06
+    qb_quality_sensitivity: float = 0.05
+    factor_clamp: tuple[float, float] = (0.90, 1.10)
+    min_games: int = 4
+    ol_run_yards_scale: float = 10.0
+
+
+@dataclass
 class PffConfig:
     """Top-level PFF configuration."""
     enabled: bool = False
@@ -149,3 +173,4 @@ class PffConfig:
     matchup: MatchupConfig = field(default_factory=MatchupConfig)
     talent: TalentConfig = field(default_factory=TalentConfig)
     tier_engine: TierConfig = field(default_factory=TierConfig)
+    team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
