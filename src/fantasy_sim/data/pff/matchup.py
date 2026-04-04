@@ -323,8 +323,8 @@ class MatchupEngine:
 
         # Early-season blend: load previous season
         prev_df = self._load_cached(facet, [target_season - 1])
-        if prev_df.is_empty():
-            # No previous season data — use whatever current season gives us
+        if prev_df.is_empty() or self._count_team_games(prev_df, team) == 0:
+            # No previous season data for this team — use current season only
             return current_factor
 
         prev_factor = self._compute_single_factor(

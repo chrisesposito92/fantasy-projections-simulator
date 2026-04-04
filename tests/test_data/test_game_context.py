@@ -150,7 +150,7 @@ class TestGameContextBuilder:
         assert "SD14" not in hou_ids_w6, "SD14 should not be on HOU at week 6"
 
     def test_matchup_engine_receives_target_season_and_week(
-        self, builder, expanded_pbp, sample_rosters, tmp_path
+        self, builder, expanded_pbp, sample_rosters
     ):
         """build_game() passes target_season and week to matchup engine."""
         from unittest.mock import MagicMock
