@@ -148,3 +148,36 @@ class TestGameContextBuilder:
         hou_ids_w6 = [p.player_id for p in hou_roster_w6.players]
         assert "SD14" in kc_ids_w6, "SD14 should be on KC at week 6"
         assert "SD14" not in hou_ids_w6, "SD14 should not be on HOU at week 6"
+
+    def test_matchup_engine_receives_target_season_and_week(
+        self, builder, expanded_pbp, sample_rosters, tmp_path
+    ):
+        """build_game() passes target_season and week to matchup engine."""
+        from unittest.mock import MagicMock
+        from fantasy_sim.data.pff.models import MatchupContext
+
+        mock_engine = MagicMock()
+        mock_engine.compute.return_value = MatchupContext()
+
+        builder._matchup_engine = mock_engine
+
+        builder.build_game(
+            home_team="KC", away_team="BUF",
+            pbp=expanded_pbp, rosters=sample_rosters,
+            training_seasons=[2024], target_season=2024, week=8,
+        )
+
+        # Should be called twice: away D vs home O, home D vs away O
+        assert mock_engine.compute.call_count == 2
+
+        # First call: away defense (BUF) adjusts home offense (KC)
+        call1 = mock_engine.compute.call_args_list[0]
+        assert call1.kwargs["defense_team"] == "BUF"
+        assert call1.kwargs["target_season"] == 2024
+        assert call1.kwargs["max_week"] == 8
+
+        # Second call: home defense (KC) adjusts away offense (BUF)
+        call2 = mock_engine.compute.call_args_list[1]
+        assert call2.kwargs["defense_team"] == "KC"
+        assert call2.kwargs["target_season"] == 2024
+        assert call2.kwargs["max_week"] == 8

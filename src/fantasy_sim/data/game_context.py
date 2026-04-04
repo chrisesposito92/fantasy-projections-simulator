@@ -340,12 +340,14 @@ class GameContextBuilder:
             home_ctx = self._matchup_engine.compute(
                 defense_team=away_team,
                 offense_team=home_team,
-                training_seasons=training_seasons,
+                target_season=target_season,
+                max_week=week,
             )
             away_ctx = self._matchup_engine.compute(
                 defense_team=home_team,
                 offense_team=away_team,
-                training_seasons=training_seasons,
+                target_season=target_season,
+                max_week=week,
             )
             self._apply_matchup(home_dists, home_roster, home_ctx)
             self._apply_matchup(away_dists, away_roster, away_ctx)
