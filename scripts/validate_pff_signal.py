@@ -229,6 +229,10 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
+    elif mode == "matchup+tier":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
@@ -299,11 +303,16 @@ def run_backtest_pair(
           f"season_mae={result_off.season_mae:.3f}  "
           f"rank_corr={_format_rank_corr(result_off)}")
 
-    mode_label = (
-        "matchup" if pff_config.matchup.enabled and not pff_config.talent.enabled
-        else "talent" if pff_config.talent.enabled and not pff_config.matchup.enabled
-        else "all"
-    )
+    if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
+        mode_label = "matchup+tier"
+    elif pff_config.matchup.enabled and not pff_config.talent.enabled:
+        mode_label = "matchup"
+    elif pff_config.talent.enabled and not pff_config.matchup.enabled:
+        mode_label = "talent"
+    elif pff_config.tier_engine.enabled:
+        mode_label = "tier"
+    else:
+        mode_label = "all"
     print(f"  [Season {test_season}] Running PFF-ON ({mode_label})...")
     t0 = time.time()
     bt_on = Backtester(
@@ -447,13 +456,14 @@ def main() -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["matchup", "talent", "tier", "all"],
+        choices=["matchup", "talent", "tier", "matchup+tier", "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
             "'matchup' = defensive matchup adjustments only, "
             "'talent' = talent stabilizer only, "
             "'tier' = tier distribution engine only, "
+            "'matchup+tier' = matchup + tier (no talent), "
             "'all' = matchup + talent layers (default: all)."
         ),
     )

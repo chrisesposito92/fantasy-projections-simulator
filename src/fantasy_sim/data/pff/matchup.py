@@ -212,6 +212,25 @@ class MatchupEngine:
         team_avg = valid.select(pl.col(stat_col).mean()).item()
         return float(team_avg) if team_avg is not None else None, game_count
 
+    def _count_team_games(self, df: pl.DataFrame, team: str) -> int:
+        """Count distinct games for a team in a DataFrame.
+
+        Returns:
+            Number of distinct games. 0 if team not found or df is empty.
+        """
+        if df.is_empty():
+            return 0
+
+        team_rows = df.filter(pl.col("team") == team)
+        if team_rows.is_empty():
+            return 0
+
+        if "game_id" in team_rows.columns:
+            return team_rows.select(pl.col("game_id").n_unique()).item()
+        elif "week" in team_rows.columns:
+            return team_rows.select(pl.col("week").n_unique()).item()
+        return team_rows.height
+
     def _compute_single_factor(
         self,
         df: pl.DataFrame,
@@ -260,47 +279,107 @@ class MatchupEngine:
 
         return factor
 
+    def _compute_blended_factor(
+        self,
+        facet: str,
+        team: str,
+        spec: dict,
+        target_season: int,
+        max_week: int,
+    ) -> float:
+        """Compute a single factor with same-season rolling window + blend.
+
+        Loads current-season data filtered to week < max_week. If the team
+        has fewer than min_games games in that window, blends with the
+        previous season using a linear ramp: weight = games / min_games.
+
+        Args:
+            facet: PFF facet name (e.g. "defense_coverage").
+            team: Team abbreviation to compute the factor for.
+            spec: Factor specification dict from _FACTOR_SPECS.
+            target_season: The season being simulated.
+            max_week: Filter data to week < max_week.
+
+        Returns:
+            Blended factor value (centered on 1.0).
+        """
+        config = self._config
+
+        # Load current season and filter to week < max_week
+        current_df = self._load_cached(facet, [target_season])
+        if not current_df.is_empty() and "week" in current_df.columns:
+            current_df = current_df.filter(pl.col("week") < max_week)
+
+        # Count this team's games in the filtered window
+        current_games = self._count_team_games(current_df, team)
+
+        # Compute factor from current-season data (may be empty)
+        current_factor = self._compute_single_factor(
+            current_df, team, spec, config,
+        )
+
+        if current_games >= config.min_games:
+            return current_factor
+
+        # Early-season blend: load previous season
+        prev_df = self._load_cached(facet, [target_season - 1])
+        if prev_df.is_empty() or self._count_team_games(prev_df, team) == 0:
+            # No previous season data for this team — use current season only
+            return current_factor
+
+        prev_factor = self._compute_single_factor(
+            prev_df, team, spec, config,
+        )
+
+        # Linear ramp: blend_weight = current_games / min_games
+        blend_weight = current_games / config.min_games
+        return blend_weight * current_factor + (1 - blend_weight) * prev_factor
+
     def compute(
         self,
         defense_team: str,
         offense_team: str,
-        training_seasons: list[int],
-        season_weights: dict[int, float] | None = None,
+        target_season: int | None = None,
+        max_week: int | None = None,
     ) -> MatchupContext:
         """Compute matchup adjustment factors for a game.
+
+        Uses same-season rolling window: for a week 8 game, loads PFF
+        data from weeks 1-7 of target_season. Early-season games blend
+        with previous-season data when the team has < min_games games.
 
         Args:
             defense_team: Team abbreviation for the defense (opponent).
             offense_team: Team abbreviation for the offense (own team).
-            training_seasons: Seasons to load PFF data from.
-            season_weights: Optional season weighting (not used for factor
-                computation, reserved for future recency weighting).
+            target_season: The season being simulated. None = neutral.
+            max_week: The week being simulated. Data is filtered to
+                week < max_week. None = neutral.
 
         Returns:
             MatchupContext with all factors populated.
         """
-        _ = season_weights  # reserved for future recency weighting
         if not self._config.enabled:
+            return MatchupContext()
+        if target_season is None or max_week is None:
             return MatchupContext()
 
         context = MatchupContext()
 
         for spec in _FACTOR_SPECS:
-            facet = spec["facet"]
             team = defense_team if spec["team_side"] == "defense" else offense_team
-
-            df = self._load_cached(facet, training_seasons)
-            if df.is_empty():
-                continue  # Factor stays at 1.0
-
-            factor = self._compute_single_factor(df, team, spec, self._config)
+            factor = self._compute_blended_factor(
+                spec["facet"], team, spec, target_season, max_week,
+            )
             setattr(context, spec["field"], factor)
 
         logger.info(
-            "Matchup factors: %s D vs %s O → catch=%.3f pass_yd=%.3f "
-            "sack=%.3f int=%.3f rush_yd=%.3f ol_pass=%.3f ol_run=%.3f",
+            "Matchup factors: %s D vs %s O (season=%d, week<%d) → "
+            "catch=%.3f pass_yd=%.3f sack=%.3f int=%.3f "
+            "rush_yd=%.3f ol_pass=%.3f ol_run=%.3f",
             defense_team,
             offense_team,
+            target_season,
+            max_week,
             context.catch_rate_factor,
             context.pass_yards_factor,
             context.sack_rate_factor,

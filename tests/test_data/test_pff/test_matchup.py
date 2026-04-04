@@ -562,7 +562,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # BAL catch_rate=0.55 is below avg (0.6367), so factor < 1.0
         assert ctx.catch_rate_factor < 1.0
@@ -574,7 +574,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("CAR", "KC", [2024])
+        ctx = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor > 1.0
 
@@ -583,7 +583,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("KC", "KC", [2024])
+        ctx = engine.compute("KC", "KC", target_season=2024, max_week=18)
 
         # KC is close to average, factor should be near 1.0
         assert ctx.catch_rate_factor == pytest.approx(1.0, abs=0.05)
@@ -591,7 +591,7 @@ class TestMatchupEngineCompute:
     def test_no_data_returns_neutral_context(self, pff_dir, loader, default_config):
         """When no PFF data exists, all factors should be 1.0."""
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == 1.0
         assert ctx.pass_yards_factor == 1.0
@@ -610,7 +610,7 @@ class TestMatchupEngineCompute:
             matchup=MatchupConfig(enabled=False),
         )
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == 1.0
         assert ctx.sack_rate_factor == 1.0
@@ -661,7 +661,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, extreme_teams)
 
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # With tight clamp, BAL elite defense should be clamped at 0.95
         assert ctx.catch_rate_factor >= 0.95
@@ -676,8 +676,8 @@ class TestMatchupEngineCompute:
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_bal = engine.compute("BAL", "KC", [2024])
-        ctx_car = engine.compute("CAR", "KC", [2024])
+        ctx_bal = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx_car = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # BAL is elite, CAR is weak — all factors should differ
         assert ctx_bal.catch_rate_factor < ctx_car.catch_rate_factor
@@ -691,7 +691,7 @@ class TestMatchupEngineCompute:
         _write_defense_pass_rush(pff_dir, 2024, THREE_TEAM_PASS_RUSH)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.sack_rate_factor > 1.0
 
@@ -700,8 +700,8 @@ class TestMatchupEngineCompute:
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_bal = engine.compute("BAL", "KC", [2024])
-        ctx_car = engine.compute("CAR", "KC", [2024])
+        ctx_bal = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx_car = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # BAL has high stop_percent=12.0 → inverted → lower rush_yards_factor
         # CAR has low stop_percent=5.0 → inverted → higher rush_yards_factor
@@ -713,8 +713,8 @@ class TestMatchupEngineCompute:
         _write_offense_pass_blocking(pff_dir, 2024, THREE_TEAM_OL_PASS)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_phi = engine.compute("KC", "PHI", [2024])
-        ctx_nyg = engine.compute("KC", "NYG", [2024])
+        ctx_phi = engine.compute("KC", "PHI", target_season=2024, max_week=18)
+        ctx_nyg = engine.compute("KC", "NYG", target_season=2024, max_week=18)
 
         # PHI has high pbe=92 → inverted → lower ol_pass_block_factor
         # NYG has low pbe=78 → inverted → higher ol_pass_block_factor
@@ -726,8 +726,8 @@ class TestMatchupEngineCompute:
         _write_offense_run_blocking(pff_dir, 2024, THREE_TEAM_OL_RUN)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_phi = engine.compute("KC", "PHI", [2024])
-        ctx_nyg = engine.compute("KC", "NYG", [2024])
+        ctx_phi = engine.compute("KC", "PHI", target_season=2024, max_week=18)
+        ctx_nyg = engine.compute("KC", "NYG", target_season=2024, max_week=18)
 
         # PHI has high grades_run_block=85 → factor > 1.0
         # NYG has low grades_run_block=55 → factor < 1.0
@@ -747,7 +747,7 @@ class TestMatchupEngineCompute:
         )
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "PHI", [2024])
+        ctx = engine.compute("BAL", "PHI", target_season=2024, max_week=18)
 
         # BAL elite defense: catch_rate and pass_yards below 1.0
         assert ctx.catch_rate_factor < 1.0
@@ -764,7 +764,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("SEA", "KC", [2024])
+        ctx = engine.compute("SEA", "KC", target_season=2024, max_week=18)
 
         # SEA is not in the data, so defensive factors → 1.0
         assert ctx.catch_rate_factor == 1.0
@@ -814,7 +814,7 @@ class TestGradeFallback:
         _write_defense_coverage(pff_dir, 2024, low_game_teams)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # BAL has high grades_coverage_defense=90 → above-average grade → factor > 1.0
         # (grade-based, not primary-stat-based)
@@ -870,7 +870,7 @@ class TestGradeFallback:
 
         loader_sufficient = PffLoader(pff_dir)
         engine_sufficient = MatchupEngine(config, loader_sufficient)
-        ctx_primary = engine_sufficient.compute("BAL", "KC", [2024])
+        ctx_primary = engine_sufficient.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Now make BAL have insufficient games
         insufficient_teams = [
@@ -910,7 +910,7 @@ class TestGradeFallback:
 
         loader_insuf = PffLoader(pff_dir2)
         engine_insuf = MatchupEngine(config, loader_insuf)
-        ctx_grade = engine_insuf.compute("BAL", "KC", [2024])
+        ctx_grade = engine_insuf.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Both should shift catch_rate_factor away from 1.0,
         # but grade-based should shift less due to GRADE_SENSITIVITY_DISCOUNT
@@ -936,8 +936,8 @@ class TestMatchupCaching:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx1 = engine.compute("BAL", "KC", [2024])
-        ctx2 = engine.compute("CAR", "KC", [2024])
+        ctx1 = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx2 = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # Both used the same facet+seasons — cache should have been hit
         assert len(engine._cache) >= 1
@@ -950,8 +950,8 @@ class TestMatchupCaching:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        engine.compute("BAL", "KC", [2023])
-        engine.compute("BAL", "KC", [2024])
+        engine.compute("BAL", "KC", target_season=2023, max_week=18)
+        engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Should have separate cache entries for each season
         keys = list(engine._cache.keys())
@@ -1051,7 +1051,7 @@ class TestLeagueStatsAggregation:
         _write_defense_coverage(pff_dir, 2024, single_team)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Only one team → std = 0 → all factors 1.0
         assert ctx.catch_rate_factor == 1.0
@@ -1089,7 +1089,7 @@ class TestNumericPrecision:
 
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == pytest.approx(expected_factor, abs=0.005)
 
@@ -1117,6 +1117,321 @@ class TestNumericPrecision:
 
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.rush_yards_factor == pytest.approx(expected_inverted, abs=0.005)
+
+
+# ========== Rolling window tests ==========
+
+
+class TestRollingWindow:
+    """Tests for same-season rolling window matchup computation."""
+
+    def test_none_target_season_returns_neutral(self, pff_dir, loader, default_config):
+        """compute() with target_season=None returns all-neutral MatchupContext."""
+        _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=None, max_week=8)
+
+        assert ctx.catch_rate_factor == 1.0
+        assert ctx.sack_rate_factor == 1.0
+        assert ctx.rush_yards_factor == 1.0
+
+    def test_none_max_week_returns_neutral(self, pff_dir, loader, default_config):
+        """compute() with max_week=None returns all-neutral MatchupContext."""
+        _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=None)
+
+        assert ctx.catch_rate_factor == 1.0
+        assert ctx.sack_rate_factor == 1.0
+        assert ctx.rush_yards_factor == 1.0
+
+    def test_only_uses_weeks_before_max_week(self, pff_dir, loader, default_config):
+        """compute(target_season=2024, max_week=8) only uses weeks 1-7 data."""
+        # Write data for weeks 1-7 with BAL strong defense
+        early_teams = [
+            {"team": "BAL", "n_players": 2, "n_games": 7,
+             "catch_rate": 0.55, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 88.0, "interceptions": 1.2},
+            {"team": "KC", "n_players": 2, "n_games": 7,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 7,
+             "catch_rate": 0.72, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, early_teams)
+
+        # Append weeks 8-10 with weak BAL defense to the same parquet
+        late_rows = {
+            "player_id": [], "player": [], "team": [], "position": [],
+            "season": [], "week": [], "game_id": [],
+            "catch_rate": [], "yards_per_reception": [],
+            "grades_coverage_defense": [], "targets": [],
+            "receptions": [], "interceptions": [], "yards": [],
+            "yards_after_catch": [],
+        }
+        for w in [8, 9, 10]:
+            for pid_offset, team_info in enumerate([
+                ("BAL", 0.80, 15.0, 45.0, 0.2),
+                ("KC", 0.64, 12.0, 65.0, 0.7),
+                ("CAR", 0.72, 14.5, 48.0, 0.3),
+            ]):
+                team, cr, ypr, grade, ints = team_info
+                late_rows["player_id"].append(9000 + pid_offset)
+                late_rows["player"].append(f"Late_{team}")
+                late_rows["team"].append(team)
+                late_rows["position"].append("CB")
+                late_rows["season"].append(2024)
+                late_rows["week"].append(w)
+                late_rows["game_id"].append(9000 + w)
+                late_rows["catch_rate"].append(cr)
+                late_rows["yards_per_reception"].append(ypr)
+                late_rows["grades_coverage_defense"].append(grade)
+                late_rows["targets"].append(20)
+                late_rows["receptions"].append(int(cr * 20))
+                late_rows["interceptions"].append(ints)
+                late_rows["yards"].append(ypr * 5.0)
+                late_rows["yards_after_catch"].append(ypr * 2.0)
+
+        early_df = pl.read_parquet(pff_dir / "defense_coverage_2024.parquet")
+        late_df = pl.DataFrame(late_rows)
+        combined = pl.concat([early_df, late_df], how="diagonal_relaxed")
+        combined.write_parquet(pff_dir / "defense_coverage_2024.parquet")
+
+        engine = MatchupEngine(default_config, loader)
+        ctx_w8 = engine.compute("BAL", "KC", target_season=2024, max_week=8)
+        assert ctx_w8.catch_rate_factor < 1.0
+
+        engine2 = MatchupEngine(default_config, PffLoader(pff_dir))
+        ctx_w11 = engine2.compute("BAL", "KC", target_season=2024, max_week=11)
+        assert ctx_w11.catch_rate_factor > ctx_w8.catch_rate_factor
+
+    def test_early_season_blends_with_previous_season(
+        self, pff_dir, loader, default_config
+    ):
+        """Team with < min_games (4) same-season games blends with previous season."""
+        prev_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.75, "yards_per_reception": 14.0,
+             "grades_coverage_defense": 45.0, "interceptions": 0.3},
+            {"team": "KC", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.55, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 85.0, "interceptions": 1.0},
+        ]
+        _write_defense_coverage(pff_dir, 2023, prev_coverage)
+
+        curr_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 2,
+             "catch_rate": 0.50, "yards_per_reception": 9.0,
+             "grades_coverage_defense": 90.0, "interceptions": 1.5},
+            {"team": "KC", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.72, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, curr_coverage)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=3)
+        assert ctx.catch_rate_factor != 1.0
+
+    def test_blend_weight_is_linear_ramp(self, pff_dir, loader):
+        """Blend weight = current_games / min_games (linear ramp)."""
+        config = PffConfig(
+            enabled=True,
+            matchup=MatchupConfig(
+                enabled=True,
+                pass_defense_sensitivity=0.10,
+                factor_clamp=(0.50, 1.50),
+                min_games=4,
+            ),
+        )
+
+        prev_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.75, "yards_per_reception": 14.0,
+             "grades_coverage_defense": 45.0, "interceptions": 0.3},
+            {"team": "KC", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.60, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.45, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 85.0, "interceptions": 1.0},
+        ]
+        _write_defense_coverage(pff_dir, 2023, prev_coverage)
+
+        curr_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 1,
+             "catch_rate": 0.50, "yards_per_reception": 9.0,
+             "grades_coverage_defense": 90.0, "interceptions": 1.5},
+            {"team": "KC", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.60, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.70, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, curr_coverage)
+
+        engine = MatchupEngine(config, loader)
+        ctx_w2 = engine.compute("BAL", "KC", target_season=2024, max_week=2)
+
+        engine_prev = MatchupEngine(config, PffLoader(pff_dir))
+        ctx_prev = engine_prev.compute("BAL", "KC", target_season=2024, max_week=1)
+
+        assert ctx_w2.catch_rate_factor != ctx_prev.catch_rate_factor
+
+    def test_at_min_games_uses_current_only(self, pff_dir, loader, default_config):
+        """Once team reaches min_games (4), use current season only — no blending."""
+        prev_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.80, "yards_per_reception": 16.0,
+             "grades_coverage_defense": 40.0, "interceptions": 0.2},
+            {"team": "KC", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.55, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 85.0, "interceptions": 1.0},
+        ]
+        _write_defense_coverage(pff_dir, 2023, prev_coverage)
+
+        curr_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 4,
+             "catch_rate": 0.50, "yards_per_reception": 9.0,
+             "grades_coverage_defense": 90.0, "interceptions": 1.5},
+            {"team": "KC", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.72, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, curr_coverage)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=5)
+        assert ctx.catch_rate_factor < 1.0
+
+    def test_week_1_uses_previous_season_only(self, pff_dir, loader, default_config):
+        """Week 1 (max_week=1): 0 current-season games -> 100% previous season."""
+        prev_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.50, "yards_per_reception": 9.0,
+             "grades_coverage_defense": 90.0, "interceptions": 1.5},
+            {"team": "KC", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.75, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2023, prev_coverage)
+
+        curr_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.55, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 88.0, "interceptions": 1.2},
+            {"team": "KC", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.64, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.72, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, curr_coverage)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=1)
+        assert ctx.catch_rate_factor < 1.0
+
+    def test_no_data_either_season_returns_neutral(self, pff_dir, loader, default_config):
+        """No PFF data for current or previous season -> all factors 1.0."""
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=8)
+
+        assert ctx.catch_rate_factor == 1.0
+        assert ctx.pass_yards_factor == 1.0
+        assert ctx.sack_rate_factor == 1.0
+        assert ctx.int_rate_factor == 1.0
+        assert ctx.rush_yards_factor == 1.0
+        assert ctx.ol_pass_block_factor == 1.0
+        assert ctx.ol_run_block_factor == 1.0
+
+    def test_cache_reused_within_same_week(self, pff_dir, loader, default_config):
+        """Multiple compute() calls for the same season reuse cached season data."""
+        _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
+
+        engine = MatchupEngine(default_config, loader)
+        engine.compute("BAL", "KC", target_season=2024, max_week=8)
+        engine.compute("CAR", "KC", target_season=2024, max_week=8)
+
+        cache_keys = list(engine._cache.keys())
+        assert any("2024" in k for k in cache_keys)
+        coverage_keys = [k for k in cache_keys if "defense_coverage" in k]
+        assert len(coverage_keys) == 1
+
+    def test_blend_monotonically_shifts_toward_current(self, pff_dir, loader):
+        """As more current-season games accumulate, factor moves from prev toward current."""
+        config = PffConfig(
+            enabled=True,
+            matchup=MatchupConfig(
+                enabled=True,
+                pass_defense_sensitivity=0.10,
+                factor_clamp=(0.50, 1.50),
+                min_games=4,
+            ),
+        )
+
+        prev_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.75, "yards_per_reception": 14.0,
+             "grades_coverage_defense": 45.0, "interceptions": 0.3},
+            {"team": "KC", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.60, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 10,
+             "catch_rate": 0.45, "yards_per_reception": 10.0,
+             "grades_coverage_defense": 85.0, "interceptions": 1.0},
+        ]
+        _write_defense_coverage(pff_dir, 2023, prev_coverage)
+
+        curr_coverage = [
+            {"team": "BAL", "n_players": 2, "n_games": 3,
+             "catch_rate": 0.50, "yards_per_reception": 9.0,
+             "grades_coverage_defense": 90.0, "interceptions": 1.5},
+            {"team": "KC", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.60, "yards_per_reception": 12.0,
+             "grades_coverage_defense": 65.0, "interceptions": 0.7},
+            {"team": "CAR", "n_players": 2, "n_games": 6,
+             "catch_rate": 0.70, "yards_per_reception": 14.5,
+             "grades_coverage_defense": 48.0, "interceptions": 0.3},
+        ]
+        _write_defense_coverage(pff_dir, 2024, curr_coverage)
+
+        e1 = MatchupEngine(config, PffLoader(pff_dir))
+        f_w1 = e1.compute("BAL", "KC", target_season=2024, max_week=1).catch_rate_factor
+
+        e2 = MatchupEngine(config, PffLoader(pff_dir))
+        f_w2 = e2.compute("BAL", "KC", target_season=2024, max_week=2).catch_rate_factor
+
+        e3 = MatchupEngine(config, PffLoader(pff_dir))
+        f_w3 = e3.compute("BAL", "KC", target_season=2024, max_week=3).catch_rate_factor
+
+        e4 = MatchupEngine(config, PffLoader(pff_dir))
+        f_w4 = e4.compute("BAL", "KC", target_season=2024, max_week=4).catch_rate_factor
+
+        assert f_w1 > f_w2 or f_w1 == pytest.approx(f_w2, abs=0.001)
+        assert f_w2 > f_w3 or f_w2 == pytest.approx(f_w3, abs=0.001)
+        assert f_w3 > f_w4 or f_w3 == pytest.approx(f_w4, abs=0.001)
+        assert f_w1 > f_w4
