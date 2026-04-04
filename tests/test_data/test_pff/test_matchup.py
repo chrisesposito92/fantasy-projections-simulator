@@ -562,7 +562,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # BAL catch_rate=0.55 is below avg (0.6367), so factor < 1.0
         assert ctx.catch_rate_factor < 1.0
@@ -574,7 +574,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("CAR", "KC", [2024])
+        ctx = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor > 1.0
 
@@ -583,7 +583,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("KC", "KC", [2024])
+        ctx = engine.compute("KC", "KC", target_season=2024, max_week=18)
 
         # KC is close to average, factor should be near 1.0
         assert ctx.catch_rate_factor == pytest.approx(1.0, abs=0.05)
@@ -591,7 +591,7 @@ class TestMatchupEngineCompute:
     def test_no_data_returns_neutral_context(self, pff_dir, loader, default_config):
         """When no PFF data exists, all factors should be 1.0."""
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == 1.0
         assert ctx.pass_yards_factor == 1.0
@@ -610,7 +610,7 @@ class TestMatchupEngineCompute:
             matchup=MatchupConfig(enabled=False),
         )
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == 1.0
         assert ctx.sack_rate_factor == 1.0
@@ -661,7 +661,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, extreme_teams)
 
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # With tight clamp, BAL elite defense should be clamped at 0.95
         assert ctx.catch_rate_factor >= 0.95
@@ -676,8 +676,8 @@ class TestMatchupEngineCompute:
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_bal = engine.compute("BAL", "KC", [2024])
-        ctx_car = engine.compute("CAR", "KC", [2024])
+        ctx_bal = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx_car = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # BAL is elite, CAR is weak — all factors should differ
         assert ctx_bal.catch_rate_factor < ctx_car.catch_rate_factor
@@ -691,7 +691,7 @@ class TestMatchupEngineCompute:
         _write_defense_pass_rush(pff_dir, 2024, THREE_TEAM_PASS_RUSH)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.sack_rate_factor > 1.0
 
@@ -700,8 +700,8 @@ class TestMatchupEngineCompute:
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_bal = engine.compute("BAL", "KC", [2024])
-        ctx_car = engine.compute("CAR", "KC", [2024])
+        ctx_bal = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx_car = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # BAL has high stop_percent=12.0 → inverted → lower rush_yards_factor
         # CAR has low stop_percent=5.0 → inverted → higher rush_yards_factor
@@ -713,8 +713,8 @@ class TestMatchupEngineCompute:
         _write_offense_pass_blocking(pff_dir, 2024, THREE_TEAM_OL_PASS)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_phi = engine.compute("KC", "PHI", [2024])
-        ctx_nyg = engine.compute("KC", "NYG", [2024])
+        ctx_phi = engine.compute("KC", "PHI", target_season=2024, max_week=18)
+        ctx_nyg = engine.compute("KC", "NYG", target_season=2024, max_week=18)
 
         # PHI has high pbe=92 → inverted → lower ol_pass_block_factor
         # NYG has low pbe=78 → inverted → higher ol_pass_block_factor
@@ -726,8 +726,8 @@ class TestMatchupEngineCompute:
         _write_offense_run_blocking(pff_dir, 2024, THREE_TEAM_OL_RUN)
 
         engine = MatchupEngine(default_config, loader)
-        ctx_phi = engine.compute("KC", "PHI", [2024])
-        ctx_nyg = engine.compute("KC", "NYG", [2024])
+        ctx_phi = engine.compute("KC", "PHI", target_season=2024, max_week=18)
+        ctx_nyg = engine.compute("KC", "NYG", target_season=2024, max_week=18)
 
         # PHI has high grades_run_block=85 → factor > 1.0
         # NYG has low grades_run_block=55 → factor < 1.0
@@ -747,7 +747,7 @@ class TestMatchupEngineCompute:
         )
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "PHI", [2024])
+        ctx = engine.compute("BAL", "PHI", target_season=2024, max_week=18)
 
         # BAL elite defense: catch_rate and pass_yards below 1.0
         assert ctx.catch_rate_factor < 1.0
@@ -764,7 +764,7 @@ class TestMatchupEngineCompute:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("SEA", "KC", [2024])
+        ctx = engine.compute("SEA", "KC", target_season=2024, max_week=18)
 
         # SEA is not in the data, so defensive factors → 1.0
         assert ctx.catch_rate_factor == 1.0
@@ -814,7 +814,7 @@ class TestGradeFallback:
         _write_defense_coverage(pff_dir, 2024, low_game_teams)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # BAL has high grades_coverage_defense=90 → above-average grade → factor > 1.0
         # (grade-based, not primary-stat-based)
@@ -936,8 +936,8 @@ class TestMatchupCaching:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        ctx1 = engine.compute("BAL", "KC", [2024])
-        ctx2 = engine.compute("CAR", "KC", [2024])
+        ctx1 = engine.compute("BAL", "KC", target_season=2024, max_week=18)
+        ctx2 = engine.compute("CAR", "KC", target_season=2024, max_week=18)
 
         # Both used the same facet+seasons — cache should have been hit
         assert len(engine._cache) >= 1
@@ -950,8 +950,8 @@ class TestMatchupCaching:
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
 
         engine = MatchupEngine(default_config, loader)
-        engine.compute("BAL", "KC", [2023])
-        engine.compute("BAL", "KC", [2024])
+        engine.compute("BAL", "KC", target_season=2023, max_week=18)
+        engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Should have separate cache entries for each season
         keys = list(engine._cache.keys())
@@ -1051,7 +1051,7 @@ class TestLeagueStatsAggregation:
         _write_defense_coverage(pff_dir, 2024, single_team)
 
         engine = MatchupEngine(default_config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         # Only one team → std = 0 → all factors 1.0
         assert ctx.catch_rate_factor == 1.0
@@ -1089,7 +1089,7 @@ class TestNumericPrecision:
 
         _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.catch_rate_factor == pytest.approx(expected_factor, abs=0.005)
 
@@ -1117,7 +1117,7 @@ class TestNumericPrecision:
 
         _write_defense_run(pff_dir, 2024, THREE_TEAM_RUN_DEF)
         engine = MatchupEngine(config, loader)
-        ctx = engine.compute("BAL", "KC", [2024])
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=18)
 
         assert ctx.rush_yards_factor == pytest.approx(expected_inverted, abs=0.005)
 
