@@ -1120,3 +1120,32 @@ class TestNumericPrecision:
         ctx = engine.compute("BAL", "KC", [2024])
 
         assert ctx.rush_yards_factor == pytest.approx(expected_inverted, abs=0.005)
+
+
+# ========== Rolling window tests ==========
+
+
+class TestRollingWindow:
+    """Tests for same-season rolling window matchup computation."""
+
+    def test_none_target_season_returns_neutral(self, pff_dir, loader, default_config):
+        """compute() with target_season=None returns all-neutral MatchupContext."""
+        _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=None, max_week=8)
+
+        assert ctx.catch_rate_factor == 1.0
+        assert ctx.sack_rate_factor == 1.0
+        assert ctx.rush_yards_factor == 1.0
+
+    def test_none_max_week_returns_neutral(self, pff_dir, loader, default_config):
+        """compute() with max_week=None returns all-neutral MatchupContext."""
+        _write_defense_coverage(pff_dir, 2024, THREE_TEAM_COVERAGE)
+
+        engine = MatchupEngine(default_config, loader)
+        ctx = engine.compute("BAL", "KC", target_season=2024, max_week=None)
+
+        assert ctx.catch_rate_factor == 1.0
+        assert ctx.sack_rate_factor == 1.0
+        assert ctx.rush_yards_factor == 1.0
