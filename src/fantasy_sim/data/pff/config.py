@@ -122,6 +122,7 @@ def load_pff_config(config: dict) -> PffConfig:
         reliability_floor=tier_raw.get("reliability_floor", 0.15),
         reliability_cap=tier_raw.get("reliability_cap", 0.85),
         blend_pool_size=tier_raw.get("blend_pool_size", 500),
+        position_reliability=tier_raw.get("position_reliability", {}),
     )
 
     ncaa_raw = tier_raw.get("ncaa_rookie", {})

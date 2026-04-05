@@ -158,6 +158,7 @@ class TierConfig:
     reliability_variance_weight: float = 0.3
     reliability_floor: float = 0.15
     reliability_cap: float = 0.85
+    position_reliability: dict[str, dict[str, float]] = field(default_factory=dict)
     blend_pool_size: int = 500
     ncaa_rookie: NcaaRookieConfig = field(default_factory=NcaaRookieConfig)
     archetypes: ArchetypeConfig = field(default_factory=ArchetypeConfig)

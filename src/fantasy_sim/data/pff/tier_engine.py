@@ -923,6 +923,7 @@ class TierEngine:
         games_played: int,
         changed_teams: bool,
         weekly_shares: "np.ndarray | None",
+        position: str | None = None,
     ) -> float:
         """Compute PBP reliability score.
 
@@ -932,8 +933,16 @@ class TierEngine:
             1. Sample size: games_played / max_games (capped at 1.0)
             2. Team change: penalty multiplier if player changed teams
             3. Share variance: coefficient of variation of weekly shares (needs >= 4 weeks)
+
+        If ``position`` is provided and ``position_reliability`` has an entry
+        for it, the per-position floor/cap override the global defaults.
         """
         cfg = self._config
+
+        # Per-position floor/cap override
+        pos_rel = cfg.position_reliability.get(position) if position else None
+        floor = pos_rel.get("floor", cfg.reliability_floor) if pos_rel else cfg.reliability_floor
+        cap = pos_rel.get("cap", cfg.reliability_cap) if pos_rel else cfg.reliability_cap
 
         # Factor 1: sample size
         sample = min(games_played / cfg.reliability_max_games, 1.0)
@@ -950,7 +959,7 @@ class TierEngine:
                 variance_penalty = min(cv, 1.0)
 
         raw = sample * team * (1.0 - variance_penalty * cfg.reliability_variance_weight)
-        return float(np.clip(raw, cfg.reliability_floor, cfg.reliability_cap))
+        return float(np.clip(raw, floor, cap))
 
     # ------------------------------------------------------------------
     # Player blending
@@ -1416,6 +1425,7 @@ class TierEngine:
                 games_played=player.games_played,
                 changed_teams=player.player_id in changed_teams,
                 weekly_shares=weekly_shares,
+                position=position,
             )
 
             # Blend player model with tier distributions
