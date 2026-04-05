@@ -2,9 +2,11 @@
 
 import numpy as np
 import pytest
+import polars as pl
+from unittest.mock import MagicMock
 
 from fantasy_sim.data.pff.config import load_pff_config
-from fantasy_sim.data.pff.models import PffConfig, TierConfig, PositionGradeConfig
+from fantasy_sim.data.pff.models import PffConfig, TierConfig, PositionGradeConfig, NcaaRookieConfig
 from fantasy_sim.data.pff.tier_engine import _pick_to_round
 
 
@@ -29,6 +31,130 @@ def _make_pool_entry(**overrides):
     )
     defaults.update(overrides)
     return _TierPoolEntry(**defaults)
+
+
+def _make_tier_engine(ncaa_enabled=True, lookback=4):
+    """Create a TierEngine with a mock PFF loader for testing."""
+    config = TierConfig(
+        enabled=True,
+        position_grades={
+            "QB": PositionGradeConfig(primary="grades_pass", secondary="accuracy_percent"),
+            "RB": PositionGradeConfig(primary="grades_run", secondary="elusive_rating"),
+            "WR": PositionGradeConfig(primary="grades_pass_route", secondary="_disabled"),
+            "TE": PositionGradeConfig(primary="grades_pass_route", secondary="recv_grade"),
+        },
+        ncaa_rookie=NcaaRookieConfig(enabled=ncaa_enabled, ncaa_lookback_seasons=lookback),
+    )
+    loader = MagicMock()
+    from fantasy_sim.data.pff.tier_engine import TierEngine
+    return TierEngine(config, loader)
+
+
+def _ncaa_facet_df(player_id, grades_col, grade_values, position="RWR"):
+    """Build a minimal NCAA facet DataFrame for testing."""
+    return pl.DataFrame({
+        "player_id": [player_id] * len(grade_values),
+        "player": ["Test Player"] * len(grade_values),
+        "team": ["TESTCOL"] * len(grade_values),
+        "position": [position] * len(grade_values),
+        grades_col: grade_values,
+        "season": [2024] * len(grade_values),
+        "week": list(range(1, len(grade_values) + 1)),
+        "game_id": [f"game_{i}" for i in range(len(grade_values))],
+    })
+
+
+class TestLoadNcaaGrades:
+    def test_loads_wr_grades_from_receiving_summary(self):
+        """WR loads from receiving_summary facet and averages across games."""
+        engine = _make_tier_engine()
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=12345, grades_col="grades_pass_route",
+            grade_values=[70.0, 80.0, 90.0],
+        )
+
+        result = engine._load_ncaa_grades(12345, "WR", rookie_season=2025)
+
+        engine._pff_loader.load_ncaa_facet.assert_called_once_with(
+            "receiving_summary", [2024],
+        )
+        assert result is not None
+        assert abs(result["grades_pass_route"] - 80.0) < 0.01
+
+    def test_loads_rb_grades_from_rushing_summary(self):
+        """RB loads from rushing_summary facet."""
+        engine = _make_tier_engine()
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=99999, grades_col="grades_run",
+            grade_values=[65.0, 75.0], position="HB",
+        )
+
+        result = engine._load_ncaa_grades(99999, "RB", rookie_season=2025)
+
+        engine._pff_loader.load_ncaa_facet.assert_called_once_with(
+            "rushing_summary", [2024],
+        )
+        assert result is not None
+        assert abs(result["grades_run"] - 70.0) < 0.01
+
+    def test_loads_qb_grades_from_passing_summary(self):
+        """QB loads from passing_summary facet."""
+        engine = _make_tier_engine()
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=11111, grades_col="grades_pass",
+            grade_values=[85.0], position="QB",
+        )
+
+        result = engine._load_ncaa_grades(11111, "QB", rookie_season=2025)
+
+        engine._pff_loader.load_ncaa_facet.assert_called_once_with(
+            "passing_summary", [2024],
+        )
+        assert result is not None
+        assert abs(result["grades_pass"] - 85.0) < 0.01
+
+    def test_lookback_when_most_recent_season_missing(self):
+        """Falls back to earlier NCAA season when most recent has no data."""
+        engine = _make_tier_engine(lookback=3)
+        # First call (2024): empty. Second call (2023): has data.
+        engine._pff_loader.load_ncaa_facet.side_effect = [
+            pl.DataFrame(),
+            _ncaa_facet_df(
+                player_id=12345, grades_col="grades_pass_route",
+                grade_values=[72.0, 78.0],
+            ),
+        ]
+
+        result = engine._load_ncaa_grades(12345, "WR", rookie_season=2025)
+
+        assert engine._pff_loader.load_ncaa_facet.call_count == 2
+        assert result is not None
+        assert abs(result["grades_pass_route"] - 75.0) < 0.01
+
+    def test_returns_none_for_unknown_player(self):
+        """Returns None when player not found in NCAA data."""
+        engine = _make_tier_engine()
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=99999, grades_col="grades_pass_route",
+            grade_values=[70.0],
+        )
+
+        result = engine._load_ncaa_grades(12345, "WR", rookie_season=2025)
+        assert result is None
+
+    def test_caches_results(self):
+        """Second call for same player uses cache, no loader call."""
+        engine = _make_tier_engine()
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=12345, grades_col="grades_pass_route",
+            grade_values=[80.0],
+        )
+
+        result1 = engine._load_ncaa_grades(12345, "WR", rookie_season=2025)
+        result2 = engine._load_ncaa_grades(12345, "WR", rookie_season=2025)
+
+        assert engine._pff_loader.load_ncaa_facet.call_count == 1
+        assert result1 == result2
 
 
 class TestTierConfig:

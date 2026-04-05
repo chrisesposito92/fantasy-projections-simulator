@@ -159,6 +159,9 @@ class TierEngine:
         self._pbp_season_cache: dict[int, dict[str, dict]] | None = None
         self._pbp_season_cache_key: tuple | None = None
 
+        # NCAA grade cache: (pff_id, position, rookie_season) -> grades dict or None
+        self._ncaa_grade_cache: dict[tuple[int, str, int], dict[str, float] | None] = {}
+
     # ------------------------------------------------------------------
     # PBP aggregation (per-season)
     # ------------------------------------------------------------------
@@ -363,6 +366,67 @@ class TierEngine:
             result[pid] = grades
 
         return result
+
+    def _load_ncaa_grades(
+        self, pff_id: int, position: str, rookie_season: int,
+    ) -> dict[str, float] | None:
+        """Load NCAA PFF grades for a rookie via the pff_id bridge.
+
+        Tries the most recent college season (rookie_season - 1) first,
+        then walks back up to ncaa_lookback_seasons.  Returns a grade dict
+        (same format as _load_season_grades) or None.
+        """
+        cache_key = (pff_id, position, rookie_season)
+        if cache_key in self._ncaa_grade_cache:
+            return self._ncaa_grade_cache[cache_key]
+
+        if self._pff_loader is None:
+            self._ncaa_grade_cache[cache_key] = None
+            return None
+
+        facet = self._POSITION_FACETS.get(position)
+        if facet is None:
+            self._ncaa_grade_cache[cache_key] = None
+            return None
+
+        lookback = self._config.ncaa_rookie.ncaa_lookback_seasons
+        meta_cols = {
+            "player_id", "player", "team", "position", "pff_position",
+            "season", "week", "game_id", "franchise_id", "jersey_number",
+            "status",
+        }
+
+        for offset in range(lookback):
+            ncaa_season = rookie_season - 1 - offset
+            df = self._pff_loader.load_ncaa_facet(facet, [ncaa_season])
+            if df.is_empty():
+                continue
+
+            player_rows = df.filter(pl.col("player_id") == pff_id)
+            if player_rows.is_empty():
+                continue
+
+            # Average numeric grade columns across games
+            numeric_cols = [
+                c for c in player_rows.columns
+                if c not in meta_cols
+                and player_rows[c].dtype in (pl.Float64, pl.Int64, pl.Float32, pl.Int32)
+            ]
+            if not numeric_cols:
+                continue
+
+            grades: dict[str, float] = {}
+            for c in numeric_cols:
+                vals = player_rows[c].drop_nulls()
+                if len(vals) > 0:
+                    grades[c] = float(vals.mean())
+
+            if grades:
+                self._ncaa_grade_cache[cache_key] = grades
+                return grades
+
+        self._ncaa_grade_cache[cache_key] = None
+        return None
 
     # ------------------------------------------------------------------
     # Thin tier merging
