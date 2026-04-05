@@ -1865,3 +1865,105 @@ class TestNcaaArchetypeOverride:
         ncaa_grades = {"grades_pass_route": 75.0}
         archetype = engine._classify_archetype(ncaa_grades)
         assert archetype is None
+
+
+class TestArchetypeConfigDisabled:
+    def test_disabled_produces_no_archetype_pools(self):
+        """With archetypes.enabled=False, _archetype_pools stays None."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=False)
+
+        players = [
+            TestArchetypePoolBuilding()._make_wr_player_season(adot=float(i))
+            for i in range(1, 31)
+        ]
+        tier_buckets = {3: players}
+
+        engine._build_archetype_pools("WR", players, tier_buckets)
+
+        assert engine._archetype_pools is None
+        assert engine._adot_boundaries is None
+
+    def test_disabled_classify_returns_none(self):
+        """_classify_archetype returns None when disabled, even with valid ADOT."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=False)
+        engine._adot_boundaries = (9.0, 14.0)
+
+        result = engine._classify_archetype({"avg_depth_of_target": 10.0})
+        assert result is None
+
+    def test_non_wr_position_skips_archetype_building(self):
+        """_build_archetype_pools is a no-op for non-WR positions."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+
+        players = [
+            TestArchetypePoolBuilding()._make_wr_player_season(adot=10.0)
+            for _ in range(30)
+        ]
+        engine._build_archetype_pools("RB", players, {3: players})
+
+        assert engine._archetype_pools is None
+
+
+@pytest.mark.statistical
+class TestArchetypeStatisticalValidation:
+    def _build_archetype_pools_with_realistic_data(self):
+        """Build archetype sub-pools with realistic slot/deep separation."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(
+            enabled=True, n_archetypes=3, min_archetype_pool_size=5,
+        )
+
+        rng = np.random.default_rng(42)
+
+        def make_player(adot, yards_mean, catch_rate):
+            ps = TestArchetypePoolBuilding()._make_wr_player_season(
+                adot=adot,
+                catch_rate=catch_rate,
+                yards_list=rng.normal(yards_mean, 3.0, size=50).tolist(),
+            )
+            return ps
+
+        slot_players = [make_player(adot=rng.uniform(4, 8), yards_mean=7.0, catch_rate=rng.uniform(0.65, 0.75)) for _ in range(20)]
+        poss_players = [make_player(adot=rng.uniform(9, 13), yards_mean=12.0, catch_rate=rng.uniform(0.58, 0.68)) for _ in range(20)]
+        deep_players = [make_player(adot=rng.uniform(15, 22), yards_mean=20.0, catch_rate=rng.uniform(0.48, 0.58)) for _ in range(20)]
+
+        all_players = slot_players + poss_players + deep_players
+        tier_buckets = {3: all_players}
+
+        engine._build_archetype_pools("WR", all_players, tier_buckets)
+        return engine
+
+    def test_deep_archetype_has_higher_mean_yards_than_slot(self):
+        """Deep-threat sub-pool has higher mean receiving_yards_dist than slot."""
+        engine = self._build_archetype_pools_with_realistic_data()
+
+        pools = engine._archetype_pools["WR"][3]
+        slot_mean = np.mean(pools["slot"].receiving_yards_dist)
+        deep_mean = np.mean(pools["deep"].receiving_yards_dist)
+
+        assert deep_mean > slot_mean, (
+            f"Deep mean yards ({deep_mean:.1f}) should exceed slot ({slot_mean:.1f})"
+        )
+
+    def test_slot_archetype_has_higher_catch_rate_than_deep(self):
+        """Slot sub-pool has higher median catch_rate than deep sub-pool."""
+        engine = self._build_archetype_pools_with_realistic_data()
+
+        pools = engine._archetype_pools["WR"][3]
+        slot_median = pools["slot"].catch_rate[1]
+        deep_median = pools["deep"].catch_rate[1]
+
+        assert slot_median > deep_median, (
+            f"Slot catch rate ({slot_median:.3f}) should exceed deep ({deep_median:.3f})"
+        )
