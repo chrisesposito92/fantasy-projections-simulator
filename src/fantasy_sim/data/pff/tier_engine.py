@@ -74,6 +74,9 @@ class _TierPoolEntry:
     # Secondary grade distribution for within-tier interpolation
     secondary_grades: np.ndarray | None = None
 
+    # Tertiary grade distribution for within-tier interpolation
+    tertiary_grades: np.ndarray | None = None
+
     # Number of player-seasons that contributed to this pool
     n_player_seasons: int = 0
 
@@ -479,19 +482,22 @@ class TierEngine:
 
     @staticmethod
     def _build_pool_entry(
-        members: list[dict], secondary_key: str
+        members: list[dict],
+        secondary_key: str,
+        tertiary_key: str | None = None,
     ) -> _TierPoolEntry:
         """Compute a _TierPoolEntry from a list of player-season stat dicts.
 
         Scalars are summarised as (p25, median, p75) tuples.  Yards arrays
         are concatenated across all members into pool-level empirical
-        distributions.  Secondary grades are collected and sorted for
-        within-tier percentile computation.
+        distributions.  Secondary and optional tertiary grades are collected
+        and sorted for within-tier percentile computation.
 
         Args:
             members: List of player-season dicts (from _aggregate_pbp_per_season
                 merged with PFF grades).
             secondary_key: Name of the secondary grade column.
+            tertiary_key: Optional name of the tertiary grade column.
 
         Returns:
             A populated _TierPoolEntry.
@@ -532,6 +538,16 @@ class TierEngine:
         ]
         sec_arr = np.sort(np.array(sec_grades, dtype=np.float64)) if sec_grades else None
 
+        # Collect tertiary grades
+        tert_arr = None
+        if tertiary_key:
+            tert_grades = [
+                m["pff_grades"].get(tertiary_key)
+                for m in members
+                if m.get("pff_grades") and m["pff_grades"].get(tertiary_key) is not None
+            ]
+            tert_arr = np.sort(np.array(tert_grades, dtype=np.float64)) if tert_grades else None
+
         return _TierPoolEntry(
             target_share=_pct(target_shares),
             carry_share=_pct(carry_shares),
@@ -542,6 +558,7 @@ class TierEngine:
             receiving_yards_dist=recv_dist,
             rushing_yards_dist=rush_dist,
             secondary_grades=sec_arr,
+            tertiary_grades=tert_arr,
             n_player_seasons=len(members),
         )
 
@@ -643,9 +660,12 @@ class TierEngine:
 
             # Build pool entries
             secondary_key = grade_cfg.secondary
+            tertiary_key = grade_cfg.tertiary
             position_pools: dict[int, _TierPoolEntry] = {}
             for tier, members in tier_buckets.items():
-                position_pools[tier] = self._build_pool_entry(members, secondary_key)
+                position_pools[tier] = self._build_pool_entry(
+                    members, secondary_key, tertiary_key,
+                )
 
             pools[position] = position_pools
             logger.info(
@@ -1084,6 +1104,19 @@ class TierEngine:
             secondary_pct = self._within_tier_percentile(secondary_grade, position, tier)
         else:
             secondary_pct = 0.5
+
+        # Composite with tertiary grade if configured
+        tertiary_key = grade_cfg.tertiary
+        if tertiary_key:
+            tertiary_grade = pff_grades.get(tertiary_key)
+            if tertiary_grade is not None:
+                pool = position_pools[tier]
+                if pool.tertiary_grades is not None and len(pool.tertiary_grades) > 0:
+                    tertiary_pct = float(
+                        np.searchsorted(pool.tertiary_grades, tertiary_grade)
+                        / len(pool.tertiary_grades)
+                    )
+                    secondary_pct = (secondary_pct + tertiary_pct) / 2.0
 
         # Approximate primary_percentile from tier number (tier 1 = top, tier 5 = bottom)
         # Map tier 1→0.9, 2→0.7, 3→0.5, 4→0.3, 5→0.1

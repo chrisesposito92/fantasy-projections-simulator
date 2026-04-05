@@ -106,7 +106,9 @@ def load_pff_config(config: dict) -> PffConfig:
                     f"missing required keys: {', '.join(missing)}"
                 )
             pos_grades[pos] = PositionGradeConfig(
-                primary=spec["primary"], secondary=spec["secondary"],
+                primary=spec["primary"],
+                secondary=spec["secondary"],
+                tertiary=spec.get("tertiary"),
             )
         position_grades = pos_grades
     else:

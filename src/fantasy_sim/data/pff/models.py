@@ -127,6 +127,7 @@ class PositionGradeConfig:
     """Primary and secondary PFF grade columns for one position."""
     primary: str
     secondary: str
+    tertiary: str | None = None
 
 
 @dataclass
