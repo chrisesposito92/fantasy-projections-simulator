@@ -1039,6 +1039,106 @@ class TierEngine:
                 tier_dists.rushing_yards_dist = tier_dists.rushing_yards_dist + shift
 
     # ------------------------------------------------------------------
+    # NCAA rookie tier assignment
+    # ------------------------------------------------------------------
+
+    def _apply_rookie_tiers(
+        self,
+        roster: "TeamRoster",
+        nfl_roster: "pl.DataFrame",
+        skipped_players: "list[PlayerModel]",
+        target_season: int,
+        team_context: "TeamContext | None",
+        rng: "np.random.Generator",
+    ) -> None:
+        """Apply NCAA-grade-based tier assignment to rookie players.
+
+        For each skipped player (not in NFL PFF crosswalk):
+        1. Check if they're a rookie (rookie_year == target_season)
+        2. Load NCAA grades via pff_id bridge
+        3. Assign tier using NFL boundaries
+        4. Blend with draft-capital-modulated confidence
+
+        Players who aren't rookies or lack NCAA data are unchanged.
+        """
+        if self._pools is None or self._boundaries is None:
+            return
+
+        ncaa_cfg = self._config.ncaa_rookie
+
+        # Build roster lookup: nfl_player_id -> {pff_id, draft_number, rookie_year}
+        pid_col = "player_id"
+        roster_lookup: dict[str, dict] = {}
+        for row in nfl_roster.iter_rows(named=True):
+            pid = row.get(pid_col)
+            if pid is None:
+                continue
+            pff_id_raw = row.get("pff_id")
+            if pff_id_raw is None:
+                continue
+            try:
+                pff_id_int = int(pff_id_raw)
+            except (ValueError, TypeError):
+                continue
+            roster_lookup[str(pid)] = {
+                "pff_id": pff_id_int,
+                "draft_number": row.get("draft_number"),
+                "rookie_year": row.get("rookie_year"),
+            }
+
+        for player in skipped_players:
+            position = player.position
+            if position not in self._pools:
+                continue
+
+            info = roster_lookup.get(player.player_id)
+            if info is None:
+                continue
+
+            # Only process rookies
+            if info["rookie_year"] != target_season:
+                continue
+
+            pff_id = info["pff_id"]
+
+            # Load NCAA grades
+            ncaa_grades = self._load_ncaa_grades(pff_id, position, target_season)
+            if ncaa_grades is None:
+                continue
+
+            # Assign tier using NFL boundaries
+            result = self.select_distributions(ncaa_grades, position)
+            if result is None:
+                continue
+
+            assignment, tier_dists = result
+
+            # Apply team context before blending
+            if team_context is not None:
+                self.apply_team_context(tier_dists, team_context, position)
+
+            # Compute draft-capital-modulated blend weight
+            draft_round = _pick_to_round(info["draft_number"])
+            if draft_round is not None:
+                draft_confidence = ncaa_cfg.draft_confidence.get(
+                    draft_round, ncaa_cfg.undrafted_confidence,
+                )
+            else:
+                draft_confidence = ncaa_cfg.undrafted_confidence
+
+            reliability = 1.0 - draft_confidence
+
+            # Blend: player's archetype model is the "PBP" side
+            self._blend_player(player, tier_dists, reliability, rng)
+
+            logger.info(
+                "NCAA tier %d assigned to rookie %s (%s) — "
+                "draft_confidence=%.2f, pff_id=%d",
+                assignment.tier, player.player_id, position,
+                draft_confidence, pff_id,
+            )
+
+    # ------------------------------------------------------------------
     # Roster-level entry point
     # ------------------------------------------------------------------
 
@@ -1096,9 +1196,12 @@ class TierEngine:
         rng = np.random.default_rng(42)
         target_s = target_season or max(training_seasons)
 
+        skipped_players: list = []
+
         for player in roster.players:
             pff_id = reverse_cw.get(player.player_id)
             if pff_id is None:
+                skipped_players.append(player)
                 continue
 
             position = player.position
@@ -1163,4 +1266,15 @@ class TierEngine:
                 position,
                 reliability,
                 assignment.primary_percentile,
+            )
+
+        # NCAA rookie tier assignment for players not in NFL PFF crosswalk
+        if (
+            skipped_players
+            and self._config.ncaa_rookie.enabled
+            and nfl_roster is not None
+        ):
+            self._apply_rookie_tiers(
+                roster, nfl_roster, skipped_players, target_s,
+                team_context, rng,
             )

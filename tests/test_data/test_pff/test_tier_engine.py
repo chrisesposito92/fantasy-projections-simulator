@@ -1212,6 +1212,254 @@ class TestNcaaRookieConfig:
         assert ncaa.draft_confidence[7] == 0.45
 
 
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+from fantasy_sim.data.pff.models import TeamContext
+
+
+def _make_rookie_player(player_id, position, team, **usage_overrides):
+    """Create a PlayerModel resembling a rookie archetype."""
+    usage = PlayerUsage()
+    outcomes = PlayerOutcomes(
+        catch_rate=0.58,
+        fumble_rate=0.008,
+        receiving_yards_dist=np.array([3, 5, 7, 8, 10, 12, 15]),
+    )
+    if position == "RB":
+        usage.carry_share = 0.10
+        usage.target_share = 0.02
+        outcomes.rushing_yards_dist = np.array([-1, 0, 1, 2, 3, 4, 5, 6])
+    elif position in ("WR", "TE"):
+        usage.target_share = 0.03
+    for k, v in usage_overrides.items():
+        setattr(usage, k, v)
+    return PlayerModel(
+        player_id=player_id, name=f"Rookie {player_id}",
+        position=position, team=team,
+        usage=usage, outcomes=outcomes, games_played=0,
+    )
+
+
+def _make_roster_df(rows):
+    """Build a minimal nflverse-style roster DataFrame."""
+    return pl.DataFrame({
+        "player_id": [r["player_id"] for r in rows],
+        "player_name": [r.get("name", "Test") for r in rows],
+        "position": [r.get("position", "WR") for r in rows],
+        "team": [r.get("team", "KC") for r in rows],
+        "pff_id": [r.get("pff_id") for r in rows],
+        "draft_number": [r.get("draft_number") for r in rows],
+        "rookie_year": [r.get("rookie_year") for r in rows],
+        "season": [r.get("season", 2025) for r in rows],
+        "week": [r.get("week", 1) for r in rows],
+        "status": [r.get("status", "ACT") for r in rows],
+    })
+
+
+class TestApplyRookieTiers:
+    def test_first_rounder_gets_full_tier_influence(self):
+        """1st-round pick with NCAA grade gets reliability ~0.0 (full tier)."""
+        engine = _make_tier_engine()
+        pool = _make_pool_entry(
+            target_share=(0.15, 0.20, 0.25),
+            catch_rate=(0.60, 0.65, 0.70),
+        )
+        engine._pools = {"WR": {2: pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+
+        player = _make_rookie_player("rookie1", "WR", "KC", target_share=0.03)
+        roster = TeamRoster(team="KC", players=[player])
+
+        nfl_roster = _make_roster_df([{
+            "player_id": "rookie1", "pff_id": 12345,
+            "draft_number": 5, "rookie_year": 2025,
+        }])
+
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=12345, grades_col="grades_pass_route",
+            grade_values=[75.0],
+        )
+
+        engine._apply_rookie_tiers(
+            roster, nfl_roster, [player], target_season=2025,
+            team_context=None, rng=np.random.default_rng(42),
+        )
+
+        # Round 1 (pick 5) -> draft_confidence 1.0 -> reliability 0.0
+        assert player.usage.target_share > 0.15
+
+    def test_udfa_gets_partial_archetype_blend(self):
+        """Undrafted player blends ~60% archetype, ~40% tier."""
+        engine = _make_tier_engine()
+        pool = _make_pool_entry(
+            target_share=(0.15, 0.20, 0.25),
+            catch_rate=(0.60, 0.65, 0.70),
+        )
+        engine._pools = {"WR": {2: pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+
+        player = _make_rookie_player("rookie_udfa", "WR", "KC", target_share=0.03)
+        original_ts = player.usage.target_share
+        roster = TeamRoster(team="KC", players=[player])
+
+        nfl_roster = _make_roster_df([{
+            "player_id": "rookie_udfa", "pff_id": 54321,
+            "draft_number": None, "rookie_year": 2025,
+        }])
+
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=54321, grades_col="grades_pass_route",
+            grade_values=[75.0],
+        )
+
+        engine._apply_rookie_tiers(
+            roster, nfl_roster, [player], target_season=2025,
+            team_context=None, rng=np.random.default_rng(42),
+        )
+
+        assert player.usage.target_share > original_ts
+        assert player.usage.target_share < 0.15
+
+    def test_non_rookie_skipped_player_is_ignored(self):
+        """Player who isn't a rookie (veteran missing PFF data) is unchanged."""
+        engine = _make_tier_engine()
+        engine._pools = {"WR": {2: _make_pool_entry()}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+
+        player = _make_rookie_player("vet_no_pff", "WR", "KC", target_share=0.12)
+        original_ts = player.usage.target_share
+        roster = TeamRoster(team="KC", players=[player])
+
+        nfl_roster = _make_roster_df([{
+            "player_id": "vet_no_pff", "pff_id": 99999,
+            "draft_number": 45, "rookie_year": 2020,
+        }])
+
+        engine._apply_rookie_tiers(
+            roster, nfl_roster, [player], target_season=2025,
+            team_context=None, rng=np.random.default_rng(42),
+        )
+
+        assert player.usage.target_share == original_ts
+
+    def test_player_without_ncaa_data_keeps_archetype(self):
+        """Rookie without NCAA PFF data keeps their archetype model."""
+        engine = _make_tier_engine()
+        engine._pools = {"WR": {2: _make_pool_entry()}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+
+        player = _make_rookie_player("rookie_no_ncaa", "WR", "KC", target_share=0.03)
+        original_ts = player.usage.target_share
+        roster = TeamRoster(team="KC", players=[player])
+
+        nfl_roster = _make_roster_df([{
+            "player_id": "rookie_no_ncaa", "pff_id": 88888,
+            "draft_number": 150, "rookie_year": 2025,
+        }])
+
+        engine._pff_loader.load_ncaa_facet.return_value = pl.DataFrame()
+
+        engine._apply_rookie_tiers(
+            roster, nfl_roster, [player], target_season=2025,
+            team_context=None, rng=np.random.default_rng(42),
+        )
+
+        assert player.usage.target_share == original_ts
+
+    def test_team_context_applied_before_blend(self):
+        """Team context adjustments apply to tier distributions before blending."""
+        engine = _make_tier_engine()
+        pool = _make_pool_entry(catch_rate=(0.60, 0.65, 0.70))
+        engine._pools = {"WR": {2: pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+
+        player = _make_rookie_player("rookie_tc", "WR", "KC", target_share=0.03)
+        roster = TeamRoster(team="KC", players=[player])
+
+        nfl_roster = _make_roster_df([{
+            "player_id": "rookie_tc", "pff_id": 77777,
+            "draft_number": 1, "rookie_year": 2025,
+        }])
+
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=77777, grades_col="grades_pass_route",
+            grade_values=[75.0],
+        )
+
+        tc = TeamContext(qb_quality_factor=1.05)
+
+        engine._apply_rookie_tiers(
+            roster, nfl_roster, [player], target_season=2025,
+            team_context=tc, rng=np.random.default_rng(42),
+        )
+
+        assert player.outcomes.catch_rate > 0.60
+
+
+class TestApplyTiersRookieIntegration:
+    def test_veterans_processed_rookies_also_processed(self):
+        """Veterans go through normal path, rookies through NCAA path."""
+        engine = _make_tier_engine()
+        pool = _make_pool_entry()
+        engine._pools = {"WR": {2: pool, 3: pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+        engine._cache_key = (2022, 2023, 2024)
+
+        vet = _make_rookie_player("vet1", "WR", "KC", target_share=0.20)
+        vet.games_played = 32
+        rookie = _make_rookie_player("rookie1", "WR", "KC", target_share=0.03)
+
+        roster = TeamRoster(team="KC", players=[vet, rookie])
+
+        crosswalk = {100: "vet1"}
+
+        nfl_roster = _make_roster_df([
+            {"player_id": "vet1", "pff_id": 100, "draft_number": 20, "rookie_year": 2020},
+            {"player_id": "rookie1", "pff_id": 12345, "draft_number": 5, "rookie_year": 2025},
+        ])
+
+        engine._load_season_grades = MagicMock(return_value={
+            100: {"grades_pass_route": 72.0},
+        })
+
+        engine._pff_loader.load_ncaa_facet.return_value = _ncaa_facet_df(
+            player_id=12345, grades_col="grades_pass_route",
+            grade_values=[78.0],
+        )
+
+        engine.apply_tiers(
+            roster, crosswalk, [2022, 2023, 2024],
+            nfl_roster=nfl_roster, target_season=2025,
+        )
+
+        # Vet has high reliability (32 games) so target_share barely moves,
+        # but catch_rate blending is visible (0.58 -> ~0.59)
+        assert vet.outcomes.catch_rate != 0.58
+        assert rookie.usage.target_share > 0.03
+
+    def test_ncaa_rookie_disabled_skips_rookie_path(self):
+        """When ncaa_rookie.enabled=False, skipped players are unchanged."""
+        engine = _make_tier_engine(ncaa_enabled=False)
+        pool = _make_pool_entry()
+        engine._pools = {"WR": {3: pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+        engine._cache_key = (2022, 2023, 2024)
+
+        rookie = _make_rookie_player("rookie1", "WR", "KC", target_share=0.03)
+        original_ts = rookie.usage.target_share
+        roster = TeamRoster(team="KC", players=[rookie])
+
+        nfl_roster = _make_roster_df([
+            {"player_id": "rookie1", "pff_id": 12345, "draft_number": 5, "rookie_year": 2025},
+        ])
+
+        engine.apply_tiers(
+            roster, {}, [2022, 2023, 2024],
+            nfl_roster=nfl_roster, target_season=2025,
+        )
+
+        assert rookie.usage.target_share == original_ts
+
+
 class TestPickToRound:
     def test_first_pick_is_round_1(self):
         assert _pick_to_round(1) == 1
