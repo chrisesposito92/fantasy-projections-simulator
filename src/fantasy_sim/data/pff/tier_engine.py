@@ -1096,7 +1096,7 @@ class TierEngine:
                 continue
 
             # Only process rookies
-            if info["rookie_year"] != target_season:
+            if info["rookie_year"] is None or info["rookie_year"] != target_season:
                 continue
 
             pff_id = info["pff_id"]
@@ -1196,7 +1196,7 @@ class TierEngine:
         rng = np.random.default_rng(42)
         target_s = target_season or max(training_seasons)
 
-        skipped_players: list = []
+        skipped_players: list[PlayerModel] = []
 
         for player in roster.players:
             pff_id = reverse_cw.get(player.player_id)
