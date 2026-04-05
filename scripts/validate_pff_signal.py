@@ -247,6 +247,16 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=True)
+    elif mode == "ncaa_rookie+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+    elif mode == "ncaa_rookie+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
@@ -291,6 +301,13 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         for key, val in overrides["team_context"].items():
             if hasattr(tc_cfg, key):
                 setattr(tc_cfg, key, val)
+    if overrides and "ncaa_rookie" in overrides:
+        ncaa_cfg = tier_cfg.ncaa_rookie
+        for key, val in overrides["ncaa_rookie"].items():
+            if key == "draft_confidence" and isinstance(val, dict):
+                ncaa_cfg.draft_confidence = {int(k): float(v) for k, v in val.items()}
+            elif hasattr(ncaa_cfg, key):
+                setattr(ncaa_cfg, key, val)
 
     return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg,
                      tier_engine=tier_cfg, team_context=tc_cfg)
@@ -481,10 +498,13 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         choices=["matchup", "talent", "tier", "matchup+tier",
-                 "team_context+tier", "team_context+tier+matchup", "all"],
+                 "team_context+tier", "team_context+tier+matchup",
+                 "ncaa_rookie+tier", "ncaa_rookie+tier+matchup", "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
+            "'ncaa_rookie+tier' = tier + NCAA rookie assignment, "
+            "'ncaa_rookie+tier+matchup' = tier + NCAA rookie + matchup, "
             "'team_context+tier' = tier + team context, "
             "'team_context+tier+matchup' = full stack, "
             "'matchup+tier' = matchup + tier (current default), "
@@ -540,8 +560,8 @@ def main() -> int:
         default=None,
         dest="config_override",
         metavar="JSON",
-        help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", "team_context". '
-             'Example: \'{"team_context": {"pass_rate_sensitivity": 0.10}}\'',
+        help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", "team_context", "ncaa_rookie". '
+             'Example: \'{"ncaa_rookie": {"undrafted_confidence": 0.30}}\'',
     )
 
     args = parser.parse_args()
