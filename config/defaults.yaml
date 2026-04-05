@@ -80,7 +80,7 @@ pff:
     reliability_variance_weight: 0.3
     reliability_floor: 0.20
     reliability_cap: 0.80
-    blend_pool_size: 500
+    blend_pool_size: 250
     ncaa_rookie:
       enabled: true
       draft_confidence:

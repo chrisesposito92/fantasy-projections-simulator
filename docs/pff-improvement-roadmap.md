@@ -32,8 +32,16 @@ Status as of 2026-04-05:
 **Result:** 4 tiers is worse than 5 tiers on rank_corr. Keep 5 tiers.
 - **#13 tier-4tiers**: rank_corr +0.0287 (below baseline +0.0304) — not adopted
 
-### D. Blend Pool Size — NOT YET TESTED
-**Current:** 500 samples. Lower priority given strong results from A+B sweeps.
+### D. Blend Pool Size — SWEPT
+**Result:** 250 samples adopted. Tied for best rank_corr (+0.0494), best weekly MAE (-0.315).
+
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 32 | pool=500 (baseline) | +0.0479 | -0.317 | -4.845 | -0.0148 |
+| **33** | **pool=250** | **+0.0494** | **-0.315** | -4.902 | -0.0134 |
+| 34 | pool=1000 | +0.0494 | -0.326 | -4.904 | -0.0124 |
+
+Smaller pool weights personal PBP data more heavily, improving weekly precision.
 
 ### E. Additional Position Grades (3+ per position)
 
