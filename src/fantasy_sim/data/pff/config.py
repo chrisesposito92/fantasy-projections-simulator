@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fantasy_sim.data.pff.models import (
+    ArchetypeConfig,
     MatchupConfig,
     NcaaPriorsConfig,
     NcaaRookieConfig,
@@ -135,6 +136,15 @@ def load_pff_config(config: dict) -> PffConfig:
         **({"draft_confidence": draft_confidence} if draft_confidence else {}),
     )
     tier_engine.ncaa_rookie = ncaa_rookie
+
+    arch_raw = tier_raw.get("archetypes", {})
+    archetypes = ArchetypeConfig(
+        enabled=arch_raw.get("enabled", True),
+        n_archetypes=arch_raw.get("n_archetypes", 3),
+        adot_grade_key=arch_raw.get("adot_grade_key", "avg_depth_of_target"),
+        min_archetype_pool_size=arch_raw.get("min_archetype_pool_size", 20),
+    )
+    tier_engine.archetypes = archetypes
 
     tc_raw = pff.get("team_context", {})
     tc_clamp = tc_raw.get("factor_clamp", [0.90, 1.10])

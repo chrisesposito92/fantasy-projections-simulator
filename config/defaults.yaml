@@ -93,6 +93,11 @@ pff:
         7: 0.50
       undrafted_confidence: 0.40
       ncaa_lookback_seasons: 4
+    archetypes:
+      enabled: true
+      n_archetypes: 3
+      adot_grade_key: avg_depth_of_target
+      min_archetype_pool_size: 20
 
   team_context:
     enabled: false

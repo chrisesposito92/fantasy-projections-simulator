@@ -6,8 +6,58 @@ import polars as pl
 from unittest.mock import MagicMock
 
 from fantasy_sim.data.pff.config import load_pff_config
-from fantasy_sim.data.pff.models import PffConfig, TierConfig, PositionGradeConfig, NcaaRookieConfig
+from fantasy_sim.data.pff.models import ArchetypeConfig, PffConfig, TierConfig, PositionGradeConfig, NcaaRookieConfig
 from fantasy_sim.data.pff.tier_engine import _pick_to_round
+
+
+class TestArchetypeConfig:
+    def test_defaults(self):
+        """ArchetypeConfig has sensible defaults."""
+        cfg = ArchetypeConfig()
+        assert cfg.enabled is True
+        assert cfg.n_archetypes == 3
+        assert cfg.adot_grade_key == "avg_depth_of_target"
+        assert cfg.min_archetype_pool_size == 20
+
+    def test_tier_config_has_archetypes_field(self):
+        """TierConfig includes an archetypes field with ArchetypeConfig default."""
+        cfg = TierConfig()
+        assert hasattr(cfg, "archetypes")
+        assert isinstance(cfg.archetypes, ArchetypeConfig)
+        assert cfg.archetypes.enabled is True
+
+    def test_yaml_parsing_archetypes(self):
+        """load_pff_config parses archetypes block from YAML dict."""
+        config = {
+            "pff": {
+                "enabled": True,
+                "tier_engine": {
+                    "enabled": True,
+                    "archetypes": {
+                        "enabled": False,
+                        "n_archetypes": 2,
+                        "min_archetype_pool_size": 15,
+                    },
+                },
+            },
+        }
+        pff_cfg = load_pff_config(config)
+        assert pff_cfg.tier_engine.archetypes.enabled is False
+        assert pff_cfg.tier_engine.archetypes.n_archetypes == 2
+        assert pff_cfg.tier_engine.archetypes.min_archetype_pool_size == 15
+        assert pff_cfg.tier_engine.archetypes.adot_grade_key == "avg_depth_of_target"
+
+    def test_yaml_parsing_archetypes_defaults_when_missing(self):
+        """When archetypes block is missing from YAML, defaults are used."""
+        config = {
+            "pff": {
+                "enabled": True,
+                "tier_engine": {"enabled": True},
+            },
+        }
+        pff_cfg = load_pff_config(config)
+        assert pff_cfg.tier_engine.archetypes.enabled is True
+        assert pff_cfg.tier_engine.archetypes.n_archetypes == 3
 
 
 # ---------------------------------------------------------------------------

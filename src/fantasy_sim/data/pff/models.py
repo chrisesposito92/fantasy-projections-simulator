@@ -114,6 +114,15 @@ class TalentConfig:
 
 
 @dataclass
+class ArchetypeConfig:
+    """Configuration for WR depth-of-target archetypes within tiers."""
+    enabled: bool = True
+    n_archetypes: int = 3
+    adot_grade_key: str = "avg_depth_of_target"
+    min_archetype_pool_size: int = 20
+
+
+@dataclass
 class PositionGradeConfig:
     """Primary and secondary PFF grade columns for one position."""
     primary: str
@@ -151,6 +160,7 @@ class TierConfig:
     reliability_cap: float = 0.85
     blend_pool_size: int = 500
     ncaa_rookie: NcaaRookieConfig = field(default_factory=NcaaRookieConfig)
+    archetypes: ArchetypeConfig = field(default_factory=ArchetypeConfig)
 
 
 @dataclass
