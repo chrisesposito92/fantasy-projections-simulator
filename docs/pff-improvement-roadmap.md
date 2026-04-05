@@ -131,15 +131,9 @@ Sweep results (all tc+tier+matchup, 4yr training, 3 seasons):
 | 25 | no pass rate, high OL (0.09) | +0.0354 | -0.269 | -4.288 | -0.0124 |
 | 26 | no pass rate, high QB (0.08) | +0.0376 | -0.264 | -4.338 | -0.0126 |
 
-### 3. NCAA Tier Assignment for Rookies (MEDIUM)
+### 3. ~~NCAA Tier Assignment for Rookies~~ — COMPLETE
 
-**What:** Use college PFF grades (2022-2025 NCAA data) to place rookies directly into NFL talent tiers instead of relying on draft-capital archetypes from `rookie_builder.py`.
-
-**Why:** Rookies have zero NFL PBP history, so the tier engine assigns them based on the 15% tier floor. An elite college route runner should be placed in Tier 1-2 with NFL-caliber distributions, regardless of draft round. ~50-60 rookies per season, disproportionately misranked.
-
-**Data required:** NCAA PFF data at `~/.fantasy-sim/pff/processed/ncaa/`. Already scraped (2022-2025). Need NCAA-to-NFL player crosswalk via draft picks.
-
-**Implementation:** Extend `TierEngine` with a `_assign_rookie_tier()` method. Map college grades to the NFL tier percentile scale (college grades are on the same 0-100 PFF scale but distribution differs). Weight by draft capital — a 1st-round pick's college grades carry more than a 5th-rounder's.
+**Result:** NCAA grades via `pff_id` bridge place rookies into NFL talent tiers. 85/85 drafted, 143/144 total rookies matched for 2025 class. Grade drives tier assignment (direct comparison against NFL boundaries — distributions are close: NCAA WR route mean=62.2 vs NFL mean=63.6). Draft capital modulates blend confidence (1st round=1.0 full tier influence, UDFA=0.4 partial). `TierEngine._apply_rookie_tiers()` processes players skipped by the NFL PFF crosswalk. Players without NCAA PFF data fall back to existing `rookie_builder.py` archetypes. Config in `defaults.yaml` under `pff.tier_engine.ncaa_rookie`. A/B harness modes: `--mode ncaa_rookie+tier`, `--mode ncaa_rookie+tier+matchup`.
 
 ### 4. Depth-of-Target Archetypes Within Tiers (MEDIUM)
 
