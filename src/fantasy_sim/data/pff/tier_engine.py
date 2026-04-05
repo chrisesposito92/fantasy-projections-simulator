@@ -162,6 +162,12 @@ class TierEngine:
         # NCAA grade cache: (pff_id, position, rookie_season) -> grades dict or None
         self._ncaa_grade_cache: dict[tuple[int, str, int], dict[str, float] | None] = {}
 
+        # Archetype sub-pools: {position: {tier: {archetype_name: _TierPoolEntry}}}
+        self._archetype_pools: dict[str, dict[int, dict[str, _TierPoolEntry]]] | None = None
+
+        # Global ADOT boundaries for archetype classification
+        self._adot_boundaries: tuple[float, ...] | None = None
+
     # ------------------------------------------------------------------
     # PBP aggregation (per-season)
     # ------------------------------------------------------------------
@@ -696,6 +702,46 @@ class TierEngine:
             if primary_grade >= boundary:
                 return tier_idx + 1
         return 5
+
+    # ------------------------------------------------------------------
+    # Archetype classification
+    # ------------------------------------------------------------------
+
+    _ARCHETYPE_NAMES_3 = ("slot", "possession", "deep")
+    _ARCHETYPE_NAMES_2 = ("short", "deep")
+
+    def _classify_archetype(self, pff_grades: dict[str, float]) -> str | None:
+        """Classify a WR into a depth archetype based on ADOT.
+
+        Uses precomputed global ADOT percentile boundaries to assign one of
+        N archetype labels.  Returns ``None`` when archetypes are disabled,
+        boundaries haven't been computed, or ADOT is missing from
+        ``pff_grades``.
+
+        Args:
+            pff_grades: PFF grade dict (must include the configured
+                ``adot_grade_key`` for classification to succeed).
+
+        Returns:
+            Archetype name string, or ``None``.
+        """
+        if not self._config.archetypes.enabled:
+            return None
+        if self._adot_boundaries is None:
+            return None
+        adot = pff_grades.get(self._config.archetypes.adot_grade_key)
+        if adot is None:
+            return None
+
+        n = self._config.archetypes.n_archetypes
+        names = self._ARCHETYPE_NAMES_3 if n == 3 else self._ARCHETYPE_NAMES_2
+
+        # Walk boundaries: values strictly below a boundary get names[i],
+        # values at or above the last boundary get names[-1].
+        for i, boundary in enumerate(self._adot_boundaries):
+            if adot < boundary:
+                return names[i]
+        return names[-1]
 
     # ------------------------------------------------------------------
     # Within-tier percentile

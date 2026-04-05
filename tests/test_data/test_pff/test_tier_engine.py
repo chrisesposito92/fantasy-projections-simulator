@@ -1534,3 +1534,57 @@ class TestPickToRound:
 
     def test_none_returns_none(self):
         assert _pick_to_round(None) is None
+
+
+class TestClassifyArchetype:
+    def _make_engine_with_boundaries(self, boundaries=(9.0, 14.0)):
+        """Create a TierEngine with preset ADOT boundaries."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = boundaries
+        return engine
+
+    def test_slot_below_p33(self):
+        """ADOT below p33 boundary classifies as slot."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"avg_depth_of_target": 7.0}) == "slot"
+
+    def test_possession_between_boundaries(self):
+        """ADOT between p33 and p67 classifies as possession."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"avg_depth_of_target": 11.0}) == "possession"
+
+    def test_deep_above_p67(self):
+        """ADOT above p67 boundary classifies as deep."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"avg_depth_of_target": 16.0}) == "deep"
+
+    def test_at_p33_boundary_is_possession(self):
+        """ADOT exactly at p33 boundary classifies as possession (>= p33)."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"avg_depth_of_target": 9.0}) == "possession"
+
+    def test_at_p67_boundary_is_deep(self):
+        """ADOT exactly at p67 boundary classifies as deep (boundary = lower bucket upper edge)."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"avg_depth_of_target": 14.0}) == "deep"
+
+    def test_none_when_adot_missing(self):
+        """Returns None when ADOT is not in the grades dict."""
+        engine = self._make_engine_with_boundaries((9.0, 14.0))
+        assert engine._classify_archetype({"grades_pass_route": 75.0}) is None
+
+    def test_none_when_boundaries_not_set(self):
+        """Returns None when ADOT boundaries haven't been computed."""
+        engine = _make_tier_engine()
+        engine._adot_boundaries = None
+        assert engine._classify_archetype({"avg_depth_of_target": 10.0}) is None
+
+    def test_none_when_archetypes_disabled(self):
+        """Returns None when archetypes are disabled in config."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=False)
+        engine._adot_boundaries = (9.0, 14.0)
+        assert engine._classify_archetype({"avg_depth_of_target": 10.0}) is None
