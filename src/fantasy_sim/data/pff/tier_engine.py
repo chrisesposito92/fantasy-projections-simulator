@@ -312,6 +312,13 @@ class TierEngine:
         "TE": "receiving_summary",
     }
 
+    # Columns to exclude when identifying numeric grade columns
+    _META_COLS: set[str] = {
+        "player_id", "player", "team", "position", "pff_position",
+        "season", "week", "game_id", "franchise_id", "jersey_number",
+        "status",
+    }
+
     def _load_season_grades(
         self, season: int, position: str
     ) -> dict[int, dict[str, float]]:
@@ -341,14 +348,9 @@ class TierEngine:
             return {}
 
         # Identify numeric grade columns
-        meta_cols = {
-            "player_id", "player", "team", "position", "pff_position",
-            "season", "week", "game_id", "franchise_id", "jersey_number",
-            "status",
-        }
         numeric_cols = [
             c for c in df.columns
-            if c not in meta_cols
+            if c not in self._META_COLS
             and df[c].dtype in (pl.Float64, pl.Int64, pl.Float32, pl.Int32)
         ]
 
@@ -390,11 +392,6 @@ class TierEngine:
             return None
 
         lookback = self._config.ncaa_rookie.ncaa_lookback_seasons
-        meta_cols = {
-            "player_id", "player", "team", "position", "pff_position",
-            "season", "week", "game_id", "franchise_id", "jersey_number",
-            "status",
-        }
 
         for offset in range(lookback):
             ncaa_season = rookie_season - 1 - offset
@@ -409,7 +406,7 @@ class TierEngine:
             # Average numeric grade columns across games
             numeric_cols = [
                 c for c in player_rows.columns
-                if c not in meta_cols
+                if c not in self._META_COLS
                 and player_rows[c].dtype in (pl.Float64, pl.Int64, pl.Float32, pl.Int32)
             ]
             if not numeric_cols:
