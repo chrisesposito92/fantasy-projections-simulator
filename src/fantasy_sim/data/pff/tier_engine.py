@@ -35,6 +35,17 @@ logger = logging.getLogger(__name__)
 MIN_TIER_POOL_SIZE = 20
 
 
+def _pick_to_round(draft_number: int | None) -> int | None:
+    """Derive draft round from overall pick number.
+
+    NFL draft has ~32 picks per round (compensatory picks vary).
+    Caps at round 7.
+    """
+    if draft_number is None:
+        return None
+    return min((draft_number - 1) // 32 + 1, 7)
+
+
 # ---------------------------------------------------------------------------
 # Internal pool entry (stores the full percentile summary for a position-tier)
 # ---------------------------------------------------------------------------

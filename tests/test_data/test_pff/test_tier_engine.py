@@ -5,6 +5,7 @@ import pytest
 
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.pff.models import PffConfig, TierConfig, PositionGradeConfig
+from fantasy_sim.data.pff.tier_engine import _pick_to_round
 
 
 # ---------------------------------------------------------------------------
@@ -1083,3 +1084,29 @@ class TestNcaaRookieConfig:
         ncaa = cfg.tier_engine.ncaa_rookie
         assert ncaa.draft_confidence[1] == 0.99
         assert ncaa.draft_confidence[7] == 0.45
+
+
+class TestPickToRound:
+    def test_first_pick_is_round_1(self):
+        assert _pick_to_round(1) == 1
+
+    def test_pick_32_is_round_1(self):
+        assert _pick_to_round(32) == 1
+
+    def test_pick_33_is_round_2(self):
+        assert _pick_to_round(33) == 2
+
+    def test_pick_64_is_round_2(self):
+        assert _pick_to_round(64) == 2
+
+    def test_pick_65_is_round_3(self):
+        assert _pick_to_round(65) == 3
+
+    def test_pick_224_is_round_7(self):
+        assert _pick_to_round(224) == 7
+
+    def test_compensatory_picks_cap_at_round_7(self):
+        assert _pick_to_round(260) == 7
+
+    def test_none_returns_none(self):
+        assert _pick_to_round(None) is None
