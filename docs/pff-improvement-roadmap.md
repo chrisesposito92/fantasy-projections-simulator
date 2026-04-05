@@ -1,12 +1,13 @@
 # PFF Improvement Roadmap
 
-Status as of 2026-04-04:
-- **tc+matchup-no-passrate** (#24): PASS (rank_corr +0.0381, wk_mae -0.260, szn_mae -4.309, calibr -0.0125) — current default
+Status as of 2026-04-05:
+- **ncaa-rookie-tier+matchup** (#28): PASS (rank_corr +0.0472, wk_mae -0.315, szn_mae -4.923, calibr -0.0126) — current default
 - Tier config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
-- Team context config: pass_rate_sensitivity=0.0 (disabled), ol_run_sensitivity=0.06, qb_quality_sensitivity=0.05, clamp [0.90, 1.10], min_games=4
+- NCAA rookie config: enabled, draft confidence 1st=1.0→7th=0.50, UDFA=0.40, lookback=4 seasons
+- Team context config: **disabled** (OL/QB adjustments overlap with NCAA grade signal, #28 without tc beats #29 with tc)
 - Matchup config: medium sensitivities (0.06-0.075), clamp [0.90, 1.10], min_games=4
 - Same-season rolling window: week < max_week filter, linear ramp blend with previous season
-- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) complete (see results below)
+- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) + round 5 (NCAA rookie) complete
 
 ## Completed Fixes
 

@@ -95,7 +95,7 @@ pff:
       ncaa_lookback_seasons: 4
 
   team_context:
-    enabled: true
+    enabled: false
     pass_rate_sensitivity: 0.0
     ol_run_sensitivity: 0.06
     qb_quality_sensitivity: 0.05
