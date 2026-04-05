@@ -61,11 +61,18 @@ Smaller pool weights personal PBP data more heavily, improving weekly precision.
 
 **Note:** This is a stepping stone toward the kNN approach (future v3), which naturally handles N dimensions without discrete interpolation logic.
 
-### F. Position-Specific Reliability
+### F. Position-Specific Reliability — SWEPT, RULED OUT
+**Result:** Position-specific floor/cap hurts rank_corr. Global reliability (0.20/0.80) works best.
 
-**Current:** Same reliability formula for all positions.
-**Opportunity:** QBs are more stable year-to-year (larger PBP samples, less role volatility). RBs are the most volatile (committee changes, injuries). Position-specific reliability params could improve per-position accuracy.
-**Try:** Lower floor for QBs (0.05 — minimal tier influence), higher floor for RBs (0.20 — more tier influence):
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| **33** | **global 0.20/0.80 (current)** | **+0.0494** | **-0.315** | -4.902 | -0.0134 |
+| 35 | QB 0.05/0.50 + RB 0.30/0.85 | +0.0460 | -0.319 | -4.913 | -0.0126 |
+| 36 | QB 0.05/0.50 only | +0.0450 | -0.312 | -4.740 | -0.0127 |
+
+QB tier influence likely helps via fumble_rate blending (the only QB field blended). Cutting it too aggressively loses that signal. Code support for `position_reliability` dict is in place if future sweeps find better settings.
+
+Previously:
 ```bash
 # Would require a code change to support per-position reliability config
 # For now, can approximate by adjusting max_games (higher = less tier influence)
@@ -103,7 +110,7 @@ Best weekly MAE, second-best rank_corr. Adopted as new default (#15 → defaults
 
 ### Remaining Candidates
 
-Priority: E (additional grades) > F (position-specific reliability) > D (pool size)
+Priority: E (additional grades) — D and F swept
 
 ---
 
