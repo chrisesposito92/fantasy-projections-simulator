@@ -570,6 +570,8 @@ class TierEngine:
         """
         pools: dict[str, dict[int, _TierPoolEntry]] = {}
         boundaries: dict[str, list[float]] = {}
+        self._archetype_pools = None
+        self._adot_boundaries = None
 
         # Invert crosswalk: nfl_id -> pff_id for fast lookup
         nfl_to_pff: dict[str, int] = {v: k for k, v in crosswalk.items()}
@@ -652,6 +654,10 @@ class TierEngine:
                 position,
                 {t: e.n_player_seasons for t, e in position_pools.items()},
             )
+
+            # Build archetype sub-pools for WR
+            if position == "WR":
+                self._build_archetype_pools(position, player_seasons, tier_buckets)
 
         self._pools = pools
         self._boundaries = boundaries
@@ -742,6 +748,88 @@ class TierEngine:
             if adot < boundary:
                 return names[i]
         return names[-1]
+
+    # ------------------------------------------------------------------
+    # Archetype sub-pool building
+    # ------------------------------------------------------------------
+
+    def _build_archetype_pools(
+        self,
+        position: str,
+        player_seasons: list[dict],
+        tier_buckets: dict[int, list],
+    ) -> None:
+        """Build archetype sub-pools for WR depth-of-target classification.
+
+        Computes global ADOT percentile boundaries, classifies each player-season,
+        and builds per-(tier, archetype) pool entries.
+
+        Only runs when archetypes.enabled is True and position is "WR".
+        Sub-pools with < min_archetype_pool_size members are discarded.
+        """
+        cfg = self._config.archetypes
+        if not cfg.enabled or position != "WR":
+            return
+
+        # Collect ADOT values from all WR player-seasons
+        adot_key = cfg.adot_grade_key
+        adot_values = [
+            ps["pff_grades"][adot_key]
+            for ps in player_seasons
+            if ps.get("pff_grades") and adot_key in ps["pff_grades"]
+        ]
+
+        if len(adot_values) < cfg.n_archetypes:
+            logger.warning(
+                "Too few WR player-seasons with ADOT (%d) for %d archetypes",
+                len(adot_values), cfg.n_archetypes,
+            )
+            return
+
+        # Compute N-1 evenly-spaced percentile boundaries
+        adot_arr = np.array(adot_values, dtype=np.float64)
+        n = cfg.n_archetypes
+        percentiles = [100.0 * (i + 1) / n for i in range(n - 1)]
+        self._adot_boundaries = tuple(
+            float(np.percentile(adot_arr, p)) for p in percentiles
+        )
+
+        logger.info(
+            "ADOT boundaries for %d archetypes: %s",
+            n, self._adot_boundaries,
+        )
+
+        # Build archetype sub-pools per tier
+        if self._archetype_pools is None:
+            self._archetype_pools = {}
+
+        secondary_key = self._config.position_grades["WR"].secondary
+        position_archetype_pools: dict[int, dict[str, _TierPoolEntry]] = {}
+
+        for tier, members in tier_buckets.items():
+            archetype_buckets: dict[str, list] = {}
+            for ps in members:
+                archetype = self._classify_archetype(ps.get("pff_grades", {}))
+                if archetype is None:
+                    continue
+                archetype_buckets.setdefault(archetype, []).append(ps)
+
+            tier_archetypes: dict[str, _TierPoolEntry] = {}
+            for arch_name, arch_members in archetype_buckets.items():
+                if len(arch_members) >= cfg.min_archetype_pool_size:
+                    tier_archetypes[arch_name] = self._build_pool_entry(
+                        arch_members, secondary_key,
+                    )
+                    logger.info(
+                        "Built WR archetype sub-pool: tier=%d, archetype=%s, n=%d",
+                        tier, arch_name, len(arch_members),
+                    )
+
+            if tier_archetypes:
+                position_archetype_pools[tier] = tier_archetypes
+
+        if position_archetype_pools:
+            self._archetype_pools["WR"] = position_archetype_pools
 
     # ------------------------------------------------------------------
     # Within-tier percentile

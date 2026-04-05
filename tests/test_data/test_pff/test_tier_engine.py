@@ -1588,3 +1588,157 @@ class TestClassifyArchetype:
         engine._config.archetypes = ArchetypeConfig(enabled=False)
         engine._adot_boundaries = (9.0, 14.0)
         assert engine._classify_archetype({"avg_depth_of_target": 10.0}) is None
+
+
+class TestArchetypePoolBuilding:
+    def _make_wr_player_season(self, adot, catch_rate=0.65, yards_list=None):
+        """Create a WR player-season dict with PFF grades including ADOT."""
+        if yards_list is None:
+            yards_list = [5, 10, 15, 20]
+        return {
+            "targets": 50,
+            "catches": 30,
+            "carries": 0,
+            "yards_list": yards_list,
+            "rushing_yards_list": [],
+            "fumbles": 1,
+            "team": "KC",
+            "games": {f"game_{i}" for i in range(10)},
+            "air_yards": 300.0,
+            "weekly_targets": {w: 5 for w in range(1, 11)},
+            "target_share": 0.20,
+            "carry_share": 0.0,
+            "catch_rate": catch_rate,
+            "air_yards_share": 0.15,
+            "fumble_rate": 0.015,
+            "weekly_share_values": [0.20] * 10,
+            "pff_grades": {
+                "grades_pass_route": 70.0,
+                "avg_depth_of_target": adot,
+            },
+            "pff_id": 1000 + int(adot * 10),
+            "nfl_id": f"player_{int(adot * 10)}",
+            "season": 2024,
+        }
+
+    def test_adot_boundaries_computed_globally(self):
+        """ADOT percentile boundaries are computed from all WR player-seasons."""
+        player_seasons = [self._make_wr_player_season(adot=float(i)) for i in range(1, 31)]
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=3)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        assert engine._adot_boundaries is not None
+        assert len(engine._adot_boundaries) == 2
+        # p33 of 1..30 should be ~10-11, p67 should be ~20-21
+        assert 9.0 <= engine._adot_boundaries[0] <= 12.0
+        assert 19.0 <= engine._adot_boundaries[1] <= 22.0
+
+    def test_three_sub_pools_built_per_tier(self):
+        """Each tier gets up to 3 archetype sub-pools when enough members exist."""
+        player_seasons = []
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=5.0 + i * 0.1))
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=12.0 + i * 0.1))
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=20.0 + i * 0.1))
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=3)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        assert engine._archetype_pools is not None
+        assert "WR" in engine._archetype_pools
+        assert 1 in engine._archetype_pools["WR"]
+        tier1_archetypes = engine._archetype_pools["WR"][1]
+        assert "slot" in tier1_archetypes
+        assert "possession" in tier1_archetypes
+        assert "deep" in tier1_archetypes
+
+    def test_sub_pool_has_archetype_specific_yards(self):
+        """Deep archetype sub-pool has higher mean receiving yards than slot."""
+        player_seasons = []
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=5.0, yards_list=[3, 5, 7, 8]))
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=11.0, yards_list=[8, 12, 15, 18]))
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=18.0, yards_list=[15, 25, 35, 45]))
+        tier_buckets = {2: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=3)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        assert engine._archetype_pools is not None
+        tier2 = engine._archetype_pools["WR"][2]
+        slot_mean = tier2["slot"].receiving_yards_dist.mean()
+        deep_mean = tier2["deep"].receiving_yards_dist.mean()
+        assert deep_mean > slot_mean
+
+    def test_thin_sub_pool_not_stored(self):
+        """Sub-pools below min_archetype_pool_size are discarded."""
+        player_seasons = []
+        for i in range(5):
+            player_seasons.append(self._make_wr_player_season(adot=5.0))
+        for i in range(5):
+            player_seasons.append(self._make_wr_player_season(adot=12.0))
+        for i in range(5):
+            player_seasons.append(self._make_wr_player_season(adot=20.0))
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=20)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        # All sub-pools are below threshold, so nothing stored
+        assert engine._archetype_pools is None or "WR" not in engine._archetype_pools
+
+    def test_missing_adot_excluded_from_sub_pools(self):
+        """Players without ADOT in pff_grades are excluded from boundary computation."""
+        player_seasons = []
+        for i in range(10):
+            player_seasons.append(self._make_wr_player_season(adot=float(i + 1)))
+        # 5 players without ADOT
+        for i in range(5):
+            ps = self._make_wr_player_season(adot=50.0)
+            del ps["pff_grades"]["avg_depth_of_target"]
+            player_seasons.append(ps)
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=3)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        assert engine._adot_boundaries is not None
+        # Boundaries computed from ADOT values 1..10 only (not the 50.0 values)
+        assert len(engine._adot_boundaries) == 2
+        # p33 of 1..10 ~ 3-4, p67 of 1..10 ~ 7-8
+        assert engine._adot_boundaries[0] < 15.0
+        assert engine._adot_boundaries[1] < 15.0
+
+    def test_disabled_config_skips_building(self):
+        """When archetypes.enabled is False, no archetype pools are built."""
+        player_seasons = [self._make_wr_player_season(adot=float(i)) for i in range(1, 31)]
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=False)
+        engine._build_archetype_pools("WR", player_seasons, tier_buckets)
+
+        assert engine._archetype_pools is None
+
+    def test_non_wr_position_skips(self):
+        """Non-WR positions do not build archetype pools."""
+        player_seasons = [self._make_wr_player_season(adot=float(i)) for i in range(1, 31)]
+        tier_buckets = {1: player_seasons}
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True, min_archetype_pool_size=3)
+        engine._build_archetype_pools("RB", player_seasons, tier_buckets)
+
+        assert engine._archetype_pools is None
