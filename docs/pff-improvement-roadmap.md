@@ -136,15 +136,11 @@ Sweep results (all tc+tier+matchup, 4yr training, 3 seasons):
 
 **Result:** NCAA grades via `pff_id` bridge place rookies into NFL talent tiers. 85/85 drafted, 143/144 total rookies matched for 2025 class. Grade drives tier assignment (direct comparison against NFL boundaries — distributions are close: NCAA WR route mean=62.2 vs NFL mean=63.6). Draft capital modulates blend confidence (1st round=1.0 full tier influence, UDFA=0.4 partial). `TierEngine._apply_rookie_tiers()` processes players skipped by the NFL PFF crosswalk. Players without NCAA PFF data fall back to existing `rookie_builder.py` archetypes. Config in `defaults.yaml` under `pff.tier_engine.ncaa_rookie`. A/B harness modes: `--mode ncaa_rookie+tier`, `--mode ncaa_rookie+tier+matchup`.
 
-### 4. Depth-of-Target Archetypes Within Tiers (MEDIUM)
+### 4. ~~Depth-of-Target Archetypes Within Tiers~~ — COMPLETE
 
-**What:** Use the `receiving_depth` PFF facet to create sub-pools within WR tiers based on target depth profile (deep threat vs slot vs possession).
+**Result:** 3 archetype sub-pools (slot/possession/deep) within each WR tier, classified by ADOT from `receiving_summary`. Overrides `receiving_yards_dist` and `catch_rate` from archetype sub-pool when available (>= 20 members); falls back to full tier pool otherwise. Global ADOT percentile boundaries (p33/p67) computed across all WR player-seasons. NCAA rookies also get archetype assignment via NCAA ADOT. Deep-threat sub-pools have higher mean yards and lower catch rates than slot sub-pools within the same tier, matching NFL reality.
 
-**Why:** Currently, all Tier 2 WRs share one yards distribution pool. A deep-threat WR and a slot WR in the same tier have genuinely different yards-per-catch distributions. This is the one case where secondary grade interpolation on yards distributions makes sense — but via archetype sub-pooling, not continuous interpolation.
-
-**Data required:** receiving_depth facet (already scraped). Contains per-player breakdowns by short/medium/deep targets.
-
-**Implementation:** Cluster WRs within each tier into 2-3 archetypes by depth profile. Assign each player to an archetype. Use the archetype's sub-pool for yards distributions instead of the full tier pool. Only applies to WR — other positions don't have the same depth variance.
+Config in `defaults.yaml` under `pff.tier_engine.archetypes`. A/B override: `--config-override '{"tier_engine": {"archetypes": {"enabled": false}}}'`.
 
 ### 5. Coverage Matchup Adjustments (LOW for backtest / HIGH for weekly)
 
