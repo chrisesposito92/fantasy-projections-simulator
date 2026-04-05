@@ -138,9 +138,19 @@ Sweep results (all tc+tier+matchup, 4yr training, 3 seasons):
 
 ### 4. ~~Depth-of-Target Archetypes Within Tiers~~ — COMPLETE
 
-**Result:** 3 archetype sub-pools (slot/possession/deep) within each WR tier, classified by ADOT from `receiving_summary`. Overrides `receiving_yards_dist` and `catch_rate` from archetype sub-pool when available (>= 20 members); falls back to full tier pool otherwise. Global ADOT percentile boundaries (p33/p67) computed across all WR player-seasons. NCAA rookies also get archetype assignment via NCAA ADOT. Deep-threat sub-pools have higher mean yards and lower catch rates than slot sub-pools within the same tier, matching NFL reality.
+**Result:** 3 archetype sub-pools (slot/possession/deep) within each WR tier, classified by ADOT from `receiving_summary`. Overrides `receiving_yards_dist` and `catch_rate` from archetype sub-pool when available (>= 10 members); falls back to full tier pool otherwise. Global ADOT percentile boundaries (p33/p67) computed across all WR player-seasons. NCAA rookies also get archetype assignment via NCAA ADOT. Deep-threat sub-pools have higher mean yards and lower catch rates than slot sub-pools within the same tier, matching NFL reality.
 
 Config in `defaults.yaml` under `pff.tier_engine.archetypes`. A/B override: `--config-override '{"tier_engine": {"archetypes": {"enabled": false}}}'`.
+
+Sweep results (all ncaa_rookie+tier+matchup, 4yr training, 3 seasons):
+
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 30 | archetypes on (pool=20) | +0.0462 | -0.313 | -4.764 | -0.0128 |
+| 31 | archetypes off | +0.0453 | -0.319 | -5.020 | -0.0133 |
+| **32** | **archetypes on (pool=10)** | **+0.0479** | -0.317 | -4.845 | **-0.0148** |
+
+`min_archetype_pool_size=10` (#32) adopted as new default: best rank_corr (+0.0479) and best calibration (-0.0148) in the ledger. Pool size 20 was too restrictive — most tier-archetype cells fell below threshold and used the full tier pool fallback.
 
 ### 5. Coverage Matchup Adjustments (LOW for backtest / HIGH for weekly)
 

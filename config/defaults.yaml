@@ -97,7 +97,7 @@ pff:
       enabled: true
       n_archetypes: 3
       adot_grade_key: avg_depth_of_target
-      min_archetype_pool_size: 20
+      min_archetype_pool_size: 10
 
   team_context:
     enabled: false
