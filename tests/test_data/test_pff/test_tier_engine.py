@@ -1742,3 +1742,126 @@ class TestArchetypePoolBuilding:
         engine._build_archetype_pools("RB", player_seasons, tier_buckets)
 
         assert engine._archetype_pools is None
+
+
+class TestArchetypeBlendOverride:
+    def test_wr_uses_archetype_yards_dist(self):
+        """WR blend uses archetype sub-pool receiving_yards_dist."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = (9.0, 14.0)
+
+        main_pool = _make_pool_entry(
+            receiving_yards_dist=np.array([10, 12, 14, 16, 18]),
+            catch_rate=(0.60, 0.65, 0.70),
+        )
+        deep_pool = _make_pool_entry(
+            receiving_yards_dist=np.array([20, 25, 30, 35, 40]),
+            catch_rate=(0.45, 0.50, 0.55),
+        )
+
+        engine._pools = {"WR": {3: main_pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+        engine._archetype_pools = {"WR": {3: {"deep": deep_pool}}}
+
+        pff_grades = {"grades_pass_route": 65.0, "avg_depth_of_target": 16.0}
+        result = engine.select_distributions(pff_grades, "WR")
+        assert result is not None
+        assignment, tier_dists = result
+
+        archetype = engine._classify_archetype(pff_grades)
+        assert archetype == "deep"
+        arch_pool_found = engine._archetype_pools["WR"][assignment.tier].get(archetype)
+        assert arch_pool_found is not None
+        tier_dists.receiving_yards_dist = arch_pool_found.receiving_yards_dist
+        tier_dists.catch_rate = engine._interp_scalar(arch_pool_found.catch_rate, 0.5)
+
+        assert np.array_equal(tier_dists.receiving_yards_dist, deep_pool.receiving_yards_dist)
+        assert tier_dists.catch_rate == 0.50
+
+    def test_wr_without_archetype_uses_main_pool(self):
+        """WR without ADOT in grades falls back to main tier pool."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = (9.0, 14.0)
+
+        main_pool = _make_pool_entry(
+            receiving_yards_dist=np.array([10, 12, 14, 16, 18]),
+        )
+        engine._pools = {"WR": {3: main_pool}}
+        engine._boundaries = {"WR": [85.0, 70.0, 55.0, 40.0]}
+        engine._archetype_pools = {"WR": {3: {"deep": _make_pool_entry()}}}
+
+        pff_grades = {"grades_pass_route": 65.0}  # no ADOT
+        result = engine.select_distributions(pff_grades, "WR")
+        assert result is not None
+        _, tier_dists = result
+
+        archetype = engine._classify_archetype(pff_grades)
+        assert archetype is None
+        assert np.array_equal(tier_dists.receiving_yards_dist, main_pool.receiving_yards_dist)
+
+    def test_rb_unaffected_by_archetypes(self):
+        """RB blending is completely unaffected by archetype logic."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = (9.0, 14.0)
+
+        rb_pool = _make_pool_entry(
+            rushing_yards_dist=np.array([2, 4, 6, 8]),
+            carry_share=(0.10, 0.15, 0.20),
+        )
+        engine._pools = {"RB": {3: rb_pool}}
+        engine._boundaries = {"RB": [85.0, 70.0, 55.0, 40.0]}
+        engine._archetype_pools = {}
+
+        pff_grades = {"grades_run": 65.0}
+        result = engine.select_distributions(pff_grades, "RB")
+        assert result is not None
+        _, tier_dists = result
+
+        archetype = engine._classify_archetype(pff_grades)
+        assert archetype is None
+
+
+class TestNcaaArchetypeOverride:
+    def test_rookie_with_ncaa_adot_gets_archetype_sub_pool(self):
+        """Rookie WR with NCAA ADOT gets archetype-specific distributions."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = (9.0, 14.0)
+
+        deep_pool = _make_pool_entry(
+            receiving_yards_dist=np.array([20, 25, 30, 35, 40]),
+            catch_rate=(0.45, 0.50, 0.55),
+        )
+        engine._archetype_pools = {"WR": {2: {"deep": deep_pool}}}
+
+        ncaa_grades = {"grades_pass_route": 75.0, "avg_depth_of_target": 17.0}
+        archetype = engine._classify_archetype(ncaa_grades)
+        assert archetype == "deep"
+
+        arch_pool_found = engine._archetype_pools["WR"][2].get(archetype)
+        assert arch_pool_found is not None
+        assert np.array_equal(arch_pool_found.receiving_yards_dist, deep_pool.receiving_yards_dist)
+
+    def test_rookie_without_ncaa_adot_uses_full_pool(self):
+        """Rookie WR without NCAA ADOT falls back to full tier pool."""
+        from fantasy_sim.data.pff.models import ArchetypeConfig
+
+        engine = _make_tier_engine()
+        engine._config.archetypes = ArchetypeConfig(enabled=True)
+        engine._adot_boundaries = (9.0, 14.0)
+        engine._archetype_pools = {"WR": {2: {"deep": _make_pool_entry()}}}
+
+        ncaa_grades = {"grades_pass_route": 75.0}
+        archetype = engine._classify_archetype(ncaa_grades)
+        assert archetype is None

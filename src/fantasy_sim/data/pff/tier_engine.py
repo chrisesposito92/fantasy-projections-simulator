@@ -1251,6 +1251,20 @@ class TierEngine:
             if team_context is not None:
                 self.apply_team_context(tier_dists, team_context, position)
 
+            # Apply archetype sub-pool override for WR rookies
+            if position == "WR" and self._archetype_pools:
+                archetype = self._classify_archetype(ncaa_grades)
+                if archetype:
+                    arch_pool = (
+                        self._archetype_pools
+                        .get("WR", {}).get(assignment.tier, {}).get(archetype)
+                    )
+                    if arch_pool:
+                        tier_dists.receiving_yards_dist = arch_pool.receiving_yards_dist
+                        tier_dists.catch_rate = self._interp_scalar(
+                            arch_pool.catch_rate, 0.5,
+                        )
+
             # Compute draft-capital-modulated blend weight
             draft_round = _pick_to_round(info["draft_number"])
             if draft_round is not None:
@@ -1369,6 +1383,20 @@ class TierEngine:
             # Apply team context to tier distributions before blending
             if team_context is not None:
                 self.apply_team_context(tier_dists, team_context, position)
+
+            # Apply archetype sub-pool override for WR
+            if position == "WR" and self._archetype_pools:
+                archetype = self._classify_archetype(pff_grades)
+                if archetype:
+                    arch_pool = (
+                        self._archetype_pools
+                        .get("WR", {}).get(assignment.tier, {}).get(archetype)
+                    )
+                    if arch_pool:
+                        tier_dists.receiving_yards_dist = arch_pool.receiving_yards_dist
+                        tier_dists.catch_rate = self._interp_scalar(
+                            arch_pool.catch_rate, 0.5,
+                        )
 
             # Gather weekly shares from PBP data for reliability scoring
             weekly_shares_list: list[float] = []
