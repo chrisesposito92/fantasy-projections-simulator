@@ -375,6 +375,101 @@ class TestWrAlignment:
         assert _ALIGNMENT_MAP["SRWR"] == "SCB"
 
 
+class TestModifierComputation:
+    """Tests for _compute_modifiers function."""
+
+    # Standard 8-CB population used across most tests
+    _POPULATION = [
+        _CbProfile(200, "BUF", "LCB", 0.50, 9.0, 82.0, 60, 8),   # strong
+        _CbProfile(300, "MIA", "LCB", 0.62, 11.0, 68.0, 55, 8),   # average
+        _CbProfile(400, "NE",  "LCB", 0.65, 12.0, 60.0, 50, 8),   # average
+        _CbProfile(500, "NYJ", "LCB", 0.70, 14.0, 55.0, 45, 8),   # weak
+        _CbProfile(600, "DAL", "LCB", 0.64, 11.5, 65.0, 50, 8),
+        _CbProfile(700, "PHI", "LCB", 0.58, 10.0, 72.0, 55, 8),
+        _CbProfile(800, "WAS", "LCB", 0.68, 13.0, 58.0, 48, 8),
+        _CbProfile(900, "NYG", "LCB", 0.60, 10.5, 70.0, 52, 8),
+    ]
+
+    def test_strong_cb_produces_negative_modifier(self, default_config):
+        """Strong CB (low catch_rate_allowed, high grade) → modifiers < 1.0."""
+        from fantasy_sim.data.pff.coverage import _compute_modifiers
+
+        strong_cb = _CbProfile(200, "BUF", "LCB", 0.50, 9.0, 82.0, 60, 8)
+        result = _compute_modifiers(strong_cb, self._POPULATION, default_config)
+
+        assert result.catch_rate_modifier < 1.0
+        assert result.ypr_modifier < 1.0
+
+    def test_weak_cb_produces_positive_modifier(self, default_config):
+        """Weak CB (high catch_rate_allowed, low grade) → modifiers > 1.0."""
+        from fantasy_sim.data.pff.coverage import _compute_modifiers
+
+        weak_cb = _CbProfile(500, "NYJ", "LCB", 0.70, 14.0, 55.0, 45, 8)
+        result = _compute_modifiers(weak_cb, self._POPULATION, default_config)
+
+        assert result.catch_rate_modifier > 1.0
+        assert result.ypr_modifier > 1.0
+
+    def test_modifiers_clamped_to_range(self, default_config):
+        """Extreme CB with very high sensitivity should be clamped at factor_clamp bounds."""
+        from fantasy_sim.data.pff.coverage import _compute_modifiers
+
+        # Very high sensitivity so unclamped modifier would exceed bounds
+        config = CoverageConfig(
+            catch_rate_sensitivity=0.20,
+            ypr_sensitivity=0.20,
+            factor_clamp=(0.95, 1.05),
+            min_coverage_targets=20,
+            min_z_score_targets=10,
+            min_z_score_population=8,
+        )
+
+        # Extreme strong CB (far below population mean)
+        extreme_cb = _CbProfile(200, "BUF", "LCB", 0.30, 7.0, 95.0, 60, 8)
+        result = _compute_modifiers(extreme_cb, self._POPULATION, config)
+
+        lo, hi = config.factor_clamp
+        assert result.catch_rate_modifier == pytest.approx(lo, abs=1e-9)
+        assert result.ypr_modifier == pytest.approx(lo, abs=1e-9)
+
+    def test_reliability_ramp_blends_outcome_and_grade(self, default_config):
+        """Low target count → grade pulls modifier, outcome z ≈ 0 but grade is strong."""
+        from fantasy_sim.data.pff.coverage import _compute_modifiers
+
+        # min_coverage_targets=20, CB has only 10 → reliability = 0.5
+        config = CoverageConfig(
+            catch_rate_sensitivity=0.04,
+            ypr_sensitivity=0.04,
+            min_coverage_targets=20,
+            min_z_score_targets=10,
+            min_z_score_population=8,
+            factor_clamp=(0.95, 1.05),
+        )
+
+        # CB with average outcomes (z ≈ 0) but strong grade (high → negative grade_z)
+        # Population mean catch_rate ≈ 0.622, mean grade ≈ 66.25
+        # Outcomes are right at the mean so outcome z ≈ 0
+        # Grade is 82 (above mean) → grade_z < 0 → blended_z < 0 → modifier < 1.0
+        low_target_cb = _CbProfile(200, "BUF", "LCB", 0.622, 11.0, 82.0, 10, 8)
+        result = _compute_modifiers(low_target_cb, self._POPULATION, config)
+
+        assert result.catch_rate_modifier < 1.0
+
+    def test_small_population_returns_neutral(self, default_config):
+        """Fewer than min_z_score_population CBs → neutral modifiers (1.0, 1.0)."""
+        from fantasy_sim.data.pff.coverage import _compute_modifiers
+
+        small_pop = [
+            _CbProfile(200, "BUF", "LCB", 0.50, 9.0, 82.0, 60, 8),
+            _CbProfile(300, "MIA", "LCB", 0.62, 11.0, 68.0, 55, 8),
+        ]
+        cb = _CbProfile(200, "BUF", "LCB", 0.50, 9.0, 82.0, 60, 8)
+        result = _compute_modifiers(cb, small_pop, default_config)
+
+        assert result.catch_rate_modifier == pytest.approx(1.0)
+        assert result.ypr_modifier == pytest.approx(1.0)
+
+
 class TestComputeStub:
     """Tests for CoverageEngine.compute() stub."""
 

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from fantasy_sim.data.pff.loader import PffLoader
-from fantasy_sim.data.pff.models import CoverageConfig
+from fantasy_sim.data.pff.models import CoverageConfig, CoverageModifiers
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,71 @@ class _CbProfile:
     coverage_grade: float
     total_targets: int
     games_played: int
+
+
+def _compute_modifiers(
+    cb: _CbProfile,
+    all_cbs_at_alignment: list[_CbProfile],
+    config: CoverageConfig,
+) -> CoverageModifiers:
+    """Compute per-WR catch rate and YPR modifiers from a CB's coverage profile.
+
+    Uses z-scores relative to all CBs at the same alignment, blended with a
+    grade-based signal weighted by outcome reliability (target volume).
+
+    Args:
+        cb: The CB profile facing the WR.
+        all_cbs_at_alignment: All CBs at this alignment (used as the population).
+        config: CoverageConfig with sensitivities, clamp, and thresholds.
+
+    Returns:
+        CoverageModifiers with catch_rate_modifier and ypr_modifier (both
+        centered on 1.0; values > 1.0 favor the WR, < 1.0 penalize the WR).
+    """
+    # Step 1: Filter population by minimum target threshold
+    eligible = [c for c in all_cbs_at_alignment if c.total_targets >= config.min_z_score_targets]
+
+    # Step 2: Population check
+    if len(eligible) < config.min_z_score_population:
+        return CoverageModifiers()
+
+    # Step 3: Compute population means and population stds (divide by N)
+    n = len(eligible)
+
+    catch_rates = [c.catch_rate_allowed for c in eligible]
+    yprs = [c.ypr_allowed for c in eligible]
+    grades = [c.coverage_grade for c in eligible]
+
+    mean_cr = sum(catch_rates) / n
+    mean_ypr = sum(yprs) / n
+    mean_grade = sum(grades) / n
+
+    std_cr = (sum((x - mean_cr) ** 2 for x in catch_rates) / n) ** 0.5
+    std_ypr = (sum((x - mean_ypr) ** 2 for x in yprs) / n) ** 0.5
+    std_grade = (sum((x - mean_grade) ** 2 for x in grades) / n) ** 0.5
+
+    # Step 4: Compute z-scores for this CB
+    # Higher catch_rate_allowed → weaker CB → positive z (bad for WR is inverted here:
+    #   a weak CB is good for WR, so positive z → modifier > 1.0 ✓)
+    catch_rate_z = (cb.catch_rate_allowed - mean_cr) / std_cr if std_cr > 0 else 0.0
+    ypr_z = (cb.ypr_allowed - mean_ypr) / std_ypr if std_ypr > 0 else 0.0
+    # Grade is inverted: higher grade → stronger CB → negative z for the WR
+    grade_z = -(cb.coverage_grade - mean_grade) / std_grade if std_grade > 0 else 0.0
+
+    # Step 5: Reliability ramp — blend outcome z with grade z
+    reliability = min(cb.total_targets / config.min_coverage_targets, 1.0)
+    blended_catch_z = reliability * catch_rate_z + (1 - reliability) * grade_z
+    blended_ypr_z = reliability * ypr_z + (1 - reliability) * grade_z
+
+    # Step 6: Convert to modifiers and clamp
+    lo, hi = config.factor_clamp
+    catch_rate_modifier = max(lo, min(hi, 1.0 + blended_catch_z * config.catch_rate_sensitivity))
+    ypr_modifier = max(lo, min(hi, 1.0 + blended_ypr_z * config.ypr_sensitivity))
+
+    return CoverageModifiers(
+        catch_rate_modifier=catch_rate_modifier,
+        ypr_modifier=ypr_modifier,
+    )
 
 
 class CoverageEngine:
