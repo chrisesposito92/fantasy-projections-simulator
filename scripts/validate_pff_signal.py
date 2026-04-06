@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
-from fantasy_sim.data.pff.models import MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
+from fantasy_sim.data.pff.models import CoverageConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 # ---------------------------------------------------------------------------
@@ -222,46 +222,67 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "talent":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "matchup+tier":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "team_context+tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=True)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "team_context+tier+matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=True)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "ncaa_rookie+tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
     elif mode == "ncaa_rookie+tier+matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+    elif mode == "coverage+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
+    elif mode == "coverage+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -308,9 +329,16 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
                 ncaa_cfg.draft_confidence = {int(k): float(v) for k, v in val.items()}
             elif hasattr(ncaa_cfg, key):
                 setattr(ncaa_cfg, key, val)
+    if overrides and "coverage" in overrides:
+        for key, val in overrides["coverage"].items():
+            if hasattr(cov_cfg, key):
+                if key == "factor_clamp" and isinstance(val, list):
+                    setattr(cov_cfg, key, tuple(val))
+                else:
+                    setattr(cov_cfg, key, val)
 
     return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg,
-                     tier_engine=tier_cfg, team_context=tc_cfg)
+                     tier_engine=tier_cfg, team_context=tc_cfg, coverage=cov_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +368,14 @@ def run_backtest_pair(
           f"season_mae={result_off.season_mae:.3f}  "
           f"rank_corr={_format_rank_corr(result_off)}")
 
-    if pff_config.team_context.enabled and pff_config.tier_engine.enabled and pff_config.matchup.enabled:
+    if hasattr(pff_config, 'coverage') and pff_config.coverage.enabled:
+        if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
+            mode_label = "coverage+tier+matchup"
+        elif pff_config.tier_engine.enabled:
+            mode_label = "coverage+tier"
+        else:
+            mode_label = "coverage"
+    elif pff_config.team_context.enabled and pff_config.tier_engine.enabled and pff_config.matchup.enabled:
         mode_label = "team_context+tier+matchup"
     elif pff_config.team_context.enabled and pff_config.tier_engine.enabled:
         mode_label = "team_context+tier"
@@ -499,10 +534,13 @@ def main() -> int:
         "--mode",
         choices=["matchup", "talent", "tier", "matchup+tier",
                  "team_context+tier", "team_context+tier+matchup",
-                 "ncaa_rookie+tier", "ncaa_rookie+tier+matchup", "all"],
+                 "ncaa_rookie+tier", "ncaa_rookie+tier+matchup",
+                 "coverage+tier", "coverage+tier+matchup", "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
+            "'coverage+tier' = tier + coverage engine (CB matchup adjustments), "
+            "'coverage+tier+matchup' = tier + coverage + defensive matchup, "
             "'ncaa_rookie+tier' = tier + NCAA rookie assignment, "
             "'ncaa_rookie+tier+matchup' = tier + NCAA rookie + matchup, "
             "'team_context+tier' = tier + team context, "
@@ -560,8 +598,9 @@ def main() -> int:
         default=None,
         dest="config_override",
         metavar="JSON",
-        help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", "team_context", "ncaa_rookie". '
-             'Example: \'{"ncaa_rookie": {"undrafted_confidence": 0.30}}\'',
+        help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", '
+             '"team_context", "ncaa_rookie", "coverage". '
+             'Example: \'{"coverage": {"catch_rate_sensitivity": 0.06}}\'',
     )
 
     args = parser.parse_args()
