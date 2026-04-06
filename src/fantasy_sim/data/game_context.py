@@ -11,6 +11,7 @@ from fantasy_sim.data.player_builder import (
     _aggregate_pbp_stats, _assemble_models,
 )
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
+from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -40,6 +41,7 @@ class GameContextBuilder:
         self,
         cache_dir: Path = DEFAULT_CACHE_DIR,
         pff_config: PffConfig | None = None,
+        weather_config: WeatherConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -114,6 +116,17 @@ class GameContextBuilder:
                 self._pff_config.dst_baseline, self._pff_loader, [],
             )
             logger.info("PFF DST baseline engine enabled")
+
+        # Weather engine setup
+        self._weather_engine = None
+        if weather_config is not None and weather_config.enabled:
+            from fantasy_sim.data.weather.engine import WeatherEngine
+            self._weather_engine = WeatherEngine(
+                config=weather_config,
+                cache_dir=self.cache_dir.parent / "weather",
+            )
+            logger.info("Weather engine enabled")
+        self._weather_config = weather_config
 
     def _ensure_pipeline(
         self,
@@ -353,6 +366,62 @@ class GameContextBuilder:
                         player.outcomes.receiving_yards_dist + shift
                     )
 
+    @staticmethod
+    def _apply_weather(
+        dists: TeamDistributions,
+        roster: TeamRoster,
+        ctx: WeatherContext,
+    ) -> None:
+        """Apply weather factors to TeamDistributions and TeamRoster in-place.
+
+        Factors centered on 1.0 (neutral). Only non-neutral factors are applied.
+        Weather affects both teams identically — call once per team.
+        """
+        import numpy as np
+
+        # --- Kicking ---
+        for bucket in ("0_39", "40_49", "50_plus"):
+            factor = ctx.fg_accuracy_factor.get(bucket, 1.0)
+            if factor != 1.0:
+                dists.kicking.fg_make_rate[bucket] = max(
+                    0.0, min(1.0, dists.kicking.fg_make_rate[bucket] * factor)
+                )
+        if ctx.xp_accuracy_factor != 1.0:
+            dists.kicking.xp_rate = max(
+                0.0, min(1.0, dists.kicking.xp_rate * ctx.xp_accuracy_factor)
+            )
+
+        # --- Turnovers ---
+        if ctx.fumble_rate_factor != 1.0:
+            dists.turnover_rates.fumble_rate *= ctx.fumble_rate_factor
+        if ctx.int_rate_factor != 1.0:
+            dists.turnover_rates.int_rate *= ctx.int_rate_factor
+
+        # --- Receivers: catch_rate and receiving_yards_dist ---
+        if ctx.catch_rate_factor != 1.0:
+            for player in roster.players:
+                if player.usage.target_share > 0 and player.outcomes.catch_rate > 0:
+                    player.outcomes.catch_rate = max(
+                        0.0, min(1.0, player.outcomes.catch_rate * ctx.catch_rate_factor)
+                    )
+                    player.outcomes.red_zone_catch_rate = max(
+                        0.0,
+                        min(1.0, player.outcomes.red_zone_catch_rate * ctx.catch_rate_factor),
+                    )
+
+        if ctx.pass_yards_factor != 1.0:
+            for player in roster.players:
+                if (
+                    player.usage.target_share > 0
+                    and player.outcomes.receiving_yards_dist is not None
+                    and len(player.outcomes.receiving_yards_dist) > 0
+                ):
+                    mean_yards = float(np.mean(player.outcomes.receiving_yards_dist))
+                    shift = (ctx.pass_yards_factor - 1.0) * mean_yards
+                    player.outcomes.receiving_yards_dist = (
+                        player.outcomes.receiving_yards_dist + shift
+                    )
+
     def _ensure_pff_crosswalk(
         self,
         training_seasons: list[int],
@@ -553,6 +622,15 @@ class GameContextBuilder:
                     kicker_model = self._kicker_engine.compute(kicker.player_id)
                     if kicker_model is not None:
                         team_dists.kicking = kicker_model
+
+        # Weather adjustments (final layer — game-condition modifier)
+        if self._weather_engine is not None and target_season and week:
+            weather_ctx = self._weather_engine.get_context(
+                home_team, away_team, target_season, week,
+            )
+            if weather_ctx is not None:
+                self._apply_weather(home_dists, home_roster, weather_ctx)
+                self._apply_weather(away_dists, away_roster, weather_ctx)
 
         return home_dists, away_dists, home_roster, away_roster
 
