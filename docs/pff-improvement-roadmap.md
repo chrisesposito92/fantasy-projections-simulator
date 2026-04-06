@@ -1,14 +1,16 @@
 # PFF Improvement Roadmap
 
-Status as of 2026-04-05:
-- **coverage+ncaa-rookie-tier+matchup**: PASS (1000 tests) — current default
-- Active PFF layers: tier (5 tiers, reliability 0.20-0.80) + team context (disabled) + matchup (medium sens 0.06-0.075) + NCAA rookie (draft confidence curve) + coverage (0.04 sens, clamp [0.95, 1.05], WR-only)
+Status as of 2026-04-06:
+- **coverage+ncaa-rookie-tier+matchup+kicker+dst_baseline**: PASS (1068 tests) — current default
+- Active PFF layers: tier (5 tiers, reliability 0.20-0.80) + team context (disabled) + matchup (medium sens 0.06-0.075) + NCAA rookie (draft confidence curve) + coverage (0.04 sens, clamp [0.97, 1.03], WR-only) + kicker (Bayesian shrinkage, prior=20) + dst_baseline (fumble rate z-score + defensive TD rates)
 - Tier config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
 - NCAA rookie config: enabled, draft confidence 1st=1.0→7th=0.50, UDFA=0.40, lookback=4 seasons
 - Matchup config: medium sensitivities (0.06-0.075), clamp [0.90, 1.10], min_games=4
 - Coverage config: outcome-based stats (catch rate allowed, YPR allowed) with grade stabilizer, alignment-based CB mapping (RWR→LCB, LWR→RCB, slot→SCB), WR-only for v1
+- Kicker config: per-kicker FG accuracy from field_goal_summary, Bayesian shrinkage (prior=20), min_attempts=5
+- DST baseline config: fumble_rate sensitivity=0.06, clamp [0.85, 1.15], defensive TD rates with Bayesian shrinkage (prior=10)
 - Same-season rolling window: week < max_week filter, linear ramp blend with previous season
-- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) + round 5 (NCAA rookie) + round 6 (coverage) complete
+- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) + round 5 (NCAA rookie) + round 6 (coverage) + round 7 (kicker/DST) complete
 
 ## Completed Fixes
 
@@ -195,12 +197,23 @@ Sweep results (all ncaa_rookie+tier+matchup, 4yr training, 3 seasons):
 
 Config in `defaults.yaml` under `pff.coverage`. A/B harness modes: `--mode coverage+tier`, `--mode coverage+tier+matchup`. Config-override supports `coverage` key.
 
-### 6. Kicker/DST from PFF Grades (LOW)
+### 6. ~~Kicker/DST from PFF Grades~~ — COMPLETE (neutral on aggregate metrics)
 
-**What:** Use `field_goal_summary` and defensive facets to improve kicker and DST projections. Currently kickers are placeholder models and DST uses team-level aggregates.
+**Result:** Per-kicker FG accuracy with Bayesian shrinkage replaces placeholder kicker model. DST baseline engine adjusts fumble_rate (z-score) and team-specific defensive TD rates (Bayesian shrinkage from fixed 0.20/0.10 constants). Both engines complement existing matchup engine without overlap.
 
-**Why:** Small component of overall backtest metrics, but easy wins. PFF kicker grades + accuracy by distance could replace the placeholder. Defensive grades could improve DST scoring projections.
+**KickerEngine** (`kicker.py`): Loads `field_goal_summary`, builds 2-layer crosswalk (pff_id + name/team), computes per-kicker `KickingModel` with Bayesian shrinkage toward league average per distance bucket (PFF twenty+thirty → 0_39, forty → 40_49, fifty → 50_plus). Prior_strength=20 (default). Replaces `TeamDistributions.kicking` in `build_game()`.
 
-**Data required:** field_goal_summary, defense_summary (both already scraped).
+**DstBaselineEngine** (`dst_baseline.py`): Loads `defense_summary`, computes `fumble_rate_factor` (forced fumbles per snap, z-scored via `compute_factor()`) and team-specific `int_return_td_rate`/`fumble_return_td_rate` (Bayesian shrinkage). Same-season rolling window with early-season blend. Applied after coverage in `build_game()`. `DefensiveTdRates` added to `TeamDistributions`, wired through `_update_box_scores()` in `game_sim.py`.
 
-**Implementation:** Extend `build_kicker_model()` to use PFF FG accuracy data by distance bucket. Extend DST projections with PFF defensive grades for sack rate, INT rate, fumble recovery rate.
+**A/B validation** (#46-48, 50 sims, 3 seasons, 4yr training): Both engines approximately neutral on aggregate metrics. Kicker/DST is a small scoring component (~5-10 fpts/week), so the win is model correctness (elite kickers differentiated, team-specific defensive identity) rather than rank_corr movement.
+
+| # | Config | rank_corr | wk_mae | szn_mae |
+|---|--------|-----------|--------|---------|
+| 44 | no kicker/dst (baseline) | +0.0517 | -0.334 | -5.109 |
+| 47 | + kicker only | +0.0489 | -0.309 | -4.934 |
+| 48 | + dst only | +0.0480 | -0.320 | -4.925 |
+| 46 | + both | +0.0440 | -0.321 | -4.822 |
+
+All within Monte Carlo noise at 50 sims. No regression, no further sweeping needed.
+
+Config in `defaults.yaml` under `pff.kicker` and `pff.dst_baseline`. A/B harness modes: `--mode kicker`, `--mode dst_baseline`, `--mode kicker+dst_baseline`, `--mode kicker+dst_baseline+tier+matchup+coverage`.
