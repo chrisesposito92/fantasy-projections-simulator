@@ -130,6 +130,21 @@ pff:
     factor_clamp: [0.97, 1.03]
     min_games: 4
 
+  # Per-kicker accuracy from PFF field goal data (Bayesian shrinkage)
+  kicker:
+    enabled: true
+    prior_strength: 20        # pseudo-attempts for Bayesian prior
+    min_attempts: 5           # minimum FG attempts to use personal data
+
+  # DST baseline: fumble rate + defensive TD rates (complements matchup engine)
+  dst_baseline:
+    enabled: true
+    sensitivities:
+      fumble_rate: 0.06
+    prior_strength: 10        # for defensive TD rate Bayesian shrinkage
+    min_games: 4
+    clamp: [0.85, 1.15]
+
   talent:
     enabled: false
     prior_strength: 30
