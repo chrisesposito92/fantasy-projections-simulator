@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 import zlib
@@ -23,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.actuals import load_actual_scores
@@ -339,7 +342,10 @@ def run_weekly_comparison(
                         coverage_modifiers=cov_map.get(pid) if pos == "WR" else None,
                     ))
 
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Skipping game %s vs %s week %d: %s", home, away, wk, exc
+                )
                 continue
 
         print(f" {len(records)} records total")
@@ -453,7 +459,7 @@ def main() -> int:
         mae_on = compute_weekly_mae(all_records, pos, use_pff_on=True)
         mae_off = compute_weekly_mae(all_records, pos, use_pff_on=False)
         tercile = compute_mae_by_difficulty(all_records, pos)
-        n_weeks = len({r.week for r in pos_records})
+        n_weeks = len({(r.season, r.week) for r in pos_records})
 
         summary = WeeklyPositionSummary(
             position=pos,

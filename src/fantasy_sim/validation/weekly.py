@@ -87,9 +87,9 @@ def compute_weekly_rank_corr(
     and actual fpts, averages across weeks. Skips weeks with < 5 players.
     """
     pos_records = [r for r in records if r.position == position]
-    by_week: dict[int, list[WeeklyPlayerRecord]] = defaultdict(list)
+    by_week: dict[tuple[int, int], list[WeeklyPlayerRecord]] = defaultdict(list)
     for r in pos_records:
-        by_week[r.week].append(r)
+        by_week[(r.season, r.week)].append(r)
 
     corrs = []
     for week_records in by_week.values():
@@ -116,9 +116,9 @@ def compute_weekly_mae(
     and actual fpts, averages across weeks.
     """
     pos_records = [r for r in records if r.position == position]
-    by_week: dict[int, list[WeeklyPlayerRecord]] = defaultdict(list)
+    by_week: dict[tuple[int, int], list[WeeklyPlayerRecord]] = defaultdict(list)
     for r in pos_records:
-        by_week[r.week].append(r)
+        by_week[(r.season, r.week)].append(r)
 
     maes = []
     for week_records in by_week.values():
@@ -211,14 +211,17 @@ def compute_directional_accuracy(
         # Find this week's actual
         this_week = None
         for a in player_actuals:
-            if a.week == record.week:
+            if a.week == record.week and a.season == record.season:
                 this_week = a
                 break
         if this_week is None or this_week.targets < min_weekly_targets:
             continue
 
         # Leave-one-out season average catch rate
-        other_weeks = [a for a in player_actuals if a.week != record.week]
+        other_weeks = [
+            a for a in player_actuals
+            if not (a.week == record.week and a.season == record.season)
+        ]
         baseline_targets = sum(a.targets for a in other_weeks)
         if baseline_targets == 0:
             continue

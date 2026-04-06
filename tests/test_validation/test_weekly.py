@@ -228,6 +228,27 @@ class TestComputeWeeklyRankCorr:
     def test_empty_records_returns_zero(self):
         assert compute_weekly_rank_corr([], "WR") == 0.0
 
+    def test_multi_season_weeks_not_merged(self):
+        """Week 1 from season 2023 and week 1 from 2024 should be separate."""
+        records = [
+            # Season 2023 week 1: perfect correlation
+            _make_record("P1", "WR", 1, 2023, projected_on=25.0, actual=24.0),
+            _make_record("P2", "WR", 1, 2023, projected_on=20.0, actual=19.0),
+            _make_record("P3", "WR", 1, 2023, projected_on=15.0, actual=14.0),
+            _make_record("P4", "WR", 1, 2023, projected_on=10.0, actual=9.0),
+            _make_record("P5", "WR", 1, 2023, projected_on=5.0, actual=4.0),
+            # Season 2024 week 1: perfect correlation
+            _make_record("P6", "WR", 1, 2024, projected_on=25.0, actual=24.0),
+            _make_record("P7", "WR", 1, 2024, projected_on=20.0, actual=19.0),
+            _make_record("P8", "WR", 1, 2024, projected_on=15.0, actual=14.0),
+            _make_record("P9", "WR", 1, 2024, projected_on=10.0, actual=9.0),
+            _make_record("P10", "WR", 1, 2024, projected_on=5.0, actual=4.0),
+        ]
+        corr = compute_weekly_rank_corr(records, "WR")
+        # Each season-week has 5 players with perfect correlation
+        # Average of two perfect correlations = 1.0
+        assert corr == pytest.approx(1.0)
+
 
 class TestComputeWeeklyMae:
     def test_known_mae_two_weeks(self):
@@ -476,3 +497,25 @@ class TestComputeDirectionalAccuracy:
         }
         result = compute_directional_accuracy(records, actuals)
         assert result.total_eligible == 0
+
+    def test_leave_one_out_cross_season_correct(self):
+        """Leave-one-out should only exclude same season+week, not cross-season."""
+        mods = CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=1.0)
+        # Record is for 2024 week 3
+        records = [_make_record("P1", "WR", 3, 2024, coverage_modifiers=mods)]
+        # Build actuals manually, overriding season on each entry
+        a_2023_wk1 = _make_actual("P1", 1, receptions=6, targets=8)
+        a_2023_wk1.season = 2023
+        a_2023_wk3 = _make_actual("P1", 3, receptions=6, targets=8)
+        a_2023_wk3.season = 2023
+        a_2024_wk1 = _make_actual("P1", 1, receptions=6, targets=8)
+        a_2024_wk1.season = 2024
+        a_2024_wk3 = _make_actual("P1", 3, receptions=2, targets=8)
+        a_2024_wk3.season = 2024
+
+        actuals = {"P1": [a_2023_wk1, a_2023_wk3, a_2024_wk1, a_2024_wk3]}
+        result = compute_directional_accuracy(records, actuals)
+        # Baseline: 2023 wk1 (6/8) + 2023 wk3 (6/8) + 2024 wk1 (6/8) = 18/24 = 0.75
+        # This week: 2024 wk3: 2/8 = 0.25 < 0.75, modifier < 1.0 → correct
+        assert result.total_eligible == 1
+        assert result.correct_direction == 1
