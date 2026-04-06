@@ -145,7 +145,7 @@ class WeatherEngine:
 
         try:
             import nflreadpy
-            sched = nflreadpy.import_schedules([season])
+            sched = nflreadpy.load_schedules([season])
         except Exception:
             logger.warning("Could not load schedule for season %d", season)
             self._schedule_cache[season] = {}
