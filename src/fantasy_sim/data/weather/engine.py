@@ -139,7 +139,7 @@ class WeatherEngine:
         self._schedule_cache: dict[int, dict] = {}
 
     def _load_schedule(self, season: int) -> dict[tuple[int, str, str], tuple[date, int]]:
-        """Load nflverse schedule and build lookup: (week, home, away) -> (date, hour_utc)."""
+        """Load nflverse schedule and build lookup: (week, home, away) -> (date, game_hour_et)."""
         if season in self._schedule_cache:
             return self._schedule_cache[season]
 
@@ -167,16 +167,15 @@ class WeatherEngine:
             else:
                 game_date = gameday
 
-            hour_utc = 17  # default: 1pm ET = 17 UTC
+            game_hour = 13  # default: 1pm ET
             if gametime:
                 try:
                     parts = str(gametime).split(":")
-                    et_hour = int(parts[0])
-                    hour_utc = et_hour + 4
+                    game_hour = int(parts[0])
                 except (ValueError, IndexError):
                     pass
 
-            lookup[(int(week), str(home), str(away))] = (game_date, hour_utc)
+            lookup[(int(week), str(home), str(away))] = (game_date, game_hour)
 
         self._schedule_cache[season] = lookup
         return lookup
@@ -202,7 +201,7 @@ class WeatherEngine:
             )
             return None
 
-        game_date, hour_utc = schedule[key]
+        game_date, game_hour = schedule[key]
 
         stadium = get_stadium(home_team)
         if stadium is None:
@@ -210,7 +209,7 @@ class WeatherEngine:
             return None
 
         weather = self._provider.get_weather(
-            stadium.latitude, stadium.longitude, game_date, hour_utc,
+            stadium.latitude, stadium.longitude, game_date, game_hour,
         )
         if weather is None:
             return None

@@ -55,7 +55,7 @@ class GameWeather:
 - Uses httpx (already a project dependency for PFF scraper)
 
 **Cache:** JSON files at `~/.fantasy-sim/weather/`, one per game.
-- Filename: `{season}_week{week:02d}_{home}_{away}.json`
+- Filename: `{lat}_{lon}_{date}.json` (e.g. `39.00_n94.50_2024-09-08.json`)
 - Historical data: cached permanently (immutable — weather that already happened doesn't change)
 - Forecast data: refetched if `fetched_at` > `forecast_ttl_hours` (default 6) and game date is still in the future
 - A full season is ~272 files, trivially small

@@ -215,7 +215,7 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
     """Build a PffConfig with the appropriate layers enabled.
 
     Args:
-        mode: One of "matchup", "talent", "tier", or "all".
+        mode: PFF/weather layer combination (e.g. "all", "tier", "matchup+tier").
         overrides: Optional dict with "talent" and/or "matchup" sub-dicts
             of attribute overrides to apply via setattr.
     """
@@ -676,7 +676,7 @@ def main() -> int:
             "'weather' = weather engine only, "
             "'weather+tier' = weather + tier, "
             "'weather+tier+matchup' = weather + tier + matchup, "
-            "'all' = matchup + talent layers (default: all)."
+            "'all' = tier + matchup + coverage + kicker + dst_baseline (default: all)."
         ),
     )
     parser.add_argument(

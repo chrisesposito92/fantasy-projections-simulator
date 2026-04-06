@@ -75,7 +75,7 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
     """Build a PffConfig with the appropriate layers enabled.
 
     Args:
-        mode: One of "matchup", "talent", "tier", or "all".
+        mode: PFF/weather layer combination (e.g. "all", "tier", "matchup+tier").
         overrides: Optional dict with "talent" and/or "matchup" sub-dicts
             of attribute overrides to apply via setattr.
     """

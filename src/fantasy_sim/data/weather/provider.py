@@ -58,26 +58,44 @@ class WeatherProvider:
         except (json.JSONDecodeError, OSError):
             return None
 
+        # Stale forecast: game is now in the past but was cached from a forecast.
+        # Refetch so the historical archive endpoint provides actual weather.
+        source = data.get("source", "historical")
+        if game_date < date.today() and source == "forecast":
+            return None
+
         # Historical data is immutable — always valid
         if game_date < date.today():
-            return GameWeather(**{k: data[k] for k in GameWeather.__dataclass_fields__})
+            try:
+                return GameWeather(**{k: data[k] for k in GameWeather.__dataclass_fields__})
+            except (KeyError, TypeError):
+                path.unlink(missing_ok=True)
+                return None
 
         # Forecast data — check TTL
         fetched_at = data.get("fetched_at")
         if fetched_at:
-            fetched = datetime.fromisoformat(fetched_at)
-            age_hours = (datetime.now(timezone.utc) - fetched).total_seconds() / 3600
-            if age_hours < self._forecast_ttl_hours:
-                return GameWeather(**{k: data[k] for k in GameWeather.__dataclass_fields__})
+            try:
+                fetched = datetime.fromisoformat(fetched_at)
+                if fetched.tzinfo is None:
+                    fetched = fetched.replace(tzinfo=timezone.utc)
+                age_hours = (datetime.now(timezone.utc) - fetched).total_seconds() / 3600
+                if age_hours < self._forecast_ttl_hours:
+                    return GameWeather(**{k: data[k] for k in GameWeather.__dataclass_fields__})
+            except (ValueError, KeyError, TypeError):
+                path.unlink(missing_ok=True)
+                return None
         return None
 
-    def _write_cache(self, path: Path, gw: GameWeather) -> None:
-        """Write weather result to cache with timestamp."""
+    def _write_cache(self, path: Path, gw: GameWeather, game_date: date) -> None:
+        """Write weather result to cache with timestamp and source tag."""
+        is_historical = game_date < date.today()
         data = {
             "wind_speed_mph": gw.wind_speed_mph,
             "temperature_f": gw.temperature_f,
             "precipitation_inches": gw.precipitation_inches,
             "precipitation_type": gw.precipitation_type,
+            "source": "historical" if is_historical else "forecast",
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
         path.write_text(json.dumps(data, indent=2))
@@ -87,7 +105,7 @@ class WeatherProvider:
         latitude: float,
         longitude: float,
         game_date: date,
-        game_hour_utc: int,
+        game_hour: int,
     ) -> GameWeather | None:
         """Fetch weather for a location and date, using cache when available.
 
@@ -100,7 +118,7 @@ class WeatherProvider:
             return cached
 
         try:
-            gw = self._fetch(latitude, longitude, game_date, game_hour_utc)
+            gw = self._fetch(latitude, longitude, game_date, game_hour)
         except Exception:
             logger.warning(
                 "Weather API error for (%.2f, %.2f) on %s", latitude, longitude, game_date,
@@ -108,7 +126,7 @@ class WeatherProvider:
             )
             return None
 
-        self._write_cache(cache_path, gw)
+        self._write_cache(cache_path, gw, game_date)
         return gw
 
     def _fetch(
@@ -116,7 +134,7 @@ class WeatherProvider:
         latitude: float,
         longitude: float,
         game_date: date,
-        game_hour_utc: int,
+        game_hour: int,
     ) -> GameWeather:
         """Call Open-Meteo API and parse response into GameWeather."""
         is_historical = game_date < date.today()
@@ -131,6 +149,7 @@ class WeatherProvider:
             "wind_speed_unit": "kmh",
             "temperature_unit": "celsius",
             "precipitation_unit": "mm",
+            "timezone": "America/New_York",
         }
 
         resp = httpx.get(base_url, params=params, timeout=15.0)
@@ -139,7 +158,7 @@ class WeatherProvider:
 
         hourly = data["hourly"]
         # Extract 3-hour game window (kickoff to kickoff + 3h)
-        start_idx = max(0, min(game_hour_utc, 23))
+        start_idx = max(0, min(game_hour, 23))
         end_idx = min(start_idx + 3, len(hourly["time"]))
 
         temps = hourly["temperature_2m"][start_idx:end_idx]
