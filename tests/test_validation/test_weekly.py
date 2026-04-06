@@ -1,5 +1,6 @@
 # tests/test_validation/test_weekly.py
 import pytest
+from fantasy_sim.data.actuals import ActualPlayerWeek
 from fantasy_sim.data.pff.models import CoverageModifiers
 from fantasy_sim.validation.weekly import (
     WeeklyPlayerRecord,
@@ -9,6 +10,7 @@ from fantasy_sim.validation.weekly import (
     compute_weekly_rank_corr,
     compute_weekly_mae,
     compute_mae_by_difficulty,
+    compute_directional_accuracy,
 )
 
 
@@ -35,6 +37,25 @@ def _make_record(
         actual_fpts=actual,
         matchup_factors=matchup_factors or {},
         coverage_modifiers=coverage_modifiers,
+    )
+
+
+def _make_actual(
+    player_id: str = "P1",
+    week: int = 1,
+    receptions: int = 5,
+    targets: int = 8,
+) -> ActualPlayerWeek:
+    return ActualPlayerWeek(
+        player_id=player_id,
+        name=f"Player {player_id}",
+        position="WR",
+        team="KC",
+        season=2024,
+        week=week,
+        fpts=10.0,
+        receptions=receptions,
+        targets=targets,
     )
 
 
@@ -262,3 +283,121 @@ class TestComputeMaeByDifficulty:
         assert "strong" in wr_result
         qb_result = compute_mae_by_difficulty(records, "QB")
         assert qb_result == {}
+
+
+class TestComputeDirectionalAccuracy:
+    def test_tough_cb_catch_rate_drops_correct(self):
+        """Modifier < 1.0, actual catch rate below season avg → correct."""
+        mods = CoverageModifiers(catch_rate_modifier=0.95, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 3, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=6, targets=8),
+                _make_actual("P1", 2, receptions=5, targets=8),
+                _make_actual("P1", 3, receptions=3, targets=8),
+            ],
+        }
+        # Leave-one-out avg: (6+5)/(8+8) = 11/16 = 0.6875
+        # This week: 3/8 = 0.375 < 0.6875 → correct
+        result = compute_directional_accuracy(records, actuals)
+        assert result.total_eligible == 1
+        assert result.correct_direction == 1
+        assert result.accuracy == pytest.approx(1.0)
+
+    def test_weak_cb_catch_rate_rises_correct(self):
+        """Modifier > 1.0, actual catch rate above season avg → correct."""
+        mods = CoverageModifiers(catch_rate_modifier=1.05, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 3, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=4, targets=8),
+                _make_actual("P1", 2, receptions=4, targets=8),
+                _make_actual("P1", 3, receptions=7, targets=8),
+            ],
+        }
+        result = compute_directional_accuracy(records, actuals)
+        assert result.correct_direction == 1
+
+    def test_tough_cb_catch_rate_rises_incorrect(self):
+        """Modifier < 1.0, actual catch rate above season avg → incorrect."""
+        mods = CoverageModifiers(catch_rate_modifier=0.95, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 3, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=4, targets=8),
+                _make_actual("P1", 2, receptions=4, targets=8),
+                _make_actual("P1", 3, receptions=7, targets=8),
+            ],
+        }
+        result = compute_directional_accuracy(records, actuals)
+        assert result.total_eligible == 1
+        assert result.correct_direction == 0
+
+    def test_below_min_targets_excluded(self):
+        """Weekly targets < 4 → excluded."""
+        mods = CoverageModifiers(catch_rate_modifier=0.95, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 3, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=4, targets=8),
+                _make_actual("P1", 2, receptions=4, targets=8),
+                _make_actual("P1", 3, receptions=1, targets=3),
+            ],
+        }
+        result = compute_directional_accuracy(records, actuals, min_weekly_targets=4)
+        assert result.total_eligible == 0
+
+    def test_modifier_in_dead_zone_excluded(self):
+        """Modifier within 0.01 of 1.0 → excluded."""
+        mods = CoverageModifiers(catch_rate_modifier=1.005, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 3, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=4, targets=8),
+                _make_actual("P1", 2, receptions=4, targets=8),
+                _make_actual("P1", 3, receptions=6, targets=8),
+            ],
+        }
+        result = compute_directional_accuracy(records, actuals)
+        assert result.total_eligible == 0
+
+    def test_no_coverage_modifiers_excluded(self):
+        """Records without coverage_modifiers → excluded."""
+        records = [_make_record("P1", "WR", 1)]
+        result = compute_directional_accuracy(records, {"P1": [_make_actual()]})
+        assert result.total_eligible == 0
+
+    def test_non_wr_excluded(self):
+        """Non-WR records → excluded even with coverage_modifiers."""
+        mods = CoverageModifiers(catch_rate_modifier=0.95, ypr_modifier=1.0)
+        records = [_make_record("P1", "RB", 1, coverage_modifiers=mods)]
+        result = compute_directional_accuracy(records, {"P1": [_make_actual()]})
+        assert result.total_eligible == 0
+
+    def test_zero_eligible_returns_zero_accuracy(self):
+        result = compute_directional_accuracy([], {})
+        assert result == DirectionalAccuracyResult(0, 0, 0.0)
+
+    def test_leave_one_out_two_weeks(self):
+        """WR with 2 total weeks: baseline is 1 week of data."""
+        mods = CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 2, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [
+                _make_actual("P1", 1, receptions=6, targets=8),
+                _make_actual("P1", 2, receptions=3, targets=8),
+            ],
+        }
+        result = compute_directional_accuracy(records, actuals)
+        assert result.total_eligible == 1
+        assert result.correct_direction == 1
+
+    def test_leave_one_out_one_week_skipped(self):
+        """WR with only 1 total week: baseline has 0 targets → skipped."""
+        mods = CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=1.0)
+        records = [_make_record("P1", "WR", 1, coverage_modifiers=mods)]
+        actuals = {
+            "P1": [_make_actual("P1", 1, receptions=3, targets=8)],
+        }
+        result = compute_directional_accuracy(records, actuals)
+        assert result.total_eligible == 0

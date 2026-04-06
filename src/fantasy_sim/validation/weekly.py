@@ -179,3 +179,68 @@ def compute_mae_by_difficulty(
                 )
 
     return result
+
+
+def compute_directional_accuracy(
+    records: list[WeeklyPlayerRecord],
+    actuals_by_player: dict[str, list[ActualPlayerWeek]],
+    min_weekly_targets: int = 4,
+) -> DirectionalAccuracyResult:
+    """WR directional accuracy: did actual catch rate move as coverage predicted?
+
+    For each WR-week with a meaningful coverage modifier (|mod - 1.0| > 0.01),
+    checks whether the actual catch rate moved in the predicted direction
+    relative to the WR's leave-one-out season average.
+    """
+    total = 0
+    correct = 0
+
+    for record in records:
+        if record.position != "WR":
+            continue
+        if record.coverage_modifiers is None:
+            continue
+        mod = record.coverage_modifiers.catch_rate_modifier
+        if abs(mod - 1.0) <= 0.01:
+            continue
+
+        player_actuals = actuals_by_player.get(record.player_id, [])
+        if not player_actuals:
+            continue
+
+        # Find this week's actual
+        this_week = None
+        for a in player_actuals:
+            if a.week == record.week:
+                this_week = a
+                break
+        if this_week is None or this_week.targets < min_weekly_targets:
+            continue
+
+        # Leave-one-out season average catch rate
+        other_weeks = [a for a in player_actuals if a.week != record.week]
+        baseline_targets = sum(a.targets for a in other_weeks)
+        if baseline_targets == 0:
+            continue
+        baseline_receptions = sum(a.receptions for a in other_weeks)
+        season_avg_cr = baseline_receptions / baseline_targets
+
+        # This week's catch rate
+        weekly_cr = this_week.receptions / this_week.targets
+
+        # Check direction
+        if mod < 1.0:
+            if weekly_cr < season_avg_cr:
+                correct += 1
+        else:
+            if weekly_cr > season_avg_cr:
+                correct += 1
+
+        total += 1
+
+    accuracy = correct / total if total > 0 else 0.0
+    return DirectionalAccuracyResult(
+        total_eligible=total,
+        correct_direction=correct,
+        accuracy=accuracy,
+    )
