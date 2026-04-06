@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
-from fantasy_sim.data.pff.models import CoverageConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
+from fantasy_sim.data.pff.models import CoverageConfig, DstBaselineConfig, KickerConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 # ---------------------------------------------------------------------------
@@ -223,66 +223,120 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "talent":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "matchup+tier":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "team_context+tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=True)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "team_context+tier+matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=True)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "ncaa_rookie+tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "ncaa_rookie+tier+matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "coverage+tier":
         matchup_cfg = MatchupConfig(enabled=False)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=True)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
     elif mode == "coverage+tier+matchup":
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=True)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
+    elif mode == "kicker":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=True)
+        dst_cfg = DstBaselineConfig(enabled=False)
+    elif mode == "dst_baseline":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=True)
+    elif mode == "kicker+dst_baseline":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=False)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=True)
+        dst_cfg = DstBaselineConfig(enabled=True)
+    elif mode == "kicker+dst_baseline+tier+matchup+coverage":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
+        kicker_cfg = KickerConfig(enabled=True)
+        dst_cfg = DstBaselineConfig(enabled=True)
     else:  # "all"
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=True)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -336,9 +390,18 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
                     setattr(cov_cfg, key, tuple(val))
                 else:
                     setattr(cov_cfg, key, val)
+    if overrides and "kicker" in overrides:
+        for key, val in overrides["kicker"].items():
+            if hasattr(kicker_cfg, key):
+                setattr(kicker_cfg, key, val)
+    if overrides and "dst_baseline" in overrides:
+        for key, val in overrides["dst_baseline"].items():
+            if hasattr(dst_cfg, key):
+                setattr(dst_cfg, key, val)
 
     return PffConfig(enabled=True, matchup=matchup_cfg, talent=talent_cfg,
-                     tier_engine=tier_cfg, team_context=tc_cfg, coverage=cov_cfg)
+                     tier_engine=tier_cfg, team_context=tc_cfg, coverage=cov_cfg,
+                     kicker=kicker_cfg, dst_baseline=dst_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +598,10 @@ def main() -> int:
         choices=["matchup", "talent", "tier", "matchup+tier",
                  "team_context+tier", "team_context+tier+matchup",
                  "ncaa_rookie+tier", "ncaa_rookie+tier+matchup",
-                 "coverage+tier", "coverage+tier+matchup", "all"],
+                 "coverage+tier", "coverage+tier+matchup",
+                 "kicker", "dst_baseline", "kicker+dst_baseline",
+                 "kicker+dst_baseline+tier+matchup+coverage",
+                 "all"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "
@@ -599,7 +665,7 @@ def main() -> int:
         dest="config_override",
         metavar="JSON",
         help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", '
-             '"team_context", "ncaa_rookie", "coverage". '
+             '"team_context", "ncaa_rookie", "coverage", "kicker", "dst_baseline". '
              'Example: \'{"coverage": {"catch_rate_sensitivity": 0.06}}\'',
     )
 
