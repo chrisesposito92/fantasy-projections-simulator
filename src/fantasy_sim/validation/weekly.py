@@ -103,3 +103,31 @@ def compute_weekly_rank_corr(
         corrs.append(spearman_rank_correlation(projected, actual))
 
     return float(np.mean(corrs)) if corrs else 0.0
+
+
+def compute_weekly_mae(
+    records: list[WeeklyPlayerRecord],
+    position: str,
+    use_pff_on: bool = True,
+) -> float:
+    """Average MAE across weeks for one position.
+
+    Groups records by week, computes MAE per week between projected
+    and actual fpts, averages across weeks.
+    """
+    pos_records = [r for r in records if r.position == position]
+    by_week: dict[int, list[WeeklyPlayerRecord]] = defaultdict(list)
+    for r in pos_records:
+        by_week[r.week].append(r)
+
+    maes = []
+    for week_records in by_week.values():
+        projected = [
+            r.projected_fpts_on if use_pff_on else r.projected_fpts_off
+            for r in week_records
+        ]
+        actual = [r.actual_fpts for r in week_records]
+        mae = float(np.mean(np.abs(np.array(projected) - np.array(actual))))
+        maes.append(mae)
+
+    return float(np.mean(maes)) if maes else 0.0

@@ -7,6 +7,7 @@ from fantasy_sim.validation.weekly import (
     DirectionalAccuracyResult,
     WeeklyLedgerEntry,
     compute_weekly_rank_corr,
+    compute_weekly_mae,
 )
 
 
@@ -129,3 +130,48 @@ class TestComputeWeeklyRankCorr:
 
     def test_empty_records_returns_zero(self):
         assert compute_weekly_rank_corr([], "WR") == 0.0
+
+
+class TestComputeWeeklyMae:
+    def test_known_mae_two_weeks(self):
+        """Two weeks, known errors → verify averaged MAE."""
+        records = [
+            # Week 1: errors = |12-10|=2, |18-20|=2, |8-10|=2 → MAE=2.0
+            _make_record("P1", "WR", 1, projected_on=12.0, actual=10.0),
+            _make_record("P2", "WR", 1, projected_on=18.0, actual=20.0),
+            _make_record("P3", "WR", 1, projected_on=8.0, actual=10.0),
+            # Week 2: errors = |15-10|=5, |25-20|=5, |5-10|=5 → MAE=5.0
+            _make_record("P1", "WR", 2, projected_on=15.0, actual=10.0),
+            _make_record("P2", "WR", 2, projected_on=25.0, actual=20.0),
+            _make_record("P3", "WR", 2, projected_on=5.0, actual=10.0),
+        ]
+        mae = compute_weekly_mae(records, "WR")
+        assert mae == pytest.approx(3.5)  # (2.0 + 5.0) / 2
+
+    def test_single_week(self):
+        records = [
+            _make_record("P1", "WR", 1, projected_on=12.0, actual=10.0),
+            _make_record("P2", "WR", 1, projected_on=18.0, actual=20.0),
+        ]
+        mae = compute_weekly_mae(records, "WR")
+        assert mae == pytest.approx(2.0)
+
+    def test_position_filtering(self):
+        records = [
+            _make_record("W1", "WR", 1, projected_on=12.0, actual=10.0),
+            _make_record("Q1", "QB", 1, projected_on=30.0, actual=10.0),
+        ]
+        mae = compute_weekly_mae(records, "WR")
+        assert mae == pytest.approx(2.0)
+
+    def test_uses_pff_off(self):
+        records = [
+            _make_record("P1", "WR", 1, projected_on=15.0, projected_off=12.0, actual=10.0),
+        ]
+        mae_on = compute_weekly_mae(records, "WR", use_pff_on=True)
+        mae_off = compute_weekly_mae(records, "WR", use_pff_on=False)
+        assert mae_on == pytest.approx(5.0)
+        assert mae_off == pytest.approx(2.0)
+
+    def test_empty_records(self):
+        assert compute_weekly_mae([], "WR") == 0.0
