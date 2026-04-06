@@ -252,8 +252,6 @@ def run_weekly_comparison(
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == test_season)
         )
-        week_game_count = week_games.height
-
         for game in week_games.iter_rows(named=True):
             home, away = game["home_team"], game["away_team"]
             try:
@@ -351,8 +349,6 @@ def run_weekly_comparison(
                     "Skipping game %s vs %s week %d: %s", home, away, wk, exc
                 )
                 continue
-
-        print(f"    Week {wk}: {week_game_count} games... {len(records)} records total")
 
     return records
 
