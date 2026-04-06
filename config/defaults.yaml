@@ -69,6 +69,7 @@ pff:
       RB:
         primary: grades_run
         secondary: elusive_rating
+        tertiary: yards_after_contact
       WR:
         primary: grades_pass_route
         secondary: _disabled

@@ -43,23 +43,20 @@ Status as of 2026-04-05:
 
 Smaller pool weights personal PBP data more heavily, improving weekly precision.
 
-### E. Additional Position Grades (3+ per position)
+### E. Additional Position Grades (3+ per position) — SWEPT
 
-**Current:** 2 grades per position (primary → tier assignment, secondary → within-tier interpolation).
-**Opportunity:** The design supports N grades per position, but `PositionGradeConfig` currently only has `primary` and `secondary` fields. Adding a tertiary grade would require extending the dataclass and interpolation logic — small code change, not just config.
+**Result:** RB `yards_after_contact` adopted as tertiary. TE `yprr` ruled out. WR handled by archetypes (item #4).
 
-**Candidates for a third grade:**
+Tertiary grades are averaged with secondary percentile into a composite within-tier percentile. `PositionGradeConfig` extended with optional `tertiary: str | None` field.
 
-| Position | Current (primary, secondary) | Tertiary candidate | What it adds |
-|----------|-----------------------------|--------------------|--------------|
-| RB | grades_run, elusive_rating | yards_after_contact | Separates power backs from finesse backs within a tier |
-| WR | grades_pass_route, yprr | avg_depth_of_target | Separates deep threats from slot receivers (addresses the WR archetype gap) |
-| TE | grades_pass_route, recv_grade | yprr | Adds per-route production to the route quality + receiving grade combo |
-| QB | grades_pass, accuracy_percent | (skip — QBs only blend fumble_rate) | N/A |
+| # | Config | rank_corr | wk_mae | szn_mae | calibr |
+|---|--------|-----------|--------|---------|--------|
+| 33 | no tertiary (baseline) | +0.0494 | -0.315 | -4.902 | -0.0134 |
+| **37** | **RB yards_after_contact** | **+0.0498** | -0.336 | **-5.179** | **-0.0139** |
+| 38 | TE yprr | +0.0435 | -0.313 | -4.627 | -0.0120 |
+| 39 | RB + TE combo | +0.0482 | -0.318 | -4.961 | -0.0131 |
 
-**Implementation approach:** Extend `PositionGradeConfig` with an optional `tertiary: str | None` field. If present, use it as a second interpolation dimension within the tier (2D interpolation on secondary × tertiary). Or simpler: average the secondary and tertiary percentiles into one composite within-tier percentile.
-
-**Note:** This is a stepping stone toward the kNN approach (future v3), which naturally handles N dimensions without discrete interpolation logic.
+RB `yards_after_contact` separates power backs from finesse backs within tiers — best rank_corr and season MAE. TE `yprr` adds noise (similar to how WR secondary interpolation added noise before archetypes). QB skipped (only blends fumble_rate).
 
 ### F. Position-Specific Reliability — SWEPT, RULED OUT
 **Result:** Position-specific floor/cap hurts rank_corr. Global reliability (0.20/0.80) works best.
@@ -110,7 +107,7 @@ Best weekly MAE, second-best rank_corr. Adopted as new default (#15 → defaults
 
 ### Remaining Candidates
 
-Priority: E (additional grades) — D and F swept
+All tuning candidates swept (D, E, F).
 
 ---
 
