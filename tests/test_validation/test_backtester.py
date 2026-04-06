@@ -90,6 +90,7 @@ class TestBacktesterPffConfig:
         mock_builder_cls.assert_called_once_with(
             cache_dir="/tmp/test",
             pff_config=pff_cfg,
+            weather_config=None,
         )
 
     @patch("fantasy_sim.validation.backtester.GameContextBuilder")
