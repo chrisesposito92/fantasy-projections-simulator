@@ -314,6 +314,67 @@ class TestBuildCbProfiles:
         assert profiles["LCB"].coverage_grade == pytest.approx(72.0, abs=0.1)
 
 
+class TestWrAlignment:
+    """Tests for CoverageEngine._determine_wr_alignments."""
+
+    def test_determines_wr_alignment_from_matchup_data(self, pff_dir, loader, default_config):
+        """WR with 4 RWR rows and 2 SLWR rows should resolve to RWR (plurality)."""
+        # Type 1 rows for PFF player_id=500 on KC
+        type1_rows = []
+        for week, position in enumerate(["RWR", "RWR", "RWR", "RWR", "SLWR", "SLWR"], start=1):
+            type1_rows.append({
+                "player_id": 500,
+                "player": "WR_Plurality",
+                "team": "KC",
+                "position": position,
+                "week": week,
+                "game_id": 9000 + week,
+            })
+
+        _write_coverage_matchup(pff_dir, 2024, type1_rows, [])
+
+        engine = CoverageEngine(loader, default_config)
+        alignments = engine._determine_wr_alignments(
+            wr_player_ids=["wr_1"],
+            offense_team="KC",
+            target_season=2024,
+            max_week=7,
+            pff_player_id_map={"wr_1": 500},
+        )
+
+        assert alignments["wr_1"] == "RWR"
+
+    def test_fallback_by_target_share_rank(self, pff_dir, loader, default_config):
+        """WRs with no PFF data fall back to index-based alignment."""
+        # Write empty parquet — no WR rows at all
+        _write_coverage_matchup(pff_dir, 2024, [], [])
+
+        engine = CoverageEngine(loader, default_config)
+        alignments = engine._determine_wr_alignments(
+            wr_player_ids=["wr_1", "wr_2", "wr_3"],
+            offense_team="KC",
+            target_season=2024,
+            max_week=7,
+            pff_player_id_map={},
+        )
+
+        # WR1 and WR2 should be outside alignments, WR3 should be slot
+        outside = {"RWR", "LWR"}
+        slot = {"SLWR", "SRWR"}
+        assert alignments["wr_1"] in outside
+        assert alignments["wr_2"] in outside
+        assert alignments["wr_3"] in slot
+
+    def test_alignment_to_cb_mapping(self):
+        """_ALIGNMENT_MAP correctly maps WR alignments to CB alignments."""
+        from fantasy_sim.data.pff.coverage import _ALIGNMENT_MAP
+
+        assert _ALIGNMENT_MAP["RWR"] == "LCB"
+        assert _ALIGNMENT_MAP["LWR"] == "RCB"
+        assert _ALIGNMENT_MAP["SLWR"] == "SCB"
+        assert _ALIGNMENT_MAP["SRWR"] == "SCB"
+
+
 class TestComputeStub:
     """Tests for CoverageEngine.compute() stub."""
 

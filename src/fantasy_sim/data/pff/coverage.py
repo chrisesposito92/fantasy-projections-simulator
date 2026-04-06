@@ -284,6 +284,79 @@ class CoverageEngine:
 
         return blended
 
+    def _determine_wr_alignments(
+        self,
+        wr_player_ids: list[str],
+        offense_team: str,
+        target_season: int,
+        max_week: int,
+        pff_player_id_map: dict[str, int],
+    ) -> dict[str, str]:
+        """Determine each WR's primary alignment from PFF matchup data.
+
+        For each WR, looks up their Type 1 rows (coverage_player_id IS NULL)
+        in the defense_coverage_matchup facet and takes the plurality pff_position.
+        WRs not resolved fall back to index-based alignment:
+          index 0 → RWR, index 1 → LWR, index 2+ → SLWR.
+
+        Args:
+            wr_player_ids: nflverse player_ids for WRs, pre-sorted by
+                target_share descending.
+            offense_team: Team abbreviation for the offense.
+            target_season: The season to load data from.
+            max_week: Filter data to week < max_week.
+            pff_player_id_map: Maps nflverse player_id → PFF player_id.
+
+        Returns:
+            Dict mapping nflverse player_id → pff_position alignment
+            (RWR/LWR/SLWR/SRWR).
+        """
+        _FALLBACK = ["RWR", "LWR", "SLWR"]
+
+        # Load and filter to rolling window
+        df = self._load_cached([target_season])
+        type1_wrs = pl.DataFrame()
+
+        if not df.is_empty():
+            if "week" in df.columns:
+                df = df.filter(pl.col("week") < max_week)
+
+            if not df.is_empty():
+                # Type 1 WR rows for the offense team
+                # After load_facet: position="WR", pff_position="RWR"/"LWR"/etc.
+                pos_col = "pff_position" if "pff_position" in df.columns else "position"
+                type1_wrs = df.filter(
+                    pl.col("coverage_player_id").is_null()
+                    & (pl.col("team") == offense_team)
+                    & (pl.col("position") == "WR")
+                )
+
+        alignments: dict[str, str] = {}
+
+        for idx, nfl_id in enumerate(wr_player_ids):
+            pff_id = pff_player_id_map.get(nfl_id)
+            resolved = False
+
+            if pff_id is not None and not type1_wrs.is_empty():
+                player_rows = type1_wrs.filter(pl.col("player_id") == pff_id)
+                if not player_rows.is_empty():
+                    # Take plurality pff_position
+                    pos_col = "pff_position" if "pff_position" in player_rows.columns else "position"
+                    counts = (
+                        player_rows
+                        .group_by(pos_col)
+                        .agg(pl.len().alias("n"))
+                        .sort("n", descending=True)
+                    )
+                    alignments[nfl_id] = counts[pos_col][0]
+                    resolved = True
+
+            if not resolved:
+                fallback = _FALLBACK[idx] if idx < len(_FALLBACK) else "SLWR"
+                alignments[nfl_id] = fallback
+
+        return alignments
+
     def compute(
         self,
         defense_team: str,
