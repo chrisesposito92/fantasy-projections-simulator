@@ -205,7 +205,7 @@ class CoverageConfig:
     min_coverage_targets: int = 20
     min_z_score_targets: int = 10
     min_z_score_population: int = 8
-    factor_clamp: tuple[float, float] = (0.95, 1.05)
+    factor_clamp: tuple[float, float] = (0.97, 1.03)
     min_games: int = 4
 
 

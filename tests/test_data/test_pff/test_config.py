@@ -135,4 +135,4 @@ def test_load_pff_config_coverage_defaults():
     pff = load_pff_config(config)
     assert pff.coverage.enabled is True
     assert pff.coverage.catch_rate_sensitivity == 0.04
-    assert pff.coverage.factor_clamp == (0.95, 1.05)
+    assert pff.coverage.factor_clamp == (0.97, 1.03)

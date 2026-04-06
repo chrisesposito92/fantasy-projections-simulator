@@ -163,7 +163,7 @@ def load_pff_config(config: dict) -> PffConfig:
     )
 
     cov_raw = pff.get("coverage", {})
-    cov_clamp = cov_raw.get("factor_clamp", [0.95, 1.05])
+    cov_clamp = cov_raw.get("factor_clamp", [0.97, 1.03])
     coverage = CoverageConfig(
         enabled=cov_raw.get("enabled", True),
         catch_rate_sensitivity=cov_raw.get("catch_rate_sensitivity", 0.04),

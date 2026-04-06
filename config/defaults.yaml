@@ -127,7 +127,7 @@ pff:
     min_coverage_targets: 20
     min_z_score_targets: 10
     min_z_score_population: 8
-    factor_clamp: [0.95, 1.05]
+    factor_clamp: [0.97, 1.03]
     min_games: 4
 
   talent:
