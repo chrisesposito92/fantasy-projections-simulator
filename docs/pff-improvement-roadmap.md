@@ -165,9 +165,33 @@ Sweep results (all ncaa_rookie+tier+matchup, 4yr training, 3 seasons):
 
 `min_archetype_pool_size=10` (#32) adopted as new default: best rank_corr (+0.0479) and best calibration (-0.0148) in the ledger. Pool size 20 was too restrictive — most tier-archetype cells fell below threshold and used the full tier pool fallback.
 
-### 5. ~~Coverage Matchup Adjustments~~ — COMPLETE
+### 5. ~~Coverage Matchup Adjustments~~ — COMPLETE (neutral weekly signal)
 
-**Result:** Per-WR coverage adjustments via alignment-based CB mapping. Outcome-based stats (catch rate allowed, YPR allowed) with PFF grade stabilizer for low-sample CBs. WR-only for v1 (TEs excluded — already got biggest tier engine lift). Applied as last PFF step after tier engine + normalization. Conservative starting sensitivities (0.04) with tight clamp [0.95, 1.05].
+**Result:** Per-WR coverage adjustments via alignment-based CB mapping. Outcome-based stats (catch rate allowed, YPR allowed) with PFF grade stabilizer for low-sample CBs. WR-only (TEs excluded). Applied as last PFF step after tier engine + normalization. Tight clamp [0.97, 1.03] adopted as default (#44).
+
+**Season-level A/B** (#40-45): Tight clamp is the only config that beats no-coverage baseline on rank_corr (+0.0517 vs +0.0498). Wider clamps and higher sensitivities slightly hurt rank_corr by introducing noise.
+
+| # | Config | rank_corr | wk_mae | szn_mae |
+|---|--------|-----------|--------|---------|
+| 37 | no coverage (baseline) | +0.0498 | -0.336 | -5.179 |
+| 40 | sens=0.04, clamp=[0.95,1.05] | +0.0468 | -0.347 | -5.052 |
+| 41 | sens=0.02 | +0.0466 | -0.303 | -4.872 |
+| 42 | sens=0.06 | +0.0435 | -0.308 | -4.852 |
+| 43 | sens=0.08 | +0.0446 | -0.315 | -4.812 |
+| **44** | **sens=0.04, clamp=[0.97,1.03]** | **+0.0517** | -0.334 | -5.109 |
+| 45 | sens=0.04, clamp=[0.93,1.07] | +0.0468 | -0.297 | -4.888 |
+
+**Weekly-level validation** (weekly harness, 3 seasons, 17K player-weeks): Coverage is neutral at weekly granularity. WR directional accuracy = 49.5-49.8% (coin flip, target was >55%). Wider clamp doesn't help — makes WR rank_corr worse (-0.0206 vs -0.0126).
+
+| # | Config | WR rank_corr | WR dir_acc |
+|---|--------|-------------|------------|
+| 1 | no coverage | -0.0170 | n/a |
+| 2 | tight clamp [0.97,1.03] | -0.0126 | 49.8% |
+| 3 | wide clamp [0.93,1.07] | -0.0206 | 49.5% |
+
+**Why weekly signal is flat:** Game-level catch rate on 4-8 targets is inherently noisy. CBs only cover the mapped WR 50-60% of routes (zone, safety help, blitz rotations). NFL offenses actively scheme WRs away from tough CBs, defeating the static alignment assumption.
+
+**Conclusion:** Keep coverage enabled with tight clamp — slight season-level lift, no weekly regression. No further tuning sweeps needed. Better data (snap-level coverage assignments, PFF's own CB-WR grades) would be needed to move directional accuracy above coin flip.
 
 Config in `defaults.yaml` under `pff.coverage`. A/B harness modes: `--mode coverage+tier`, `--mode coverage+tier+matchup`. Config-override supports `coverage` key.
 
