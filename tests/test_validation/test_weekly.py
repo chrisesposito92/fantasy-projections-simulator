@@ -11,6 +11,9 @@ from fantasy_sim.validation.weekly import (
     compute_weekly_mae,
     compute_mae_by_difficulty,
     compute_directional_accuracy,
+    load_weekly_ledger,
+    save_weekly_ledger,
+    format_weekly_progression_table,
 )
 
 
@@ -57,6 +60,78 @@ def _make_actual(
         receptions=receptions,
         targets=targets,
     )
+
+
+def _make_entry(label: str = "test-run") -> WeeklyLedgerEntry:
+    return WeeklyLedgerEntry(
+        label=label,
+        timestamp="2026-04-06T12:00:00",
+        mode="all",
+        sims=50,
+        test_seasons=[2023, 2024],
+        training_years=2,
+        position_summaries=[
+            WeeklyPositionSummary(
+                position="WR",
+                weekly_rank_corr_on=0.85,
+                weekly_rank_corr_off=0.82,
+                weekly_mae_on=5.5,
+                weekly_mae_off=5.8,
+                mae_by_tercile={"strong": 4.0, "neutral": 5.5, "weak": 7.0},
+                n_player_weeks=500,
+                n_weeks=17,
+            ),
+        ],
+        directional_accuracy=DirectionalAccuracyResult(
+            total_eligible=200,
+            correct_direction=120,
+            accuracy=0.60,
+        ),
+    )
+
+
+class TestWeeklyLedger:
+    def test_round_trip(self, tmp_path):
+        path = tmp_path / "test_ledger.json"
+        entries = [_make_entry("run-1"), _make_entry("run-2")]
+        save_weekly_ledger(path, entries)
+        loaded = load_weekly_ledger(path)
+        assert len(loaded) == 2
+        assert loaded[0].label == "run-1"
+        assert loaded[1].label == "run-2"
+        ps = loaded[0].position_summaries[0]
+        assert ps.position == "WR"
+        assert ps.weekly_rank_corr_on == pytest.approx(0.85)
+        assert ps.mae_by_tercile["strong"] == pytest.approx(4.0)
+        da = loaded[0].directional_accuracy
+        assert da is not None
+        assert da.accuracy == pytest.approx(0.60)
+
+    def test_load_nonexistent_returns_empty(self, tmp_path):
+        path = tmp_path / "nonexistent.json"
+        assert load_weekly_ledger(path) == []
+
+    def test_round_trip_no_directional_accuracy(self, tmp_path):
+        path = tmp_path / "test_ledger.json"
+        entry = _make_entry()
+        entry.directional_accuracy = None
+        save_weekly_ledger(path, [entry])
+        loaded = load_weekly_ledger(path)
+        assert loaded[0].directional_accuracy is None
+
+    def test_format_empty_ledger(self):
+        output = format_weekly_progression_table([])
+        assert "No entries" in output
+
+    def test_format_one_entry(self):
+        output = format_weekly_progression_table([_make_entry("baseline")])
+        assert "baseline" in output
+
+    def test_format_multiple_entries(self):
+        entries = [_make_entry("run-1"), _make_entry("run-2")]
+        output = format_weekly_progression_table(entries)
+        assert "run-1" in output
+        assert "run-2" in output
 
 
 class TestDataStructures:

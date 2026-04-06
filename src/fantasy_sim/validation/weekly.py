@@ -244,3 +244,86 @@ def compute_directional_accuracy(
         correct_direction=correct,
         accuracy=accuracy,
     )
+
+
+def load_weekly_ledger(
+    path: Path = WEEKLY_LEDGER_PATH,
+) -> list[WeeklyLedgerEntry]:
+    """Load weekly ledger entries from JSON."""
+    if not path.exists():
+        return []
+    with open(path) as f:
+        raw = json.load(f)
+    entries = []
+    for item in raw:
+        pos_summaries = [
+            WeeklyPositionSummary(**ps) for ps in item.get("position_summaries", [])
+        ]
+        da_raw = item.get("directional_accuracy")
+        da = DirectionalAccuracyResult(**da_raw) if da_raw else None
+        item = dict(item)
+        item["position_summaries"] = pos_summaries
+        item["directional_accuracy"] = da
+        entries.append(WeeklyLedgerEntry(**item))
+    return entries
+
+
+def save_weekly_ledger(
+    path: Path,
+    entries: list[WeeklyLedgerEntry],
+) -> None:
+    """Write weekly ledger entries to JSON."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump([asdict(e) for e in entries], f, indent=2)
+
+
+def format_weekly_progression_table(
+    entries: list[WeeklyLedgerEntry],
+) -> str:
+    """Return an ASCII table of weekly ledger entries."""
+    if not entries:
+        return "No entries in weekly ledger."
+
+    positions = ("QB", "RB", "WR", "TE")
+    header = f"{'#':>3}  {'Label':<25}  "
+    header += "  ".join(f"{p}_rc" for p in positions)
+    header += "  "
+    header += "  ".join(f"{p}_mae" for p in positions)
+    header += "  dir_acc"
+    sep = "-" * len(header)
+    lines = [sep, header, sep]
+
+    for i, e in enumerate(entries, start=1):
+        pos_data = {ps.position: ps for ps in e.position_summaries}
+        parts = [f"{i:>3}  {e.label:<25}"]
+
+        # Rank corr deltas
+        for pos in positions:
+            ps = pos_data.get(pos)
+            if ps:
+                delta = ps.weekly_rank_corr_on - ps.weekly_rank_corr_off
+                parts.append(f"{delta:>+.4f}")
+            else:
+                parts.append(f"{'n/a':>7}")
+
+        # MAE deltas
+        for pos in positions:
+            ps = pos_data.get(pos)
+            if ps:
+                delta = ps.weekly_mae_on - ps.weekly_mae_off
+                parts.append(f"{delta:>+.3f}")
+            else:
+                parts.append(f"{'n/a':>7}")
+
+        # Directional accuracy
+        if e.directional_accuracy:
+            parts.append(f"{e.directional_accuracy.accuracy:.1%}")
+        else:
+            parts.append("n/a")
+
+        lines.append("  ".join(parts))
+
+    lines.append(sep)
+    return "\n".join(lines)
