@@ -26,6 +26,8 @@ from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.pff.models import CoverageConfig, DstBaselineConfig, KickerConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
+from fantasy_sim.data.weather.config import load_weather_config
+from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
 # ---------------------------------------------------------------------------
@@ -404,6 +406,35 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
                      kicker=kicker_cfg, dst_baseline=dst_cfg)
 
 
+def _build_weather_config(mode: str, overrides: dict | None = None) -> WeatherConfig | None:
+    """Build a WeatherConfig if the mode includes weather.
+
+    Returns None if weather is not part of the mode, or a WeatherConfig
+    with enabled=True (and optional overrides applied) if it is.
+    """
+    if "weather" not in mode:
+        return None
+
+    from fantasy_sim.config.loader import load_defaults
+    defaults = load_defaults()
+    weather_config = load_weather_config(defaults)
+    weather_config.enabled = True
+
+    if overrides and "weather" in overrides:
+        weather_raw = overrides["weather"]
+        for section in ("wind", "temperature", "precipitation"):
+            if section in weather_raw:
+                sub_config = getattr(weather_config, section)
+                for k, v in weather_raw[section].items():
+                    setattr(sub_config, k, v)
+        if "factor_clamp" in weather_raw:
+            weather_config.factor_clamp = tuple(weather_raw["factor_clamp"])
+        if "forecast_ttl_hours" in weather_raw:
+            weather_config.forecast_ttl_hours = weather_raw["forecast_ttl_hours"]
+
+    return weather_config
+
+
 # ---------------------------------------------------------------------------
 # Backtest runner
 # ---------------------------------------------------------------------------
@@ -414,6 +445,7 @@ def run_backtest_pair(
     scoring_config: dict,
     num_training_seasons: int,
     pff_config: PffConfig,
+    weather_config: WeatherConfig | None = None,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
 
@@ -459,6 +491,7 @@ def run_backtest_pair(
         n_sims=n_sims,
         num_training_seasons=num_training_seasons,
         pff_config=pff_config,
+        weather_config=weather_config,
     )
     result_on = bt_on.run(scoring_config)
     elapsed_on = time.time() - t0
@@ -601,6 +634,7 @@ def main() -> int:
                  "coverage+tier", "coverage+tier+matchup",
                  "kicker", "dst_baseline", "kicker+dst_baseline",
                  "kicker+dst_baseline+tier+matchup+coverage",
+                 "weather", "weather+tier", "weather+tier+matchup",
                  "all"],
         default="all",
         help=(
@@ -615,6 +649,9 @@ def main() -> int:
             "'matchup' = defensive matchup adjustments only, "
             "'talent' = talent stabilizer only, "
             "'tier' = tier distribution engine only, "
+            "'weather' = weather engine only, "
+            "'weather+tier' = weather + tier, "
+            "'weather+tier+matchup' = weather + tier + matchup, "
             "'all' = matchup + talent layers (default: all)."
         ),
     )
@@ -665,7 +702,7 @@ def main() -> int:
         dest="config_override",
         metavar="JSON",
         help='PFF config overrides as JSON. Keys: "talent", "matchup", "tier_engine", '
-             '"team_context", "ncaa_rookie", "coverage", "kicker", "dst_baseline". '
+             '"team_context", "ncaa_rookie", "coverage", "kicker", "dst_baseline", "weather". '
              'Example: \'{"coverage": {"catch_rate_sensitivity": 0.06}}\'',
     )
 
@@ -681,6 +718,7 @@ def main() -> int:
 
     # Build PFF config once from mode + overrides
     pff_config = _build_pff_config(args.mode, overrides=overrides)
+    weather_config = _build_weather_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  PFF SIGNAL A/B VALIDATION")
@@ -717,6 +755,7 @@ def main() -> int:
                     scoring_config=scoring_config,
                     num_training_seasons=args.training_years,
                     pff_config=pff_config,
+                    weather_config=weather_config,
                 ): season
                 for season in args.seasons
             }
@@ -737,6 +776,7 @@ def main() -> int:
                 scoring_config=scoring_config,
                 num_training_seasons=args.training_years,
                 pff_config=pff_config,
+                weather_config=weather_config,
             )
             results.append(comparison)
 
