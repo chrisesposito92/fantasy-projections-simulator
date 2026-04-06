@@ -177,7 +177,7 @@ pff:
       ncaa_data_dir: null
 
 weather:
-  enabled: false  # opt-in for v1, flip to true once A/B validated
+  enabled: true
   wind:
     threshold_mph: 10
     fg_sensitivity: 0.008         # per mph above threshold
