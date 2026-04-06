@@ -252,7 +252,7 @@ def run_weekly_comparison(
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == test_season)
         )
-        print(f"    Week {wk}: {week_games.height} games...", end="", flush=True)
+        week_game_count = week_games.height
 
         for game in week_games.iter_rows(named=True):
             home, away = game["home_team"], game["away_team"]
@@ -352,7 +352,7 @@ def run_weekly_comparison(
                 )
                 continue
 
-        print(f" {len(records)} records total")
+        print(f"    Week {wk}: {week_game_count} games... {len(records)} records total")
 
     return records
 
