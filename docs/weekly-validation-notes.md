@@ -1,3 +1,11 @@
+**Status:** Implemented — see `scripts/validate_weekly_signal.py`
+
+**Validation module:** `src/fantasy_sim/validation/weekly.py`
+**Tests:** `tests/test_validation/test_weekly.py`
+**Ledger:** `results/weekly_ab_ledger.json`
+
+---
+
 # Weekly Validation Harness — Notes
 
 **Purpose:** A per-week, per-player validation harness that retains weekly granularity instead of aggregating to season-level metrics. Supports all positions (QB, RB, WR, TE). The standard A/B harness aggregates across 17 games, which washes out per-game effects like matchup adjustments. This harness keeps the weekly signal visible.

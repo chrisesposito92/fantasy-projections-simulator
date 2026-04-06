@@ -246,6 +246,63 @@ fantasy-sim backtest --season 2024 --training-years 5
 
 ---
 
+## Standalone Validation Scripts
+
+These are standalone Python scripts (not `fantasy-sim` subcommands). They require network access and PFF data.
+
+### Season-Level A/B Validation
+
+Compares PFF-on vs PFF-off projections at season-level granularity. See `scripts/validate_pff_signal.py`.
+
+```bash
+# Run A/B test for all PFF layers
+uv run python scripts/validate_pff_signal.py --mode all --sims 50
+
+# Test specific layer combination
+uv run python scripts/validate_pff_signal.py --mode coverage+tier --sims 50
+
+# Record result in the ledger
+uv run python scripts/validate_pff_signal.py --mode all --sims 50 --label "baseline-v1"
+
+# View progression across runs
+uv run python scripts/validate_pff_signal.py --show-ledger
+
+# Override PFF config for sweep testing
+uv run python scripts/validate_pff_signal.py --mode tier --config-override '{"tier_engine": {"reliability_floor": 0.30}}'
+```
+
+### Weekly A/B Validation
+
+Per-week, per-player PFF signal evaluation. Retains weekly granularity instead of aggregating to season-level. Measures per-position rank correlation, MAE, MAE by matchup difficulty, and WR directional accuracy. See `scripts/validate_weekly_signal.py`.
+
+```bash
+# Run weekly validation for all positions
+uv run python scripts/validate_weekly_signal.py --mode all --sims 50
+
+# Test specific PFF layers on WR only
+uv run python scripts/validate_weekly_signal.py --mode coverage+tier --positions WR --sims 50
+
+# Record result in the weekly ledger
+uv run python scripts/validate_weekly_signal.py --mode all --sims 50 --label "weekly-baseline"
+
+# View weekly ledger progression
+uv run python scripts/validate_weekly_signal.py --show-ledger
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--mode MODE` | all | PFF layer(s) to enable: `matchup`, `tier`, `matchup+tier`, `coverage+tier`, `coverage+tier+matchup`, `team_context+tier`, `team_context+tier+matchup`, `ncaa_rookie+tier`, `ncaa_rookie+tier+matchup`, `talent`, `all` |
+| `--sims N` | 50 | Simulations per game |
+| `--seasons YEAR [YEAR...]` | 2023 2024 | Test seasons to backtest |
+| `--training-years N` | 2 | Number of prior seasons for model fitting |
+| `--scoring FORMAT` | ppr | Scoring format |
+| `--positions POS [POS...]` | QB RB WR TE | Positions to evaluate |
+| `--label TEXT` | — | Label for ledger entry (required for recording) |
+| `--show-ledger` | — | Print ledger progression table and exit |
+| `--config-override JSON` | — | PFF config overrides as JSON |
+
+---
+
 ## Common Options
 
 These options appear on most commands:

@@ -59,6 +59,12 @@ uv run python scripts/validate_pff_signal.py --mode talent --sims 50 --label "ru
 uv run python scripts/validate_pff_signal.py --show-ledger
 uv run python scripts/validate_pff_signal.py --mode talent --config-override '{"talent": {"prior_strength": 30}}'
 
+# Weekly PFF validation (per-week granularity, all positions)
+uv run python scripts/validate_weekly_signal.py --mode all --sims 50
+uv run python scripts/validate_weekly_signal.py --mode coverage+tier --positions WR --sims 50
+uv run python scripts/validate_weekly_signal.py --show-ledger
+uv run python scripts/validate_weekly_signal.py --mode all --sims 50 --label "weekly-baseline"
+
 # Install dependencies
 uv pip install -e ".[dev]"
 
@@ -199,6 +205,7 @@ The project is organized as a pipeline:
 - **NCAA Rookie Tier Assignment**: Complete — 949 tests. Uses college PFF grades to place rookies into NFL talent tiers via the `pff_id` bridge (nflverse roster `pff_id` == NCAA PFF `player_id`, 85/85 drafted + 143/144 total match rate). Grade drives tier assignment (direct comparison against NFL boundaries), draft capital modulates blend confidence (`NcaaRookieConfig` with per-round confidence curve). All rookies with NCAA PFF data get grade-based assignment; players without fall back to existing `rookie_builder.py` archetypes. `TierEngine._apply_rookie_tiers()` processes players skipped by the NFL PFF crosswalk. A/B harness modes: `--mode ncaa_rookie+tier`, `--mode ncaa_rookie+tier+matchup`. Config in `defaults.yaml` under `pff.tier_engine.ncaa_rookie`.
 - **WR Depth-of-Target Archetypes**: Complete — 978 tests. 3 archetype sub-pools (slot/possession/deep) within each WR tier classified by ADOT. Overrides receiving_yards_dist and catch_rate. NCAA rookies get archetype assignment. Global ADOT percentile boundaries (p33/p67). Falls back to full tier pool when sub-pool < min_archetype_pool_size.
 - **PFF Coverage Matchup Engine**: Complete — 20 tests (1000 total). Per-WR coverage adjustments using defense_coverage_matchup facet. Alignment-based CB mapping (RWR→LCB, LWR→RCB, slot→SCB), outcome-based stats with grade stabilizer, catch_rate + YPR modifiers. WR-only, TEs excluded for v1.
+- **Weekly Validation Harness**: Complete — scripts/validate_weekly_signal.py with per-week metrics (rank_corr, MAE, MAE by difficulty, WR directional accuracy). Separate ledger at results/weekly_ab_ledger.json.
 
 ## Style
 
