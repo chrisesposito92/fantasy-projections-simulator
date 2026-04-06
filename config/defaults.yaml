@@ -175,3 +175,23 @@ pff:
       enabled: true
       draft_weight: 0.6
       ncaa_data_dir: null
+
+weather:
+  enabled: false  # opt-in for v1, flip to true once A/B validated
+  wind:
+    threshold_mph: 10
+    fg_sensitivity: 0.008         # per mph above threshold
+    fg_50_plus_multiplier: 2.5    # 50+ yarders hit harder than short FGs
+    pass_yards_sensitivity: 0.004
+    int_rate_sensitivity: 0.003
+    xp_sensitivity: 0.002
+  temperature:
+    threshold_f: 35
+    fumble_rate_sensitivity: 0.003  # per degree below threshold
+  precipitation:
+    catch_rate_sensitivity: 0.03    # per inch in 3-hour game window
+    fumble_rate_sensitivity: 0.02
+    fg_sensitivity: 0.015
+    pass_yards_sensitivity: 0.008
+  factor_clamp: [0.80, 1.20]
+  forecast_ttl_hours: 6
