@@ -8,6 +8,7 @@ from fantasy_sim.validation.weekly import (
     WeeklyLedgerEntry,
     compute_weekly_rank_corr,
     compute_weekly_mae,
+    compute_mae_by_difficulty,
 )
 
 
@@ -175,3 +176,89 @@ class TestComputeWeeklyMae:
 
     def test_empty_records(self):
         assert compute_weekly_mae([], "WR") == 0.0
+
+
+class TestComputeMaeByDifficulty:
+    def test_nine_records_tercile_split(self):
+        """9 records with known magnitudes → 3 per tercile, verify MAE."""
+        records = []
+        # Strong tercile (mag 0.08, 0.07, 0.06): errors 2, 3, 1 → MAE=2.0
+        records.append(_make_record("P1", "WR", 1, projected_on=12.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.08}))
+        records.append(_make_record("P2", "WR", 1, projected_on=13.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.07}))
+        records.append(_make_record("P3", "WR", 1, projected_on=11.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.06}))
+        # Neutral tercile (mag 0.05, 0.04, 0.03): errors 4, 5, 6 → MAE=5.0
+        records.append(_make_record("P4", "WR", 2, projected_on=14.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.05}))
+        records.append(_make_record("P5", "WR", 2, projected_on=15.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.04}))
+        records.append(_make_record("P6", "WR", 2, projected_on=16.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.03}))
+        # Weak tercile (mag 0.02, 0.01, 0.00): errors 7, 8, 9 → MAE=8.0
+        records.append(_make_record("P7", "WR", 3, projected_on=17.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.02}))
+        records.append(_make_record("P8", "WR", 3, projected_on=18.0, actual=10.0,
+                                    matchup_factors={"catch_rate_factor": 1.01}))
+        records.append(_make_record("P9", "WR", 3, projected_on=19.0, actual=10.0,
+                                    matchup_factors={}))
+
+        result = compute_mae_by_difficulty(records, "WR")
+        assert result["strong"] == pytest.approx(2.0)
+        assert result["neutral"] == pytest.approx(5.0)
+        assert result["weak"] == pytest.approx(8.0)
+
+    def test_coverage_modifiers_included_in_magnitude(self):
+        """Coverage modifier with higher deviation should dominate magnitude.
+
+        P1 has coverage catch_rate_modifier=0.90 → magnitude 0.10, which is
+        the largest deviation. With 6 records and n//3=2, strong tercile
+        contains P1 (err=2) and P6 (err=0) → MAE=1.0.
+        """
+        mods = CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=1.0)
+        r = _make_record("P1", "WR", 1, projected_on=12.0, actual=10.0,
+                         matchup_factors={"catch_rate_factor": 1.02},
+                         coverage_modifiers=mods)
+        records = [r]
+        for i in range(5):
+            records.append(_make_record(f"P{i+2}", "WR", 1, projected_on=10.0, actual=10.0,
+                                        matchup_factors={"catch_rate_factor": 1.0 + i * 0.001}))
+        result = compute_mae_by_difficulty(records, "WR")
+        # P1 ranks first (highest magnitude 0.10 from coverage modifier).
+        # Strong tercile = 2 records: P1 (err=2.0) + P6 (err=0.0) → MAE=1.0.
+        assert result["strong"] == pytest.approx(1.0)
+
+    def test_all_neutral_modifiers(self):
+        """All modifiers at 1.0 → all records have magnitude 0, tercile MAEs equal."""
+        records = [
+            _make_record(f"P{i}", "WR", 1,
+                         projected_on=10.0, actual=10.0,
+                         matchup_factors={})
+            for i in range(9)
+        ]
+        result = compute_mae_by_difficulty(records, "WR")
+        assert result["strong"] == pytest.approx(result["weak"], abs=0.01)
+
+    def test_fewer_than_3_records_returns_empty(self):
+        records = [
+            _make_record("P1", "WR", 1, projected_on=12.0, actual=10.0),
+            _make_record("P2", "WR", 1, projected_on=15.0, actual=10.0),
+        ]
+        assert compute_mae_by_difficulty(records, "WR") == {}
+
+    def test_empty_records(self):
+        assert compute_mae_by_difficulty([], "WR") == {}
+
+    def test_position_filtering(self):
+        records = [
+            _make_record(f"W{i}", "WR", 1, projected_on=10.0 + i, actual=10.0,
+                         matchup_factors={"catch_rate_factor": 1.0 + i * 0.01})
+            for i in range(6)
+        ]
+        records.append(_make_record("Q1", "QB", 1, projected_on=30.0, actual=10.0,
+                                    matchup_factors={"sack_rate_factor": 1.10}))
+        wr_result = compute_mae_by_difficulty(records, "WR")
+        assert "strong" in wr_result
+        qb_result = compute_mae_by_difficulty(records, "QB")
+        assert qb_result == {}

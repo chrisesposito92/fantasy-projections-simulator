@@ -131,3 +131,51 @@ def compute_weekly_mae(
         maes.append(mae)
 
     return float(np.mean(maes)) if maes else 0.0
+
+
+def _get_adjustment_magnitude(record: WeeklyPlayerRecord) -> float:
+    """Max |factor - 1.0| across matchup_factors and coverage modifiers."""
+    deviations = [abs(v - 1.0) for v in record.matchup_factors.values()]
+    if record.coverage_modifiers is not None:
+        deviations.append(abs(record.coverage_modifiers.catch_rate_modifier - 1.0))
+        deviations.append(abs(record.coverage_modifiers.ypr_modifier - 1.0))
+    return max(deviations) if deviations else 0.0
+
+
+def compute_mae_by_difficulty(
+    records: list[WeeklyPlayerRecord],
+    position: str,
+) -> dict[str, float]:
+    """MAE split by PFF adjustment magnitude terciles.
+
+    Sorts records by max |factor - 1.0| descending, splits into equal
+    thirds. Returns MAE for each tercile using PFF-on projections.
+    """
+    pos_records = [r for r in records if r.position == position]
+    if len(pos_records) < 3:
+        return {}
+
+    sorted_records = sorted(
+        pos_records, key=_get_adjustment_magnitude, reverse=True
+    )
+    n = len(sorted_records)
+    third = n // 3
+
+    strong = sorted_records[:third]
+    weak = sorted_records[n - third:]
+    neutral = sorted_records[third : n - third]
+
+    result: dict[str, float] = {}
+    for label, group in [("strong", strong), ("neutral", neutral), ("weak", weak)]:
+        if group:
+            errors = [abs(r.projected_fpts_on - r.actual_fpts) for r in group]
+            result[label] = float(np.mean(errors))
+            if len(group) < 3:
+                logger.warning(
+                    "Tercile '%s' has only %d entries for %s",
+                    label,
+                    len(group),
+                    position,
+                )
+
+    return result
