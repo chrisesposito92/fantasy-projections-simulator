@@ -1,13 +1,14 @@
 # PFF Improvement Roadmap
 
 Status as of 2026-04-05:
-- **ncaa-rookie-tier+matchup** (#28): PASS (rank_corr +0.0472, wk_mae -0.315, szn_mae -4.923, calibr -0.0126) — current default
+- **coverage+ncaa-rookie-tier+matchup**: PASS (1000 tests) — current default
+- Active PFF layers: tier (5 tiers, reliability 0.20-0.80) + team context (disabled) + matchup (medium sens 0.06-0.075) + NCAA rookie (draft confidence curve) + coverage (0.04 sens, clamp [0.95, 1.05], WR-only)
 - Tier config: reliability_floor=0.20, reliability_cap=0.80, WR secondary=_disabled
 - NCAA rookie config: enabled, draft confidence 1st=1.0→7th=0.50, UDFA=0.40, lookback=4 seasons
-- Team context config: **disabled** (OL/QB adjustments overlap with NCAA grade signal, #28 without tc beats #29 with tc)
 - Matchup config: medium sensitivities (0.06-0.075), clamp [0.90, 1.10], min_games=4
+- Coverage config: outcome-based stats (catch rate allowed, YPR allowed) with grade stabilizer, alignment-based CB mapping (RWR→LCB, LWR→RCB, slot→SCB), WR-only for v1
 - Same-season rolling window: week < max_week filter, linear ramp blend with previous season
-- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) + round 5 (NCAA rookie) complete
+- Sweep rounds 1+2 (tier) + round 3 (matchup) + round 4 (team context) + round 5 (NCAA rookie) + round 6 (coverage) complete
 
 ## Completed Fixes
 
@@ -164,15 +165,11 @@ Sweep results (all ncaa_rookie+tier+matchup, 4yr training, 3 seasons):
 
 `min_archetype_pool_size=10` (#32) adopted as new default: best rank_corr (+0.0479) and best calibration (-0.0148) in the ledger. Pool size 20 was too restrictive — most tier-archetype cells fell below threshold and used the full tier pool fallback.
 
-### 5. Coverage Matchup Adjustments (LOW for backtest / HIGH for weekly)
+### 5. ~~Coverage Matchup Adjustments~~ — COMPLETE
 
-**What:** Use `defense_coverage_matchup` data for receiver-vs-defender matchup adjustments. When a WR1 faces a shadow CB, adjust target_share and catch_rate for that specific game.
+**Result:** Per-WR coverage adjustments via alignment-based CB mapping. Outcome-based stats (catch rate allowed, YPR allowed) with PFF grade stabilizer for low-sample CBs. WR-only for v1 (TEs excluded — already got biggest tier engine lift). Applied as last PFF step after tier engine + normalization. Conservative starting sensitivities (0.04) with tight clamp [0.95, 1.05].
 
-**Why:** The most granular matchup signal PFF offers. Less useful for season-level backtesting (matchup effects average out over 17 games) but very high value for weekly projection accuracy.
-
-**Data required:** defense_coverage_matchup facet (already scraped). Contains receiver-defender pairing data.
-
-**Implementation:** Per-game overlay on top of the matchup engine. After the team-level defensive adjustment, apply a player-specific modifier based on the expected CB matchup. Requires mapping WR alignment to likely CB assignment.
+Config in `defaults.yaml` under `pff.coverage`. A/B harness modes: `--mode coverage+tier`, `--mode coverage+tier+matchup`. Config-override supports `coverage` key.
 
 ### 6. Kicker/DST from PFF Grades (LOW)
 
