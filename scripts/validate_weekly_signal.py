@@ -252,6 +252,7 @@ def run_weekly_comparison(
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == test_season)
         )
+        print(f"  [{test_season}] Week {wk}/{max(weeks)}...", flush=True)
         for game in week_games.iter_rows(named=True):
             home, away = game["home_team"], game["away_team"]
             try:
