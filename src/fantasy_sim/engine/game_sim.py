@@ -116,7 +116,11 @@ def simulate_game(
                 continue
 
         # Only update stats if play was NOT a penalty
-        _update_box_scores(off_box, def_box, result, rng=rng)
+        _update_box_scores(
+            off_box, def_box, result, rng=rng,
+            int_return_td_rate=def_dists.defensive_td_rates.int_return_td_rate,
+            fumble_return_td_rate=def_dists.defensive_td_rates.fumble_return_td_rate,
+        )
 
         # Update per-player stats when rosters are provided
         if roster is not None:
@@ -165,6 +169,8 @@ def _update_box_scores(
     def_box: TeamBoxScore,
     result: PlayResult,
     rng: np.random.Generator | None = None,
+    int_return_td_rate: float = INT_RETURN_TD_RATE,
+    fumble_return_td_rate: float = FUMBLE_RETURN_TD_RATE,
 ) -> None:
     """Update both offensive and defensive box scores from a play result."""
     if result.play_type == "pass":
@@ -176,7 +182,7 @@ def _update_box_scores(
         elif result.is_interception:
             off_box.interceptions_thrown += 1
             def_box.interceptions_caught += 1
-            if rng is not None and rng.random() < INT_RETURN_TD_RATE:
+            if rng is not None and rng.random() < int_return_td_rate:
                 def_box.defensive_tds += 1
         elif result.is_complete:
             off_box.completions += 1
@@ -192,7 +198,7 @@ def _update_box_scores(
     if result.is_fumble:
         off_box.fumbles_lost += 1
         def_box.fumbles_recovered += 1
-        if rng is not None and rng.random() < FUMBLE_RETURN_TD_RATE:
+        if rng is not None and rng.random() < fumble_return_td_rate:
             def_box.defensive_tds += 1
 
 

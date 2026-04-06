@@ -322,3 +322,45 @@ class TestDstBaselineDefensiveTdRates:
 
         # With only 2 games, strong 2023 signal should pull rate above prior 0.20
         assert ctx.int_return_td_rate > 0.20
+
+
+# ---------- TestGameSimDefensiveTdRates ----------
+
+
+import numpy as np
+
+
+class TestGameSimDefensiveTdRates:
+    """Test that game_sim uses team-specific defensive TD rates."""
+
+    def test_update_box_scores_uses_custom_int_td_rate(self):
+        from fantasy_sim.engine.game_sim import _update_box_scores
+        from fantasy_sim.engine.types import TeamBoxScore, PlayResult
+
+        result = PlayResult(play_type="pass", yards=0, is_interception=True)
+        rng = np.random.default_rng(42)
+        # rate=1.0 guarantees a defensive TD on every interception
+        for _ in range(10):
+            off = TeamBoxScore()
+            defb = TeamBoxScore()
+            _update_box_scores(off, defb, result, rng=rng,
+                               int_return_td_rate=1.0, fumble_return_td_rate=0.0)
+            assert defb.defensive_tds == 1
+
+    def test_update_box_scores_uses_custom_fumble_td_rate(self):
+        from fantasy_sim.engine.game_sim import _update_box_scores
+        from fantasy_sim.engine.types import TeamBoxScore, PlayResult
+
+        result = PlayResult(play_type="run", yards=3, is_fumble=True)
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            off = TeamBoxScore()
+            defb = TeamBoxScore()
+            _update_box_scores(off, defb, result, rng=rng,
+                               int_return_td_rate=0.0, fumble_return_td_rate=1.0)
+            assert defb.defensive_tds == 1
+
+    def test_update_box_scores_default_rates_unchanged(self):
+        from fantasy_sim.engine.game_sim import _update_box_scores, INT_RETURN_TD_RATE, FUMBLE_RETURN_TD_RATE
+        assert INT_RETURN_TD_RATE == 0.20
+        assert FUMBLE_RETURN_TD_RATE == 0.10
