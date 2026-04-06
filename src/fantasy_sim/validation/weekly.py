@@ -74,3 +74,32 @@ class WeeklyLedgerEntry:
     training_years: int
     position_summaries: list[WeeklyPositionSummary]
     directional_accuracy: DirectionalAccuracyResult | None
+
+
+def compute_weekly_rank_corr(
+    records: list[WeeklyPlayerRecord],
+    position: str,
+    use_pff_on: bool = True,
+) -> float:
+    """Average Spearman rank correlation across weeks for one position.
+
+    Groups records by week, computes Spearman per week between projected
+    and actual fpts, averages across weeks. Skips weeks with < 5 players.
+    """
+    pos_records = [r for r in records if r.position == position]
+    by_week: dict[int, list[WeeklyPlayerRecord]] = defaultdict(list)
+    for r in pos_records:
+        by_week[r.week].append(r)
+
+    corrs = []
+    for week_records in by_week.values():
+        if len(week_records) < 5:
+            continue
+        projected = [
+            r.projected_fpts_on if use_pff_on else r.projected_fpts_off
+            for r in week_records
+        ]
+        actual = [r.actual_fpts for r in week_records]
+        corrs.append(spearman_rank_correlation(projected, actual))
+
+    return float(np.mean(corrs)) if corrs else 0.0
