@@ -327,3 +327,134 @@ class TestComputeStub:
             max_week=10,
         )
         assert result == {}
+
+
+class TestEarlySeasonBlend:
+    """Tests for CoverageEngine early-season blending in _build_cb_profiles."""
+
+    def test_blends_with_previous_season_when_few_games(self, pff_dir, loader):
+        """When current season has < min_games, blend with previous season."""
+        # 2023 parquet: CB 200 (LCB, BUF) with 9 games, catch_rate_allowed = 2/5 = 0.40
+        type1_rows_2023 = []
+        type2_rows_2023 = []
+        for week in range(1, 10):  # 9 weeks
+            type1_rows_2023.append({
+                "player_id": 200,
+                "player": "CB_Vet",
+                "team": "BUF",
+                "position": "LCB",
+                "week": week,
+                "game_id": 8000 + week,
+            })
+            type2_rows_2023.append({
+                "player_id": 600,
+                "coverage_player_id": 200,
+                "week": week,
+                "game_id": 8000 + week,
+                "targets": 5,
+                "receptions": 2,  # 18/45 = 0.40 catch_rate_allowed
+                "yards": 20.0,
+                "grades_coverage_defense": 70.0,
+                "grades_overall": 65.0,
+            })
+        _write_coverage_matchup(pff_dir, 2023, type1_rows_2023, type2_rows_2023)
+
+        # 2024 parquet: CB 200 (LCB, BUF) with 2 games, catch_rate_allowed = 4/5 = 0.80
+        type1_rows_2024 = []
+        type2_rows_2024 = []
+        for week in range(1, 3):  # 2 weeks
+            type1_rows_2024.append({
+                "player_id": 200,
+                "player": "CB_Vet",
+                "team": "BUF",
+                "position": "LCB",
+                "week": week,
+                "game_id": 9000 + week,
+            })
+            type2_rows_2024.append({
+                "player_id": 600,
+                "coverage_player_id": 200,
+                "week": week,
+                "game_id": 9000 + week,
+                "targets": 5,
+                "receptions": 4,  # 8/10 = 0.80 catch_rate_allowed
+                "yards": 40.0,
+                "grades_coverage_defense": 75.0,
+                "grades_overall": 70.0,
+            })
+        _write_coverage_matchup(pff_dir, 2024, type1_rows_2024, type2_rows_2024)
+
+        # Config: min_games=4
+        config = CoverageConfig(min_games=4)
+        engine = CoverageEngine(loader, config)
+        # max_week=3 so only weeks 1-2 are visible (week < 3) → 2 games
+        profiles = engine._build_cb_profiles("BUF", target_season=2024, max_week=3)
+
+        # blend_weight = 2 / 4 = 0.5
+        # blended = 0.5 * 0.80 + 0.5 * 0.40 = 0.60
+        assert "LCB" in profiles
+        lcb = profiles["LCB"]
+        assert lcb.catch_rate_allowed == pytest.approx(0.60, abs=0.01)
+
+    def test_no_blend_when_enough_games(self, pff_dir, loader):
+        """When current season has >= min_games, use current season only."""
+        # 2023 parquet: CB 200 (LCB, BUF) with 9 games, catch_rate_allowed = 0.40
+        type1_rows_2023 = []
+        type2_rows_2023 = []
+        for week in range(1, 10):
+            type1_rows_2023.append({
+                "player_id": 200,
+                "player": "CB_Vet",
+                "team": "BUF",
+                "position": "LCB",
+                "week": week,
+                "game_id": 8000 + week,
+            })
+            type2_rows_2023.append({
+                "player_id": 600,
+                "coverage_player_id": 200,
+                "week": week,
+                "game_id": 8000 + week,
+                "targets": 5,
+                "receptions": 2,
+                "yards": 20.0,
+                "grades_coverage_defense": 70.0,
+                "grades_overall": 65.0,
+            })
+        _write_coverage_matchup(pff_dir, 2023, type1_rows_2023, type2_rows_2023)
+
+        # 2024 parquet: CB 200 (LCB, BUF) with 6 games, catch_rate_allowed = 0.80
+        type1_rows_2024 = []
+        type2_rows_2024 = []
+        for week in range(1, 7):  # 6 weeks
+            type1_rows_2024.append({
+                "player_id": 200,
+                "player": "CB_Vet",
+                "team": "BUF",
+                "position": "LCB",
+                "week": week,
+                "game_id": 9000 + week,
+            })
+            type2_rows_2024.append({
+                "player_id": 600,
+                "coverage_player_id": 200,
+                "week": week,
+                "game_id": 9000 + week,
+                "targets": 5,
+                "receptions": 4,
+                "yards": 40.0,
+                "grades_coverage_defense": 75.0,
+                "grades_overall": 70.0,
+            })
+        _write_coverage_matchup(pff_dir, 2024, type1_rows_2024, type2_rows_2024)
+
+        # Config: min_games=4; current season has 6 games >= 4
+        config = CoverageConfig(min_games=4)
+        engine = CoverageEngine(loader, config)
+        # max_week=10 so all 6 weeks are visible
+        profiles = engine._build_cb_profiles("BUF", target_season=2024, max_week=10)
+
+        # Should use current season only: catch_rate_allowed = 0.80
+        assert "LCB" in profiles
+        lcb = profiles["LCB"]
+        assert lcb.catch_rate_allowed == pytest.approx(0.80, abs=0.01)

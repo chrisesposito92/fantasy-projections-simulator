@@ -62,13 +62,13 @@ class CoverageEngine:
             self._cache[key] = self._loader.load_facet(_FACET, seasons)
         return self._cache[key]
 
-    def _build_cb_profiles(
+    def _build_season_profiles(
         self,
         defense_team: str,
         target_season: int,
         max_week: int,
     ) -> dict[str, _CbProfile]:
-        """Build per-alignment CB profiles for a defense.
+        """Build per-alignment CB profiles for a defense from a single season.
 
         Algorithm:
         1. Load defense_coverage_matchup for target_season, filter week < max_week
@@ -87,7 +87,7 @@ class CoverageEngine:
 
         Args:
             defense_team: Team abbreviation for the defense.
-            target_season: The season being simulated.
+            target_season: The season to load data from.
             max_week: Filter data to week < max_week.
 
         Returns:
@@ -203,15 +203,86 @@ class CoverageEngine:
                 games_played=int(row["games_played"]),
             )
 
+        return profiles
+
+    def _build_cb_profiles(
+        self,
+        defense_team: str,
+        target_season: int,
+        max_week: int,
+    ) -> dict[str, _CbProfile]:
+        """Build per-alignment CB profiles with early-season blending.
+
+        Calls _build_season_profiles for the current season. If any CB has
+        fewer than min_games games, blends with the previous season using a
+        linear ramp: weight = current_games / min_games.
+
+        Args:
+            defense_team: Team abbreviation for the defense.
+            target_season: The season being simulated.
+            max_week: Filter data to week < max_week.
+
+        Returns:
+            Dict mapping alignment (LCB/RCB/SCB) to _CbProfile for
+            the starting CB at that alignment (blended if early season).
+        """
+        current_profiles = self._build_season_profiles(defense_team, target_season, max_week)
+
+        if not current_profiles:
+            return current_profiles
+
+        # Check if any CB has fewer than min_games
+        min_games = self._config.min_games
+        min_current_games = min(p.games_played for p in current_profiles.values())
+
         logger.info(
             "CB profiles for %s (season=%d, week<%d): %s",
             defense_team,
             target_season,
             max_week,
-            {a: f"#{p.player_id} tgt={p.total_targets}" for a, p in profiles.items()},
+            {a: f"#{p.player_id} tgt={p.total_targets}" for a, p in current_profiles.items()},
         )
 
-        return profiles
+        if min_current_games >= min_games:
+            return current_profiles
+
+        # Early-season blend: load previous season (max_week=99 to get all weeks)
+        prev_profiles = self._build_season_profiles(defense_team, target_season - 1, max_week=99)
+        if not prev_profiles:
+            return current_profiles
+
+        # Linear ramp: blend_weight = current_games / min_games
+        blend_weight = min_current_games / min_games
+
+        blended: dict[str, _CbProfile] = {}
+        for alignment, current in current_profiles.items():
+            prev = prev_profiles.get(alignment)
+            if prev is None:
+                # No previous-season data for this alignment — use current only
+                blended[alignment] = current
+                continue
+
+            blended[alignment] = _CbProfile(
+                player_id=current.player_id,
+                team=current.team,
+                alignment=alignment,
+                catch_rate_allowed=(
+                    blend_weight * current.catch_rate_allowed
+                    + (1 - blend_weight) * prev.catch_rate_allowed
+                ),
+                ypr_allowed=(
+                    blend_weight * current.ypr_allowed
+                    + (1 - blend_weight) * prev.ypr_allowed
+                ),
+                coverage_grade=(
+                    blend_weight * current.coverage_grade
+                    + (1 - blend_weight) * prev.coverage_grade
+                ),
+                total_targets=current.total_targets + prev.total_targets,
+                games_played=current.games_played,
+            )
+
+        return blended
 
     def compute(
         self,
