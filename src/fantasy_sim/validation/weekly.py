@@ -217,10 +217,10 @@ def compute_directional_accuracy(
         if this_week is None or this_week.targets < min_weekly_targets:
             continue
 
-        # Leave-one-out season average catch rate
+        # Leave-one-out season average catch rate (same season only)
         other_weeks = [
             a for a in player_actuals
-            if not (a.week == record.week and a.season == record.season)
+            if a.season == record.season and a.week != record.week
         ]
         baseline_targets = sum(a.targets for a in other_weeks)
         if baseline_targets == 0:

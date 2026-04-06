@@ -310,12 +310,16 @@ def run_weekly_comparison(
                         pff_crosswalk=builder_on._pff_crosswalk,
                     )
 
-                # Index PFF-off projections by player_id
+                # Index projections by player_id
+                on_by_pid = {p["player_id"]: p for p in projs_on}
                 off_by_pid = {p["player_id"]: p["fpts"] for p in projs_off}
 
-                # Build records from PFF-on projections
-                for proj in projs_on:
-                    pid = proj["player_id"]
+                # Only emit records for players present in BOTH on and off
+                # projections to avoid asymmetric bias from Monte Carlo variance
+                common_pids = set(on_by_pid.keys()) & set(off_by_pid.keys())
+
+                for pid in common_pids:
+                    proj = on_by_pid[pid]
                     pos = proj.get("position") or actual_pos.get(pid, "")
                     if pos not in positions:
                         continue
@@ -336,7 +340,7 @@ def run_weekly_comparison(
                         week=wk,
                         season=test_season,
                         projected_fpts_on=proj["fpts"],
-                        projected_fpts_off=off_by_pid.get(pid, 0.0),
+                        projected_fpts_off=off_by_pid[pid],
                         actual_fpts=actual_by_pw[pid][wk],
                         matchup_factors=_filter_matchup_factors(pos, matchup_ctx),
                         coverage_modifiers=cov_map.get(pid) if pos == "WR" else None,

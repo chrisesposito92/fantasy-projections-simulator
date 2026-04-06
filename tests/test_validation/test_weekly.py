@@ -498,12 +498,12 @@ class TestComputeDirectionalAccuracy:
         result = compute_directional_accuracy(records, actuals)
         assert result.total_eligible == 0
 
-    def test_leave_one_out_cross_season_correct(self):
-        """Leave-one-out should only exclude same season+week, not cross-season."""
+    def test_leave_one_out_same_season_only(self):
+        """Baseline uses same-season data only, excluding the current week."""
         mods = CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=1.0)
         # Record is for 2024 week 3
         records = [_make_record("P1", "WR", 3, 2024, coverage_modifiers=mods)]
-        # Build actuals manually, overriding season on each entry
+        # Build actuals with cross-season data
         a_2023_wk1 = _make_actual("P1", 1, receptions=6, targets=8)
         a_2023_wk1.season = 2023
         a_2023_wk3 = _make_actual("P1", 3, receptions=6, targets=8)
@@ -515,7 +515,8 @@ class TestComputeDirectionalAccuracy:
 
         actuals = {"P1": [a_2023_wk1, a_2023_wk3, a_2024_wk1, a_2024_wk3]}
         result = compute_directional_accuracy(records, actuals)
-        # Baseline: 2023 wk1 (6/8) + 2023 wk3 (6/8) + 2024 wk1 (6/8) = 18/24 = 0.75
+        # Baseline: same-season only = 2024 wk1 (6/8) = 0.75
+        # (2023 data excluded from baseline)
         # This week: 2024 wk3: 2/8 = 0.25 < 0.75, modifier < 1.0 → correct
         assert result.total_eligible == 1
         assert result.correct_direction == 1
