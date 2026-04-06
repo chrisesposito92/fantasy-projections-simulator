@@ -159,23 +159,28 @@ class WeatherEngine:
             gameday = row.get("gameday")
             gametime = row.get("gametime")
 
-            if not all((week, home, away, gameday)):
+            if week is None or home is None or away is None or gameday is None:
                 continue
 
             if isinstance(gameday, str):
                 game_date = date.fromisoformat(gameday)
-            else:
+            elif isinstance(gameday, date):
                 game_date = gameday
+            else:
+                continue
+
+            week_int: int = int(week)
+            home_str: str = str(home)
+            away_str: str = str(away)
 
             game_hour = 13  # default: 1pm ET
             if gametime:
                 try:
-                    parts = str(gametime).split(":")
-                    game_hour = int(parts[0])
+                    game_hour = int(str(gametime).split(":")[0])
                 except (ValueError, IndexError):
                     pass
 
-            lookup[(int(week), str(home), str(away))] = (game_date, game_hour)
+            lookup[(week_int, home_str, away_str)] = (game_date, game_hour)
 
         self._schedule_cache[season] = lookup
         return lookup
