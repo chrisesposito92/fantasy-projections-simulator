@@ -102,7 +102,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 
 **Phase 7C: Polish + Tests + CI** — Complete (87 tests, 505 total)
 
-- DST defensive TDs: probabilistic pick-sixes (~20% of INTs) and fumble return TDs (~10%) modeled in `_update_box_scores`, surfaced through `score_dst` and `build_dst_projections`
+- DST defensive TDs: probabilistic pick-sixes and fumble return TDs modeled in `_update_box_scores` with team-specific rates (defaults: ~20% of INTs, ~10% of fumble recoveries), surfaced through `score_dst` and `build_dst_projections`
 - Per-week zero-out: `games_missed` override now stores specific week numbers in `weeks_missed`; players are filtered from simulation during those weeks via `_filter_available()` in `player_selector`
 - Pace override: `pace_plays_per_game` team override scales clock runoff via `pace_factor` to control plays-per-game (baseline 65)
 - Fuzzy matching disambiguation: `AmbiguousMatchError` raised when 2+ players match within 5 points of each other, listing all options for the user
@@ -116,6 +116,15 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Four metrics: per-position weekly rank correlation, weekly MAE, MAE by matchup difficulty tercile, WR directional accuracy for coverage signal
 - Separate ledger (`results/weekly_ab_ledger.json`) for tracking weekly-granularity A/B runs
 - Script: `scripts/validate_weekly_signal.py` with `--mode`, `--positions`, `--label`, `--show-ledger` flags
+
+**PFF Kicker/DST Baseline** — Complete (29 tests, 1068 total)
+
+- Per-kicker FG accuracy from PFF `field_goal_summary` with Bayesian shrinkage toward league average by distance bucket (20+30yd → 0_39, 40yd → 40_49, 50+ → 50_plus)
+- 2-layer kicker crosswalk (pff_id match + name/team fallback) replaces placeholder kicker model with player-specific `KickingModel`
+- DST baseline engine: `fumble_rate_factor` (z-score from forced fumbles per snap) adjusts opposing offense turnover rates
+- Team-specific defensive TD rates: `int_return_td_rate` and `fumble_return_td_rate` via Bayesian shrinkage replace fixed constants in `game_sim.py`
+- Complements matchup engine (which handles sack/INT rates) without overlap
+- A/B validation: neutral on aggregate metrics (kicker/DST is ~5-10 fpts/week), kept enabled for model correctness
 
 **Passing Yards Calibration** — Complete (579 tests)
 
