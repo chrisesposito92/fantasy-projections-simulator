@@ -98,6 +98,23 @@ class GameContextBuilder:
             )
             logger.info("PFF coverage engine enabled")
 
+        self._kicker_engine = None
+        self._dst_baseline_engine = None
+
+        if self._pff_config.enabled and self._pff_config.kicker.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.kicker import KickerEngine
+            self._kicker_engine = KickerEngine(
+                self._pff_config.kicker, self._pff_loader, [],
+            )
+            logger.info("PFF kicker engine enabled")
+
+        if self._pff_config.enabled and self._pff_config.dst_baseline.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.dst_baseline import DstBaselineEngine
+            self._dst_baseline_engine = DstBaselineEngine(
+                self._pff_config.dst_baseline, self._pff_loader, [],
+            )
+            logger.info("PFF DST baseline engine enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -482,6 +499,60 @@ class GameContextBuilder:
             )
             self._apply_coverage(home_roster, home_cov)
             self._apply_coverage(away_roster, away_cov)
+
+        # PFF DST baseline: fumble rate + defensive TD rates
+        if self._dst_baseline_engine is not None and target_season and week:
+            # Re-create engine with correct seasons if needed
+            if self._dst_baseline_engine._seasons != training_seasons:
+                from fantasy_sim.data.pff.dst_baseline import DstBaselineEngine
+                self._dst_baseline_engine = DstBaselineEngine(
+                    self._pff_config.dst_baseline, self._pff_loader,
+                    training_seasons + ([target_season] if target_season not in training_seasons else []),
+                )
+            # Away defense adjusts home offense fumble rate, home defense adjusts away
+            home_dst_ctx = self._dst_baseline_engine.compute(
+                away_team, target_season, max_week=week,
+            )
+            away_dst_ctx = self._dst_baseline_engine.compute(
+                home_team, target_season, max_week=week,
+            )
+            if home_dst_ctx.fumble_rate_factor != 1.0:
+                home_dists.turnover_rates.fumble_rate *= home_dst_ctx.fumble_rate_factor
+            if away_dst_ctx.fumble_rate_factor != 1.0:
+                away_dists.turnover_rates.fumble_rate *= away_dst_ctx.fumble_rate_factor
+            # Set team-specific defensive TD rates on defending team's dists
+            from fantasy_sim.engine.types import DefensiveTdRates
+            away_dists.defensive_td_rates = DefensiveTdRates(
+                int_return_td_rate=home_dst_ctx.int_return_td_rate,
+                fumble_return_td_rate=home_dst_ctx.fumble_return_td_rate,
+            )
+            home_dists.defensive_td_rates = DefensiveTdRates(
+                int_return_td_rate=away_dst_ctx.int_return_td_rate,
+                fumble_return_td_rate=away_dst_ctx.fumble_return_td_rate,
+            )
+
+        # PFF kicker: replace team-level KickingModel with per-kicker rates
+        if self._kicker_engine is not None:
+            # Re-create engine with correct seasons if needed
+            if self._kicker_engine._data.is_empty() or not self._kicker_engine._nfl_to_pff:
+                from fantasy_sim.data.pff.kicker import KickerEngine
+                all_seasons = training_seasons + ([target_season] if target_season and target_season not in training_seasons else [])
+                self._kicker_engine = KickerEngine(
+                    self._pff_config.kicker, self._pff_loader, all_seasons,
+                )
+                roster_season = target_season or max(training_seasons)
+                nfl_roster = self.loader.load_rosters([roster_season])
+                self._kicker_engine.build_crosswalk(nfl_roster, roster_season)
+            for team_roster, team_dists in [
+                (home_roster, home_dists), (away_roster, away_dists),
+            ]:
+                kicker = next(
+                    (p for p in team_roster.players if p.position == "K"), None,
+                )
+                if kicker is not None:
+                    kicker_model = self._kicker_engine.compute(kicker.player_id)
+                    if kicker_model is not None:
+                        team_dists.kicking = kicker_model
 
         return home_dists, away_dists, home_roster, away_roster
 
