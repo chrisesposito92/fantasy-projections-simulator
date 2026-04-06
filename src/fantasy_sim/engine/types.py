@@ -5,6 +5,13 @@ from fantasy_sim.models.distributions import (
 
 
 @dataclass
+class DefensiveTdRates:
+    """Team-specific defensive TD rates (replaces fixed constants in game_sim)."""
+    int_return_td_rate: float = 0.20
+    fumble_return_td_rate: float = 0.10
+
+
+@dataclass
 class TeamDistributions:
     """All distributions needed to simulate one team."""
     play_calling: PlayCallingDist
@@ -13,6 +20,7 @@ class TeamDistributions:
     kicking: KickingModel
     drive_start: DriveStartModel
     pace_factor: float = 1.0
+    defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
 
 
 @dataclass

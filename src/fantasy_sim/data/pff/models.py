@@ -210,6 +210,32 @@ class CoverageConfig:
 
 
 @dataclass
+class KickerConfig:
+    """Configuration for the PFF kicker engine."""
+    enabled: bool = True
+    prior_strength: int = 20
+    min_attempts: int = 5
+
+
+@dataclass
+class DstBaselineConfig:
+    """Configuration for the DST baseline engine."""
+    enabled: bool = True
+    sensitivities: dict[str, float] = field(default_factory=lambda: {"fumble_rate": 0.06})
+    prior_strength: int = 10
+    min_games: int = 4
+    clamp: list[float] = field(default_factory=lambda: [0.85, 1.15])
+
+
+@dataclass
+class DstBaselineContext:
+    """Per-team DST baseline adjustments from PFF defensive data."""
+    fumble_rate_factor: float = 1.0
+    int_return_td_rate: float = 0.20
+    fumble_return_td_rate: float = 0.10
+
+
+@dataclass
 class PffConfig:
     """Top-level PFF configuration."""
     enabled: bool = False
@@ -219,3 +245,5 @@ class PffConfig:
     tier_engine: TierConfig = field(default_factory=TierConfig)
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
+    kicker: KickerConfig = field(default_factory=KickerConfig)
+    dst_baseline: DstBaselineConfig = field(default_factory=DstBaselineConfig)
