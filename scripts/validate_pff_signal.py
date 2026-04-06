@@ -690,17 +690,17 @@ def main() -> int:
         "--seasons",
         type=int,
         nargs="+",
-        default=[2023, 2024],
+        default=[2023, 2024, 2025],
         metavar="YEAR",
-        help="Test seasons to backtest (default: 2023 2024).",
+        help="Test seasons to backtest (default: 2023 2024 2025).",
     )
     parser.add_argument(
         "--training-years",
         type=int,
-        default=2,
+        default=4,
         metavar="N",
         dest="training_years",
-        help="Number of training seasons before each test season (default: 2).",
+        help="Number of training seasons before each test season (default: 4).",
     )
     parser.add_argument(
         "--scoring",
