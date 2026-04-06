@@ -331,14 +331,38 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         cov_cfg = CoverageConfig(enabled=True)
         kicker_cfg = KickerConfig(enabled=True)
         dst_cfg = DstBaselineConfig(enabled=True)
-    else:  # "all"
-        matchup_cfg = MatchupConfig(enabled=True)
-        talent_cfg = TalentConfig(enabled=True)
+    elif mode == "weather":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
         kicker_cfg = KickerConfig(enabled=False)
         dst_cfg = DstBaselineConfig(enabled=False)
+    elif mode == "weather+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
+    elif mode == "weather+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+        kicker_cfg = KickerConfig(enabled=False)
+        dst_cfg = DstBaselineConfig(enabled=False)
+    else:  # "all", "all+weather" — current defaults: tier + matchup + coverage + kicker + dst
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
+        kicker_cfg = KickerConfig(enabled=True)
+        dst_cfg = DstBaselineConfig(enabled=True)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -635,7 +659,7 @@ def main() -> int:
                  "kicker", "dst_baseline", "kicker+dst_baseline",
                  "kicker+dst_baseline+tier+matchup+coverage",
                  "weather", "weather+tier", "weather+tier+matchup",
-                 "all"],
+                 "all", "all+weather"],
         default="all",
         help=(
             "Which PFF layer(s) to enable in the ON run. "

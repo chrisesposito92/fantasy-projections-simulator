@@ -139,12 +139,30 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=True)
-    else:  # "all"
-        matchup_cfg = MatchupConfig(enabled=True)
-        talent_cfg = TalentConfig(enabled=True)
+    elif mode == "weather":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+    elif mode == "weather+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+    elif mode == "weather+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+    else:  # "all", "all+weather" — current defaults: tier + matchup + coverage
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -399,7 +417,7 @@ def main() -> int:
             "ncaa_rookie+tier", "ncaa_rookie+tier+matchup",
             "coverage+tier", "coverage+tier+matchup",
             "weather", "weather+tier", "weather+tier+matchup",
-            "all",
+            "all", "all+weather",
         ],
         default="all",
         help=(
