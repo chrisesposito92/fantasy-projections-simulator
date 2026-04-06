@@ -103,10 +103,7 @@ def _write_coverage_matchup(pff_dir, season, type1_rows, type2_rows):
         "grades_overall": pl.Float64,
     }
     if all_rows:
-        df = pl.DataFrame(all_rows).cast({
-            k: v for k, v in schema.items()
-            if k in pl.DataFrame(all_rows).columns
-        })
+        df = pl.DataFrame(all_rows, schema=schema, infer_schema_length=None)
     else:
         df = pl.DataFrame(schema=schema)
     path = pff_dir / f"defense_coverage_matchup_{season}.parquet"
@@ -470,17 +467,186 @@ class TestModifierComputation:
         assert result.ypr_modifier == pytest.approx(1.0)
 
 
-class TestComputeStub:
-    """Tests for CoverageEngine.compute() stub."""
+class TestCoverageEngineCompute:
+    """Tests for CoverageEngine.compute() full orchestration."""
 
-    def test_compute_returns_empty_dict(self, pff_dir, loader, default_config):
-        """Stub compute() should return empty dict."""
-        engine = CoverageEngine(loader, default_config)
+    # ---------- helper ----------
+
+    @staticmethod
+    def _setup_league_data(pff_dir, season):
+        """Write a parquet with league-wide CB data (8+ per alignment) and KC WRs.
+
+        BUF CBs: strong LCB (pid=200, catch_rate ~0.33), average RCB (pid=202),
+                  weak SCB (pid=203, catch_rate ~0.75).
+        7 other teams with average CBs at all 3 alignments.
+        KC WR Type 1 rows: pid=500 as RWR, pid=501 as LWR, pid=502 as SLWR.
+        """
+        type1_rows = []
+        type2_rows = []
+
+        # --- BUF CBs ---
+        buf_cbs = [
+            # (pid, alignment, targets_per_week, recs_per_week, ypr, grade)
+            (200, "LCB", 8, 2, 8.0, 88.0),   # strong: 2/8 = 0.25 catch rate
+            (202, "RCB", 8, 5, 11.0, 65.0),   # average: 5/8 = 0.625
+            (203, "SCB", 8, 7, 14.0, 45.0),   # weak: 7/8 = 0.875 catch rate
+        ]
+        for pid, align, tgt, rec, ypr, grade in buf_cbs:
+            for week in range(1, 7):
+                type1_rows.append({
+                    "player_id": pid,
+                    "player": f"BUF_{align}_{pid}",
+                    "team": "BUF",
+                    "position": align,
+                    "week": week,
+                    "game_id": 1000 + week,
+                })
+                yards = round(ypr * rec, 1) if rec > 0 else 0.0
+                type2_rows.append({
+                    "player_id": 900 + week,  # dummy receiver
+                    "coverage_player_id": pid,
+                    "week": week,
+                    "game_id": 1000 + week,
+                    "targets": tgt,
+                    "receptions": rec,
+                    "yards": yards,
+                    "grades_coverage_defense": grade,
+                    "grades_overall": grade - 5.0,
+                })
+
+        # --- 7 other teams with average CBs at all 3 alignments ---
+        other_teams = ["MIA", "NE", "NYJ", "DAL", "PHI", "WAS", "NYG"]
+        avg_cbs = [
+            # (alignment, targets, recs, ypr, grade)
+            ("LCB", 8, 5, 11.0, 65.0),
+            ("RCB", 8, 5, 11.0, 65.0),
+            ("SCB", 8, 5, 11.0, 65.0),
+        ]
+        pid_counter = 1000
+        for team in other_teams:
+            for align, tgt, rec, ypr, grade in avg_cbs:
+                pid_counter += 1
+                pid = pid_counter
+                for week in range(1, 7):
+                    type1_rows.append({
+                        "player_id": pid,
+                        "player": f"{team}_{align}_{pid}",
+                        "team": team,
+                        "position": align,
+                        "week": week,
+                        "game_id": 2000 + pid_counter * 10 + week,
+                    })
+                    yards = round(ypr * rec, 1) if rec > 0 else 0.0
+                    type2_rows.append({
+                        "player_id": 900 + week,
+                        "coverage_player_id": pid,
+                        "week": week,
+                        "game_id": 2000 + pid_counter * 10 + week,
+                        "targets": tgt,
+                        "receptions": rec,
+                        "yards": yards,
+                        "grades_coverage_defense": grade,
+                        "grades_overall": grade - 5.0,
+                    })
+
+        # --- KC WRs (Type 1 only, for alignment resolution) ---
+        kc_wrs = [
+            (500, "RWR"),
+            (501, "LWR"),
+            (502, "SLWR"),
+        ]
+        for pid, align in kc_wrs:
+            for week in range(1, 7):
+                type1_rows.append({
+                    "player_id": pid,
+                    "player": f"KC_WR_{pid}",
+                    "team": "KC",
+                    "position": align,
+                    "week": week,
+                    "game_id": 3000 + week,
+                })
+
+        _write_coverage_matchup(pff_dir, season, type1_rows, type2_rows)
+
+    def test_compute_returns_per_wr_modifiers(self, pff_dir, loader):
+        """compute() returns per-WR modifiers based on CB matchups.
+
+        wr_1 (RWR) faces BUF LCB (strong) -> catch_rate_modifier < 1.0
+        wr_3 (SLWR) faces BUF SCB (weak) -> catch_rate_modifier > 1.0
+        """
+        from fantasy_sim.models.player import (
+            PlayerModel,
+            PlayerOutcomes,
+            PlayerUsage,
+            TeamRoster,
+        )
+
+        self._setup_league_data(pff_dir, 2024)
+
+        # Build KC roster with 3 WRs
+        wrs = []
+        for pid, name, ts in [
+            ("wr_1", "WR_One", 0.30),
+            ("wr_2", "WR_Two", 0.25),
+            ("wr_3", "WR_Three", 0.15),
+        ]:
+            wrs.append(PlayerModel(
+                player_id=pid,
+                name=name,
+                position="WR",
+                team="KC",
+                usage=PlayerUsage(target_share=ts),
+                outcomes=PlayerOutcomes(catch_rate=0.65),
+            ))
+        roster = TeamRoster(team="KC", players=wrs)
+
+        # PFF crosswalk: pff_id -> nfl_id
+        pff_crosswalk = {500: "wr_1", 501: "wr_2", 502: "wr_3"}
+
+        config = CoverageConfig(
+            enabled=True,
+            min_z_score_population=8,
+            min_z_score_targets=10,
+            min_coverage_targets=20,
+        )
+        engine = CoverageEngine(loader, config)
         result = engine.compute(
             defense_team="BUF",
-            roster=None,
+            offense_roster=roster,
             target_season=2024,
-            max_week=10,
+            max_week=7,
+            pff_crosswalk=pff_crosswalk,
+        )
+
+        # wr_1 (RWR) faces BUF LCB (strong, catch_rate ~0.33) -> modifier < 1.0
+        assert "wr_1" in result
+        assert result["wr_1"].catch_rate_modifier < 1.0
+
+        # wr_3 (SLWR) faces BUF SCB (weak, catch_rate ~0.75) -> modifier > 1.0
+        assert "wr_3" in result
+        assert result["wr_3"].catch_rate_modifier > 1.0
+
+    def test_compute_disabled_returns_empty(self, pff_dir, loader):
+        """compute() with enabled=False returns empty dict."""
+        config = CoverageConfig(enabled=False)
+        engine = CoverageEngine(loader, config)
+        result = engine.compute(
+            defense_team="BUF",
+            offense_roster=None,
+            target_season=2024,
+            max_week=7,
+        )
+        assert result == {}
+
+    def test_compute_no_season_returns_empty(self, pff_dir, loader):
+        """compute() with target_season=None returns empty dict."""
+        config = CoverageConfig(enabled=True)
+        engine = CoverageEngine(loader, config)
+        result = engine.compute(
+            defense_team="BUF",
+            offense_roster=None,
+            target_season=None,
+            max_week=None,
         )
         assert result == {}
 

@@ -17,6 +17,7 @@ import polars as pl
 
 from fantasy_sim.data.pff.loader import PffLoader
 from fantasy_sim.data.pff.models import CoverageConfig, CoverageModifiers
+from fantasy_sim.models.player import TeamRoster
 
 logger = logging.getLogger(__name__)
 
@@ -422,24 +423,147 @@ class CoverageEngine:
 
         return alignments
 
+    def _build_all_cb_profiles(
+        self,
+        target_season: int,
+        max_week: int,
+    ) -> dict[str, list[_CbProfile]]:
+        """Build CB profiles for every team, grouped by alignment.
+
+        Iterates all teams present in the defense_coverage_matchup data,
+        calls _build_season_profiles for each, and groups the resulting
+        profiles by alignment (LCB/RCB/SCB).
+
+        Args:
+            target_season: The season to load data from.
+            max_week: Filter data to week < max_week.
+
+        Returns:
+            Dict mapping alignment → list of _CbProfile across all teams.
+        """
+        df = self._load_cached([target_season])
+        if df.is_empty():
+            return {}
+
+        # Filter to rolling window
+        if "week" in df.columns:
+            df = df.filter(pl.col("week") < max_week)
+        if df.is_empty():
+            return {}
+
+        # Get Type 1 CB rows to find all teams with CB data
+        pos_col = "pff_position" if "pff_position" in df.columns else "position"
+        type1_cbs = df.filter(
+            pl.col("coverage_player_id").is_null()
+            & pl.col(pos_col).is_in(list(CB_ALIGNMENTS))
+        )
+        if type1_cbs.is_empty():
+            return {}
+
+        all_teams = type1_cbs["team"].unique().to_list()
+
+        # Build profiles for each team and group by alignment
+        by_alignment: dict[str, list[_CbProfile]] = {}
+        for team in all_teams:
+            team_profiles = self._build_season_profiles(team, target_season, max_week)
+            for alignment, profile in team_profiles.items():
+                by_alignment.setdefault(alignment, []).append(profile)
+
+        return by_alignment
+
     def compute(
         self,
         defense_team: str,
-        roster: object | None = None,
+        offense_roster: "TeamRoster | None" = None,
         target_season: int | None = None,
         max_week: int | None = None,
-    ) -> dict:
-        """Compute per-WR coverage modifiers.
+        pff_crosswalk: dict[int, str] | None = None,
+    ) -> dict[str, CoverageModifiers]:
+        """Compute per-WR coverage modifiers for a matchup.
 
-        Stub — returns empty dict. Will be completed in Task 6.
+        Wires together CB profile building, WR alignment resolution,
+        and z-score modifier computation.
 
         Args:
             defense_team: Team abbreviation for the defense.
-            roster: TeamRoster for the offense (unused in stub).
+            offense_roster: TeamRoster for the offense.
             target_season: The season being simulated.
             max_week: The week being simulated.
+            pff_crosswalk: Maps PFF player_id (int) → nflverse player_id (str).
 
         Returns:
-            Empty dict (stub).
+            Dict mapping nflverse player_id → CoverageModifiers for each WR
+            with non-neutral modifiers.
         """
-        return {}
+        # Guard clauses
+        if not self._config.enabled:
+            return {}
+        if target_season is None or max_week is None:
+            return {}
+        if offense_roster is None:
+            return {}
+
+        # Step 1: Build CB profiles for the defense
+        cb_profiles = self._build_cb_profiles(defense_team, target_season, max_week)
+        if not cb_profiles:
+            logger.info("No CB profiles for %s — skipping coverage", defense_team)
+            return {}
+
+        # Step 2: Build league-wide CB profiles for z-score populations
+        all_cb_profiles = self._build_all_cb_profiles(target_season, max_week)
+
+        # Step 3: Get WRs from offense roster
+        wrs = [p for p in offense_roster.players if p.position == "WR"]
+        if not wrs:
+            return {}
+
+        # Step 4: Build reverse crosswalk (nfl_id → pff_id)
+        pff_id_map: dict[str, int] = {}
+        if pff_crosswalk:
+            pff_id_map = {nfl_id: pff_id for pff_id, nfl_id in pff_crosswalk.items()}
+
+        # Step 5: Sort WRs by target_share descending for fallback alignment
+        wrs_sorted = sorted(wrs, key=lambda p: p.usage.target_share, reverse=True)
+        wr_ids_sorted = [p.player_id for p in wrs_sorted]
+
+        # Step 6: Determine WR alignments
+        offense_team = offense_roster.team
+        wr_alignments = self._determine_wr_alignments(
+            wr_ids_sorted, offense_team, target_season, max_week, pff_id_map,
+        )
+
+        # Step 7: Compute modifiers for each WR
+        result: dict[str, CoverageModifiers] = {}
+        for wr_id, wr_alignment in wr_alignments.items():
+            # Map WR alignment to CB alignment
+            cb_alignment = _ALIGNMENT_MAP.get(wr_alignment)
+            if cb_alignment is None:
+                continue
+
+            # Get the CB at that alignment for this defense
+            cb = cb_profiles.get(cb_alignment)
+            if cb is None:
+                continue
+
+            # Get the population of CBs at this alignment
+            population = all_cb_profiles.get(cb_alignment, [])
+
+            modifiers = _compute_modifiers(cb, population, self._config)
+
+            # Only store non-neutral modifiers
+            if (
+                modifiers.catch_rate_modifier != 1.0
+                or modifiers.ypr_modifier != 1.0
+            ):
+                result[wr_id] = modifiers
+
+        logger.info(
+            "Coverage modifiers for %s vs %s (season=%d, week<%d): %d WRs adjusted",
+            offense_team,
+            defense_team,
+            target_season,
+            max_week,
+            len(result),
+        )
+
+        return result
