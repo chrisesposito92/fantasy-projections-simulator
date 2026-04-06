@@ -162,8 +162,8 @@ def compute_directional_accuracy(
 
 For each WR record with coverage modifiers where `|catch_rate_modifier - 1.0| > 0.01`:
 
-1. Compute the WR's season-average actual catch rate from `actuals_by_player` (receptions / targets across all weeks EXCLUDING the current week, to avoid bias from the week being evaluated)
-2. Get this week's actual catch rate from `ActualPlayerWeek`
+1. Compute the WR's season-average actual catch rate from `actuals_by_player` (sum of `receptions` / sum of `targets` from `ActualPlayerWeek` fields, across all weeks EXCLUDING the current week, to avoid bias from the week being evaluated). Skip if the leave-one-out baseline has 0 targets (e.g., WR with only 1 week of data).
+2. Get this week's actual catch rate: `ActualPlayerWeek.receptions / ActualPlayerWeek.targets`
 3. Skip if weekly targets < 4
 4. Check direction: modifier < 1.0 (tough CB) → did actual catch rate fall below season avg? (and vice versa)
 5. Count correct / total
@@ -217,8 +217,9 @@ def run_weekly_comparison(
 
 - **Same seed for on/off:** `zlib.crc32(game_id.encode()) % (2**31)`. Variance differences come from the model, not RNG.
 - **Modifier capture via private attributes:** `builder_on._matchup_engine` and `builder_on._coverage_engine`. This is internal tooling, same pattern as tests. No public API changes to `GameContextBuilder`.
-- **Position-filtered matchup_factors:** QB gets `{sack_rate_factor, int_rate_factor, ol_pass_block_factor}`, RB gets `{rush_yards_factor, ol_run_block_factor}`, WR/TE get `{catch_rate_factor, pass_yards_factor}`.
+- **Position-filtered matchup_factors:** The script filters `MatchupContext` fields at record creation time — metric functions receive pre-filtered dicts and don't need to know position-to-factor mappings. QB gets `{sack_rate_factor, int_rate_factor, ol_pass_block_factor}`, RB gets `{rush_yards_factor, ol_run_block_factor}`, WR/TE get `{catch_rate_factor, pass_yards_factor}`.
 - **Multi-season parallelism:** `ProcessPoolExecutor` when `len(seasons) > 1`, same as existing harness.
+- **Two builders = double PFF data loading:** Each `GameContextBuilder` has its own PFF loader cache, so PFF parquet files are loaded twice (once per builder). At ~20K rows per facet file across 3 seasons, this adds negligible overhead vs the simulation compute. Not worth optimizing with shared caching.
 
 ### Output
 
@@ -251,6 +252,8 @@ Tests in `tests/test_validation/test_weekly.py`. ~20-25 tests, all synthetic dat
 - Modifier within dead zone (|mod - 1.0| <= 0.01) -> excluded
 - Zero eligible records -> `DirectionalAccuracyResult(0, 0, 0.0)`
 - Season average from available weeks only
+- Leave-one-out with 2 total weeks: baseline is 1 week of data, still computes
+- Leave-one-out with 1 total week: baseline has 0 targets, record skipped
 
 ### Ledger
 
