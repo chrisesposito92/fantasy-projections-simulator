@@ -780,3 +780,148 @@ class TestEarlySeasonBlend:
         assert "LCB" in profiles
         lcb = profiles["LCB"]
         assert lcb.catch_rate_allowed == pytest.approx(0.80, abs=0.01)
+
+
+class TestGameContextIntegration:
+    """Tests for GameContextBuilder._apply_coverage static method."""
+
+    @staticmethod
+    def _make_wr_roster(team="KC", wrs=None):
+        """Build a TeamRoster with WR players.
+
+        Args:
+            team: Team abbreviation.
+            wrs: list of (player_id, catch_rate, rz_catch_rate, yards_array) tuples.
+        """
+        import numpy as np
+        from fantasy_sim.models.player import (
+            PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster,
+        )
+
+        if wrs is None:
+            wrs = [
+                ("wr_1", 0.65, 0.60, np.array([5.0, 10.0, 15.0, 20.0])),
+                ("wr_2", 0.60, 0.55, np.array([4.0, 8.0, 12.0, 16.0])),
+            ]
+
+        players = []
+        for pid, cr, rz_cr, yards in wrs:
+            players.append(PlayerModel(
+                player_id=pid,
+                name=pid,
+                position="WR",
+                team=team,
+                usage=PlayerUsage(target_share=0.25),
+                outcomes=PlayerOutcomes(
+                    catch_rate=cr,
+                    red_zone_catch_rate=rz_cr,
+                    receiving_yards_dist=yards,
+                ),
+            ))
+        return TeamRoster(team=team, players=players)
+
+    def test_apply_coverage_modifies_wr_catch_rate(self):
+        """Applying coverage modifiers adjusts catch_rate and red_zone_catch_rate for matched WRs."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        from fantasy_sim.data.pff.models import CoverageModifiers
+        import numpy as np
+
+        roster = self._make_wr_roster(wrs=[
+            ("wr_1", 0.65, 0.60, np.array([5.0, 10.0, 15.0])),
+            ("wr_2", 0.60, 0.55, np.array([4.0, 8.0, 12.0])),
+        ])
+
+        modifiers = {
+            "wr_1": CoverageModifiers(catch_rate_modifier=0.95, ypr_modifier=0.97),
+        }
+
+        GameContextBuilder._apply_coverage(roster, modifiers)
+
+        wr_1 = next(p for p in roster.players if p.player_id == "wr_1")
+        wr_2 = next(p for p in roster.players if p.player_id == "wr_2")
+
+        # wr_1 catch_rate: 0.65 * 0.95 = 0.6175
+        assert wr_1.outcomes.catch_rate == pytest.approx(0.6175, abs=1e-4)
+        # wr_1 red_zone_catch_rate: 0.60 * 0.95 = 0.57
+        assert wr_1.outcomes.red_zone_catch_rate == pytest.approx(0.57, abs=1e-4)
+
+        # wr_2 should be unchanged (not in modifiers dict)
+        assert wr_2.outcomes.catch_rate == pytest.approx(0.60, abs=1e-4)
+        assert wr_2.outcomes.red_zone_catch_rate == pytest.approx(0.55, abs=1e-4)
+
+    def test_apply_coverage_shifts_receiving_yards(self):
+        """Applying ypr_modifier shifts receiving_yards_dist additively."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        from fantasy_sim.data.pff.models import CoverageModifiers
+        import numpy as np
+
+        original_yards = np.array([5.0, 10.0, 15.0, 20.0])
+        roster = self._make_wr_roster(wrs=[
+            ("wr_1", 0.65, 0.60, original_yards.copy()),
+        ])
+
+        # ypr_modifier=1.03, catch_rate_modifier=1.0 (neutral)
+        modifiers = {
+            "wr_1": CoverageModifiers(catch_rate_modifier=1.0, ypr_modifier=1.03),
+        }
+
+        GameContextBuilder._apply_coverage(roster, modifiers)
+
+        wr_1 = next(p for p in roster.players if p.player_id == "wr_1")
+
+        # shift = (1.03 - 1.0) * 10.0 = 0.3
+        expected = original_yards + 0.3
+        np.testing.assert_array_almost_equal(
+            wr_1.outcomes.receiving_yards_dist, expected, decimal=4
+        )
+        # catch_rate should be unchanged (modifier is 1.0)
+        assert wr_1.outcomes.catch_rate == pytest.approx(0.65, abs=1e-4)
+
+    def test_apply_coverage_skips_non_wr(self):
+        """Coverage modifiers only apply to WR-position players, not RBs."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        from fantasy_sim.data.pff.models import CoverageModifiers
+        from fantasy_sim.models.player import (
+            PlayerModel, PlayerOutcomes, PlayerUsage,
+        )
+        import numpy as np
+
+        roster = self._make_wr_roster(wrs=[
+            ("wr_1", 0.65, 0.60, np.array([5.0, 10.0, 15.0])),
+        ])
+
+        # Add an RB to the roster
+        rb = PlayerModel(
+            player_id="rb_1",
+            name="rb_1",
+            position="RB",
+            team="KC",
+            usage=PlayerUsage(carry_share=0.50, target_share=0.10),
+            outcomes=PlayerOutcomes(
+                catch_rate=0.70,
+                red_zone_catch_rate=0.65,
+                receiving_yards_dist=np.array([3.0, 5.0, 7.0]),
+            ),
+        )
+        roster.players.append(rb)
+
+        # Put both in modifiers dict
+        modifiers = {
+            "wr_1": CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=0.95),
+            "rb_1": CoverageModifiers(catch_rate_modifier=0.90, ypr_modifier=0.95),
+        }
+
+        GameContextBuilder._apply_coverage(roster, modifiers)
+
+        wr_1 = next(p for p in roster.players if p.player_id == "wr_1")
+        rb_1 = next(p for p in roster.players if p.player_id == "rb_1")
+
+        # WR should be modified
+        assert wr_1.outcomes.catch_rate == pytest.approx(0.65 * 0.90, abs=1e-4)
+
+        # RB should be untouched
+        assert rb_1.outcomes.catch_rate == pytest.approx(0.70, abs=1e-4)
+        assert rb_1.outcomes.red_zone_catch_rate == pytest.approx(0.65, abs=1e-4)
+        np.testing.assert_array_almost_equal(
+            rb_1.outcomes.receiving_yards_dist, np.array([3.0, 5.0, 7.0]), decimal=4
+        )

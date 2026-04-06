@@ -10,7 +10,7 @@ from fantasy_sim.data.player_builder import (
     build_team_roster,
     _aggregate_pbp_stats, _assemble_models,
 )
-from fantasy_sim.data.pff.models import PffConfig, MatchupContext
+from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -88,6 +88,15 @@ class GameContextBuilder:
                 self._pff_config.team_context, self._pff_loader
             )
             logger.info("PFF team context engine enabled")
+
+        self._coverage_engine = None
+
+        if self._pff_config.enabled and self._pff_config.coverage.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.coverage import CoverageEngine
+            self._coverage_engine = CoverageEngine(
+                self._pff_loader, self._pff_config.coverage
+            )
+            logger.info("PFF coverage engine enabled")
 
     def _ensure_pipeline(
         self,
@@ -291,6 +300,42 @@ class GameContextBuilder:
                         player.outcomes.rushing_yards_dist + shift
                     )
 
+    @staticmethod
+    def _apply_coverage(
+        roster: TeamRoster,
+        modifiers: dict[str, CoverageModifiers],
+    ) -> None:
+        """Apply per-WR coverage modifiers to roster in-place.
+
+        Only modifies WR-position players. Multiplicative for catch_rate,
+        additive shift for receiving_yards_dist (same pattern as _apply_matchup).
+        """
+        if not modifiers:
+            return
+        for player in roster.players:
+            if player.position != "WR":
+                continue
+            mods = modifiers.get(player.player_id)
+            if mods is None:
+                continue
+            if mods.catch_rate_modifier != 1.0:
+                player.outcomes.catch_rate = max(
+                    0.0, min(1.0, player.outcomes.catch_rate * mods.catch_rate_modifier)
+                )
+                player.outcomes.red_zone_catch_rate = max(
+                    0.0,
+                    min(1.0, player.outcomes.red_zone_catch_rate * mods.catch_rate_modifier),
+                )
+            if mods.ypr_modifier != 1.0:
+                if (
+                    player.outcomes.receiving_yards_dist is not None
+                    and len(player.outcomes.receiving_yards_dist) > 0
+                ):
+                    shift = (mods.ypr_modifier - 1.0) * 10.0
+                    player.outcomes.receiving_yards_dist = (
+                        player.outcomes.receiving_yards_dist + shift
+                    )
+
     def _ensure_pff_crosswalk(
         self,
         training_seasons: list[int],
@@ -417,6 +462,26 @@ class GameContextBuilder:
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
+
+        # PFF coverage matchup (per-WR adjustments, last PFF step)
+        if self._coverage_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            home_cov = self._coverage_engine.compute(
+                defense_team=away_team,
+                offense_roster=home_roster,
+                target_season=target_season,
+                max_week=week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
+            away_cov = self._coverage_engine.compute(
+                defense_team=home_team,
+                offense_roster=away_roster,
+                target_season=target_season,
+                max_week=week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
+            self._apply_coverage(home_roster, home_cov)
+            self._apply_coverage(away_roster, away_cov)
 
         return home_dists, away_dists, home_roster, away_roster
 
