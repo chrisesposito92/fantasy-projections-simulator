@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fantasy_sim.data.pff.models import (
     ArchetypeConfig,
+    CoverageConfig,
     MatchupConfig,
     NcaaPriorsConfig,
     NcaaRookieConfig,
@@ -161,6 +162,19 @@ def load_pff_config(config: dict) -> PffConfig:
         ol_run_yards_scale=tc_raw.get("ol_run_yards_scale", 10.0),
     )
 
+    cov_raw = pff.get("coverage", {})
+    cov_clamp = cov_raw.get("factor_clamp", [0.95, 1.05])
+    coverage = CoverageConfig(
+        enabled=cov_raw.get("enabled", True),
+        catch_rate_sensitivity=cov_raw.get("catch_rate_sensitivity", 0.04),
+        ypr_sensitivity=cov_raw.get("ypr_sensitivity", 0.04),
+        min_coverage_targets=cov_raw.get("min_coverage_targets", 20),
+        min_z_score_targets=cov_raw.get("min_z_score_targets", 10),
+        min_z_score_population=cov_raw.get("min_z_score_population", 8),
+        factor_clamp=tuple(cov_clamp),
+        min_games=cov_raw.get("min_games", 4),
+    )
+
     return PffConfig(
         enabled=pff.get("enabled", False),
         data_dir=pff.get("data_dir"),
@@ -168,4 +182,5 @@ def load_pff_config(config: dict) -> PffConfig:
         talent=talent,
         tier_engine=tier_engine,
         team_context=team_context,
+        coverage=coverage,
     )

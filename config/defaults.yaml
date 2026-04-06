@@ -120,6 +120,16 @@ pff:
     factor_clamp: [0.90, 1.10]
     min_games: 4
 
+  coverage:
+    enabled: true
+    catch_rate_sensitivity: 0.04
+    ypr_sensitivity: 0.04
+    min_coverage_targets: 20
+    min_z_score_targets: 10
+    min_z_score_population: 8
+    factor_clamp: [0.95, 1.05]
+    min_games: 4
+
   talent:
     enabled: false
     prior_strength: 30

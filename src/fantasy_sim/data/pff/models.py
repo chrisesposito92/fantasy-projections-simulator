@@ -190,6 +190,26 @@ class TeamContextConfig:
 
 
 @dataclass
+class CoverageModifiers:
+    """Per-WR modifiers from coverage matchup analysis."""
+    catch_rate_modifier: float = 1.0
+    ypr_modifier: float = 1.0
+
+
+@dataclass
+class CoverageConfig:
+    """Configuration for the coverage matchup engine."""
+    enabled: bool = True
+    catch_rate_sensitivity: float = 0.04
+    ypr_sensitivity: float = 0.04
+    min_coverage_targets: int = 20
+    min_z_score_targets: int = 10
+    min_z_score_population: int = 8
+    factor_clamp: tuple[float, float] = (0.95, 1.05)
+    min_games: int = 4
+
+
+@dataclass
 class PffConfig:
     """Top-level PFF configuration."""
     enabled: bool = False
@@ -198,3 +218,4 @@ class PffConfig:
     talent: TalentConfig = field(default_factory=TalentConfig)
     tier_engine: TierConfig = field(default_factory=TierConfig)
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
+    coverage: CoverageConfig = field(default_factory=CoverageConfig)

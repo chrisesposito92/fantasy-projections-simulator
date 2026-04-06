@@ -99,3 +99,40 @@ class TestPositionSpecificStrength:
     def test_team_change_factor_loaded(self):
         cfg = load_pff_config({"pff": {"talent": {"team_change_factor": 0.5}}})
         assert cfg.talent.team_change_factor == 0.5
+
+
+def test_load_pff_config_coverage():
+    """Coverage config is loaded from defaults.yaml."""
+    config = {
+        "pff": {
+            "enabled": True,
+            "coverage": {
+                "enabled": True,
+                "catch_rate_sensitivity": 0.06,
+                "ypr_sensitivity": 0.05,
+                "min_coverage_targets": 30,
+                "min_z_score_targets": 15,
+                "min_z_score_population": 10,
+                "factor_clamp": [0.93, 1.07],
+                "min_games": 3,
+            },
+        }
+    }
+    pff = load_pff_config(config)
+    assert pff.coverage.enabled is True
+    assert pff.coverage.catch_rate_sensitivity == 0.06
+    assert pff.coverage.ypr_sensitivity == 0.05
+    assert pff.coverage.min_coverage_targets == 30
+    assert pff.coverage.min_z_score_targets == 15
+    assert pff.coverage.min_z_score_population == 10
+    assert pff.coverage.factor_clamp == (0.93, 1.07)
+    assert pff.coverage.min_games == 3
+
+
+def test_load_pff_config_coverage_defaults():
+    """Coverage config uses defaults when not specified in yaml."""
+    config = {"pff": {"enabled": True}}
+    pff = load_pff_config(config)
+    assert pff.coverage.enabled is True
+    assert pff.coverage.catch_rate_sensitivity == 0.04
+    assert pff.coverage.factor_clamp == (0.95, 1.05)
