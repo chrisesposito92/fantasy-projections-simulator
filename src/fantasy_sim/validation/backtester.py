@@ -10,8 +10,6 @@ from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.actuals import load_actual_scores
-from fantasy_sim.engine.monte_carlo import run_simulations
-from fantasy_sim.scoring.projections import build_player_projections
 from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
     boom_bust_calibration,
@@ -60,6 +58,7 @@ class Backtester:
         cache_dir: Path | None = None,
         pff_config: PffConfig | None = None,
         weather_config: WeatherConfig | None = None,
+        max_workers: int = 1,
     ):
         self.test_season = test_season
         self.n_sims = n_sims
@@ -71,12 +70,16 @@ class Backtester:
         self.builder = GameContextBuilder(
             cache_dir=self.loader.cache_dir, pff_config=pff_config, weather_config=weather_config,
         )
+        self.max_workers = max_workers
 
     def run(self, scoring_config: dict) -> BacktestResult:
         """Run the full backtest for one season.
 
         Uses only training_seasons data for model fitting (no leakage).
+        Three phases: build contexts -> simulate (optionally parallel) -> aggregate.
         """
+        from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel
+
         schedules = self.loader.load_schedules([self.test_season])
         player_stats = self.loader.load_player_stats([self.test_season])
 
@@ -91,15 +94,12 @@ class Backtester:
         )
         weeks = [w for w in weeks if 1 <= w <= 18]
 
-        projected_by_player_week = defaultdict(dict)
-        all_weekly_errors = []
-
+        # --- Phase 1: Build game contexts (sequential, cache-friendly) ---
+        specs: list[GameSpec] = []
         for wk in weeks:
             week_games = schedules.filter(
                 (pl.col("week") == wk) & (pl.col("season") == self.test_season)
             )
-
-            games_this_week = 0
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
                 try:
@@ -110,23 +110,39 @@ class Backtester:
                         week=wk,
                     )
                     seed = zlib.crc32(game["game_id"].encode()) % (2**31)
-                    results = run_simulations(
-                        home_dists, away_dists, n_sims=self.n_sims,
+                    specs.append(GameSpec(
+                        game_id=game["game_id"],
+                        home_dists=home_dists,
+                        away_dists=away_dists,
+                        home_roster=home_roster,
+                        away_roster=away_roster,
                         seed=seed,
-                        home_roster=home_roster, away_roster=away_roster,
                         week=wk,
-                    )
-                    # Build projections per-game to get correct per-player averages
-                    game_projs = build_player_projections(results.games, scoring_config)
-                    for proj in game_projs:
-                        pid = proj["player_id"]
-                        projected_by_player_week[pid][wk] = proj["fpts"]
-                        if pid in actual_by_player_week and wk in actual_by_player_week[pid]:
-                            error = abs(proj["fpts"] - actual_by_player_week[pid][wk])
-                            all_weekly_errors.append(error)
-                    games_this_week += 1
+                    ))
                 except Exception:
                     continue
+
+        # --- Phase 2: Simulate (parallel or sequential) ---
+        sim_results = simulate_games_parallel(
+            specs, n_sims=self.n_sims, scoring_config=scoring_config,
+            max_workers=self.max_workers,
+        )
+
+        # --- Phase 3: Aggregate results ---
+        projected_by_player_week = defaultdict(dict)
+        all_weekly_errors = []
+
+        spec_by_id = {s.game_id: s for s in specs}
+
+        for result in sim_results:
+            spec = spec_by_id[result.game_id]
+            wk = spec.week
+            for proj in result.projections:
+                pid = proj["player_id"]
+                projected_by_player_week[pid][wk] = proj["fpts"]
+                if pid in actual_by_player_week and wk in actual_by_player_week[pid]:
+                    error = abs(proj["fpts"] - actual_by_player_week[pid][wk])
+                    all_weekly_errors.append(error)
 
         weekly_mae = float(np.mean(all_weekly_errors)) if all_weekly_errors else 99.0
 

@@ -151,7 +151,7 @@ class TestConfigResolution:
         """defaults.yaml should provide simulation.historical_seasons."""
         from fantasy_sim.config.loader import load_defaults
         defaults = load_defaults()
-        assert defaults["simulation"]["historical_seasons"] == [2022, 2023, 2024]
+        assert defaults["simulation"]["historical_seasons"] == [2021, 2022, 2023, 2024]
 
 
 class TestGameCommand:

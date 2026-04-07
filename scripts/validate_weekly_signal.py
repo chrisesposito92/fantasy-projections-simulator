@@ -42,10 +42,8 @@ from fantasy_sim.data.pff.models import (
 )
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
-from fantasy_sim.engine.monte_carlo import run_simulations
-from fantasy_sim.scoring.projections import build_player_projections
+from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, default_max_workers
 from fantasy_sim.validation.weekly import (
-    DirectionalAccuracyResult,
     WeeklyLedgerEntry,
     WeeklyPlayerRecord,
     WeeklyPositionSummary,
@@ -266,6 +264,7 @@ def run_weekly_comparison(
     pff_config: PffConfig,
     positions: list[str],
     weather_config: WeatherConfig | None = None,
+    max_workers: int = 1,
 ) -> list[WeeklyPlayerRecord]:
     """Run PFF-on vs PFF-off for every game in a season, collect per-player records."""
 
@@ -296,43 +295,50 @@ def run_weekly_comparison(
     )
     weeks = [w for w in weeks if 1 <= w <= 18]
 
-    records: list[WeeklyPlayerRecord] = []
+    # --- Phase 1: Build all game contexts (sequential, cache-friendly) ---
+    specs: list[GameSpec] = []
+    game_aux: dict[str, dict] = {}  # game_id -> auxiliary data for Phase 3
 
     for wk in weeks:
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == test_season)
         )
-        print(f"  [{test_season}] Week {wk}/{max(weeks)}...", flush=True)
+        print(f"  [{test_season}] Building contexts... Week {wk}/{max(weeks)}", flush=True)
         for game in week_games.iter_rows(named=True):
             home, away = game["home_team"], game["away_team"]
+            game_id = game["game_id"]
             try:
-                seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+                seed = zlib.crc32(game_id.encode()) % (2**31)
 
-                # PFF-off
+                # Build both contexts before appending either —
+                # if one fails, skip the game entirely (no orphaned specs)
                 hd_off, ad_off, hr_off, ar_off = builder_off.build_game(
                     home, away,
                     training_seasons=training_seasons,
                     target_season=test_season, week=wk,
                 )
-                results_off = run_simulations(
-                    hd_off, ad_off, n_sims=n_sims, seed=seed,
-                    home_roster=hr_off, away_roster=ar_off, week=wk,
-                )
-                projs_off = build_player_projections(results_off.games, scoring_config)
-
-                # PFF-on
                 hd_on, ad_on, hr_on, ar_on = builder_on.build_game(
                     home, away,
                     training_seasons=training_seasons,
                     target_season=test_season, week=wk,
                 )
-                results_on = run_simulations(
-                    hd_on, ad_on, n_sims=n_sims, seed=seed,
-                    home_roster=hr_on, away_roster=ar_on, week=wk,
-                )
-                projs_on = build_player_projections(results_on.games, scoring_config)
 
-                # Capture modifiers from PFF-on builder (cached, cheap)
+                specs.append(GameSpec(
+                    game_id=game_id,
+                    home_dists=hd_off, away_dists=ad_off,
+                    home_roster=hr_off, away_roster=ar_off,
+                    seed=seed, week=wk,
+                    metadata={"arm": "off"},
+                ))
+                specs.append(GameSpec(
+                    game_id=game_id,
+                    home_dists=hd_on, away_dists=ad_on,
+                    home_roster=hr_on, away_roster=ar_on,
+                    seed=seed, week=wk,
+                    metadata={"arm": "on"},
+                ))
+
+                # Capture matchup/coverage contexts (cheap, engines cached)
                 home_matchup_ctx = MatchupContext()
                 away_matchup_ctx = MatchupContext()
                 if builder_on._matchup_engine is not None:
@@ -359,47 +365,86 @@ def run_weekly_comparison(
                         pff_crosswalk=builder_on._pff_crosswalk,
                     )
 
-                # Index projections by player_id
-                on_by_pid = {p["player_id"]: p for p in projs_on}
-                off_by_pid = {p["player_id"]: p["fpts"] for p in projs_off}
-
-                # Only emit records for players present in BOTH on and off
-                # projections to avoid asymmetric bias from Monte Carlo variance
-                common_pids = set(on_by_pid.keys()) & set(off_by_pid.keys())
-
-                for pid in common_pids:
-                    proj = on_by_pid[pid]
-                    pos = proj.get("position") or actual_pos.get(pid, "")
-                    if pos not in positions:
-                        continue
-                    if pid not in actual_by_pw or wk not in actual_by_pw[pid]:
-                        continue
-
-                    team = proj.get("team") or actual_team.get(pid, "")
-                    is_home = team == home
-
-                    matchup_ctx = home_matchup_ctx if is_home else away_matchup_ctx
-                    cov_map = home_coverage if is_home else away_coverage
-
-                    records.append(WeeklyPlayerRecord(
-                        player_id=pid,
-                        name=proj.get("name") or actual_name.get(pid, ""),
-                        position=pos,
-                        team=team,
-                        week=wk,
-                        season=test_season,
-                        projected_fpts_on=proj["fpts"],
-                        projected_fpts_off=off_by_pid[pid],
-                        actual_fpts=actual_by_pw[pid][wk],
-                        matchup_factors=_filter_matchup_factors(pos, matchup_ctx),
-                        coverage_modifiers=cov_map.get(pid) if pos == "WR" else None,
-                    ))
+                game_aux[game_id] = {
+                    "home": home, "away": away, "week": wk,
+                    "home_matchup_ctx": home_matchup_ctx,
+                    "away_matchup_ctx": away_matchup_ctx,
+                    "home_coverage": home_coverage,
+                    "away_coverage": away_coverage,
+                }
 
             except Exception as exc:
                 logger.warning(
-                    "Skipping game %s vs %s week %d: %s", home, away, wk, exc
+                    "Skipping game %s vs %s week %d context build: %s", home, away, wk, exc
                 )
                 continue
+
+    # --- Phase 2: Simulate all games (parallel) ---
+    print(f"  [{test_season}] Simulating {len(specs)} game-arms...", flush=True)
+
+    def _on_complete(done: int, total: int) -> None:
+        if done % 50 == 0 or done == total:
+            print(f"    [{test_season}] {done}/{total} complete", flush=True)
+
+    sim_results = simulate_games_parallel(
+        specs, n_sims=n_sims, scoring_config=scoring_config,
+        max_workers=max_workers, on_complete=_on_complete,
+    )
+
+    # --- Phase 3: Pair results and build records ---
+    by_game: dict[str, dict[str, list[dict]]] = defaultdict(dict)
+    for r in sim_results:
+        by_game[r.game_id][r.metadata["arm"]] = r.projections
+
+    records: list[WeeklyPlayerRecord] = []
+
+    for game_id, arms in by_game.items():
+        if "off" not in arms or "on" not in arms:
+            continue
+
+        aux = game_aux.get(game_id)
+        if aux is None:
+            continue
+
+        home = aux["home"]
+        wk = aux["week"]
+        home_matchup_ctx = aux["home_matchup_ctx"]
+        away_matchup_ctx = aux["away_matchup_ctx"]
+        home_coverage = aux["home_coverage"]
+        away_coverage = aux["away_coverage"]
+
+        on_by_pid = {p["player_id"]: p for p in arms["on"]}
+        off_by_pid = {p["player_id"]: p["fpts"] for p in arms["off"]}
+
+        common_pids = set(on_by_pid.keys()) & set(off_by_pid.keys())
+
+        for pid in common_pids:
+            proj = on_by_pid[pid]
+            pos = proj.get("position") or actual_pos.get(pid, "")
+            if pos not in positions:
+                continue
+            if pid not in actual_by_pw or wk not in actual_by_pw[pid]:
+                continue
+
+            team = proj.get("team") or actual_team.get(pid, "")
+            is_home = team == home
+
+            matchup_ctx = home_matchup_ctx if is_home else away_matchup_ctx
+            cov_map = home_coverage if is_home else away_coverage
+
+            records.append(WeeklyPlayerRecord(
+                player_id=pid,
+                name=proj.get("name") or actual_name.get(pid, ""),
+                position=pos,
+                team=team,
+                week=wk,
+                season=test_season,
+                projected_fpts_on=proj["fpts"],
+                projected_fpts_off=off_by_pid[pid],
+                actual_fpts=actual_by_pw[pid][wk],
+                matchup_factors=_filter_matchup_factors(pos, matchup_ctx),
+                coverage_modifiers=cov_map.get(pid) if pos == "WR" else None,
+            ))
 
     return records
 
@@ -444,6 +489,13 @@ def main() -> int:
              '"team_context", "ncaa_rookie", "coverage", "weather". '
              'Example: \'{"weather": {"wind": {"pass_yards_sensitivity": 0.04}}}\'',
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Worker processes for game simulation (0=auto, 1=sequential). Default: auto.",
+    )
 
     args = parser.parse_args()
 
@@ -468,6 +520,15 @@ def main() -> int:
         print(f"  label         : {args.label}")
     print("=" * 68)
 
+    num_seasons = len(args.seasons)
+    if args.workers == 1:
+        per_season_workers = 1
+    elif args.workers > 1:
+        per_season_workers = args.workers
+    else:
+        per_season_workers = default_max_workers(batch_size=576, num_concurrent=num_seasons)
+    print(f"  workers       : {per_season_workers} per season")
+
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
 
@@ -489,6 +550,7 @@ def main() -> int:
                     pff_config=pff_config,
                     positions=args.positions,
                     weather_config=weather_config,
+                    max_workers=per_season_workers,
                 ): season
                 for season in args.seasons
             }
@@ -507,6 +569,7 @@ def main() -> int:
                 pff_config=pff_config,
                 positions=args.positions,
                 weather_config=weather_config,
+                max_workers=per_season_workers,
             )
             all_records.extend(season_records)
 
