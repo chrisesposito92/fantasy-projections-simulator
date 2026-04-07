@@ -481,7 +481,7 @@ def run_backtest_pair(
         test_season=test_season,
         n_sims=n_sims,
         num_training_seasons=num_training_seasons,
-        max_workers=max_workers,
+        max_workers=1,  # PFF-OFF is cheap (~0.4s/game), parallelism adds overhead
     )
     result_off = bt_off.run(scoring_config)
     elapsed_off = time.time() - t0

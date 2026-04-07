@@ -387,6 +387,12 @@ def build_games_parallel(
     if max_workers is None or max_workers == 0:
         max_workers = default_max_workers(len(game_args))
 
+    # Cap build workers: each worker independently warms pipeline/PBP/PFF
+    # caches, so more workers = more I/O contention and memory pressure.
+    _MAX_BUILD_WORKERS = 4
+    if max_workers > _MAX_BUILD_WORKERS:
+        max_workers = _MAX_BUILD_WORKERS
+
     total = len(game_args)
 
     if max_workers <= 1:
