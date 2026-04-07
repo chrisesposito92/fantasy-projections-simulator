@@ -306,7 +306,8 @@ def run_weekly_comparison(
                 test_season, wk, game["game_id"], seed,
             ))
 
-    print(f"  [{test_season}] Building {len(game_args)} game contexts (workers={max_workers})...", flush=True)
+    build_workers = min(max_workers, 4) if max_workers > 0 else "auto"
+    print(f"  [{test_season}] Building {len(game_args)} game contexts (workers={build_workers})...", flush=True)
 
     def _on_build_complete(done: int, total: int) -> None:
         if done % 20 == 0 or done == total:

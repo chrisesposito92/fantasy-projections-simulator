@@ -163,7 +163,9 @@ def simulate_games_parallel(
 # Phase 1 parallelism: game context building
 # ---------------------------------------------------------------------------
 
-# Deferred import inside worker functions to avoid circular imports at module load.
+# GameContextBuilder is imported at module level (for mock patching in tests)
+# and also inside worker init functions (for subprocess workers that don't
+# share the parent's module namespace).
 
 
 def _init_build_worker_single(
@@ -311,8 +313,16 @@ def _build_game_worker_dual(args: tuple) -> dict:
             },
         }
     except Exception as exc:
-        logger.warning("Build failed for %s: %s", game_id, exc)
-        return {"status": "error", "game_id": game_id, "error": str(exc)}
+        logger.warning("Build failed for %s: %s", game_id, exc, exc_info=True)
+        return {
+            "status": "error",
+            "game_id": game_id,
+            "seed": seed,
+            "week": week,
+            "home": home,
+            "away": away,
+            "error": str(exc),
+        }
 
 
 def _build_games_sequential(
