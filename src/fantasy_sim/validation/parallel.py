@@ -229,6 +229,7 @@ def _build_game_worker_single(args: tuple) -> dict:
             "home": home,
             "away": away,
             "error": str(exc),
+            "error_type": type(exc).__name__,
         }
 
 
@@ -322,6 +323,7 @@ def _build_game_worker_dual(args: tuple) -> dict:
             "home": home,
             "away": away,
             "error": str(exc),
+            "error_type": type(exc).__name__,
         }
 
 
@@ -451,6 +453,7 @@ def build_games_parallel(
                         "home": args[0],
                         "away": args[1],
                         "error": str(exc),
+                        "error_type": type(exc).__name__,
                     })
                 completed += 1
                 if on_complete:
