@@ -1,9 +1,9 @@
 # config/defaults.yaml
 simulation:
   num_sims: 1000
-  training_years: 3
-  historical_seasons: [2022, 2023, 2024]
-  recency_weights: [0.2, 0.3, 0.5]
+  training_years: 4
+  historical_seasons: [2021, 2022, 2023, 2024]
+  recency_weights: [0.1, 0.2, 0.3, 0.4]
   rookie_blend_games: 4
 
 scoring:

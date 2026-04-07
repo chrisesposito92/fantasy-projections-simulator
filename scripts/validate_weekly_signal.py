@@ -428,7 +428,7 @@ def main() -> int:
         ),
     )
     parser.add_argument("--sims", type=int, default=50, help="Sims per game (default: 50).")
-    parser.add_argument("--seasons", type=int, nargs="+", default=[2023, 2024, 2025], help="Test seasons (default: 2023 2024 2025).")
+    parser.add_argument("--seasons", type=int, nargs="+", default=[2023, 2024], help="Test seasons (default: 2023 2024).")
     parser.add_argument("--training-years", type=int, default=4, dest="training_years", help="Training seasons before each test season (default: 4).")
     parser.add_argument("--scoring", default="ppr", choices=["ppr", "half_ppr", "standard"])
     parser.add_argument("--positions", nargs="+", default=list(POSITIONS), help="Positions to evaluate.")
