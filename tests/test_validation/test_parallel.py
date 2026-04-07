@@ -399,6 +399,79 @@ class TestBuildGamesParallel:
         assert completed[-1] == (2, 2)
 
 
+class TestBuildGamesParallelDualArm:
+    def _mock_builder(self):
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._matchup_engine = None
+        mock._coverage_engine = None
+        mock._pff_crosswalk = None
+        mock._pff_config = MagicMock(enabled=False)
+        return mock
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_returns_both_arms(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        assert len(results) == 1
+        r = results[0]
+        assert r["status"] == "ok"
+        assert "off" in r["results"]
+        assert "on" in r["results"]
+        assert len(r["results"]["off"]) == 4  # (hd, ad, hr, ar)
+        assert len(r["results"]["on"]) == 4
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_captures_matchup_aux(self, mock_builder_cls):
+        from fantasy_sim.data.pff.models import MatchupContext
+        mock_on = self._mock_builder()
+        mock_matchup = MagicMock()
+        mock_matchup.compute.return_value = MatchupContext(catch_rate_factor=1.05)
+        mock_on._matchup_engine = mock_matchup
+        mock_on._coverage_engine = None
+
+        call_count = 0
+        def make_builder(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return self._mock_builder()  # off builder (no engines)
+            return mock_on  # on builder (with engines)
+
+        mock_builder_cls.side_effect = make_builder
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        r = results[0]
+        assert "matchup_aux" in r
+        assert r["matchup_aux"]["home_matchup_ctx"].catch_rate_factor == 1.05
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_error_skips_game(self, mock_builder_cls):
+        mock = self._mock_builder()
+        mock.build_game.side_effect = RuntimeError("fail")
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        assert len(results) == 1
+        assert results[0]["status"] == "error"
+
+
 from fantasy_sim.validation.backtester import Backtester
 
 

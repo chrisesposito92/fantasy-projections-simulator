@@ -230,6 +230,91 @@ def _build_game_worker_single(args: tuple) -> dict:
         }
 
 
+def _init_build_worker_dual(
+    cache_dir: Path,
+    pff_config: PffConfig | None,
+    weather_config: WeatherConfig | None,
+) -> None:
+    """ProcessPoolExecutor initializer: create off+on builders per worker."""
+    global _worker_builders
+    from fantasy_sim.data.game_context import GameContextBuilder
+
+    _worker_builders = {
+        "off": GameContextBuilder(cache_dir=cache_dir),
+        "on": GameContextBuilder(
+            cache_dir=cache_dir,
+            pff_config=pff_config,
+            weather_config=weather_config,
+        ),
+    }
+
+
+def _build_game_worker_dual(args: tuple) -> dict:
+    """Worker: build game context for one game, both off+on arms."""
+    home, away, training_seasons, target_season, week, game_id, seed = args
+    from fantasy_sim.data.pff.models import MatchupContext
+
+    try:
+        hd_off, ad_off, hr_off, ar_off = _worker_builders["off"].build_game(
+            home, away, training_seasons=training_seasons,
+            target_season=target_season, week=week,
+        )
+        hd_on, ad_on, hr_on, ar_on = _worker_builders["on"].build_game(
+            home, away, training_seasons=training_seasons,
+            target_season=target_season, week=week,
+        )
+
+        builder_on = _worker_builders["on"]
+
+        home_matchup_ctx = MatchupContext()
+        away_matchup_ctx = MatchupContext()
+        if builder_on._matchup_engine is not None:
+            home_matchup_ctx = builder_on._matchup_engine.compute(
+                defense_team=away, offense_team=home,
+                target_season=target_season, max_week=week,
+            )
+            away_matchup_ctx = builder_on._matchup_engine.compute(
+                defense_team=home, offense_team=away,
+                target_season=target_season, max_week=week,
+            )
+
+        home_coverage: dict = {}
+        away_coverage: dict = {}
+        if builder_on._coverage_engine is not None:
+            home_coverage = builder_on._coverage_engine.compute(
+                defense_team=away, offense_roster=hr_on,
+                target_season=target_season, max_week=week,
+                pff_crosswalk=builder_on._pff_crosswalk,
+            )
+            away_coverage = builder_on._coverage_engine.compute(
+                defense_team=home, offense_roster=ar_on,
+                target_season=target_season, max_week=week,
+                pff_crosswalk=builder_on._pff_crosswalk,
+            )
+
+        return {
+            "status": "ok",
+            "game_id": game_id,
+            "seed": seed,
+            "week": week,
+            "home": home,
+            "away": away,
+            "results": {
+                "off": (hd_off, ad_off, hr_off, ar_off),
+                "on": (hd_on, ad_on, hr_on, ar_on),
+            },
+            "matchup_aux": {
+                "home_matchup_ctx": home_matchup_ctx,
+                "away_matchup_ctx": away_matchup_ctx,
+                "home_coverage": home_coverage,
+                "away_coverage": away_coverage,
+            },
+        }
+    except Exception as exc:
+        logger.warning("Build failed for %s: %s", game_id, exc)
+        return {"status": "error", "game_id": game_id, "error": str(exc)}
+
+
 def _build_games_sequential(
     game_args: list[tuple],
     cache_dir: Path,
