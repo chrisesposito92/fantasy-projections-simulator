@@ -464,6 +464,83 @@ def _build_weather_config(mode: str, overrides: dict | None = None) -> WeatherCo
 # Backtest runner
 # ---------------------------------------------------------------------------
 
+def _run_backtest_off(
+    test_season: int,
+    n_sims: int,
+    scoring_config: dict,
+    num_training_seasons: int,
+) -> BacktestResult:
+    """Run PFF-OFF baseline for one season."""
+    print(f"  [{test_season}] Running PFF-OFF baseline...", flush=True)
+    t0 = time.time()
+    bt = Backtester(
+        test_season=test_season,
+        n_sims=n_sims,
+        num_training_seasons=num_training_seasons,
+        max_workers=1,  # PFF-OFF is cheap (~0.4s/game), parallelism adds overhead
+    )
+    result = bt.run(scoring_config)
+    elapsed = time.time() - t0
+    print(f"    [{test_season}] PFF-OFF done in {elapsed:.1f}s  "
+          f"weekly_mae={result.weekly_mae:.3f}  "
+          f"season_mae={result.season_mae:.3f}  "
+          f"rank_corr={_format_rank_corr(result)}", flush=True)
+    return result
+
+
+def _run_backtest_on(
+    test_season: int,
+    n_sims: int,
+    scoring_config: dict,
+    num_training_seasons: int,
+    pff_config: PffConfig,
+    weather_config: WeatherConfig | None,
+    max_workers: int,
+    mode_label: str,
+) -> BacktestResult:
+    """Run PFF-ON for one season."""
+    print(f"  [{test_season}] Running PFF-ON ({mode_label})...", flush=True)
+    t0 = time.time()
+    bt = Backtester(
+        test_season=test_season,
+        n_sims=n_sims,
+        num_training_seasons=num_training_seasons,
+        pff_config=pff_config,
+        weather_config=weather_config,
+        max_workers=max_workers,
+    )
+    result = bt.run(scoring_config)
+    elapsed = time.time() - t0
+    print(f"    [{test_season}] PFF-ON done in {elapsed:.1f}s  "
+          f"weekly_mae={result.weekly_mae:.3f}  "
+          f"season_mae={result.season_mae:.3f}  "
+          f"rank_corr={_format_rank_corr(result)}", flush=True)
+    return result
+
+
+def _get_mode_label(pff_config: PffConfig) -> str:
+    """Derive a human-readable mode label from PFF config."""
+    if hasattr(pff_config, 'coverage') and pff_config.coverage.enabled:
+        if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
+            return "coverage+tier+matchup"
+        elif pff_config.tier_engine.enabled:
+            return "coverage+tier"
+        return "coverage"
+    if pff_config.team_context.enabled and pff_config.tier_engine.enabled and pff_config.matchup.enabled:
+        return "team_context+tier+matchup"
+    if pff_config.team_context.enabled and pff_config.tier_engine.enabled:
+        return "team_context+tier"
+    if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
+        return "matchup+tier"
+    if pff_config.matchup.enabled and not pff_config.talent.enabled:
+        return "matchup"
+    if pff_config.talent.enabled and not pff_config.matchup.enabled:
+        return "talent"
+    if pff_config.tier_engine.enabled:
+        return "tier"
+    return "all"
+
+
 def run_backtest_pair(
     test_season: int,
     n_sims: int,
@@ -474,60 +551,14 @@ def run_backtest_pair(
     max_workers: int = 1,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
-
-    print(f"\n  [Season {test_season}] Running PFF-OFF baseline...")
-    t0 = time.time()
-    bt_off = Backtester(
-        test_season=test_season,
-        n_sims=n_sims,
-        num_training_seasons=num_training_seasons,
-        max_workers=1,  # PFF-OFF is cheap (~0.4s/game), parallelism adds overhead
+    result_off = _run_backtest_off(
+        test_season, n_sims, scoring_config, num_training_seasons,
     )
-    result_off = bt_off.run(scoring_config)
-    elapsed_off = time.time() - t0
-    print(f"    Done in {elapsed_off:.1f}s  "
-          f"weekly_mae={result_off.weekly_mae:.3f}  "
-          f"season_mae={result_off.season_mae:.3f}  "
-          f"rank_corr={_format_rank_corr(result_off)}")
-
-    if hasattr(pff_config, 'coverage') and pff_config.coverage.enabled:
-        if pff_config.matchup.enabled and pff_config.tier_engine.enabled:
-            mode_label = "coverage+tier+matchup"
-        elif pff_config.tier_engine.enabled:
-            mode_label = "coverage+tier"
-        else:
-            mode_label = "coverage"
-    elif pff_config.team_context.enabled and pff_config.tier_engine.enabled and pff_config.matchup.enabled:
-        mode_label = "team_context+tier+matchup"
-    elif pff_config.team_context.enabled and pff_config.tier_engine.enabled:
-        mode_label = "team_context+tier"
-    elif pff_config.matchup.enabled and pff_config.tier_engine.enabled:
-        mode_label = "matchup+tier"
-    elif pff_config.matchup.enabled and not pff_config.talent.enabled:
-        mode_label = "matchup"
-    elif pff_config.talent.enabled and not pff_config.matchup.enabled:
-        mode_label = "talent"
-    elif pff_config.tier_engine.enabled:
-        mode_label = "tier"
-    else:
-        mode_label = "all"
-    print(f"  [Season {test_season}] Running PFF-ON ({mode_label})...")
-    t0 = time.time()
-    bt_on = Backtester(
-        test_season=test_season,
-        n_sims=n_sims,
-        num_training_seasons=num_training_seasons,
-        pff_config=pff_config,
-        weather_config=weather_config,
-        max_workers=max_workers,
+    mode_label = _get_mode_label(pff_config)
+    result_on = _run_backtest_on(
+        test_season, n_sims, scoring_config, num_training_seasons,
+        pff_config, weather_config, max_workers, mode_label,
     )
-    result_on = bt_on.run(scoring_config)
-    elapsed_on = time.time() - t0
-    print(f"    Done in {elapsed_on:.1f}s  "
-          f"weekly_mae={result_on.weekly_mae:.3f}  "
-          f"season_mae={result_on.season_mae:.3f}  "
-          f"rank_corr={_format_rank_corr(result_on)}")
-
     return ComparisonResult(test_season=test_season, off=result_off, on=result_on)
 
 
@@ -797,14 +828,37 @@ def main() -> int:
     total_start = time.time()
     results: list[ComparisonResult] = []
 
+    mode_label = _get_mode_label(pff_config)
+
     if len(args.seasons) > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
-        print(f"\nRunning {len(args.seasons)} seasons in parallel...")
+        # Phase A: All PFF-OFF baselines (lightweight, no build workers)
+        # Runs all seasons simultaneously without resource contention.
+        print(f"\nPhase A: PFF-OFF baselines ({len(args.seasons)} seasons)...")
+        off_results: dict[int, BacktestResult] = {}
         with ProcessPoolExecutor(max_workers=len(args.seasons)) as pool:
             futures = {
                 pool.submit(
-                    run_backtest_pair,
+                    _run_backtest_off,
+                    test_season=season,
+                    n_sims=args.sims,
+                    scoring_config=scoring_config,
+                    num_training_seasons=args.training_years,
+                ): season
+                for season in args.seasons
+            }
+            for future in as_completed(futures):
+                off_results[futures[future]] = future.result()
+
+        # Phase B: All PFF-ON (heavy, with build workers)
+        # Starts only after all PFF-OFF complete, preventing resource starvation.
+        print(f"\nPhase B: PFF-ON {mode_label} ({len(args.seasons)} seasons)...")
+        on_results: dict[int, BacktestResult] = {}
+        with ProcessPoolExecutor(max_workers=len(args.seasons)) as pool:
+            futures = {
+                pool.submit(
+                    _run_backtest_on,
                     test_season=season,
                     n_sims=args.sims,
                     scoring_config=scoring_config,
@@ -812,17 +866,19 @@ def main() -> int:
                     pff_config=pff_config,
                     weather_config=weather_config,
                     max_workers=per_season_workers,
+                    mode_label=mode_label,
                 ): season
                 for season in args.seasons
             }
             for future in as_completed(futures):
                 season = futures[future]
-                comparison = future.result()
-                results.append(comparison)
+                on_results[season] = future.result()
                 print(f"\n  Season {season} complete.")
 
-        # Sort by season so output is deterministic
-        results.sort(key=lambda r: r.test_season)
+        for season in sorted(args.seasons):
+            results.append(ComparisonResult(
+                test_season=season, off=off_results[season], on=on_results[season],
+            ))
     else:
         for season in args.seasons:
             print(f"\nBacktesting season {season}...")
