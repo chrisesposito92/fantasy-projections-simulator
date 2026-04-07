@@ -483,3 +483,63 @@ class TestBacktesterParallel:
     def test_max_workers_param(self):
         bt = Backtester(test_season=2024, n_sims=10, max_workers=4)
         assert bt.max_workers == 4
+
+
+class TestBuildGamesParallelDeterminism:
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_determinism_across_runs(self, mock_builder_cls):
+        """Same inputs must produce identical outputs across two sequential runs."""
+        def make_builder(*a, **kw):
+            mock = MagicMock()
+            mock.build_game.return_value = (
+                _make_dists("KC"), _make_dists("BUF"),
+                _make_roster("KC"), _make_roster("BUF"),
+            )
+            mock._pff_config = MagicMock(enabled=False)
+            mock._matchup_engine = None
+            mock._coverage_engine = None
+            mock._pff_crosswalk = None
+            return mock
+        mock_builder_cls.side_effect = make_builder
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 100),
+            ("SF", "DAL", [2022, 2023], 2024, 2, "game_2", 200),
+            ("MIA", "NYJ", [2022, 2023], 2024, 1, "game_3", 300),
+        ]
+        run1 = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        run2 = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+
+        assert len(run1) == len(run2)
+        for r1, r2 in zip(run1, run2):
+            assert r1["game_id"] == r2["game_id"]
+            assert r1["seed"] == r2["seed"]
+            assert r1["week"] == r2["week"]
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_results_sorted_by_week_then_game_id(self, mock_builder_cls):
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._pff_config = MagicMock(enabled=False)
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 3, "game_c", 1),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "game_a", 2),
+            ("MIA", "NYJ", [2022, 2023], 2024, 1, "game_b", 3),
+            ("GB", "CHI", [2022, 2023], 2024, 2, "game_d", 4),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        ids = [r["game_id"] for r in results]
+        assert ids == ["game_a", "game_b", "game_d", "game_c"]
