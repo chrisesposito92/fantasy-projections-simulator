@@ -310,12 +310,19 @@ def run_weekly_comparison(
             try:
                 seed = zlib.crc32(game_id.encode()) % (2**31)
 
-                # PFF-off context
+                # Build both contexts before appending either —
+                # if one fails, skip the game entirely (no orphaned specs)
                 hd_off, ad_off, hr_off, ar_off = builder_off.build_game(
                     home, away,
                     training_seasons=training_seasons,
                     target_season=test_season, week=wk,
                 )
+                hd_on, ad_on, hr_on, ar_on = builder_on.build_game(
+                    home, away,
+                    training_seasons=training_seasons,
+                    target_season=test_season, week=wk,
+                )
+
                 specs.append(GameSpec(
                     game_id=game_id,
                     home_dists=hd_off, away_dists=ad_off,
@@ -323,13 +330,6 @@ def run_weekly_comparison(
                     seed=seed, week=wk,
                     metadata={"arm": "off"},
                 ))
-
-                # PFF-on context
-                hd_on, ad_on, hr_on, ar_on = builder_on.build_game(
-                    home, away,
-                    training_seasons=training_seasons,
-                    target_season=test_season, week=wk,
-                )
                 specs.append(GameSpec(
                     game_id=game_id,
                     home_dists=hd_on, away_dists=ad_on,

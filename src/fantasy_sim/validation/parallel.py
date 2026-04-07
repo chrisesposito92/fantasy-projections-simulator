@@ -120,7 +120,7 @@ def simulate_games_parallel(
                 result = _simulate_worker((spec, n_sims, scoring_config))
                 results.append(result)
             except Exception:
-                logger.warning("Game %s failed, skipping", spec.game_id)
+                logger.warning("Game %s failed, skipping", spec.game_id, exc_info=True)
             if on_complete:
                 on_complete(i + 1, total)
         return results
@@ -128,26 +128,25 @@ def simulate_games_parallel(
     # Parallel path
     from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
 
-    try:
-        with ProcessPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(_simulate_worker, (spec, n_sims, scoring_config)): spec
-                for spec in specs
-            }
-            completed = 0
-            for future in as_completed(futures):
-                spec = futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                except Exception:
-                    logger.warning("Game %s failed, skipping", spec.game_id)
-                completed += 1
-                if on_complete:
-                    on_complete(completed, total)
-    except BrokenExecutor:
-        logger.error(
-            "Worker process crashed. Try --workers 1 for sequential mode."
-        )
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(_simulate_worker, (spec, n_sims, scoring_config)): spec
+            for spec in specs
+        }
+        completed = 0
+        for future in as_completed(futures):
+            spec = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except BrokenExecutor:
+                raise RuntimeError(
+                    "Worker process crashed. Try --workers 1 for sequential mode."
+                )
+            except Exception:
+                logger.warning("Game %s failed, skipping", spec.game_id, exc_info=True)
+            completed += 1
+            if on_complete:
+                on_complete(completed, total)
 
     return results
