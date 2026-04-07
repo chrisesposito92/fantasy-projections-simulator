@@ -82,6 +82,12 @@ class PropsLoader:
             )
             self._api_key = None
 
+    def _redact(self, text: str) -> str:
+        """Remove the API key from error messages to prevent leaking secrets."""
+        if self._api_key:
+            return text.replace(self._api_key, "***REDACTED***")
+        return text
+
     def _load_env_file(self, key_name: str) -> str | None:
         """Load an API key from .env file in the cache directory."""
         env_path = self.cache_dir / ".env"
@@ -134,11 +140,12 @@ class PropsLoader:
             return self._empty_df()
 
         if season < _MIN_PROPS_SEASON:
-            logger.warning(
-                "Player props not available before season %d (season %d requested)",
-                _MIN_PROPS_SEASON,
-                season,
-            )
+            if not getattr(self, "_warned_min_season", False):
+                logger.warning(
+                    "Player props not available before season %d — skipping all earlier seasons",
+                    _MIN_PROPS_SEASON,
+                )
+                self._warned_min_season = True
             return self._empty_df()
 
         # --- Fetch from API ---
@@ -241,7 +248,7 @@ class PropsLoader:
                 resp.raise_for_status()
                 return resp.json()
         except Exception as exc:
-            logger.warning("Failed to fetch NFL events: %s", exc)
+            logger.warning("Failed to fetch NFL events: %s", self._redact(str(exc)))
             return []
 
     def _fetch_event_props(
@@ -290,10 +297,10 @@ class PropsLoader:
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as exc:
-            logger.warning("HTTP error fetching props for event %s: %s", event_id, exc)
+            logger.warning("HTTP error fetching props for event %s: %s", event_id, self._redact(str(exc)))
             return {}
         except Exception as exc:
-            logger.warning("Error fetching props for event %s: %s", event_id, exc)
+            logger.warning("Error fetching props for event %s: %s", event_id, self._redact(str(exc)))
             return {}
 
     def _parse_event_props(
