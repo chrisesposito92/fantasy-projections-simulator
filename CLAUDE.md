@@ -217,3 +217,594 @@ The project is organized as a pipeline:
 - Dataclasses for data types (frozen when used as dict keys)
 - Type hints on all function signatures
 - Tests follow TDD: test first, then implement
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**Fantasy Projections Simulator — Accuracy Initiative**
+
+An NFL fantasy football projections simulator that simulates games play-by-play using historical nflverse data, PFF intelligence layers, and weather adjustments, then runs Monte Carlo simulations to produce fantasy point projections with full stat distributions. This initiative focuses on improving projection accuracy across all metrics — ranking correlation, weekly/season MAE, and boom/bust calibration — through new data sources, modeling improvements, and better signal extraction.
+
+**Core Value:** **Projection accuracy that beats the current best A/B results (run #44: rank_corr +0.0517) and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) — with WR and QB accuracy as the highest-priority positions.**
+
+### Constraints
+
+- **Data**: PFF premium subscription available. Open to free sources. Will consider paid if justified by A/B results.
+- **Methodology**: All improvements must be validated through A/B harness before merging. No changes without measurable signal.
+- **Architecture**: Open to any approach (new layers, ML models, structural changes) — whatever moves the metrics.
+- **Testing**: Must maintain 1,122+ test suite. New features need tests.
+- **Positions**: WR and QB accuracy are highest priority but all positions matter.
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:codebase/STACK.md -->
+## Technology Stack
+
+## Languages
+- Python 3.12+ (currently running 3.14.3) - All source code, scripts, tests
+- YAML - Configuration (`config/defaults.yaml`, scoring presets, season overrides)
+- JSON - PFF raw data archive, weather cache, A/B test ledgers
+## Runtime
+- Python 3.14.3 (development machine)
+- CI tests across Python 3.12, 3.13, 3.14
+- `uv` (Astral) - Package management and virtual environment
+- Lockfile: `uv.lock` present (revision 3)
+- Install: `uv pip install -e ".[dev]"`
+- Run commands: `uv run pytest`, `uv run fantasy-sim`
+## Frameworks
+- No web framework - CLI application only
+- Click 8.3.1 - Command-line interface with subcommands (`demo`, `week`, `season`, `game`, `player`, `backtest`)
+- Rich 14.3.3 - Terminal output (tables, progress bars, spinners)
+- pytest 9.0.2 - Test runner
+- pytest-xdist 3.8.0 - Parallel test execution
+- Hypothesis 6.151.10 - Property-based testing
+- Hatchling - Build backend (`[build-system]` in `pyproject.toml`)
+- Wheel packages built from `src/fantasy_sim/`
+## Key Dependencies
+- `polars` 1.39.3 - All DataFrame operations (NOT pandas). Used for PBP data, rosters, PFF data, aggregations
+- `numpy` 2.4.4 - Numerical arrays for play outcome distributions, random sampling (`rng.choice()`), Monte Carlo simulation
+- `scipy` 1.17.1 - Statistical functions (implicit dependency, used in distribution fitting)
+- `nflreadpy` 0.1.5 - NFL data from nflverse (play-by-play, rosters, schedules, snap counts, depth charts, draft picks). Returns Polars DataFrames natively. Depends on `requests`, `pydantic`, `tqdm`, `platformdirs`.
+- `httpx` 0.28.1 - HTTP client for PFF REST API scraping and Open-Meteo weather API
+- `pyyaml` 6.0.3 - YAML config file loading
+- `thefuzz` 0.22.1 - Fuzzy string matching for player name resolution (backed by `rapidfuzz` 3.14.3)
+- `click` 8.3.1 - CLI framework
+- `rich` 14.3.3 - Terminal tables and progress bars
+- `rapidfuzz` 3.14.3 - C-extension backend for thefuzz (fast Levenshtein distance)
+- `pydantic` 2.12.5 - Used by nflreadpy internally for data validation
+- `requests` 2.33.0 - Used by nflreadpy for HTTP downloads from GitHub
+- `tqdm` 4.67.3 - Progress bars (nflreadpy dependency)
+- `platformdirs` 4.9.4 - nflreadpy cache directory resolution
+## nflverse Data Stack
+| Function | Wrapper In | Used By | Purpose |
+|----------|-----------|---------|---------|
+| `load_pbp(seasons)` | `DataLoader.load_pbp()` | `DataPipeline`, `GameContextBuilder`, `TierEngine`, `TeamContextEngine` | Play-by-play data - the core dataset. ~13MB/season. |
+| `load_rosters_weekly(seasons)` | `DataLoader.load_rosters()` | `GameContextBuilder`, `PffLoader.build_crosswalk()`, `KickerEngine` | Weekly roster snapshots with team, position, status, pff_id, college_name, rookie_year |
+| `load_schedules(seasons)` | `DataLoader.load_schedules()` | `WeatherEngine`, `Backtester`, CLI `week`/`season`/`backtest` commands | Game schedule with dates, times, matchups |
+| `load_player_stats(seasons)` | `DataLoader.load_player_stats()` | `Backtester`, `load_actual_scores()` | Weekly player stat lines for backtesting against actuals |
+| `load_snap_counts(seasons)` | `DataLoader.load_snap_counts()` | Available but not currently called in main pipeline | Per-player snap counts |
+| `load_depth_charts(seasons)` | `DataLoader.load_depth_charts()` | Available but not currently called in main pipeline | Team depth charts |
+| `load_draft_picks()` | `DataLoader.load_draft_picks()` | `rookie_builder.py` (draft capital tier determination) | Historical draft data (round, pick number) |
+| Column | Used In | Purpose |
+|--------|---------|---------|
+| `play_type` | `preprocessor.py`, `player_builder.py`, `pipeline.py` | Filter to "pass", "run", "field_goal", "extra_point", "kickoff" |
+| `season` | `player_builder.py`, `preprocessor.py` | Season filtering, recency weighting |
+| `posteam` | `preprocessor.py`, `player_builder.py` | Possessing team (for team-level stats) |
+| `yards_gained` | `preprocessor.py`, `player_builder.py` | Play outcome yards (stored as empirical distributions) |
+| `receiver_player_id` | `player_builder.py` | Links pass plays to receivers |
+| `rusher_player_id` | `player_builder.py` | Links run plays to rushers |
+| `passer_player_id` | `player_builder.py` | Links pass plays to QBs |
+| `complete_pass` | `player_builder.py` | Catch rate computation |
+| `interception` | `preprocessor.py`, `player_builder.py` | INT rate, QB fumble filtering |
+| `fumble_lost` | `preprocessor.py`, `player_builder.py` | Fumble rates, sack-fumble rates |
+| `sack` | `preprocessor.py`, `player_builder.py` | Sack rate, sack-fumble attribution |
+| `yardline_100` | `preprocessor.py`, `player_builder.py` | Red zone detection (<=20), field position |
+| `game_id` | `player_builder.py` | Games played counting (unique game_ids per player) |
+| `air_yards` | `player_builder.py` | Air yards share computation (optional, may be absent) |
+| `qb_scramble` | `player_builder.py` | Separating scrambles from designed QB runs (optional) |
+| `penalty` | `preprocessor.py` | Penalty rate computation |
+| `touchback` | `preprocessor.py` | Drive start model (touchback rate) |
+| `extra_point_result` | `preprocessor.py` | XP make rate ("good" = success) |
+| `kick_distance` | `preprocessor.py` | FG distance bucketing (0-39, 40-49, 50+) |
+| `field_goal_result` | `preprocessor.py` | FG make rate ("made" = success) |
+| Column | Used In | Purpose |
+|--------|---------|---------|
+| `player_id` (or `gsis_id`) | Everywhere | Primary player identifier (auto-renamed from `gsis_id`) |
+| `player_name` (or `full_name`) | Everywhere | Display name (auto-renamed from `full_name`) |
+| `team` | `player_builder.py`, `game_context.py` | Current team assignment |
+| `position` | `player_builder.py` | Position filtering (QB, RB, WR, TE, K) |
+| `status` | `player_builder.py` | Active status filtering (`ACT` only) |
+| `season` | `game_context.py` | Season filtering for roster merges |
+| `week` | `game_context.py` | Week filtering for mid-season roster accuracy |
+| `pff_id` | `pff/loader.py` | PFF crosswalk Layer 1 (direct ID match) |
+| `college_name` | `pff/loader.py` | NCAA crosswalk (name + college match for rookies) |
+| `rookie_year` | `pff/loader.py` | NCAA crosswalk season filtering |
+| `draft_number` / `draft_round` | `player_builder.py` | Rookie archetype tier assignment |
+| Column | Used In | Purpose |
+|--------|---------|---------|
+| `week` | `backtester.py`, CLI, `weather/engine.py` | Week number |
+| `home_team` | CLI, `weather/engine.py` | Home team abbreviation |
+| `away_team` | CLI, `weather/engine.py` | Away team abbreviation |
+| `game_id` | `backtester.py` | Deterministic seed for Monte Carlo |
+| `gameday` | `weather/engine.py` | Game date (for weather lookup) |
+| `gametime` | `weather/engine.py` | Kickoff hour (for weather window) |
+| `season` | `backtester.py` | Season filtering |
+| Column | Used In | Purpose |
+|--------|---------|---------|
+| `player_id`, `player_name`/`player_display_name` | `actuals.py` | Player identification |
+| `position`, `recent_team`/`team` | `actuals.py` | Position and team |
+| `season`, `week` | `actuals.py` | Time filtering |
+| `passing_yards`, `passing_tds`, `interceptions`/`passing_interceptions` | `actuals.py` | QB stats for scoring |
+| `rushing_yards`, `rushing_tds`, `carries` | `actuals.py` | Rush stats for scoring |
+| `receptions`, `targets`, `receiving_yards`, `receiving_tds` | `actuals.py` | Receiving stats for scoring |
+| `receiving_fumbles_lost`, `rushing_fumbles_lost`, `sack_fumbles_lost` | `actuals.py` | Fumble attribution |
+| `completions`, `attempts`, `sacks`/`sacks_suffered` | `actuals.py` | Additional QB stats |
+- Training: 3 years prior to target season (configurable via `defaults.yaml` `simulation.training_years`)
+- Default: `[2022, 2023, 2024]` (set in `defaults.yaml` `simulation.historical_seasons`)
+- Recency weights: `{2022: 0.2, 2023: 0.3, 2024: 0.5}` (more recent = higher weight)
+- Backtester: `range(test_season - num_training_seasons, test_season)` with no data leakage
+## Data Stack (General)
+- Polars 1.39.3 exclusively (no pandas anywhere in codebase)
+- LazyFrame evaluation not used - eager mode throughout
+- `pl.read_parquet()` / `df.write_parquet()` for all caching
+- NumPy 2.4.4 for all simulation arrays
+- Play outcome distributions stored as `np.ndarray` (empirical, non-parametric)
+- `numpy.random.Generator` for all random sampling (seeded via `np.random.default_rng()`)
+- Parquet: Primary cache/storage format for nflverse data and processed PFF data
+- JSON: PFF raw API responses, weather cache, scraper progress state, A/B test ledgers
+- YAML: Configuration files
+- **nflverse** (via nflreadpy): Play-by-play, weekly rosters, schedules, player stats, draft picks. Public data, no auth. See detailed section above.
+- **PFF** (via httpx): 21 game-level facets for NFL (2018-2025) and NCAA (2022-2025). Premium subscription required.
+- **Open-Meteo** (via httpx): Hourly weather data (historical archive + forecast). Free, no API key.
+## Configuration
+- `config/defaults.yaml` - Master configuration (simulation params, scoring presets, PFF engine configs, weather configs)
+- `config/season.example.yaml` / `config/season.2025.yaml` - Per-season override configs (player/team overrides)
+- `config/custom_scoring.example.yaml` - Custom scoring with `inherit` + `overrides` pattern
+- `config/loader.py`: `load_defaults()` reads `defaults.yaml`, `resolve_scoring()` handles `_inherit` chains
+- Scoring presets: `ppr` (base) -> `half_ppr` (inherits ppr, reception=0.5) -> `standard` (inherits ppr, reception=0)
+- PFF config: `data/pff/config.py`: `load_pff_config()` extracts PFF section into typed dataclasses
+- Weather config: `data/weather/config.py`: `load_weather_config()` extracts weather section
+- `.env` file exists at `~/.fantasy-sim/pff/.env` (PFF cookie auth - never read this file)
+- No other env vars required for core functionality
+- nflverse data is public (no auth needed)
+- Open-Meteo is free (no auth needed)
+## Build & Deploy
+- `src/fantasy_sim/` layout (src-based)
+- Entry point: `fantasy-sim` CLI via `[project.scripts]` in `pyproject.toml`
+- Editable install: `uv pip install -e ".[dev]"`
+- Local CLI tool only - not deployed to any server
+- No Docker, no cloud infrastructure
+- Runs on developer machine with `uv run fantasy-sim`
+- GitHub Actions (`.github/workflows/ci.yml`)
+- Triggers: push to main, PRs to main
+- Matrix: Python 3.12, 3.13, 3.14
+- Uses `astral-sh/setup-uv@v4` with lockfile-based caching
+- Two jobs:
+- Concurrency: cancel-in-progress per workflow+ref
+## Platform Requirements
+- Python 3.12+ (3.14 recommended)
+- `uv` package manager
+- Network access for initial nflverse data download
+- PFF premium subscription for PFF data (optional but recommended)
+- ~8GB disk space for full PFF data cache
+- Same as development (local CLI tool)
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+## Naming Patterns
+- All source files use `snake_case.py` (e.g., `play_resolver.py`, `game_context.py`, `tier_engine.py`)
+- Test files mirror source with `test_` prefix: `test_play_resolver.py`, `test_game_context.py`
+- Subpackage `__init__.py` files are present but typically empty or with minimal exports
+- Use `snake_case` for all functions: `resolve_play()`, `build_player_models()`, `compute_weather_factors()`
+- Private/internal functions prefixed with `_`: `_resolve_pass()`, `_clamp_yards()`, `_blend_float()`
+- Builder functions use `build_*` prefix: `build_game()`, `build_player_projections()`, `build_team_roster()`
+- Computation functions use `compute_*` prefix: `compute_factor()`, `compute_reliability()`, `compute_weather_factors()`
+- Factory helpers in tests use `make_*` or `_make_*`: `make_state()`, `make_roster()`, `_make_pool_entry()`
+- `snake_case` throughout: `catch_rate`, `target_share`, `yard_line`, `score_differential`
+- Constants use `UPPER_SNAKE_CASE`: `MIN_BUCKET_PLAYS = 10`, `INT_RETURN_TD_RATE = 0.20`, `MAX_PLAYS = 400`
+- RNG variables named `rng` (numpy Generator): `rng = np.random.default_rng(42)`
+- Abbreviations preserved from NFL domain: `rz` (red zone), `pbp` (play-by-play), `dst` (defense/special teams), `fg` (field goal), `xp` (extra point), `td` (touchdown), `int` (interception)
+- `PascalCase` for all classes: `GameStateBucket`, `TeamDistributions`, `PlayerBoxScore`
+- Engine classes use `*Engine` suffix: `TierEngine`, `MatchupEngine`, `CoverageEngine`, `WeatherEngine`, `ScoringEngine`
+- Builder classes use `*Builder` suffix: `GameContextBuilder`
+- Config dataclasses use `*Config` suffix: `MatchupConfig`, `WeatherConfig`, `TierConfig`
+- Model dataclasses use descriptive names: `PlayerModel`, `PlayerUsage`, `PlayerOutcomes`, `TeamRoster`
+- Context/result types: `MatchupContext`, `WeatherContext`, `BacktestResult`, `GameResult`
+- No enum usage; string literals used instead (e.g., `"pass" | "run"`, `"home" | "away"`)
+- Positions as string constants: `"QB"`, `"RB"`, `"WR"`, `"TE"`
+## Code Style
+- No explicit formatter configured (no ruff, black, prettier, flake8 config files)
+- Consistent 4-space indentation throughout
+- Line length generally kept under ~120 characters but no hard enforcement
+- Trailing commas used in multi-line collections and function calls
+- Single quotes for short strings, double quotes for docstrings (mixed usage)
+- No linter configuration detected in `pyproject.toml` or standalone config files
+- Code quality maintained through TDD workflow and code review rather than automated linting
+- Type hints on all function signatures (enforced by project convention):
+- Uses Python 3.12+ union syntax: `Path | None`, `dict[str, float] | None`, `np.ndarray | None`
+- `from __future__ import annotations` used in some files for forward references
+- `TYPE_CHECKING` guard for circular import prevention:
+- Module-level docstrings on all files: `"""PFF data loader and player ID crosswalk builder."""`
+- Class docstrings are brief single-line: `"""All distributions needed to simulate one team."""`
+- Function docstrings use Google-style with Args/Returns when non-trivial:
+- Inline comments explain NFL domain logic and calibration constants:
+## Import Organization
+- Explicit named imports preferred over module imports:
+- Multi-line imports use parenthesized grouping with trailing commas
+- No path aliases configured (no `[tool.mypy]` paths or import aliases)
+- Scripts use `sys.path.insert(0, ...)` to add `src/` to path:
+## Data Patterns
+- All DataFrame operations use polars: `pl.DataFrame`, `pl.col()`, `.filter()`, `.group_by()`, `.join()`
+- Polars used for data loading, PBP processing, PFF data, roster management
+- Parquet for caching: `df.write_parquet(path)`, `pl.read_parquet(path)`
+- `np.random.Generator` for all RNG (not legacy `RandomState` except in test fixtures)
+- Empirical distributions stored as `np.ndarray` and sampled with `rng.choice(arr)`
+- No parametric distributions; all sampling is non-parametric from historical data arrays
+- `@dataclass` for mutable state: `GameState`, `PlayerBoxScore`, `TeamBoxScore`
+- `@dataclass(frozen=True)` for dict keys: `GameStateBucket` (hashable for probability lookup)
+- `field(default_factory=...)` for mutable defaults:
+- Play outcomes stored as numpy arrays of historical yard values
+- Sampled directly: `int(rng.choice(arr))` -- non-parametric
+- Minimum bucket sizes enforced: `MIN_BUCKET_PLAYS = 10`, `MIN_PLAYER_PLAYS = 5`
+- Fallback to team/league defaults when bucket is too small
+## Architecture Patterns
+- Each "engine" is a class with `__init__(config, loader)` and a `compute()` method
+- Engines are stateless computation units with internal caching
+- Examples: `TierEngine`, `MatchupEngine`, `CoverageEngine`, `WeatherEngine`, `KickerEngine`, `DstBaselineEngine`
+- `compute()` returns a context/result object (e.g., `MatchupContext`, `WeatherContext`)
+- `GameContextBuilder` orchestrates all engines in a defined order
+- `build_game()` is the main entry point, returning `(home_dists, away_dists, home_roster, away_roster)`
+- Pipeline ordering: base model -> matchup -> team context + tier blend -> normalize -> user overrides -> normalize -> weather
+- Factors are multiplicative, centered on 1.0
+- Clamped to configurable range (typically `[0.80, 1.20]`)
+- Blends observed data toward league-average prior based on sample size
+- Pattern: `adjusted = (n * observed + prior_strength * prior) / (n + prior_strength)`
+- Same-season data filtered to `week < max_week` (no future leak)
+- When team has < `min_games` (default 4), blends with previous season via linear ramp
+- Prevents noisy adjustments in weeks 1-3
+- Layer 1: Pipeline output keyed by training_seasons
+- Layer 2: PBP stats keyed by training_seasons
+- Layer 3: Player models keyed by (training_seasons, target_season, week)
+- Caching separates expensive PBP aggregation from cheap per-week roster assembly
+## Configuration Patterns
+- `config/defaults.yaml` defines simulation params, scoring presets, PFF config, weather config
+- Scoring uses `_inherit` chains: `half_ppr._inherit: ppr` with override fields
+- `resolve_scoring()` follows `_inherit` recursively with circular reference detection
+- Click-based CLI with `--pff/--no-pff`, `--weather/--no-weather`, `--scoring`, `--sims`
+- Season config YAML (`--config`) provides `season:`, `weeks:`, `scoring_format:` defaults
+- CLI flags take precedence over config file; `scoring_format:` always overrides CLI `--scoring`
+- `--config-override '{"talent": {"prior_strength": 30}}'` on validation scripts
+- Supports keys: `tier_engine`, `talent`, `matchup`, `team_context`, `ncaa_rookie`, `weather`
+- Merges into default config for sweep testing without modifying `defaults.yaml`
+- All adjustment engines expose sensitivity floats in their config dataclasses
+- Pattern: `{stat}_sensitivity: float = {default}` (e.g., `pass_defense_sensitivity=0.08`)
+- Allows A/B sweep tuning via config-override
+## Error Handling
+- `ConfigError(Exception)` in `config/loader.py` for YAML parsing/validation errors
+- `AmbiguousMatchError(KeyError)` in `overrides/resolver.py` for fuzzy match ambiguity
+- `ValueError` for invalid arguments: `raise ValueError(f"n_sims must be positive, got {n_sims}")`
+- `KeyError` for missing players/items: `raise KeyError(f"No exact match for '{query}'")`
+- `click.BadParameter` for CLI validation: `raise click.BadParameter(f"Invalid week range: '{weeks_str}'")`
+- `SystemExit(1)` for CLI-level fatal errors (caught at top of command handlers)
+- League-average distributions when team data is insufficient (`MIN_BUCKET_PLAYS = 10`)
+- Previous-season blend when current-season games < `min_games` (4)
+- Default catch rate modifier (`RZ_CATCH_RATE_MODIFIER = 0.92`) when player has < `MIN_RZ_TARGETS`
+- Uniform weights in `select_receiver()`/`select_rusher()` when all share weights are zero
+- `getattr` fallback for backward compatibility with penalty modeling
+## Logging
+- Module-level logger: `logger = logging.getLogger(__name__)`
+- Used in data layer (`pff/loader.py`, `weather/provider.py`, `pff/tier_engine.py`)
+- Not used in engine layer (pure computation, no side effects)
+- Validation scripts use `print()` for user-facing output
+## Comments
+- NFL domain constants always commented with real-world context:
+- Section separators use `# ---------- Section Name ----------` in test files
+- Inline comments explain "why" not "what": `# Coin toss`, `# Fumble cancels TD`
+## Function Design
+- Functions typically 10-50 lines; largest are engine `compute()` methods (~100 lines)
+- Complex logic broken into private helpers: `_resolve_pass()`, `_resolve_run()`, `_red_zone_td_gate()`
+- Required parameters first, then optional with defaults
+- `rng: np.random.Generator` always passed explicitly (never global state)
+- Config objects passed as dataclasses, not raw dicts (except scoring config which is `dict[str, float]`)
+- Optional roster params enable progressive feature gates: `home_roster: TeamRoster | None = None`
+- Single return type (no overloaded returns)
+- Dataclasses for complex returns: `PlayResult`, `GameResult`, `BacktestResult`, `MatchupContext`
+- Tuples for simple multi-returns: `tuple[str, int] | None` for penalty checks
+## Module Design
+- Explicit imports at point of use; no `__all__` definitions
+- `__init__.py` files are empty (no re-exports)
+- Each module has a clear single responsibility
+- Not used. All imports reference the specific module file directly:
+- Module-level constants colocated with the code that uses them:
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+## Pattern Overview
+- Play-by-play simulation (not statistical regression) -- each play is resolved individually with game-state-aware probability sampling
+- Empirical (non-parametric) distributions -- yards gained are stored as numpy arrays of historical values and sampled directly, avoiding parametric distribution fitting
+- Layered adjustment pipeline -- base PBP model -> matchup -> tier engine + team context -> coverage -> DST baseline -> kicker -> weather -> user overrides (each layer applies multiplicative factors)
+- Three-layer caching strategy for expensive computations (pipeline output, PBP stats, player models)
+- Mutable game state with immutable distribution inputs
+## Layers
+- Purpose: Fetch, cache, and preprocess NFL data into simulation-ready distributions
+- Location: `src/fantasy_sim/data/`
+- Contains: Data loading, PBP preprocessing, player model building, PFF intelligence, weather engine
+- Depends on: nflreadpy, nflverse PBP/roster data, PFF processed parquet, Open-Meteo API
+- Used by: CLI commands, validation/backtester
+- Purpose: Shared data types (dataclasses) used across all layers
+- Location: `src/fantasy_sim/models/`
+- Contains: GameStateBucket, distribution types, player/roster models
+- Depends on: numpy (for array fields)
+- Used by: Everything -- engine, data, scoring, overrides
+- Purpose: Play-by-play game simulation and Monte Carlo runner
+- Location: `src/fantasy_sim/engine/`
+- Contains: Game state machine, play calling, play resolution, player selection, clock management
+- Depends on: Models layer, numpy RNG
+- Used by: Monte Carlo runner, CLI, backtester
+- Purpose: Config-driven fantasy point calculation and projection aggregation
+- Location: `src/fantasy_sim/scoring/`
+- Contains: Point scoring engine, projection builder (mean/floor/ceiling/stddev)
+- Depends on: Engine types (PlayerBoxScore, TeamBoxScore, GameResult)
+- Used by: CLI, backtester, output
+- Purpose: User-specified modifications to player usage/outcomes and team distributions
+- Location: `src/fantasy_sim/overrides/`
+- Contains: Override engine, YAML/CLI parser, fuzzy name resolver
+- Depends on: Models (PlayerModel, TeamRoster), engine types (TeamDistributions)
+- Used by: CLI, game_context
+- Purpose: YAML configuration loading with inheritance
+- Location: `src/fantasy_sim/config/`, `config/`
+- Contains: Config loader, scoring presets with `_inherit` chains
+- Depends on: PyYAML
+- Used by: CLI, PFF config, weather config
+- Purpose: Backtesting against historical actuals, accuracy metrics
+- Location: `src/fantasy_sim/validation/`
+- Contains: Backtester, Spearman/MAE/boom-bust metrics, report formatting
+- Depends on: Data layer (GameContextBuilder, actuals), engine (Monte Carlo), scoring
+- Used by: CLI `backtest` command, A/B validation scripts
+- Purpose: Terminal display and file export
+- Location: `src/fantasy_sim/output/`
+- Contains: Rich terminal tables by position, CSV/JSON export
+- Depends on: Rich library
+- Used by: CLI
+## Data Flow
+### Primary Simulation Pipeline
+```
+|                                                       |
+|  1. MatchupEngine.compute()                          |
+|     away D -> home offense factors, home D -> away   |
+|     _apply_matchup() mutates dists + roster          |
+|                                                       |
+|  2. TierEngine.apply_tiers()                         |
+|     + TeamContextEngine.compute() (if enabled)       |
+|     Blends PFF grade tiers with PBP player data      |
+|     _normalize_roster_shares() after                 |
+|                                                       |
+|  3. CoverageEngine.compute()                         |
+|     Per-WR modifiers from CB matchup analysis        |
+|     _apply_coverage() mutates roster                 |
+|                                                       |
+|  4. DstBaselineEngine.compute()                      |
+|     Fumble rate factor + defensive TD rates           |
+|     Sets DefensiveTdRates on TeamDistributions       |
+|                                                       |
+|  5. KickerEngine.compute()                           |
+|     Per-kicker FG accuracy replaces team KickingModel|
+|                                                       |
+|  6. WeatherEngine.get_context()                      |
+|     _apply_weather() mutates dists + roster          |
+|                                                       |
+```
+### nflverse Data Flow (Detail)
+| Function | nflreadpy Call | Data | Used By |
+|---|---|---|---|
+| `DataLoader.load_pbp()` | `nflreadpy.load_pbp(seasons)` | Play-by-play data (every NFL play) | Preprocessor, player_builder |
+| `DataLoader.load_rosters()` | `nflreadpy.load_rosters_weekly(seasons)` | Weekly roster snapshots | Player model assembly, PFF crosswalk |
+| `DataLoader.load_player_stats()` | `nflreadpy.load_player_stats(seasons)` | Per-player weekly stat summaries | Backtester (actuals comparison) |
+| `DataLoader.load_schedules()` | `nflreadpy.load_schedules(seasons)` | Game schedule with dates/times | Backtester, WeatherEngine |
+| `DataLoader.load_snap_counts()` | `nflreadpy.load_snap_counts(seasons)` | Per-player snap count data | Available but not heavily used |
+| `DataLoader.load_depth_charts()` | `nflreadpy.load_depth_charts(seasons)` | Team depth charts | Available but not heavily used |
+| `DataLoader.load_draft_picks()` | `nflreadpy.load_draft_picks()` | Historical draft pick data | Rookie model tier assignment |
+- `play_type` (filter: "pass", "run", "field_goal", "extra_point", "kickoff")
+- `posteam` (possessing team)
+- `down`, `ydstogo`, `score_differential`, `qtr`, `yardline_100` (game state bucketing)
+- `yards_gained` (empirical distributions)
+- `interception`, `fumble_lost`, `sack` (turnover rates)
+- `kick_distance`, `field_goal_result` (kicking model)
+- `extra_point_result` (XP rate)
+- `touchback`, `return_yards` (drive start model)
+- `penalty`, `penalty_type`, `penalty_yards` (penalty rates)
+- `season` (for season weighting)
+- `receiver_player_id`, `rusher_player_id`, `passer_player_id` (player attribution)
+- `complete_pass` (catch rate, yards on completions)
+- `yards_gained` (per-player yards distributions)
+- `air_yards` (air yards share)
+- `yardline_100` (red zone detection, <= 20)
+- `game_id` (games played counting)
+- `qb_scramble` (scramble vs designed run separation)
+- `fumble_lost` (QB pre-throw fumble rate)
+- `player_id` (gsis_id, renamed), `player_name` (full_name, renamed)
+- `team`, `position`, `status` (filter: "ACT")
+- `season`, `week` (latest snapshot, per-week filtering)
+- `pff_id` (PFF crosswalk bridge)
+- `college_name`, `rookie_year` (NCAA rookie crosswalk)
+### nflverse Caching Architecture
+```
+```
+### PFF Intelligence Pipeline
+```
+```
+### Weather Pipeline
+```
+```
+## Core Subsystems
+### Data Layer (`src/fantasy_sim/data/`)
+- Wraps nflreadpy with parquet caching at `~/.fantasy-sim/cache/`
+- Cache key = `{dataset}_{sorted_seasons}.parquet`
+- Renames nflverse columns: `gsis_id` -> `player_id`, `full_name` -> `player_name`
+- Orchestrates `DataLoader` + `Preprocessor`
+- Single `build()` method returns dict with all distribution types
+- Accepts optional `season_weights` for recency bias
+- `compute_play_calling()` -> per-team P(run|state), P(pass|state) via `GameStateBucket`
+- `compute_play_outcomes()` -> empirical yards distributions keyed by (play_type, bucket)
+- `compute_turnover_rates()` -> per-team INT/fumble/sack rates
+- `compute_kicking_model()` -> FG make rate by distance bucket, XP rate
+- `compute_drive_start_model()` -> touchback rate + return yardline distribution
+- `compute_penalty_rates()` -> per-team penalty frequency and type distribution
+- Uses `MIN_BUCKET_PLAYS = 10` threshold: buckets with fewer plays fall back to team/league defaults
+- Season weighting via row replication (max_weight -> 10 copies, others proportional)
+- `_aggregate_pbp_stats()` -> extracts per-player receiving/rushing/QB stats from PBP (cached)
+- `_assemble_models()` -> merges PBP stats with current roster to produce `PlayerModel` objects
+- `build_team_roster()` -> deepcopies players from cache, normalizes shares to sum to 1.0
+- `blend_with_archetype()` -> blends sparse player data with positional archetypes
+- Separates stats (historical PBP across training seasons) from team assignment (current roster)
+- Central orchestrator for building simulation inputs
+- `build_game()` returns `(home_dists, away_dists, home_roster, away_roster)`
+- Initializes all PFF engines and weather engine in `__init__()` via lazy imports
+- Applies PFF + weather adjustments in fixed order (matchup -> tier -> coverage -> DST -> kicker -> weather)
+- Contains `pre_resolve_overrides()` and `apply_overrides()` for user override application
+### PFF Intelligence (`src/fantasy_sim/data/pff/`)
+- Assigns players to 5 PFF grade-based tiers (percentile cutoffs: 0.85, 0.65, 0.40, 0.20)
+- Builds per-(position, tier) pool entries with full stat distributions from historical player-seasons
+- Blends tier distributions with PBP data weighted by reliability score (floor=0.20, cap=0.80)
+- Reliability considers: games played (max 32), team change penalty (0.5x), grade variance
+- WR archetypes: 3 depth-of-target sub-pools (slot/possession/deep) within each tier
+- NCAA rookie assignment: maps college PFF grades to NFL tiers via `pff_id` bridge, draft capital modulates blend confidence
+- Converts PFF defensive/OL stats into per-game z-score factors centered on 1.0
+- 7 factors: catch_rate, pass_yards, sack_rate, int_rate, rush_yards, ol_pass_block, ol_run_block
+- Same-season rolling window: `week < max_week` filter prevents future data leakage
+- Early-season blend: linear ramp with previous season when team has < 4 games
+- Medium sensitivities (0.06-0.075), clamped to [0.90, 1.10]
+- Season-level team environment factors (not per-game like matchup)
+- Three factors: pass_rate (PBP), ol_run_block (PFF), qb_quality (PFF)
+- Snap-weighted aggregation for OL and QB data
+- Applied to TierDistributions BEFORE player blending
+- Per-WR modifiers from CB matchup analysis
+- Alignment-based mapping: RWR->LCB, LWR->RCB, slot->SCB
+- Outcome-based stats (catch rate allowed, YPR) with grade-based stabilizer for low-sample CBs
+- Z-score relative to all CBs at the same alignment across the league
+- Tight clamp [0.97, 1.03] -- small but meaningful per-WR adjustments
+- WR-only (TEs excluded)
+- Per-kicker FG accuracy from PFF `field_goal_summary`
+- Bayesian shrinkage toward league average (prior_strength=20 pseudo-attempts)
+- Replaces team-level `KickingModel` with per-kicker rates by distance bucket
+- Fumble rate factor via z-score of team forced-fumble rate per defensive snap
+- Team-specific defensive TD rates (pick-six rate, fumble return TD rate) via Bayesian shrinkage
+- Complements MatchupEngine (handles DST scoring components specifically)
+- Reads `{facet}_{season}.parquet` from `~/.fantasy-sim/pff/processed/nfl/`
+- Normalizes 4 non-standard PFF team abbreviations (ARZ/BLT/CLV/HST)
+- Maps PFF positions to fantasy positions (LWR/RWR/SLWR->WR, HB->RB, etc.)
+- Two-layer crosswalk: pff_id direct match, then name+team fallback
+- NCAA loader (`load_ncaa_facet()`) reads from `~/.fantasy-sim/pff/processed/ncaa/`
+### Weather Engine (`src/fantasy_sim/data/weather/`)
+- Orchestrates schedule lookup -> stadium resolution -> API fetch -> factor computation
+- Dome/retractable stadiums short-circuit to neutral `WeatherContext`
+- Threshold + linear scaling (not z-scores -- weather has absolute physical thresholds)
+- Wind, temperature, precipitation combine multiplicatively, clamped to [0.80, 1.20]
+- Fetches from Open-Meteo (free, no API key needed)
+- Historical archive API for past dates, forecast API for future dates
+- 3-hour game window: averages temperature/wind, sums precipitation
+- JSON cache at `~/.fantasy-sim/weather/`, keyed by `{lat}_{lon}_{date}.json`
+- Forecast TTL: 6 hours; stale forecast detection (refetches when game is now in the past)
+- Maps all 32 NFL teams to lat/lon coordinates and venue type
+- Venue types: outdoor, dome (DET, LA, LAC, LV, MIN, NO), retractable (ARI, ATL, DAL, HOU, IND)
+### Simulation Engine (`src/fantasy_sim/engine/`)
+- Main game loop: max 400 plays, 4 quarters + OT
+- Each play: 4th-down decision -> play selection -> play resolution -> stat updates -> clock
+- Tracks both team-level (`TeamBoxScore`) and player-level (`PlayerBoxScore`) stats
+- Defensive TDs: 20% of INTs returned for TD, 10% of fumble recoveries (configurable via `DefensiveTdRates`)
+- OT rules: 10-minute period, walk-off scoring
+- `select_play_type()` looks up `GameStateBucket` in `PlayCallingDist`
+- `fourth_down_decision()` uses distance-based heuristics + FG probability
+- `_resolve_pass()`: scramble check -> sack check -> INT check -> QB fumble check -> receiver selection -> catch rate -> yards -> TD gate -> fumble
+- `_resolve_run()`: rusher selection -> player yards dist -> TD gate -> fumble
+- Red zone TD gate: per-play probability check calibrated to ~55% drive-level TD rate
+- `CATCH_YARDS_BOOST = 1` compensates for field-position clamping bias
+- Home-field advantage: 50% chance of +1 yard per play
+- Pace factor scales clock runoff (more/fewer plays per game)
+- Filters by `weeks_missed` for per-week availability
+- `select_passer()` -> highest snap_share QB
+- `select_receiver()` -> weighted by target_share (red_zone_target_share in RZ)
+- `select_rusher()` -> weighted by carry_share, MIN_QB_CARRY_SHARE=0.10 excludes pocket passers
+- Sequential loop of `simulate_game()` calls (no parallelism)
+- Single `numpy.random.Generator` with configurable seed for reproducibility
+- Returns `SimulationSummary` with all `GameResult` objects
+### Scoring (`src/fantasy_sim/scoring/`)
+- `score_player()`: config-driven, position-specific reception keys (`reception_wr`, `reception_te`), yardage bonuses
+- `score_dst()`: 7 points-allowed brackets, sacks, INTs, fumble recoveries, defensive TDs, safeties
+- `score_kicker()`: FG by distance bucket (0-39, 40-49, 50+), XP, FG misses
+- `build_player_projections()` -> mean stats + fpts across all sims, ranked
+- `build_detailed_projections()` -> adds floor (p10), ceiling (p90), stddev
+- `build_dst_projections()` / `build_kicker_projections()` for DST and kickers
+- Players treated as 0 in sims they don't appear in (no inflation from sparse appearances)
+### Validation (`src/fantasy_sim/validation/`)
+- Hold-out validation: trains on N prior seasons, tests on target season
+- Iterates every game in every week, builds context + runs sims per game
+- Deterministic seeds via `zlib.crc32(game_id)`
+- Targets: rank_corr > 0.80, weekly_mae < 6.0, season_mae < 25, calibration < 0.10
+- Spearman rank correlation, MAE, boom/bust calibration
+### Overrides (`src/fantasy_sim/overrides/`)
+- Player overrides: target_share, carry_share, catch_rate, fumble_rate, games_missed, etc.
+- Share overrides trigger proportional redistribution to teammates
+- Team overrides: pass_rate, int_rate, fumble_rate, sack_rate, pace_plays_per_game
+- Resolution chain: exact ID -> exact name -> underscore conversion -> fuzzy match (thefuzz, score >= 70)
+- Ambiguity detection: raises `AmbiguousMatchError` when 2+ players match within 5 points
+### Config (`src/fantasy_sim/config/`, `config/`)
+- YAML loading with `_inherit` chain resolution for scoring presets
+- Custom scoring via `inherit` + `overrides` format
+- `load_defaults()` reads `config/defaults.yaml`
+- Scoring presets: PPR (base), half_ppr (_inherit: ppr), standard (_inherit: ppr)
+- Position minimums (min_snaps, min_carries, min_targets)
+- PFF config (all 6 engines + tier parameters + archetypes + NCAA rookie config)
+- Weather config (wind/temp/precipitation sensitivities and thresholds)
+- Simulation defaults (num_sims, training_years, recency_weights)
+### CLI (`src/fantasy_sim/cli.py`)
+- Click-based CLI with commands: `demo`, `week`, `season`, `game`, `player`, `backtest`
+- Entry point: `fantasy-sim` (registered in pyproject.toml)
+- Common options: `--sims`, `--scoring`, `--scoring-config`, `--detail`, `--format`, `--output`, `--override`, `--config`, `--pff/--no-pff`, `--weather/--no-weather`
+- Rich progress bars for simulation loops
+- Config resolution chain: defaults.yaml -> season.yaml -> --scoring-config -> CLI flags
+## Key Design Decisions
+- Matchup adjustments are applied to base distributions first
+- Tier engine blends PFF talent data with already-matchup-adjusted PBP baselines
+- Coverage is last PFF layer (fine-grained per-WR tweaks on top of broader adjustments)
+- Weather is the absolute last game-condition modifier
+- User overrides always take final precedence
+## Concurrency & Performance
+- **nflverse cache** (`~/.fantasy-sim/cache/`): Parquet files, 13-50 MB each for PBP. No TTL. Shared across all CLI invocations.
+- **PFF cache** (`~/.fantasy-sim/pff/processed/`): Parquet files processed from raw JSON. ~168 NFL files + ~84 NCAA files.
+- **Weather cache** (`~/.fantasy-sim/weather/`): JSON files, one per (location, date). Historical immutable, forecast TTL 6 hours.
+- **In-memory caches**: GameContextBuilder caches pipeline output, PBP stats, and player models. PffLoader caches loaded DataFrames. MatchupEngine, CoverageEngine, TeamContextEngine cache loaded facets by season key.
+- First run for a season: ~30-60 seconds (nflverse network fetch + parquet write)
+- Subsequent runs: ~2-5 seconds for pipeline + player model building (parquet reads)
+- Simulation speed: ~100-200 games/second (depends on play count per game)
+- Memory: ~200-400 MB for loaded PBP data + distributions
+<!-- GSD:architecture-end -->
+
+<!-- GSD:skills-start source:skills/ -->
+## Project Skills
+
+No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
+<!-- GSD:skills-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->
