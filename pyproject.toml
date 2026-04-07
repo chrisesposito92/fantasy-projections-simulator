@@ -39,3 +39,9 @@ markers = [
     "integration: tests that call nflreadpy (slow, requires network)",
     "statistical: tests that run bulk simulations (slow)",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
+]
