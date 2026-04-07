@@ -64,13 +64,13 @@ Pipeline: Data → Models → Engine → Scoring → Output
 
 ### Adjustment Pipeline Order (in `GameContextBuilder.build_game()`)
 
-base PBP model → matchup → team context + tier blend → normalize → coverage → DST baseline → kicker → weather → user overrides → normalize
+base PBP model → vegas (pace + pass rate) → matchup → team context + tier blend → normalize → coverage → DST baseline → kicker → weather → props (player-level) → user overrides → normalize
 
 ### Three-Layer Cache
 
 1. Pipeline output (keyed by training_seasons)
 2. PBP stats (keyed by training_seasons)
-3. Player models (keyed by training_seasons + target_season + week)
+3. Player models (keyed by training_seasons + target_season + week + props_enabled)
 
 Player models separate stats (historical PBP, cached/expensive) from team assignment (current roster, cheap/per-week).
 
@@ -117,11 +117,26 @@ Six active layers in `data/pff/`, configured in `defaults.yaml` under `pff:`. CL
 - Fixtures in `tests/conftest.py` provide sample PBP data (20 plays, KC/BUF)
 - `unittest.mock.patch` to mock nflreadpy (no network in unit tests)
 - Markers: `@pytest.mark.integration`, `@pytest.mark.statistical`
-- **1122+ tests** across all phases
+- **1248 tests** across all phases
+
+## Vegas Engine
+
+`data/vegas/` adds market-derived game environment signals. Three sub-engines, configured in `defaults.yaml` under `vegas:`. CLI `--vegas/--no-vegas` and `--props/--no-props` flags.
+
+| Engine | What it does | Key config |
+|--------|-------------|------------|
+| **VegasEngine (VEG-01)** | ITT-derived `pace_factor` from spread_line/total_line. Higher ITT → more plays via faster clock pace. Z-score with `compute_factor()` from matchup.py. | `vegas.itt` |
+| **VegasEngine (VEG-02)** | Spread-derived `pass_rate_factor` modifying `PlayCallingDist.default` only. Favorites run more, underdogs pass more. Inverted z-score. | `vegas.spread` |
+| **PlayerPropsEngine (VEG-03)** | Player-level Bayesian blend from The Odds API props (receiving yards/receptions → target_share, rushing yards → carry_share, passing yards → proportional dist shift). Levenshtein name crosswalk (≥0.85). | `vegas.props` |
+
+- Data: nflverse `load_schedules()` for spread/total (VEG-01/02), The Odds API for player props (VEG-03, requires API key)
+- League stats: `ITT_LEAGUE_AVG=21.97`, `ITT_LEAGUE_STD=3.67`, `SPREAD_STD=5.72` (854 games 2022-2024)
+- Props cache: parquet at `~/.fantasy-sim/props/` keyed by (season, week)
+- A/B modes: `--mode vegas`, `--mode vegas+spread`, `--mode vegas+props`
 
 ## Current State
 
-All development phases complete through Weather Engine. Key completed features:
+All development phases complete through Vegas Engine. Key completed features:
 - Core simulation engine with play-by-play resolution and Monte Carlo runner
 - Player models from PBP data with roster separation (stats vs team assignment)
 - Red zone accuracy (TD gates, per-player RZ catch rates, QB fumble check)
@@ -132,6 +147,8 @@ All development phases complete through Weather Engine. Key completed features:
 - NCAA rookie tier assignment via pff_id bridge
 - WR depth-of-target archetypes (slot/possession/deep)
 - Weather engine (wind/temp/precipitation from Open-Meteo)
+- Vegas engine: ITT pace scaling (VEG-01), spread-based pass/run conditioning (VEG-02)
+- Player props engine: Bayesian blending from The Odds API with name crosswalk (VEG-03)
 - Weekly + season A/B validation harnesses with persistent ledgers
 
 ## Style
@@ -153,8 +170,9 @@ All development phases complete through Weather Engine. Key completed features:
 | nflverse (via nflreadpy) | Public, no auth | PBP, rosters, schedules, player stats, draft picks |
 | PFF (via httpx) | Premium subscription, cookie auth | 21 game-level facets (NFL + NCAA) |
 | Open-Meteo (via httpx) | Free, no API key | Hourly weather (historical + forecast) |
+| The Odds API (via httpx) | Paid subscription, API key | NFL player props (receiving, rushing, passing, TD) |
 
-Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-sim/pff/processed/`, weather JSON at `~/.fantasy-sim/weather/`. PFF cookie auth at `~/.fantasy-sim/pff/.env` (never read this file).
+Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-sim/pff/processed/`, weather JSON at `~/.fantasy-sim/weather/`, props parquet at `~/.fantasy-sim/props/`. PFF cookie auth at `~/.fantasy-sim/pff/.env` (never read this file). Props API key at `~/.fantasy-sim/props/.env`.
 
 ## Project
 
