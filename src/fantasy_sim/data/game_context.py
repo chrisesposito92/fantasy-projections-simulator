@@ -288,6 +288,8 @@ class GameContextBuilder:
         # --- Receivers: catch_rate and red_zone_catch_rate ---
         if ctx.catch_rate_factor != 1.0:
             for player in roster.players:
+                if player.position == "WR":
+                    continue  # CoverageEngine owns WR catch_rate (D-01)
                 if player.usage.target_share > 0 and player.outcomes.catch_rate > 0:
                     player.outcomes.catch_rate = max(
                         0.0, min(1.0, player.outcomes.catch_rate * ctx.catch_rate_factor)

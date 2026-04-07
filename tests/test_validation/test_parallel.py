@@ -277,6 +277,7 @@ class TestKickingModelIsolation:
         builder._pipeline_cache = pipeline_output
         builder._cached_training_seasons = (2022, 2023, 2024)
         builder._pbp_stats_cache = {}
+        builder._pbp_stats_cache_key = ((2022, 2023, 2024), ())
         builder._player_models_cache = {}
         builder._player_cache_key = ((2022, 2023, 2024), None, None)
         builder.cache_dir = "/tmp"

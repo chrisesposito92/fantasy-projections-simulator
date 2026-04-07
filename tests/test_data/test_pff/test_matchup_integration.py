@@ -110,16 +110,21 @@ def _make_roster(
 
 class TestApplyMatchup:
     def test_catch_rate_scaled_by_factor(self):
-        """catch_rate_factor=0.90 reduces every receiver's catch_rate by 10%."""
+        """catch_rate_factor=0.90 reduces non-WR receiver catch_rate by 10%.
+
+        After FIX-04, WRs are excluded from matchup catch_rate (CoverageEngine
+        owns WR catch_rate per D-01).  RB still gets scaled.
+        """
         dists = _make_dists()
         roster = _make_roster(catch_rate=0.65, rz_catch_rate=0.60)
         ctx = MatchupContext(catch_rate_factor=0.90)
 
         GameContextBuilder._apply_matchup(dists, roster, ctx)
 
-        wr = next(p for p in roster.players if p.player_id == "TST_WR")
-        assert abs(wr.outcomes.catch_rate - 0.65 * 0.90) < 1e-9
-        assert abs(wr.outcomes.red_zone_catch_rate - 0.60 * 0.90) < 1e-9
+        # RB catch_rate IS scaled by matchup
+        rb = next(p for p in roster.players if p.player_id == "TST_RB")
+        assert abs(rb.outcomes.catch_rate - 0.70 * 0.90) < 1e-9
+        assert abs(rb.outcomes.red_zone_catch_rate - 0.65 * 0.90) < 1e-9
 
     def test_catch_rate_clamped_to_one(self):
         """catch_rate_factor > 1.0 never pushes catch_rate above 1.0."""
@@ -240,6 +245,74 @@ class TestApplyMatchup:
         qb = next(p for p in roster.players if p.player_id == "TST_QB")
         # QB has target_share=0, so catch_rate (0.0) should remain 0.0
         assert qb.outcomes.catch_rate == 0.0
+
+    def test_wr_catch_rate_not_scaled_by_matchup(self):
+        """WR catch_rate and rz_catch_rate are NOT modified by matchup (D-01).
+
+        CoverageEngine is the sole owner of WR catch_rate adjustments.
+        """
+        dists = _make_dists()
+        roster = _make_roster(catch_rate=0.65, rz_catch_rate=0.60)
+        ctx = MatchupContext(catch_rate_factor=0.90)
+
+        GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        wr = next(p for p in roster.players if p.player_id == "TST_WR")
+        assert wr.outcomes.catch_rate == 0.65
+        assert wr.outcomes.red_zone_catch_rate == 0.60
+
+    def test_te_catch_rate_still_scaled_by_matchup(self):
+        """TE catch_rate IS still modified by matchup catch_rate_factor."""
+        dists = _make_dists()
+        te = PlayerModel(
+            player_id="TST_TE",
+            name="TE",
+            position="TE",
+            team="TST",
+            usage=PlayerUsage(target_share=0.20),
+            outcomes=PlayerOutcomes(
+                catch_rate=0.70,
+                red_zone_catch_rate=0.65,
+                receiving_yards_dist=np.array([4.0, 6.0, 8.0]),
+            ),
+        )
+        roster = _make_roster(catch_rate=0.65, rz_catch_rate=0.60)
+        roster.players.append(te)
+        ctx = MatchupContext(catch_rate_factor=0.90)
+
+        GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        te_result = next(p for p in roster.players if p.player_id == "TST_TE")
+        assert abs(te_result.outcomes.catch_rate - 0.70 * 0.90) < 1e-9
+        assert abs(te_result.outcomes.red_zone_catch_rate - 0.65 * 0.90) < 1e-9
+
+    def test_rb_catch_rate_still_scaled_by_matchup(self):
+        """RB catch_rate IS still modified by matchup catch_rate_factor."""
+        dists = _make_dists()
+        roster = _make_roster(catch_rate=0.65, rz_catch_rate=0.60)
+        ctx = MatchupContext(catch_rate_factor=0.85)
+
+        GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        rb = next(p for p in roster.players if p.player_id == "TST_RB")
+        assert abs(rb.outcomes.catch_rate - 0.70 * 0.85) < 1e-9
+        assert abs(rb.outcomes.red_zone_catch_rate - 0.65 * 0.85) < 1e-9
+
+    def test_wr_pass_yards_still_shifted_by_matchup(self):
+        """WR receiving_yards_dist IS still shifted by pass_yards_factor (D-02).
+
+        Only catch_rate is excluded for WR; pass_yards_factor still applies.
+        """
+        base = np.array([5.0, 10.0, 15.0])
+        dists = _make_dists()
+        roster = _make_roster(recv_yards=base)
+        ctx = MatchupContext(pass_yards_factor=1.10)
+
+        GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        wr = next(p for p in roster.players if p.player_id == "TST_WR")
+        shift = (1.10 - 1.0) * 10.0  # +1.0
+        np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, base + shift)
 
     def test_builder_accepts_pff_config(self):
         """GameContextBuilder(pff_config=PffConfig(...)) constructs without error."""
