@@ -42,22 +42,18 @@ class TestBacktester:
 
 
 class TestBacktesterRosterHandling:
-    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
     @patch("fantasy_sim.validation.backtester.DataLoader")
-    def test_build_game_receives_target_season_and_week(self, mock_loader_cls, mock_builder_cls):
+    def test_build_game_receives_target_season_and_week(self, mock_loader_cls, mock_build_parallel):
         mock_loader = MagicMock()
         mock_loader_cls.return_value = mock_loader
         mock_loader.cache_dir = "/tmp/test"
-
         mock_loader.load_schedules.return_value = pl.DataFrame([
             {"season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
              "home_team": "KC", "away_team": "BUF"},
         ])
         mock_loader.load_player_stats.return_value = pl.DataFrame({"season": pl.Series([], dtype=pl.Int32)})
-
-        mock_builder = MagicMock()
-        mock_builder_cls.return_value = mock_builder
-        mock_builder.build_game.side_effect = Exception("stop")
+        mock_build_parallel.return_value = []
 
         from fantasy_sim.config.loader import load_defaults, resolve_scoring
         config = load_defaults()
@@ -65,42 +61,90 @@ class TestBacktesterRosterHandling:
 
         bt = Backtester(test_season=2024, n_sims=10)
         bt.loader = mock_loader
-        bt.builder = mock_builder
-
         bt.run(scoring_config)
 
-        call_kwargs = mock_builder.build_game.call_args[1]
-        assert call_kwargs["training_seasons"] == [2021, 2022, 2023]
-        assert call_kwargs["target_season"] == 2024
-        assert call_kwargs["week"] == 1
+        game_args = mock_build_parallel.call_args[0][0]
+        home, away, ts, target, wk, gid, seed = game_args[0]
+        assert ts == [2021, 2022, 2023]
+        assert target == 2024
+        assert wk == 1
 
 
 class TestBacktesterPffConfig:
-    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
     @patch("fantasy_sim.validation.backtester.DataLoader")
-    def test_pff_config_passed_to_builder(self, mock_loader_cls, mock_builder_cls):
+    def test_pff_config_stored(self, mock_loader_cls):
         from fantasy_sim.data.pff.models import PffConfig, TalentConfig
         pff_cfg = PffConfig(enabled=True, talent=TalentConfig(enabled=True))
         mock_loader = MagicMock()
         mock_loader_cls.return_value = mock_loader
         mock_loader.cache_dir = "/tmp/test"
+        bt = Backtester(test_season=2024, n_sims=10, pff_config=pff_cfg)
+        assert bt._pff_config is pff_cfg
 
-        Backtester(test_season=2024, n_sims=10, pff_config=pff_cfg)
-
-        mock_builder_cls.assert_called_once_with(
-            cache_dir="/tmp/test",
-            pff_config=pff_cfg,
-            weather_config=None,
-        )
-
-    @patch("fantasy_sim.validation.backtester.GameContextBuilder")
     @patch("fantasy_sim.validation.backtester.DataLoader")
-    def test_no_pff_config_passes_none(self, mock_loader_cls, mock_builder_cls):
+    def test_no_pff_config_is_none(self, mock_loader_cls):
         mock_loader = MagicMock()
         mock_loader_cls.return_value = mock_loader
         mock_loader.cache_dir = "/tmp/test"
+        bt = Backtester(test_season=2024, n_sims=10)
+        assert bt._pff_config is None
 
-        Backtester(test_season=2024, n_sims=10)
 
-        call_kwargs = mock_builder_cls.call_args[1]
-        assert call_kwargs.get("pff_config") is None
+class TestBacktesterParallelBuild:
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_phase1_uses_build_games_parallel(self, mock_loader_cls, mock_build_parallel):
+        from pathlib import Path
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = Path("/tmp/test")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {"season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame({"season": pl.Series([], dtype=pl.Int32)})
+        mock_build_parallel.return_value = []
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10, max_workers=4)
+        bt.loader = mock_loader
+        bt.run(scoring_config)
+
+        mock_build_parallel.assert_called_once()
+        call_kwargs = mock_build_parallel.call_args[1]
+        assert call_kwargs["max_workers"] == 4
+        assert call_kwargs["dual_arm"] is False
+
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_phase1_passes_pff_and_weather_config(self, mock_loader_cls, mock_build_parallel):
+        from pathlib import Path
+        from fantasy_sim.data.pff.models import PffConfig, TalentConfig
+        from fantasy_sim.data.weather.models import WeatherConfig
+
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = Path("/tmp/test")
+        mock_loader.load_schedules.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32), "week": pl.Series([], dtype=pl.Int32),
+             "game_id": pl.Series([], dtype=pl.Utf8), "home_team": pl.Series([], dtype=pl.Utf8),
+             "away_team": pl.Series([], dtype=pl.Utf8)}
+        )
+        mock_loader.load_player_stats.return_value = pl.DataFrame({"season": pl.Series([], dtype=pl.Int32)})
+        mock_build_parallel.return_value = []
+
+        pff_cfg = PffConfig(enabled=True, talent=TalentConfig(enabled=True))
+        weather_cfg = WeatherConfig(enabled=True)
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10, pff_config=pff_cfg, weather_config=weather_cfg)
+        bt.loader = mock_loader
+        bt.run(scoring_config)
+
+        call_kwargs = mock_build_parallel.call_args[1]
+        assert call_kwargs["pff_config"] is pff_cfg
+        assert call_kwargs["weather_config"] is weather_cfg
