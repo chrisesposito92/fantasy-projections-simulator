@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from fantasy_sim.data.pff.models import PffConfig
+    from fantasy_sim.data.weather.models import WeatherConfig
     from fantasy_sim.engine.types import TeamDistributions
     from fantasy_sim.models.player import TeamRoster
 
@@ -166,8 +168,8 @@ def simulate_games_parallel(
 
 def _init_build_worker_single(
     cache_dir: Path,
-    pff_config: dict | None,
-    weather_config: dict | None,
+    pff_config: PffConfig | None,
+    weather_config: WeatherConfig | None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
     global _worker_builders
@@ -231,20 +233,31 @@ def _build_game_worker_single(args: tuple) -> dict:
 def _build_games_sequential(
     game_args: list[tuple],
     cache_dir: Path,
-    pff_config: dict | None,
-    weather_config: dict | None,
+    pff_config: PffConfig | None,
+    weather_config: WeatherConfig | None,
     dual_arm: bool,
-    on_complete: "Callable[[int, int], None] | None",
+    on_complete: Callable[[int, int], None] | None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
     global _worker_builders
 
-    builder = GameContextBuilder(
-        cache_dir=cache_dir,
-        pff_config=pff_config,
-        weather_config=weather_config,
-    )
-    _worker_builders = {"single": builder}
+    if dual_arm:
+        _worker_builders = {
+            "off": GameContextBuilder(cache_dir=cache_dir),
+            "on": GameContextBuilder(
+                cache_dir=cache_dir,
+                pff_config=pff_config,
+                weather_config=weather_config,
+            ),
+        }
+    else:
+        _worker_builders = {
+            "single": GameContextBuilder(
+                cache_dir=cache_dir,
+                pff_config=pff_config,
+                weather_config=weather_config,
+            ),
+        }
 
     total = len(game_args)
     results: list[dict] = []
@@ -262,8 +275,8 @@ def _build_games_sequential(
 def build_games_parallel(
     game_args: list[tuple],
     cache_dir: Path,
-    pff_config: dict | None = None,
-    weather_config: dict | None = None,
+    pff_config=None,
+    weather_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
     on_complete: "Callable[[int, int], None] | None" = None,
@@ -274,10 +287,10 @@ def build_games_parallel(
         game_args: List of tuples (home, away, training_seasons, target_season,
                    week, game_id, seed).
         cache_dir: Directory for the GameContextBuilder cache.
-        pff_config: PFF configuration dict (None to use defaults).
-        weather_config: Weather configuration dict (None to use defaults).
+        pff_config: PffConfig or None (passed to GameContextBuilder).
+        weather_config: WeatherConfig or None (passed to GameContextBuilder).
         max_workers: Worker processes. None/0=auto, 1=sequential.
-        dual_arm: If True, use dual-arm workers (A/B). Requires Task 3.
+        dual_arm: If True, use dual-arm workers (off+on).
         on_complete: Optional callback(completed_count, total_count).
 
     Returns:
@@ -298,8 +311,12 @@ def build_games_parallel(
     else:
         from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
 
-        init_fn = _init_build_worker_single
-        worker_fn = _build_game_worker_single if not dual_arm else _build_game_worker_dual  # noqa: F821
+        if dual_arm:
+            init_fn = _init_build_worker_dual  # noqa: F821 — defined in Task 3
+            worker_fn = _build_game_worker_dual  # noqa: F821
+        else:
+            init_fn = _init_build_worker_single
+            worker_fn = _build_game_worker_single
 
         with ProcessPoolExecutor(
             max_workers=max_workers,
