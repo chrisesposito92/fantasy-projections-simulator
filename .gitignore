@@ -17,3 +17,5 @@ htmlcov/
 # A/B test results (machine-specific)
 results/
 !results/.gitkeep
+
+.planning/
