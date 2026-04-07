@@ -9,7 +9,7 @@ from fantasy_sim.data.loader import DataLoader, DEFAULT_CACHE_DIR
 from fantasy_sim.data.pipeline import DataPipeline
 from fantasy_sim.data.player_builder import (
     build_team_roster,
-    _aggregate_pbp_stats, _assemble_models,
+    _aggregate_pbp_stats, _assemble_models, _build_season_weights,
 )
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
@@ -49,6 +49,7 @@ class GameContextBuilder:
         self._pipeline_cache: dict | None = None
         self._cached_training_seasons: tuple[int, ...] | None = None
         self._pbp_stats_cache: dict | None = None
+        self._pbp_stats_cache_key: tuple | None = None
         self._player_models_cache: dict | None = None
         self._player_cache_key: tuple | None = None
 
@@ -136,12 +137,13 @@ class GameContextBuilder:
         rosters: pl.DataFrame | None = None,
         target_season: int | None = None,
         week: int | None = None,
+        season_weights: dict[int, float] | None = None,
     ) -> tuple[dict, dict]:
         """Build and cache pipeline output + player models.
 
         Three cache layers:
         1. Pipeline output (team distributions) — cached on training_seasons.
-        2. PBP stats — cached on training_seasons.
+        2. PBP stats — cached on (training_seasons, season_weights).
         3. Player models — cached on (training_seasons, target_season, week).
         """
         # Load PBP if not provided (needed for both pipeline and player models)
@@ -155,13 +157,15 @@ class GameContextBuilder:
             or self._cached_training_seasons != ts_key
         ):
             pipeline = DataPipeline(cache_dir=self.cache_dir, seasons=training_seasons)
-            self._pipeline_cache = pipeline.build(pbp=pbp)
+            self._pipeline_cache = pipeline.build(pbp=pbp, season_weights=season_weights)
             self._cached_training_seasons = ts_key
             self._pbp_stats_cache = None
 
-        # --- Layer 2: PBP stats (cached on training_seasons) ---
-        if self._pbp_stats_cache is None:
-            self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons)
+        # --- Layer 2: PBP stats (cached on training_seasons + season_weights) ---
+        _pbp_key = (ts_key, tuple(sorted((season_weights or {}).items())))
+        if self._pbp_stats_cache is None or self._pbp_stats_cache_key != _pbp_key:
+            self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons, season_weights=season_weights)
+            self._pbp_stats_cache_key = _pbp_key
 
         # --- Layer 3: Player models (cached on training_seasons + target_season + week) ---
         cache_key = (ts_key, target_season, week)
@@ -195,11 +199,13 @@ class GameContextBuilder:
         rosters: pl.DataFrame | None = None,
         target_season: int | None = None,
         week: int | None = None,
+        season_weights: dict[int, float] | None = None,
     ) -> TeamDistributions:
         """Build TeamDistributions for a specific team."""
         training_seasons = training_seasons or [2022, 2023, 2024]
         pipeline_output, _ = self._ensure_pipeline(
-            training_seasons, pbp, rosters, target_season, week
+            training_seasons, pbp, rosters, target_season, week,
+            season_weights=season_weights,
         )
 
         play_calling = pipeline_output["play_calling"].get(team, _DEFAULT_PLAY_CALLING)
@@ -233,11 +239,13 @@ class GameContextBuilder:
         rosters: pl.DataFrame | None = None,
         target_season: int | None = None,
         week: int | None = None,
+        season_weights: dict[int, float] | None = None,
     ) -> TeamRoster:
         """Build TeamRoster for a specific team."""
         training_seasons = training_seasons or [2022, 2023, 2024]
         _, player_models = self._ensure_pipeline(
-            training_seasons, pbp, rosters, target_season, week
+            training_seasons, pbp, rosters, target_season, week,
+            season_weights=season_weights,
         )
         roster = build_team_roster(team, player_models)
         if not roster.players:
@@ -456,24 +464,29 @@ class GameContextBuilder:
         week: int | None = None,
         pbp: pl.DataFrame | None = None,
         rosters: pl.DataFrame | None = None,
+        season_weights: dict[int, float] | None = None,
     ) -> tuple[TeamDistributions, TeamDistributions, TeamRoster, TeamRoster]:
         """Build all context needed to simulate one game."""
         training_seasons = training_seasons or [2022, 2023, 2024]
         home_dists = self.build_team_distributions(
             home_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
+            season_weights=season_weights,
         )
         away_dists = self.build_team_distributions(
             away_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
+            season_weights=season_weights,
         )
         home_roster = self.build_team_roster(
             home_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
+            season_weights=season_weights,
         )
         away_roster = self.build_team_roster(
             away_team, training_seasons=training_seasons, pbp=pbp,
             rosters=rosters, target_season=target_season, week=week,
+            season_weights=season_weights,
         )
 
         # PFF matchup adjustments: away D → home offense, home D → away offense

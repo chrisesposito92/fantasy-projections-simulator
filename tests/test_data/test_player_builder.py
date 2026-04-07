@@ -1,8 +1,10 @@
 import numpy as np
+import polars as pl
 import pytest
 from fantasy_sim.data.player_builder import (
     build_player_models, build_team_roster, blend_with_archetype,
     _aggregate_pbp_stats, build_kicker_model, _assemble_models,
+    _build_season_weights,
 )
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
@@ -519,3 +521,86 @@ class TestQBPassFumbleRate:
         assert pm is not None
         # expanded_pbp has 40 KC passes, well under 100
         assert pm.outcomes.pass_fumble_rate == pytest.approx(0.0034, abs=0.0001)
+
+
+class TestSeasonWeighting:
+    """Tests for recency weighting in _aggregate_pbp_stats (FIX-02)."""
+
+    @staticmethod
+    def _make_multi_season_pbp() -> pl.DataFrame:
+        """Build PBP with a player who has different target counts per season."""
+        base = {
+            "game_id": "G1", "posteam": "T1", "defteam": "T2",
+            "down": 1, "ydstogo": 10, "yardline_100": 50,
+            "score_differential": 0, "qtr": 1,
+            "rush_attempt": 0, "interception": 0, "fumble_lost": 0,
+            "sack": 0, "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+            "passer_player_id": "QB1", "rusher_player_id": None,
+        }
+        plays = []
+        # 2022: 10 targets for WR1 (all completions, 8 yards each)
+        for i in range(10):
+            plays.append({
+                **base, "season": 2022, "week": 1, "game_id": "2022_01_T1",
+                "play_type": "pass", "yards_gained": 8, "complete_pass": 1,
+                "pass_attempt": 1, "receiver_player_id": "WR1",
+            })
+        # 2023: 5 targets for WR1 (all completions, 12 yards each)
+        for i in range(5):
+            plays.append({
+                **base, "season": 2023, "week": 1, "game_id": "2023_01_T1",
+                "play_type": "pass", "yards_gained": 12, "complete_pass": 1,
+                "pass_attempt": 1, "receiver_player_id": "WR1",
+            })
+        return pl.DataFrame(plays)
+
+    def test_aggregate_pbp_stats_with_season_weights(self):
+        """Season weights cause more recent season rows to be replicated more."""
+        pbp = self._make_multi_season_pbp()
+        # Without weights: 10 targets in 2022, 5 in 2023 = 15 total
+        result_unweighted = _aggregate_pbp_stats(pbp, [2022, 2023])
+        unweighted_targets = result_unweighted["receiving"]["WR1"]["targets"]
+
+        # With weights: 2022=0.3, 2023=0.5 -> 2023 gets 10 reps, 2022 gets 6 reps
+        # So: 10*6=60 targets from 2022, 5*10=50 targets from 2023 = 110 total
+        result_weighted = _aggregate_pbp_stats(
+            pbp, [2022, 2023], season_weights={2022: 0.3, 2023: 0.5}
+        )
+        weighted_targets = result_weighted["receiving"]["WR1"]["targets"]
+
+        assert unweighted_targets == 15
+        assert weighted_targets > unweighted_targets
+        # 2023 rows (5) replicated 10x = 50, 2022 rows (10) replicated 6x = 60
+        assert weighted_targets == 110
+
+    def test_aggregate_pbp_stats_no_weights_unchanged(self):
+        """Passing season_weights=None gives identical results to no weights."""
+        pbp = self._make_multi_season_pbp()
+        result_default = _aggregate_pbp_stats(pbp, [2022, 2023])
+        result_none = _aggregate_pbp_stats(pbp, [2022, 2023], season_weights=None)
+
+        assert result_default["receiving"]["WR1"]["targets"] == result_none["receiving"]["WR1"]["targets"]
+        assert result_default["receiving"]["WR1"]["catches"] == result_none["receiving"]["WR1"]["catches"]
+
+    def test_season_weight_alignment_tail(self):
+        """With 4-element recency_weights and 3 training_seasons, tail-align."""
+        result = _build_season_weights(
+            training_seasons=[2022, 2023, 2024],
+            recency_weights=[0.1, 0.2, 0.3, 0.4],
+        )
+        assert result == {2022: 0.2, 2023: 0.3, 2024: 0.4}
+
+    def test_season_weight_alignment_exact(self):
+        """With 4-element recency_weights and 4 training_seasons, exact match."""
+        result = _build_season_weights(
+            training_seasons=[2021, 2022, 2023, 2024],
+            recency_weights=[0.1, 0.2, 0.3, 0.4],
+        )
+        assert result == {2021: 0.1, 2022: 0.2, 2023: 0.3, 2024: 0.4}
+
+    def test_pbp_stats_cache_invalidation(self):
+        """Cache key must change when season_weights change."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        builder = GameContextBuilder()
+        # After init, _pbp_stats_cache_key should be None
+        assert builder._pbp_stats_cache_key is None

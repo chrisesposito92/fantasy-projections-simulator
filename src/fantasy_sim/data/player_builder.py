@@ -14,6 +14,19 @@ FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
 ACTIVE_STATUSES = {"ACT"}
 
 
+def _build_season_weights(
+    training_seasons: list[int],
+    recency_weights: list[float],
+) -> dict[int, float]:
+    """Align recency_weights list (oldest-to-newest) to training_seasons.
+
+    Tail-aligns: takes last N weights where N = len(training_seasons).
+    """
+    n = len(training_seasons)
+    aligned = recency_weights[-n:] if len(recency_weights) >= n else recency_weights
+    return dict(zip(sorted(training_seasons), aligned))
+
+
 def blend_with_archetype(
     model: PlayerModel,
     rookie_blend_games: int = 4,
@@ -110,11 +123,16 @@ def build_kicker_model(player_id: str, name: str, team: str) -> PlayerModel:
 def _aggregate_pbp_stats(
     pbp: pl.DataFrame,
     training_seasons: list[int],
+    season_weights: dict[int, float] | None = None,
 ) -> dict:
     """Aggregate raw PBP data into per-player and per-team stat buckets.
 
     This is a pure data-extraction step — no PlayerModel objects are created.
     The result can be cached and reused across multiple roster merges.
+
+    When *season_weights* is provided, rows are replicated proportional to
+    weight (same pattern as ``Preprocessor._apply_season_weights``).  The max
+    weight gets 10 replications; others are proportional (minimum 1).
 
     Returns a dict with keys:
         - receiving: dict[player_id -> {targets, catches, yards list, rz_targets, air_yards, team, game_ids set}]
@@ -131,6 +149,21 @@ def _aggregate_pbp_stats(
         pl.col("play_type").is_in(["pass", "run"]) &
         pl.col("season").is_in(training_seasons)
     )
+
+    # Apply recency weighting via row replication (same pattern as Preprocessor)
+    if season_weights:
+        max_w = max(season_weights.values())
+        if max_w > 0:
+            frames: list[pl.DataFrame] = []
+            for season in plays["season"].unique().to_list():
+                sp = plays.filter(pl.col("season") == season)
+                if sp.is_empty():
+                    continue
+                raw_w = season_weights.get(int(season), 0.0)
+                reps = max(1, round((raw_w / max_w) * 10))
+                frames.extend([sp] * reps)
+            if frames:
+                plays = pl.concat(frames)
 
     # --- Team-level totals ---
     team_pass_attempts: dict[str, int] = {}
@@ -461,6 +494,7 @@ def build_player_models(
     current_rosters: pl.DataFrame,
     training_seasons: list[int],
     rookie_blend_games: int = 0,
+    season_weights: dict[int, float] | None = None,
 ) -> dict[str, PlayerModel]:
     """Build PlayerModels from PBP stats and current roster.
 
@@ -468,7 +502,7 @@ def build_player_models(
     comes from current_rosters. Players on the roster without PBP data
     get archetype (skill positions) or placeholder (kickers) models.
     """
-    aggregated = _aggregate_pbp_stats(pbp, training_seasons)
+    aggregated = _aggregate_pbp_stats(pbp, training_seasons, season_weights=season_weights)
     return _assemble_models(aggregated, current_rosters, rookie_blend_games)
 
 
