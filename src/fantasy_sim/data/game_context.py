@@ -189,7 +189,7 @@ class GameContextBuilder:
             self._pbp_stats_cache_key = _pbp_key
 
         # --- Layer 3: Player models (cached on training_seasons + target_season + week + props) ---
-        props_enabled = self._props_engine is not None
+        props_enabled = getattr(self, "_props_engine", None) is not None
         cache_key = (ts_key, target_season, week, props_enabled)
         if self._player_models_cache is None or self._player_cache_key != cache_key:
             # Determine current rosters

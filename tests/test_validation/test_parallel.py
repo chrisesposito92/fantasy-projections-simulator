@@ -262,6 +262,10 @@ class TestKickingModelIsolation:
         builder._pff_crosswalk = None
         builder._pff_loader = None
         builder._weather_config = None
+        builder._vegas_engine = None
+        builder._vegas_config = None
+        builder._props_engine = None
+        builder._props_config = None
 
         kicking = KickingModel(
             fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65},
@@ -279,7 +283,7 @@ class TestKickingModelIsolation:
         builder._pbp_stats_cache = {}
         builder._pbp_stats_cache_key = ((2022, 2023, 2024), ())
         builder._player_models_cache = {}
-        builder._player_cache_key = ((2022, 2023, 2024), None, None)
+        builder._player_cache_key = ((2022, 2023, 2024), None, None, False)
         builder.cache_dir = "/tmp"
         builder.loader = MagicMock()
 
