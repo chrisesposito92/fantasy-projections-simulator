@@ -195,3 +195,12 @@ weather:
     pass_yards_sensitivity: 0.008
   factor_clamp: [0.80, 1.20]
   forecast_ttl_hours: 6
+
+vegas:
+  enabled: true
+  itt:
+    sensitivity: 0.06
+    factor_clamp: [0.88, 1.12]
+  spread:
+    sensitivity: 0.04
+    factor_clamp: [0.92, 1.08]
