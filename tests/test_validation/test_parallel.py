@@ -228,6 +228,250 @@ class TestSimulateGamesParallel:
         assert completed[-1] == (2, 2)
 
 
+import copy
+
+
+class TestKickingModelIsolation:
+    def test_weather_mutation_does_not_bleed_across_games(self):
+        """Two TeamDistributions from the same pipeline must have independent KickingModels."""
+        dists_a = _make_dists("KC")
+        dists_b = _make_dists("BUF")
+
+        # Simulate what _apply_weather does: mutate kicking in-place
+        original_rate = dists_a.kicking.fg_make_rate["50_plus"]
+        dists_a.kicking.fg_make_rate["50_plus"] = 0.10  # severe weather
+
+        # dists_b should NOT see this mutation
+        assert dists_b.kicking.fg_make_rate["50_plus"] == original_rate
+
+    def test_build_team_distributions_returns_independent_kicking(self):
+        """build_team_distributions must deepcopy kicking from pipeline cache."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        from unittest.mock import MagicMock, patch
+
+        builder = object.__new__(GameContextBuilder)
+        builder._pff_config = MagicMock(enabled=False)
+        builder._matchup_engine = None
+        builder._talent_stabilizer = None
+        builder._tier_engine = None
+        builder._team_context_engine = None
+        builder._coverage_engine = None
+        builder._kicker_engine = None
+        builder._dst_baseline_engine = None
+        builder._weather_engine = None
+        builder._pff_crosswalk = None
+        builder._pff_loader = None
+        builder._weather_config = None
+
+        kicking = KickingModel(
+            fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65},
+            xp_rate=0.94,
+        )
+        pipeline_output = {
+            "play_calling": {"KC": PlayCallingDist(team="KC", distributions={}, default={"pass": 0.55, "run": 0.45})},
+            "play_outcomes": PlayOutcomeDist(distributions={}, defaults={}),
+            "turnover_rates": {"KC": TurnoverRates(team="KC", int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10)},
+            "kicking": kicking,
+            "drive_start": DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+        }
+        builder._pipeline_cache = pipeline_output
+        builder._cached_training_seasons = (2022, 2023, 2024)
+        builder._pbp_stats_cache = {}
+        builder._player_models_cache = {}
+        builder._player_cache_key = ((2022, 2023, 2024), None, None)
+        builder.cache_dir = "/tmp"
+        builder.loader = MagicMock()
+
+        dists = builder.build_team_distributions("KC", training_seasons=[2022, 2023, 2024])
+
+        # Mutate the returned kicking — should NOT affect the pipeline cache
+        dists.kicking.fg_make_rate["50_plus"] = 0.10
+        assert pipeline_output["kicking"].fg_make_rate["50_plus"] == 0.65
+
+
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+
+class TestBuildGamesParallel:
+    def _mock_builder(self):
+        """Create a mock GameContextBuilder that returns valid game contexts."""
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._pff_config = MagicMock(enabled=False)
+        return mock
+
+    def test_empty_input_returns_empty(self):
+        from fantasy_sim.validation.parallel import build_games_parallel
+        results = build_games_parallel(
+            [], cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert results == []
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_single_game(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "2024_01_KC_BUF", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert len(results) == 1
+        r = results[0]
+        assert r["status"] == "ok"
+        assert r["game_id"] == "2024_01_KC_BUF"
+        assert r["seed"] == 42
+        assert r["week"] == 1
+        assert r["home_dists"].play_calling.team == "KC"
+        assert r["away_roster"].team == "BUF"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_multiple_games(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 100),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "game_2", 200),
+            ("KC", "BUF", [2022, 2023], 2024, 2, "game_3", 300),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert len(results) == 3
+        # Results should be sorted by (week, game_id)
+        assert results[0]["game_id"] == "game_1"
+        assert results[1]["game_id"] == "game_2"
+        assert results[2]["game_id"] == "game_3"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_error_skips_failed_game(self, mock_builder_cls):
+        mock = self._mock_builder()
+        call_count = 0
+
+        def side_effect(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise ValueError("bad team")
+            return (
+                _make_dists("KC"), _make_dists("BUF"),
+                _make_roster("KC"), _make_roster("BUF"),
+            )
+
+        mock.build_game.side_effect = side_effect
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "good_1", 100),
+            ("XX", "YY", [2022, 2023], 2024, 1, "bad_1", 200),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "good_2", 300),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        ok_results = [r for r in results if r["status"] == "ok"]
+        err_results = [r for r in results if r["status"] == "error"]
+        assert len(ok_results) == 2
+        assert len(err_results) == 1
+        assert err_results[0]["game_id"] == "bad_1"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_on_complete_callback(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        completed = []
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "g1", 1),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "g2", 2),
+        ]
+        build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+            on_complete=lambda done, total: completed.append((done, total)),
+        )
+        assert len(completed) == 2
+        assert completed[-1] == (2, 2)
+
+
+class TestBuildGamesParallelDualArm:
+    def _mock_builder(self):
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._matchup_engine = None
+        mock._coverage_engine = None
+        mock._pff_crosswalk = None
+        mock._pff_config = MagicMock(enabled=False)
+        return mock
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_returns_both_arms(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        assert len(results) == 1
+        r = results[0]
+        assert r["status"] == "ok"
+        assert "off" in r["results"]
+        assert "on" in r["results"]
+        assert len(r["results"]["off"]) == 4  # (hd, ad, hr, ar)
+        assert len(r["results"]["on"]) == 4
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_captures_matchup_aux(self, mock_builder_cls):
+        from fantasy_sim.data.pff.models import MatchupContext
+        mock_on = self._mock_builder()
+        mock_matchup = MagicMock()
+        mock_matchup.compute.return_value = MatchupContext(catch_rate_factor=1.05)
+        mock_on._matchup_engine = mock_matchup
+        mock_on._coverage_engine = None
+
+        call_count = 0
+        def make_builder(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return self._mock_builder()  # off builder (no engines)
+            return mock_on  # on builder (with engines)
+
+        mock_builder_cls.side_effect = make_builder
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        r = results[0]
+        assert "matchup_aux" in r
+        assert r["matchup_aux"]["home_matchup_ctx"].catch_rate_factor == 1.05
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_error_skips_game(self, mock_builder_cls):
+        mock = self._mock_builder()
+        mock.build_game.side_effect = RuntimeError("fail")
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1, dual_arm=True,
+        )
+        assert len(results) == 1
+        assert results[0]["status"] == "error"
+
+
 from fantasy_sim.validation.backtester import Backtester
 
 
@@ -239,3 +483,63 @@ class TestBacktesterParallel:
     def test_max_workers_param(self):
         bt = Backtester(test_season=2024, n_sims=10, max_workers=4)
         assert bt.max_workers == 4
+
+
+class TestBuildGamesParallelDeterminism:
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_determinism_across_runs(self, mock_builder_cls):
+        """Same inputs must produce identical outputs across two sequential runs."""
+        def make_builder(*a, **kw):
+            mock = MagicMock()
+            mock.build_game.return_value = (
+                _make_dists("KC"), _make_dists("BUF"),
+                _make_roster("KC"), _make_roster("BUF"),
+            )
+            mock._pff_config = MagicMock(enabled=False)
+            mock._matchup_engine = None
+            mock._coverage_engine = None
+            mock._pff_crosswalk = None
+            return mock
+        mock_builder_cls.side_effect = make_builder
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 100),
+            ("SF", "DAL", [2022, 2023], 2024, 2, "game_2", 200),
+            ("MIA", "NYJ", [2022, 2023], 2024, 1, "game_3", 300),
+        ]
+        run1 = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        run2 = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+
+        assert len(run1) == len(run2)
+        for r1, r2 in zip(run1, run2):
+            assert r1["game_id"] == r2["game_id"]
+            assert r1["seed"] == r2["seed"]
+            assert r1["week"] == r2["week"]
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_results_sorted_by_week_then_game_id(self, mock_builder_cls):
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._pff_config = MagicMock(enabled=False)
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 3, "game_c", 1),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "game_a", 2),
+            ("MIA", "NYJ", [2022, 2023], 2024, 1, "game_b", 3),
+            ("GB", "CHI", [2022, 2023], 2024, 2, "game_d", 4),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        ids = [r["game_id"] for r in results]
+        assert ids == ["game_a", "game_b", "game_d", "game_c"]

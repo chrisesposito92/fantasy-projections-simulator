@@ -6,7 +6,6 @@ import zlib
 import numpy as np
 import polars as pl
 from fantasy_sim.data.loader import DataLoader
-from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.actuals import load_actual_scores
@@ -14,6 +13,7 @@ from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
     boom_bust_calibration,
 )
+from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, build_games_parallel
 
 
 @dataclass
@@ -67,9 +67,8 @@ class Backtester:
         ))
         self.scoring_format = scoring_format
         self.loader = DataLoader(cache_dir=cache_dir) if cache_dir else DataLoader()
-        self.builder = GameContextBuilder(
-            cache_dir=self.loader.cache_dir, pff_config=pff_config, weather_config=weather_config,
-        )
+        self._pff_config = pff_config
+        self._weather_config = weather_config
         self.max_workers = max_workers
 
     def run(self, scoring_config: dict) -> BacktestResult:
@@ -78,8 +77,6 @@ class Backtester:
         Uses only training_seasons data for model fitting (no leakage).
         Three phases: build contexts -> simulate (optionally parallel) -> aggregate.
         """
-        from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel
-
         schedules = self.loader.load_schedules([self.test_season])
         player_stats = self.loader.load_player_stats([self.test_season])
 
@@ -94,33 +91,42 @@ class Backtester:
         )
         weeks = [w for w in weeks if 1 <= w <= 18]
 
-        # --- Phase 1: Build game contexts (sequential, cache-friendly) ---
-        specs: list[GameSpec] = []
+        # --- Phase 1: Build game contexts (parallel) ---
+        game_args = []
         for wk in weeks:
             week_games = schedules.filter(
                 (pl.col("week") == wk) & (pl.col("season") == self.test_season)
             )
             for game in week_games.iter_rows(named=True):
                 home, away = game["home_team"], game["away_team"]
-                try:
-                    home_dists, away_dists, home_roster, away_roster = self.builder.build_game(
-                        home, away,
-                        training_seasons=self.training_seasons,
-                        target_season=self.test_season,
-                        week=wk,
-                    )
-                    seed = zlib.crc32(game["game_id"].encode()) % (2**31)
-                    specs.append(GameSpec(
-                        game_id=game["game_id"],
-                        home_dists=home_dists,
-                        away_dists=away_dists,
-                        home_roster=home_roster,
-                        away_roster=away_roster,
-                        seed=seed,
-                        week=wk,
-                    ))
-                except Exception:
-                    continue
+                seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+                game_args.append((
+                    home, away, self.training_seasons,
+                    self.test_season, wk, game["game_id"], seed,
+                ))
+
+        build_results = build_games_parallel(
+            game_args,
+            cache_dir=self.loader.cache_dir,
+            pff_config=self._pff_config,
+            weather_config=self._weather_config,
+            max_workers=self.max_workers,
+            dual_arm=False,
+        )
+
+        specs: list[GameSpec] = []
+        for r in build_results:
+            if r["status"] != "ok":
+                continue
+            specs.append(GameSpec(
+                game_id=r["game_id"],
+                home_dists=r["home_dists"],
+                away_dists=r["away_dists"],
+                home_roster=r["home_roster"],
+                away_roster=r["away_roster"],
+                seed=r["seed"],
+                week=r["week"],
+            ))
 
         # --- Phase 2: Simulate (parallel or sequential) ---
         sim_results = simulate_games_parallel(

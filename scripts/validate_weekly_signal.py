@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.actuals import load_actual_scores
-from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.models import (
     CoverageConfig,
@@ -42,7 +41,7 @@ from fantasy_sim.data.pff.models import (
 )
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
-from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, default_max_workers
+from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, default_max_workers, build_games_parallel
 from fantasy_sim.validation.weekly import (
     WeeklyLedgerEntry,
     WeeklyPlayerRecord,
@@ -286,98 +285,77 @@ def run_weekly_comparison(
         actual_team[a.player_id] = a.team
         actual_name[a.player_id] = a.name
 
-    builder_off = GameContextBuilder(cache_dir=loader.cache_dir)
-    builder_on = GameContextBuilder(cache_dir=loader.cache_dir, pff_config=pff_config, weather_config=weather_config)
-
     weeks = sorted(
         schedules.filter(pl.col("season") == test_season)["week"]
         .unique().to_list()
     )
     weeks = [w for w in weeks if 1 <= w <= 18]
 
-    # --- Phase 1: Build all game contexts (sequential, cache-friendly) ---
-    specs: list[GameSpec] = []
-    game_aux: dict[str, dict] = {}  # game_id -> auxiliary data for Phase 3
-
+    # --- Phase 1: Build all game contexts (parallel) ---
+    game_args = []
     for wk in weeks:
         week_games = schedules.filter(
             (pl.col("week") == wk) & (pl.col("season") == test_season)
         )
-        print(f"  [{test_season}] Building contexts... Week {wk}/{max(weeks)}", flush=True)
+        print(f"  [{test_season}] Collecting games... Week {wk}/{max(weeks)}", flush=True)
         for game in week_games.iter_rows(named=True):
             home, away = game["home_team"], game["away_team"]
-            game_id = game["game_id"]
-            try:
-                seed = zlib.crc32(game_id.encode()) % (2**31)
+            seed = zlib.crc32(game["game_id"].encode()) % (2**31)
+            game_args.append((
+                home, away, training_seasons,
+                test_season, wk, game["game_id"], seed,
+            ))
 
-                # Build both contexts before appending either —
-                # if one fails, skip the game entirely (no orphaned specs)
-                hd_off, ad_off, hr_off, ar_off = builder_off.build_game(
-                    home, away,
-                    training_seasons=training_seasons,
-                    target_season=test_season, week=wk,
-                )
-                hd_on, ad_on, hr_on, ar_on = builder_on.build_game(
-                    home, away,
-                    training_seasons=training_seasons,
-                    target_season=test_season, week=wk,
-                )
+    build_workers = min(max_workers, 4) if max_workers > 0 else "auto"
+    print(f"  [{test_season}] Building {len(game_args)} game contexts (workers={build_workers})...", flush=True)
 
-                specs.append(GameSpec(
-                    game_id=game_id,
-                    home_dists=hd_off, away_dists=ad_off,
-                    home_roster=hr_off, away_roster=ar_off,
-                    seed=seed, week=wk,
-                    metadata={"arm": "off"},
-                ))
-                specs.append(GameSpec(
-                    game_id=game_id,
-                    home_dists=hd_on, away_dists=ad_on,
-                    home_roster=hr_on, away_roster=ar_on,
-                    seed=seed, week=wk,
-                    metadata={"arm": "on"},
-                ))
+    def _on_build_complete(done: int, total: int) -> None:
+        if done % 20 == 0 or done == total:
+            print(f"    [{test_season}] {done}/{total} games built", flush=True)
 
-                # Capture matchup/coverage contexts (cheap, engines cached)
-                home_matchup_ctx = MatchupContext()
-                away_matchup_ctx = MatchupContext()
-                if builder_on._matchup_engine is not None:
-                    home_matchup_ctx = builder_on._matchup_engine.compute(
-                        defense_team=away, offense_team=home,
-                        target_season=test_season, max_week=wk,
-                    )
-                    away_matchup_ctx = builder_on._matchup_engine.compute(
-                        defense_team=home, offense_team=away,
-                        target_season=test_season, max_week=wk,
-                    )
+    build_results = build_games_parallel(
+        game_args,
+        cache_dir=loader.cache_dir,
+        pff_config=pff_config,
+        weather_config=weather_config,
+        max_workers=max_workers,
+        dual_arm=True,
+        on_complete=_on_build_complete,
+    )
 
-                home_coverage: dict = {}
-                away_coverage: dict = {}
-                if builder_on._coverage_engine is not None:
-                    home_coverage = builder_on._coverage_engine.compute(
-                        defense_team=away, offense_roster=hr_on,
-                        target_season=test_season, max_week=wk,
-                        pff_crosswalk=builder_on._pff_crosswalk,
-                    )
-                    away_coverage = builder_on._coverage_engine.compute(
-                        defense_team=home, offense_roster=ar_on,
-                        target_season=test_season, max_week=wk,
-                        pff_crosswalk=builder_on._pff_crosswalk,
-                    )
+    # Assemble specs + game_aux from results
+    specs: list[GameSpec] = []
+    game_aux: dict[str, dict] = {}
 
-                game_aux[game_id] = {
-                    "home": home, "away": away, "week": wk,
-                    "home_matchup_ctx": home_matchup_ctx,
-                    "away_matchup_ctx": away_matchup_ctx,
-                    "home_coverage": home_coverage,
-                    "away_coverage": away_coverage,
-                }
+    for r in build_results:
+        if r["status"] != "ok":
+            continue
+        game_id = r["game_id"]
+        off = r["results"]["off"]
+        on = r["results"]["on"]
 
-            except Exception as exc:
-                logger.warning(
-                    "Skipping game %s vs %s week %d context build: %s", home, away, wk, exc
-                )
-                continue
+        specs.append(GameSpec(
+            game_id=game_id,
+            home_dists=off[0], away_dists=off[1],
+            home_roster=off[2], away_roster=off[3],
+            seed=r["seed"], week=r["week"],
+            metadata={"arm": "off"},
+        ))
+        specs.append(GameSpec(
+            game_id=game_id,
+            home_dists=on[0], away_dists=on[1],
+            home_roster=on[2], away_roster=on[3],
+            seed=r["seed"], week=r["week"],
+            metadata={"arm": "on"},
+        ))
+
+        game_aux[game_id] = {
+            "home": r["home"], "away": r["away"], "week": r["week"],
+            "home_matchup_ctx": r["matchup_aux"]["home_matchup_ctx"],
+            "away_matchup_ctx": r["matchup_aux"]["away_matchup_ctx"],
+            "home_coverage": r["matchup_aux"]["home_coverage"],
+            "away_coverage": r["matchup_aux"]["away_coverage"],
+        }
 
     # --- Phase 2: Simulate all games (parallel) ---
     print(f"  [{test_season}] Simulating {len(specs)} game-arms...", flush=True)

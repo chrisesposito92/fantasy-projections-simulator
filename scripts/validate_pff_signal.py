@@ -481,7 +481,7 @@ def run_backtest_pair(
         test_season=test_season,
         n_sims=n_sims,
         num_training_seasons=num_training_seasons,
-        max_workers=max_workers,
+        max_workers=1,  # PFF-OFF is cheap (~0.4s/game), parallelism adds overhead
     )
     result_off = bt_off.run(scoring_config)
     elapsed_off = time.time() - t0
@@ -777,7 +777,8 @@ def main() -> int:
         per_season_workers = args.workers
     else:
         per_season_workers = default_max_workers(batch_size=288, num_concurrent=num_seasons)
-    print(f"  workers       : {per_season_workers} per season")
+    build_workers = min(per_season_workers, 4)
+    print(f"  workers       : {per_season_workers} sim, {build_workers} build per season")
 
     # Load scoring config
     defaults = load_defaults()
