@@ -777,7 +777,8 @@ def main() -> int:
         per_season_workers = args.workers
     else:
         per_season_workers = default_max_workers(batch_size=288, num_concurrent=num_seasons)
-    print(f"  workers       : {per_season_workers} per season")
+    build_workers = min(per_season_workers, 4)
+    print(f"  workers       : {per_season_workers} sim, {build_workers} build per season")
 
     # Load scoring config
     defaults = load_defaults()
