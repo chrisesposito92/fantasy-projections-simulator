@@ -9,7 +9,7 @@ from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
-from fantasy_sim.data.vegas.config import load_vegas_config
+from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.models.distributions import (
@@ -100,8 +100,9 @@ def _make_builder(
     pff_flag: bool | None = None,
     weather_flag: bool | None = None,
     vegas_flag: bool | None = None,
+    props_flag: bool | None = None,
 ) -> GameContextBuilder:
-    """Create GameContextBuilder, optionally with PFF, weather, and Vegas enabled."""
+    """Create GameContextBuilder, optionally with PFF, weather, Vegas, and props enabled."""
     defaults = load_defaults()
     pff_config = load_pff_config(defaults)
     if pff_flag is True:
@@ -116,12 +117,16 @@ def _make_builder(
     vegas_config = load_vegas_config(defaults)
     if vegas_flag is not None:
         vegas_config.enabled = vegas_flag
+    props_config = load_props_config(defaults)
+    if props_flag is not None:
+        props_config.enabled = props_flag
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
         pff_config=pff_config,
         weather_config=weather_config,
         vegas_config=vegas_config,
+        props_config=props_config,
     )
 
 
@@ -531,9 +536,10 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
+@click.option("--props/--no-props", default=None, help="Enable/disable player props adjustments")
 @click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff, weather, vegas, training_years):
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff, weather, vegas, props, training_years):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:

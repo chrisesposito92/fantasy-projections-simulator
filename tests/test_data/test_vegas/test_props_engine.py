@@ -710,16 +710,42 @@ class TestPropsIntegration:
 
     def test_ab_mode_vegas_props(self):
         """_build_props_config('vegas+props') returns PropsConfig with enabled=True."""
-        from scripts.validate_pff_signal import _build_props_config
-        config = _build_props_config("vegas+props")
-        assert config is not None
-        assert config.enabled is True
+        import sys
+        from pathlib import Path
+        from unittest.mock import patch
+
+        scripts_dir = str(Path(__file__).resolve().parents[3] / "scripts")
+        sys.path.insert(0, scripts_dir)
+        try:
+            with patch("validate_pff_signal.load_defaults") as mock_defaults, \
+                 patch("validate_pff_signal.load_vegas_config") as mock_vegas:
+                mock_defaults.return_value = {}
+                mock_vegas.return_value = None
+                import validate_pff_signal as vps
+                config = vps._build_props_config("vegas+props")
+                assert config is not None
+                assert config.enabled is True
+        finally:
+            sys.path.remove(scripts_dir)
 
     def test_ab_mode_no_props(self):
         """_build_props_config('vegas') returns None (no props)."""
-        from scripts.validate_pff_signal import _build_props_config
-        config = _build_props_config("vegas")
-        assert config is None
+        import sys
+        from pathlib import Path
+        from unittest.mock import patch
+
+        scripts_dir = str(Path(__file__).resolve().parents[3] / "scripts")
+        sys.path.insert(0, scripts_dir)
+        try:
+            with patch("validate_pff_signal.load_defaults") as mock_defaults, \
+                 patch("validate_pff_signal.load_vegas_config") as mock_vegas:
+                mock_defaults.return_value = {}
+                mock_vegas.return_value = None
+                import validate_pff_signal as vps
+                config = vps._build_props_config("vegas")
+                assert config is None
+        finally:
+            sys.path.remove(scripts_dir)
 
     def test_cache_key_includes_props(self):
         """Layer 3 cache key changes when props_enabled flips."""

@@ -13,7 +13,7 @@ from fantasy_sim.data.player_builder import (
 )
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
-from fantasy_sim.data.vegas.models import VegasConfig, VegasContext
+from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -45,6 +45,7 @@ class GameContextBuilder:
         pff_config: PffConfig | None = None,
         weather_config: WeatherConfig | None = None,
         vegas_config: VegasConfig | None = None,
+        props_config: PropsConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -140,6 +141,16 @@ class GameContextBuilder:
             logger.info("Vegas engine enabled")
         self._vegas_config = vegas_config
 
+        # Player props engine setup (VEG-03: Bayesian prop blend)
+        self._props_engine = None
+        self._props_config = props_config
+        if props_config is not None and props_config.enabled:
+            from fantasy_sim.data.vegas.props_loader import PropsLoader
+            from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
+            props_loader = PropsLoader(props_config)
+            self._props_engine = PlayerPropsEngine(props_config, props_loader)
+            logger.info("Player props engine enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -177,8 +188,9 @@ class GameContextBuilder:
             self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons, season_weights=season_weights)
             self._pbp_stats_cache_key = _pbp_key
 
-        # --- Layer 3: Player models (cached on training_seasons + target_season + week) ---
-        cache_key = (ts_key, target_season, week)
+        # --- Layer 3: Player models (cached on training_seasons + target_season + week + props) ---
+        props_enabled = self._props_engine is not None
+        cache_key = (ts_key, target_season, week, props_enabled)
         if self._player_models_cache is None or self._player_cache_key != cache_key:
             # Determine current rosters
             if rosters is not None:
@@ -538,6 +550,16 @@ class GameContextBuilder:
             )
             self._apply_vegas(home_dists, home_vegas_ctx)
             self._apply_vegas(away_dists, away_vegas_ctx)
+
+        # Player props (VEG-03): Bayesian blend of prop lines into player models
+        # Applied before matchup engine so PFF adjustments layer on top.
+        if self._props_engine is not None and target_season and week:
+            self._props_engine.apply(home_roster, home_team, target_season, week)
+            self._props_engine.apply(away_roster, away_team, target_season, week)
+            # Re-normalize shares after props mutation (addresses MEDIUM review concern)
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
 
         # PFF matchup adjustments: away D → home offense, home D → away offense
         if self._matchup_engine is not None:
