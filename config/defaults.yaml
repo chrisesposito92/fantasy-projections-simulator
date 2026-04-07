@@ -204,3 +204,18 @@ vegas:
   spread:
     sensitivity: 0.04
     factor_clamp: [0.92, 1.08]
+  props:
+    enabled: true
+    prior_strength: 10.0
+    min_divergence: 0.005
+    cache_dir: null
+    api_key_env: ODDS_API_KEY
+    fuzzy_threshold: 0.85
+    markets:
+      - player_pass_yds
+      - player_rush_yds
+      - player_reception_yds
+      - player_receptions
+      - player_anytime_td
+      - player_pass_tds
+      - player_rush_tds
