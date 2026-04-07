@@ -28,8 +28,8 @@ from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.pff.models import CoverageConfig, DstBaselineConfig, KickerConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
-from fantasy_sim.data.vegas.config import load_vegas_config
-from fantasy_sim.data.vegas.models import VegasConfig
+from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
+from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 from fantasy_sim.validation.parallel import default_max_workers
 
@@ -495,6 +495,24 @@ def _build_vegas_config(mode: str, overrides: dict | None = None) -> VegasConfig
     return vegas_config
 
 
+def _build_props_config(mode: str, overrides: dict | None = None) -> PropsConfig | None:
+    """Build a PropsConfig if the mode includes props.
+
+    Returns None if props are not part of the mode, or a PropsConfig with
+    enabled=True when mode contains "props".
+
+    - mode "vegas+props": Both VegasConfig and PropsConfig enabled.
+    - Any other mode: returns None.
+    """
+    if "props" not in mode:
+        return None
+
+    defaults = load_defaults()
+    props_config = load_props_config(defaults)
+    props_config.enabled = True
+    return props_config
+
+
 # ---------------------------------------------------------------------------
 # Backtest runner
 # ---------------------------------------------------------------------------
@@ -533,6 +551,7 @@ def _run_backtest_on(
     max_workers: int,
     mode_label: str,
     vegas_config: VegasConfig | None = None,
+    props_config: PropsConfig | None = None,
 ) -> BacktestResult:
     """Run PFF-ON for one season."""
     print(f"  [{test_season}] Running PFF-ON ({mode_label})...", flush=True)
@@ -544,6 +563,7 @@ def _run_backtest_on(
         pff_config=pff_config,
         weather_config=weather_config,
         vegas_config=vegas_config,
+        props_config=props_config,
         max_workers=max_workers,
     )
     result = bt.run(scoring_config)
@@ -586,6 +606,7 @@ def run_backtest_pair(
     pff_config: PffConfig,
     weather_config: WeatherConfig | None = None,
     vegas_config: VegasConfig | None = None,
+    props_config: PropsConfig | None = None,
     max_workers: int = 1,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
@@ -597,6 +618,7 @@ def run_backtest_pair(
         test_season, n_sims, scoring_config, num_training_seasons,
         pff_config, weather_config, max_workers, mode_label,
         vegas_config=vegas_config,
+        props_config=props_config,
     )
     return ComparisonResult(test_season=test_season, off=result_off, on=result_on)
 
@@ -733,7 +755,7 @@ def main() -> int:
                  "kicker", "dst_baseline", "kicker+dst_baseline",
                  "kicker+dst_baseline+tier+matchup+coverage",
                  "weather", "weather+tier", "weather+tier+matchup",
-                 "vegas", "vegas+spread",
+                 "vegas", "vegas+spread", "vegas+props",
                  "all", "all+weather"],
         default="all",
         help=(
@@ -835,6 +857,7 @@ def main() -> int:
     pff_config = _build_pff_config(args.mode, overrides=overrides)
     weather_config = _build_weather_config(args.mode, overrides=overrides)
     vegas_config = _build_vegas_config(args.mode, overrides=overrides)
+    props_config = _build_props_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  PFF SIGNAL A/B VALIDATION")
@@ -909,6 +932,7 @@ def main() -> int:
                     max_workers=per_season_workers,
                     mode_label=mode_label,
                     vegas_config=vegas_config,
+                    props_config=props_config,
                 ): season
                 for season in args.seasons
             }
@@ -932,6 +956,7 @@ def main() -> int:
                 pff_config=pff_config,
                 weather_config=weather_config,
                 vegas_config=vegas_config,
+                props_config=props_config,
                 max_workers=per_season_workers,
             )
             results.append(comparison)

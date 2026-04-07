@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -31,3 +31,39 @@ class VegasConfig:
     itt_clamp: tuple[float, float] = (0.88, 1.12)
     spread_sensitivity: float = 0.04
     spread_clamp: tuple[float, float] = (0.92, 1.08)
+
+
+@dataclass
+class PropsConfig:
+    """Configuration for player props integration (VEG-03).
+
+    Separate from VegasConfig (following WeatherConfig precedent).
+    Passed as its own parameter to GameContextBuilder.__init__().
+
+    Fields:
+        enabled: Master switch. False = props disabled (no API calls).
+        prior_strength: Bayesian prior weight vs observed games_played.
+            Higher = props have less influence. Default 10.0 (10 game-equivalents).
+        min_divergence: Minimum |blended_ratio - 1.0| to apply adjustment.
+            Prevents noise from near-identical prop/historical values.
+        cache_dir: Local parquet cache directory. None = ~/.fantasy-sim/props/.
+        api_key_env: Environment variable name containing the API key.
+        fuzzy_threshold: Minimum Levenshtein similarity ratio for name matching.
+        markets: The Odds API market keys to fetch.
+    """
+
+    enabled: bool = False
+    prior_strength: float = 10.0
+    min_divergence: float = 0.005
+    cache_dir: str | None = None
+    api_key_env: str = "ODDS_API_KEY"
+    fuzzy_threshold: float = 0.85
+    markets: list[str] = field(default_factory=lambda: [
+        "player_pass_yds",
+        "player_rush_yds",
+        "player_reception_yds",
+        "player_receptions",
+        "player_anytime_td",
+        "player_pass_tds",
+        "player_rush_tds",
+    ])
