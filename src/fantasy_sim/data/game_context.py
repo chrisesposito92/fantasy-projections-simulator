@@ -13,6 +13,7 @@ from fantasy_sim.data.player_builder import (
 )
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
+from fantasy_sim.data.vegas.models import VegasConfig, VegasContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -43,6 +44,7 @@ class GameContextBuilder:
         cache_dir: Path = DEFAULT_CACHE_DIR,
         pff_config: PffConfig | None = None,
         weather_config: WeatherConfig | None = None,
+        vegas_config: VegasConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -129,6 +131,14 @@ class GameContextBuilder:
             )
             logger.info("Weather engine enabled")
         self._weather_config = weather_config
+
+        # Vegas engine setup (ITT pace scaling + spread-based pass rate)
+        self._vegas_engine = None
+        if vegas_config is not None and vegas_config.enabled:
+            from fantasy_sim.data.vegas.engine import VegasEngine
+            self._vegas_engine = VegasEngine(config=vegas_config, loader=self.loader)
+            logger.info("Vegas engine enabled")
+        self._vegas_config = vegas_config
 
     def _ensure_pipeline(
         self,
@@ -433,6 +443,35 @@ class GameContextBuilder:
                         player.outcomes.receiving_yards_dist + shift
                     )
 
+    @staticmethod
+    def _apply_vegas(
+        dists: TeamDistributions,
+        ctx: VegasContext,
+    ) -> None:
+        """Apply VegasContext factors to TeamDistributions in-place.
+
+        VEG-01: volume_factor drives pace_factor (play volume, not yard efficiency).
+            pace_factor > 1.0 = faster pace = less clock per play = more plays per game.
+            pace_factor < 1.0 = slower pace = more clock per play = fewer plays per game.
+            This is the correct lever for ITT: it controls the number of offensive
+            opportunities, not per-play yards.
+
+        VEG-02: pass_rate_factor modifies PlayCallingDist.default ONLY.
+            Per-bucket distributions (the GameStateBucket dict) are never touched.
+            Favorites run more (pass_rate_factor < 1.0), underdogs pass more (> 1.0).
+            Clamped so pass+run always sum to 1.0 and neither hits zero.
+        """
+        # VEG-01: pace_factor (multiplicative, correct lever for game volume)
+        if ctx.volume_factor != 1.0:
+            dists.pace_factor *= ctx.volume_factor
+
+        # VEG-02: pass rate (default only, NOT per-bucket distributions)
+        if ctx.pass_rate_factor != 1.0:
+            current_pass = dists.play_calling.default["pass"]
+            new_pass = max(0.01, min(0.99, current_pass * ctx.pass_rate_factor))
+            new_run = 1.0 - new_pass
+            dists.play_calling.default = {"pass": new_pass, "run": new_run}
+
     def _ensure_pff_crosswalk(
         self,
         training_seasons: list[int],
@@ -490,6 +529,15 @@ class GameContextBuilder:
             rosters=rosters, target_season=target_season, week=week,
             season_weights=season_weights,
         )
+
+        # Vegas adjustments (first: base volume + game script before PFF refines)
+        if self._vegas_engine is not None and target_season and week:
+            home_vegas_ctx, away_vegas_ctx = self._vegas_engine.compute(
+                home_team=home_team, away_team=away_team,
+                target_season=target_season, week=week,
+            )
+            self._apply_vegas(home_dists, home_vegas_ctx)
+            self._apply_vegas(away_dists, away_vegas_ctx)
 
         # PFF matchup adjustments: away D → home offense, home D → away offense
         if self._matchup_engine is not None:

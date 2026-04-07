@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fantasy_sim.data.pff.models import PffConfig
     from fantasy_sim.data.weather.models import WeatherConfig
+    from fantasy_sim.data.vegas.models import VegasConfig
     from fantasy_sim.engine.types import TeamDistributions
     from fantasy_sim.models.player import TeamRoster
 
@@ -170,8 +171,9 @@ def simulate_games_parallel(
 
 def _init_build_worker_single(
     cache_dir: Path,
-    pff_config: PffConfig | None,
-    weather_config: WeatherConfig | None,
+    pff_config: "PffConfig | None",
+    weather_config: "WeatherConfig | None",
+    vegas_config: "VegasConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
     global _worker_builders
@@ -181,6 +183,7 @@ def _init_build_worker_single(
         cache_dir=cache_dir,
         pff_config=pff_config,
         weather_config=weather_config,
+        vegas_config=vegas_config,
     )
     _worker_builders = {"single": builder}
 
@@ -330,10 +333,11 @@ def _build_game_worker_dual(args: tuple) -> dict:
 def _build_games_sequential(
     game_args: list[tuple],
     cache_dir: Path,
-    pff_config: PffConfig | None,
-    weather_config: WeatherConfig | None,
+    pff_config: "PffConfig | None",
+    weather_config: "WeatherConfig | None",
     dual_arm: bool,
-    on_complete: Callable[[int, int], None] | None,
+    on_complete: "Callable[[int, int], None] | None",
+    vegas_config: "VegasConfig | None" = None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
     global _worker_builders
@@ -345,6 +349,7 @@ def _build_games_sequential(
                 cache_dir=cache_dir,
                 pff_config=pff_config,
                 weather_config=weather_config,
+                vegas_config=vegas_config,
             ),
         }
     else:
@@ -353,6 +358,7 @@ def _build_games_sequential(
                 cache_dir=cache_dir,
                 pff_config=pff_config,
                 weather_config=weather_config,
+                vegas_config=vegas_config,
             ),
         }
 
@@ -374,6 +380,7 @@ def build_games_parallel(
     cache_dir: Path,
     pff_config=None,
     weather_config=None,
+    vegas_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
     on_complete: "Callable[[int, int], None] | None" = None,
@@ -409,7 +416,8 @@ def build_games_parallel(
 
     if max_workers <= 1:
         results = _build_games_sequential(
-            game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete
+            game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete,
+            vegas_config=vegas_config,
         )
     else:
         from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
@@ -424,7 +432,7 @@ def build_games_parallel(
         with ProcessPoolExecutor(
             max_workers=max_workers,
             initializer=init_fn,
-            initargs=(cache_dir, pff_config, weather_config),
+            initargs=(cache_dir, pff_config, weather_config, vegas_config),
         ) as pool:
             futures = {
                 pool.submit(worker_fn, args): args for args in game_args

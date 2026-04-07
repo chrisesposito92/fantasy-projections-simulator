@@ -28,6 +28,8 @@ from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.pff.models import CoverageConfig, DstBaselineConfig, KickerConfig, MatchupConfig, PffConfig, TalentConfig, TeamContextConfig, TierConfig
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
+from fantasy_sim.data.vegas.config import load_vegas_config
+from fantasy_sim.data.vegas.models import VegasConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 from fantasy_sim.validation.parallel import default_max_workers
 
@@ -460,6 +462,39 @@ def _build_weather_config(mode: str, overrides: dict | None = None) -> WeatherCo
     return weather_config
 
 
+def _build_vegas_config(mode: str, overrides: dict | None = None) -> VegasConfig | None:
+    """Build a VegasConfig if the mode includes vegas.
+
+    Returns None if Vegas is not part of the mode, or a VegasConfig
+    with enabled=True (and optional overrides applied) if it is.
+
+    - mode "vegas": ITT volume factor only (spread_sensitivity=0).
+    - mode "vegas+spread": both ITT and spread pass-rate factors active.
+    """
+    if "vegas" not in mode:
+        return None
+
+    defaults = load_defaults()
+    vegas_config = load_vegas_config(defaults)
+    vegas_config.enabled = True
+
+    if mode == "vegas":
+        # ITT-only mode: disable spread conditioning
+        vegas_config.spread_sensitivity = 0.0
+
+    if overrides and "vegas" in overrides:
+        vegas_raw = overrides["vegas"]
+        for key in ("itt_sensitivity", "spread_sensitivity", "enabled"):
+            if key in vegas_raw:
+                setattr(vegas_config, key, vegas_raw[key])
+        if "itt_clamp" in vegas_raw:
+            vegas_config.itt_clamp = tuple(vegas_raw["itt_clamp"])
+        if "spread_clamp" in vegas_raw:
+            vegas_config.spread_clamp = tuple(vegas_raw["spread_clamp"])
+
+    return vegas_config
+
+
 # ---------------------------------------------------------------------------
 # Backtest runner
 # ---------------------------------------------------------------------------
@@ -497,6 +532,7 @@ def _run_backtest_on(
     weather_config: WeatherConfig | None,
     max_workers: int,
     mode_label: str,
+    vegas_config: VegasConfig | None = None,
 ) -> BacktestResult:
     """Run PFF-ON for one season."""
     print(f"  [{test_season}] Running PFF-ON ({mode_label})...", flush=True)
@@ -507,6 +543,7 @@ def _run_backtest_on(
         num_training_seasons=num_training_seasons,
         pff_config=pff_config,
         weather_config=weather_config,
+        vegas_config=vegas_config,
         max_workers=max_workers,
     )
     result = bt.run(scoring_config)
@@ -548,6 +585,7 @@ def run_backtest_pair(
     num_training_seasons: int,
     pff_config: PffConfig,
     weather_config: WeatherConfig | None = None,
+    vegas_config: VegasConfig | None = None,
     max_workers: int = 1,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
@@ -558,6 +596,7 @@ def run_backtest_pair(
     result_on = _run_backtest_on(
         test_season, n_sims, scoring_config, num_training_seasons,
         pff_config, weather_config, max_workers, mode_label,
+        vegas_config=vegas_config,
     )
     return ComparisonResult(test_season=test_season, off=result_off, on=result_on)
 
@@ -694,6 +733,7 @@ def main() -> int:
                  "kicker", "dst_baseline", "kicker+dst_baseline",
                  "kicker+dst_baseline+tier+matchup+coverage",
                  "weather", "weather+tier", "weather+tier+matchup",
+                 "vegas", "vegas+spread",
                  "all", "all+weather"],
         default="all",
         help=(
@@ -794,6 +834,7 @@ def main() -> int:
     # Build PFF config once from mode + overrides
     pff_config = _build_pff_config(args.mode, overrides=overrides)
     weather_config = _build_weather_config(args.mode, overrides=overrides)
+    vegas_config = _build_vegas_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  PFF SIGNAL A/B VALIDATION")
@@ -867,6 +908,7 @@ def main() -> int:
                     weather_config=weather_config,
                     max_workers=per_season_workers,
                     mode_label=mode_label,
+                    vegas_config=vegas_config,
                 ): season
                 for season in args.seasons
             }
@@ -889,6 +931,7 @@ def main() -> int:
                 num_training_seasons=args.training_years,
                 pff_config=pff_config,
                 weather_config=weather_config,
+                vegas_config=vegas_config,
                 max_workers=per_season_workers,
             )
             results.append(comparison)
