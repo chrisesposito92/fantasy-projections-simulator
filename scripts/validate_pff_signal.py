@@ -358,7 +358,7 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         cov_cfg = CoverageConfig(enabled=False)
         kicker_cfg = KickerConfig(enabled=False)
         dst_cfg = DstBaselineConfig(enabled=False)
-    else:  # "all", "all+weather" — current defaults: tier + matchup + coverage + kicker + dst
+    else:  # "all", "all+weather", "all+vegas", "all+weather+vegas+props", etc.
         matchup_cfg = MatchupConfig(enabled=True)
         talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=True)
@@ -756,24 +756,20 @@ def main() -> int:
                  "kicker+dst_baseline+tier+matchup+coverage",
                  "weather", "weather+tier", "weather+tier+matchup",
                  "vegas", "vegas+spread", "vegas+props",
-                 "all", "all+weather"],
+                 "all", "all+weather",
+                 "all+vegas", "all+weather+vegas",
+                 "all+weather+vegas+props", "full"],
         default="all",
         help=(
-            "Which PFF layer(s) to enable in the ON run. "
-            "'coverage+tier' = tier + coverage engine (CB matchup adjustments), "
-            "'coverage+tier+matchup' = tier + coverage + defensive matchup, "
-            "'ncaa_rookie+tier' = tier + NCAA rookie assignment, "
-            "'ncaa_rookie+tier+matchup' = tier + NCAA rookie + matchup, "
-            "'team_context+tier' = tier + team context, "
-            "'team_context+tier+matchup' = full stack, "
-            "'matchup+tier' = matchup + tier (current default), "
-            "'matchup' = defensive matchup adjustments only, "
-            "'talent' = talent stabilizer only, "
-            "'tier' = tier distribution engine only, "
-            "'weather' = weather engine only, "
-            "'weather+tier' = weather + tier, "
-            "'weather+tier+matchup' = weather + tier + matchup, "
-            "'all' = tier + matchup + coverage + kicker + dst_baseline (default: all)."
+            "Which layer(s) to enable in the ON run. "
+            "'all' = PFF tier + matchup + coverage + kicker + dst_baseline, "
+            "'all+vegas' = all PFF + Vegas (ITT + spread), "
+            "'all+weather+vegas' = all PFF + weather + Vegas, "
+            "'all+weather+vegas+props' = everything (full stack), "
+            "'full' = alias for all+weather+vegas+props, "
+            "'vegas' = Vegas ITT only (no spread, no PFF), "
+            "'vegas+spread' = Vegas ITT + spread (no PFF), "
+            "'vegas+props' = Vegas + player props (no PFF)."
         ),
     )
     parser.add_argument(
@@ -852,6 +848,10 @@ def main() -> int:
 
     # Parse config overrides
     overrides = json.loads(args.config_override) if args.config_override else None
+
+    # Expand "full" alias to canonical mode string
+    if args.mode == "full":
+        args.mode = "all+weather+vegas+props"
 
     # Build PFF config once from mode + overrides
     pff_config = _build_pff_config(args.mode, overrides=overrides)
