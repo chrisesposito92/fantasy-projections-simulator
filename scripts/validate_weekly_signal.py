@@ -40,6 +40,8 @@ from fantasy_sim.data.pff.models import (
     TeamContextConfig,
     TierConfig,
 )
+from fantasy_sim.data.weather.config import load_weather_config
+from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.scoring.projections import build_player_projections
 from fantasy_sim.validation.weekly import (
@@ -73,7 +75,7 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
     """Build a PffConfig with the appropriate layers enabled.
 
     Args:
-        mode: One of "matchup", "talent", "tier", or "all".
+        mode: PFF/weather layer combination (e.g. "all", "tier", "matchup+tier").
         overrides: Optional dict with "talent" and/or "matchup" sub-dicts
             of attribute overrides to apply via setattr.
     """
@@ -137,12 +139,30 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
         tier_cfg = TierConfig(enabled=True)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=True)
-    else:  # "all"
-        matchup_cfg = MatchupConfig(enabled=True)
-        talent_cfg = TalentConfig(enabled=True)
+    elif mode == "weather":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
         tier_cfg = TierConfig(enabled=False)
         tc_cfg = TeamContextConfig(enabled=False)
         cov_cfg = CoverageConfig(enabled=False)
+    elif mode == "weather+tier":
+        matchup_cfg = MatchupConfig(enabled=False)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+    elif mode == "weather+tier+matchup":
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=False)
+    else:  # "all", "all+weather" — current defaults: tier + matchup + coverage
+        matchup_cfg = MatchupConfig(enabled=True)
+        talent_cfg = TalentConfig(enabled=False)
+        tier_cfg = TierConfig(enabled=True)
+        tc_cfg = TeamContextConfig(enabled=False)
+        cov_cfg = CoverageConfig(enabled=True)
 
     if overrides and "talent" in overrides:
         for key, val in overrides["talent"].items():
@@ -201,6 +221,35 @@ def _build_pff_config(mode: str, overrides: dict | None = None) -> PffConfig:
                      tier_engine=tier_cfg, team_context=tc_cfg, coverage=cov_cfg)
 
 
+def _build_weather_config(mode: str, overrides: dict | None = None) -> WeatherConfig | None:
+    """Build a WeatherConfig if the mode includes weather.
+
+    Returns None if weather is not part of the mode, or a WeatherConfig
+    with enabled=True (and optional overrides applied) if it is.
+    """
+    if "weather" not in mode:
+        return None
+
+    from fantasy_sim.config.loader import load_defaults
+    defaults = load_defaults()
+    weather_config = load_weather_config(defaults)
+    weather_config.enabled = True
+
+    if overrides and "weather" in overrides:
+        weather_raw = overrides["weather"]
+        for section in ("wind", "temperature", "precipitation"):
+            if section in weather_raw:
+                sub_config = getattr(weather_config, section)
+                for k, v in weather_raw[section].items():
+                    setattr(sub_config, k, v)
+        if "factor_clamp" in weather_raw:
+            weather_config.factor_clamp = tuple(weather_raw["factor_clamp"])
+        if "forecast_ttl_hours" in weather_raw:
+            weather_config.forecast_ttl_hours = weather_raw["forecast_ttl_hours"]
+
+    return weather_config
+
+
 def _filter_matchup_factors(
     position: str, ctx: MatchupContext
 ) -> dict[str, float]:
@@ -216,6 +265,7 @@ def run_weekly_comparison(
     num_training_seasons: int,
     pff_config: PffConfig,
     positions: list[str],
+    weather_config: WeatherConfig | None = None,
 ) -> list[WeeklyPlayerRecord]:
     """Run PFF-on vs PFF-off for every game in a season, collect per-player records."""
 
@@ -238,7 +288,7 @@ def run_weekly_comparison(
         actual_name[a.player_id] = a.name
 
     builder_off = GameContextBuilder(cache_dir=loader.cache_dir)
-    builder_on = GameContextBuilder(cache_dir=loader.cache_dir, pff_config=pff_config)
+    builder_on = GameContextBuilder(cache_dir=loader.cache_dir, pff_config=pff_config, weather_config=weather_config)
 
     weeks = sorted(
         schedules.filter(pl.col("season") == test_season)["week"]
@@ -365,19 +415,35 @@ def main() -> int:
             "matchup", "talent", "tier", "matchup+tier",
             "team_context+tier", "team_context+tier+matchup",
             "ncaa_rookie+tier", "ncaa_rookie+tier+matchup",
-            "coverage+tier", "coverage+tier+matchup", "all",
+            "coverage+tier", "coverage+tier+matchup",
+            "weather", "weather+tier", "weather+tier+matchup",
+            "all", "all+weather",
         ],
         default="all",
-        help="Which PFF layer(s) to enable (default: all).",
+        help=(
+            "Which PFF/weather layer(s) to enable (default: all). "
+            "'weather' = weather engine only, "
+            "'weather+tier' = weather + tier, "
+            "'weather+tier+matchup' = weather + tier + matchup."
+        ),
     )
     parser.add_argument("--sims", type=int, default=50, help="Sims per game (default: 50).")
-    parser.add_argument("--seasons", type=int, nargs="+", default=[2023, 2024], help="Test seasons.")
-    parser.add_argument("--training-years", type=int, default=2, dest="training_years")
+    parser.add_argument("--seasons", type=int, nargs="+", default=[2023, 2024, 2025], help="Test seasons (default: 2023 2024 2025).")
+    parser.add_argument("--training-years", type=int, default=4, dest="training_years", help="Training seasons before each test season (default: 4).")
     parser.add_argument("--scoring", default="ppr", choices=["ppr", "half_ppr", "standard"])
     parser.add_argument("--positions", nargs="+", default=list(POSITIONS), help="Positions to evaluate.")
     parser.add_argument("--label", type=str, default=None, help="Label for ledger entry.")
     parser.add_argument("--show-ledger", action="store_true", help="Print ledger and exit.")
-    parser.add_argument("--config-override", type=str, default=None, dest="config_override")
+    parser.add_argument(
+        "--config-override",
+        type=str,
+        default=None,
+        dest="config_override",
+        metavar="JSON",
+        help='Config overrides as JSON. Keys: "talent", "matchup", "tier_engine", '
+             '"team_context", "ncaa_rookie", "coverage", "weather". '
+             'Example: \'{"weather": {"wind": {"pass_yards_sensitivity": 0.04}}}\'',
+    )
 
     args = parser.parse_args()
 
@@ -388,6 +454,7 @@ def main() -> int:
 
     overrides = json.loads(args.config_override) if args.config_override else None
     pff_config = _build_pff_config(args.mode, overrides=overrides)
+    weather_config = _build_weather_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  WEEKLY PFF SIGNAL VALIDATION")
@@ -421,6 +488,7 @@ def main() -> int:
                     num_training_seasons=args.training_years,
                     pff_config=pff_config,
                     positions=args.positions,
+                    weather_config=weather_config,
                 ): season
                 for season in args.seasons
             }
@@ -438,6 +506,7 @@ def main() -> int:
                 num_training_seasons=args.training_years,
                 pff_config=pff_config,
                 positions=args.positions,
+                weather_config=weather_config,
             )
             all_records.extend(season_records)
 
