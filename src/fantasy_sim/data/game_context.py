@@ -1,5 +1,6 @@
 """Build game context (TeamDistributions + TeamRoster) from nflverse data."""
 
+import copy
 import logging
 from pathlib import Path
 import polars as pl
@@ -220,7 +221,7 @@ class GameContextBuilder:
             play_calling=play_calling,
             play_outcomes=pipeline_output["play_outcomes"],
             turnover_rates=turnover_rates,
-            kicking=pipeline_output["kicking"],
+            kicking=copy.deepcopy(pipeline_output["kicking"]),
             drive_start=pipeline_output["drive_start"],
         )
 

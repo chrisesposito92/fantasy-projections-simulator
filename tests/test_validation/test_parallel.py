@@ -228,6 +228,67 @@ class TestSimulateGamesParallel:
         assert completed[-1] == (2, 2)
 
 
+import copy
+
+
+class TestKickingModelIsolation:
+    def test_weather_mutation_does_not_bleed_across_games(self):
+        """Two TeamDistributions from the same pipeline must have independent KickingModels."""
+        dists_a = _make_dists("KC")
+        dists_b = _make_dists("BUF")
+
+        # Simulate what _apply_weather does: mutate kicking in-place
+        original_rate = dists_a.kicking.fg_make_rate["50_plus"]
+        dists_a.kicking.fg_make_rate["50_plus"] = 0.10  # severe weather
+
+        # dists_b should NOT see this mutation
+        assert dists_b.kicking.fg_make_rate["50_plus"] == original_rate
+
+    def test_build_team_distributions_returns_independent_kicking(self):
+        """build_team_distributions must deepcopy kicking from pipeline cache."""
+        from fantasy_sim.data.game_context import GameContextBuilder
+        from unittest.mock import MagicMock, patch
+
+        builder = object.__new__(GameContextBuilder)
+        builder._pff_config = MagicMock(enabled=False)
+        builder._matchup_engine = None
+        builder._talent_stabilizer = None
+        builder._tier_engine = None
+        builder._team_context_engine = None
+        builder._coverage_engine = None
+        builder._kicker_engine = None
+        builder._dst_baseline_engine = None
+        builder._weather_engine = None
+        builder._pff_crosswalk = None
+        builder._pff_loader = None
+        builder._weather_config = None
+
+        kicking = KickingModel(
+            fg_make_rate={"0_39": 0.93, "40_49": 0.82, "50_plus": 0.65},
+            xp_rate=0.94,
+        )
+        pipeline_output = {
+            "play_calling": {"KC": PlayCallingDist(team="KC", distributions={}, default={"pass": 0.55, "run": 0.45})},
+            "play_outcomes": PlayOutcomeDist(distributions={}, defaults={}),
+            "turnover_rates": {"KC": TurnoverRates(team="KC", int_rate=0.02, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10)},
+            "kicking": kicking,
+            "drive_start": DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([74, 76])),
+        }
+        builder._pipeline_cache = pipeline_output
+        builder._cached_training_seasons = (2022, 2023, 2024)
+        builder._pbp_stats_cache = {}
+        builder._player_models_cache = {}
+        builder._player_cache_key = ((2022, 2023, 2024), None, None)
+        builder.cache_dir = "/tmp"
+        builder.loader = MagicMock()
+
+        dists = builder.build_team_distributions("KC", training_seasons=[2022, 2023, 2024])
+
+        # Mutate the returned kicking — should NOT affect the pipeline cache
+        dists.kicking.fg_make_rate["50_plus"] = 0.10
+        assert pipeline_output["kicking"].fg_make_rate["50_plus"] == 0.65
+
+
 from fantasy_sim.validation.backtester import Backtester
 
 
