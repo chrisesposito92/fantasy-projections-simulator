@@ -68,16 +68,31 @@ class PropsLoader:
 
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Read API key from env var (never log the key itself)
+        # Read API key: env var first, then .env file in cache dir
         env_key = os.environ.get(config.api_key_env)
+        if not env_key:
+            env_key = self._load_env_file(config.api_key_env)
         if env_key:
             self._api_key: str | None = env_key
         else:
             logger.warning(
-                "No Odds API key found in env var '%s' -- props disabled",
+                "No Odds API key found in env var '%s' or %s/.env -- props disabled",
                 config.api_key_env,
+                self.cache_dir,
             )
             self._api_key = None
+
+    def _load_env_file(self, key_name: str) -> str | None:
+        """Load an API key from .env file in the cache directory."""
+        env_path = self.cache_dir / ".env"
+        if not env_path.exists():
+            return None
+        prefix = f"{key_name}="
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith(prefix):
+                return line[len(prefix):].strip().strip('"').strip("'")
+        return None
 
     # ------------------------------------------------------------------
     # Public API
