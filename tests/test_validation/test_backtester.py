@@ -1,5 +1,9 @@
 # tests/test_validation/test_backtester.py
+import io
+import sys
+
 import polars as pl
+import pytest
 from unittest.mock import patch, MagicMock
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 
@@ -148,3 +152,156 @@ class TestBacktesterParallelBuild:
         call_kwargs = mock_build_parallel.call_args[1]
         assert call_kwargs["pff_config"] is pff_cfg
         assert call_kwargs["weather_config"] is weather_cfg
+
+
+def _make_ok_result(game_id: str, week: int = 1) -> dict:
+    """Helper: build an 'ok' build result dict with minimal stub data."""
+    return {
+        "status": "ok",
+        "game_id": game_id,
+        "seed": 42,
+        "week": week,
+        "home": "KC",
+        "away": "BUF",
+        "home_dists": MagicMock(),
+        "away_dists": MagicMock(),
+        "home_roster": MagicMock(),
+        "away_roster": MagicMock(),
+    }
+
+
+def _make_error_result(game_id: str, week: int = 1, error_type: str = "KeyError") -> dict:
+    """Helper: build an 'error' build result dict."""
+    return {
+        "status": "error",
+        "game_id": game_id,
+        "seed": 42,
+        "week": week,
+        "home": "KC",
+        "away": "BUF",
+        "error": f"Some {error_type} occurred",
+        "error_type": error_type,
+    }
+
+
+def _mock_loader():
+    """Helper: create a mock DataLoader with minimal schedule data."""
+    mock_loader = MagicMock()
+    mock_loader.cache_dir = "/tmp/test"
+    mock_loader.load_schedules.return_value = pl.DataFrame([
+        {"season": 2024, "week": 1, "game_id": "2024_01_KC_BUF",
+         "home_team": "KC", "away_team": "BUF"},
+    ])
+    mock_loader.load_player_stats.return_value = pl.DataFrame(
+        {"season": pl.Series([], dtype=pl.Int32)}
+    )
+    return mock_loader
+
+
+class TestBacktesterFailureSurfacing:
+    """Tests for FIX-01 (failure counting) and FIX-03 (hold-out gate)."""
+
+    def test_holdout_season_raises(self):
+        """Backtester(test_season=2025) must raise ValueError with 'hold-out'."""
+        with pytest.raises(ValueError, match="hold-out"):
+            Backtester(test_season=2025)
+
+    def test_holdout_season_2024_allowed(self):
+        """Backtester(test_season=2024) must NOT raise."""
+        bt = Backtester(test_season=2024, n_sims=10)
+        assert bt.test_season == 2024
+
+    def test_holdout_season_2026_raises(self):
+        """Backtester(test_season=2026) must also raise (>= check)."""
+        with pytest.raises(ValueError, match="hold-out"):
+            Backtester(test_season=2026)
+
+    @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.load_actual_scores")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_build_failures_counted_and_logged(
+        self, mock_loader_cls, mock_load_actuals, mock_build, mock_sim
+    ):
+        """1 failure out of 20 games (5%) -- should complete without AssertionError.
+
+        Strict < 0.05 means 1/20 = 5% is NOT below threshold. Use 1/21.
+        """
+        mock_loader_cls.return_value = _mock_loader()
+        mock_load_actuals.return_value = []
+
+        # 20 ok results + 1 error = 21 total, failure rate = 1/21 ~ 4.8% < 5%
+        results = [_make_ok_result(f"game_{i}") for i in range(20)]
+        results.append(_make_error_result("game_fail_1"))
+        mock_build.return_value = results
+        mock_sim.return_value = []
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10)
+        bt.loader = _mock_loader()
+
+        # Should NOT raise -- failure rate is below 5%
+        bt.run(scoring_config)
+
+    @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.load_actual_scores")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_build_failure_rate_above_threshold(
+        self, mock_loader_cls, mock_load_actuals, mock_build, mock_sim
+    ):
+        """2 failures out of 20 games (10% > 5%) -- must raise AssertionError."""
+        mock_loader_cls.return_value = _mock_loader()
+        mock_load_actuals.return_value = []
+
+        results = [_make_ok_result(f"game_{i}") for i in range(18)]
+        results.append(_make_error_result("game_fail_1"))
+        results.append(_make_error_result("game_fail_2"))
+        mock_build.return_value = results
+        mock_sim.return_value = []
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10)
+        bt.loader = _mock_loader()
+
+        with pytest.raises(AssertionError, match="failure rate"):
+            bt.run(scoring_config)
+
+    @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.load_actual_scores")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_error_type_in_failure_output(
+        self, mock_loader_cls, mock_load_actuals, mock_build, mock_sim
+    ):
+        """Error result with error_type='KeyError' should appear in FAIL output."""
+        mock_loader_cls.return_value = _mock_loader()
+        mock_load_actuals.return_value = []
+
+        # 20 ok + 1 error with KeyError type
+        results = [_make_ok_result(f"game_{i}") for i in range(20)]
+        results.append(_make_error_result("game_fail_key", error_type="KeyError"))
+        mock_build.return_value = results
+        mock_sim.return_value = []
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10)
+        bt.loader = _mock_loader()
+
+        captured = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = captured
+        try:
+            bt.run(scoring_config)
+        finally:
+            sys.stdout = old_stdout
+
+        output = captured.getvalue()
+        assert "KeyError" in output
+        assert "game_fail_key" in output

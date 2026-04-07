@@ -46,6 +46,9 @@ class BacktestResult:
         return True
 
 
+_HOLDOUT_SEASON = 2025
+
+
 class Backtester:
     """Run hold-out backtests against historical seasons."""
 
@@ -60,6 +63,11 @@ class Backtester:
         weather_config: WeatherConfig | None = None,
         max_workers: int = 1,
     ):
+        if test_season >= _HOLDOUT_SEASON:
+            raise ValueError(
+                f"Season {test_season} is reserved as hold-out until milestone completion. "
+                f"Use seasons 2022-2024 for A/B validation."
+            )
         self.test_season = test_season
         self.n_sims = n_sims
         self.training_seasons = list(range(
@@ -115,8 +123,15 @@ class Backtester:
         )
 
         specs: list[GameSpec] = []
+        failed_games: list[str] = []
+        total_games = len(build_results)
+
         for r in build_results:
             if r["status"] != "ok":
+                err_type = r.get("error_type", "Error")
+                err_msg = str(r.get("error", "unknown"))[:80]
+                failed_games.append(r["game_id"])
+                print(f"FAIL: {r['game_id']} — {err_type}: {err_msg}")
                 continue
             specs.append(GameSpec(
                 game_id=r["game_id"],
@@ -127,6 +142,15 @@ class Backtester:
                 seed=r["seed"],
                 week=r["week"],
             ))
+
+        # Failure summary and assertion (FIX-01)
+        if failed_games:
+            failure_rate = len(failed_games) / max(total_games, 1)
+            print(f"\n{len(failed_games)}/{total_games} games failed ({failure_rate:.1%})")
+            assert failure_rate < 0.05, (
+                f"Game failure rate {failure_rate:.1%} >= 5% threshold "
+                f"({len(failed_games)} failures: {failed_games[:5]})"
+            )
 
         # --- Phase 2: Simulate (parallel or sequential) ---
         sim_results = simulate_games_parallel(

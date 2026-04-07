@@ -694,9 +694,9 @@ def main() -> int:
         "--seasons",
         type=int,
         nargs="+",
-        default=[2023, 2024],
+        default=[2022, 2023, 2024],
         metavar="YEAR",
-        help="Test seasons to backtest (default: 2023 2024).",
+        help="Test seasons to backtest (default: 2022 2023 2024).",
     )
     parser.add_argument(
         "--training-years",
@@ -747,6 +747,15 @@ def main() -> int:
         entries = load_ledger()
         print(format_progression_table(entries))
         return 0
+
+    # Hold-out gate: block 2025+ seasons until milestone completion (FIX-03)
+    if any(s >= 2025 for s in args.seasons):
+        print(
+            "ERROR: Season 2025+ is reserved as hold-out until milestone completion. "
+            "Use --seasons 2022 2023 2024.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Parse config overrides
     overrides = json.loads(args.config_override) if args.config_override else None

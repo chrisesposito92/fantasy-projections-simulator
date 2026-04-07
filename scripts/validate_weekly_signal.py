@@ -451,7 +451,7 @@ def main() -> int:
         ),
     )
     parser.add_argument("--sims", type=int, default=50, help="Sims per game (default: 50).")
-    parser.add_argument("--seasons", type=int, nargs="+", default=[2023, 2024], help="Test seasons (default: 2023 2024).")
+    parser.add_argument("--seasons", type=int, nargs="+", default=[2022, 2023, 2024], help="Test seasons (default: 2022 2023 2024).")
     parser.add_argument("--training-years", type=int, default=4, dest="training_years", help="Training seasons before each test season (default: 4).")
     parser.add_argument("--scoring", default="ppr", choices=["ppr", "half_ppr", "standard"])
     parser.add_argument("--positions", nargs="+", default=list(POSITIONS), help="Positions to evaluate.")
@@ -481,6 +481,15 @@ def main() -> int:
         entries = load_weekly_ledger(WEEKLY_LEDGER_PATH)
         print(format_weekly_progression_table(entries))
         return 0
+
+    # Hold-out gate: block 2025+ seasons until milestone completion (FIX-03)
+    if any(s >= 2025 for s in args.seasons):
+        print(
+            "ERROR: Season 2025+ is reserved as hold-out until milestone completion. "
+            "Use --seasons 2022 2023 2024.",
+            file=sys.stderr,
+        )
+        return 1
 
     overrides = json.loads(args.config_override) if args.config_override else None
     pff_config = _build_pff_config(args.mode, overrides=overrides)
