@@ -42,11 +42,8 @@ from fantasy_sim.data.pff.models import (
 )
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
-from fantasy_sim.engine.monte_carlo import run_simulations
-from fantasy_sim.scoring.projections import build_player_projections
 from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, default_max_workers
 from fantasy_sim.validation.weekly import (
-    DirectionalAccuracyResult,
     WeeklyLedgerEntry,
     WeeklyPlayerRecord,
     WeeklyPositionSummary,

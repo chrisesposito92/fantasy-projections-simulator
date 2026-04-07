@@ -29,6 +29,7 @@ from fantasy_sim.data.pff.models import CoverageConfig, DstBaselineConfig, Kicke
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
+from fantasy_sim.validation.parallel import default_max_workers
 
 # ---------------------------------------------------------------------------
 # Kill-point thresholds
@@ -470,6 +471,7 @@ def run_backtest_pair(
     num_training_seasons: int,
     pff_config: PffConfig,
     weather_config: WeatherConfig | None = None,
+    max_workers: int = 1,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
 
@@ -479,6 +481,7 @@ def run_backtest_pair(
         test_season=test_season,
         n_sims=n_sims,
         num_training_seasons=num_training_seasons,
+        max_workers=max_workers,
     )
     result_off = bt_off.run(scoring_config)
     elapsed_off = time.time() - t0
@@ -516,6 +519,7 @@ def run_backtest_pair(
         num_training_seasons=num_training_seasons,
         pff_config=pff_config,
         weather_config=weather_config,
+        max_workers=max_workers,
     )
     result_on = bt_on.run(scoring_config)
     elapsed_on = time.time() - t0
@@ -729,6 +733,13 @@ def main() -> int:
              '"team_context", "ncaa_rookie", "coverage", "kicker", "dst_baseline", "weather". '
              'Example: \'{"coverage": {"catch_rate_sensitivity": 0.06}}\'',
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Worker processes for game simulation (0=auto, 1=sequential). Default: auto.",
+    )
 
     args = parser.parse_args()
 
@@ -758,6 +769,16 @@ def main() -> int:
         print(f"  config_override: {overrides}")
     print("=" * 68)
 
+    # Compute per-season worker count
+    num_seasons = len(args.seasons)
+    if args.workers == 1:
+        per_season_workers = 1
+    elif args.workers > 1:
+        per_season_workers = args.workers
+    else:
+        per_season_workers = default_max_workers(batch_size=288, num_concurrent=num_seasons)
+    print(f"  workers       : {per_season_workers} per season")
+
     # Load scoring config
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
@@ -780,6 +801,7 @@ def main() -> int:
                     num_training_seasons=args.training_years,
                     pff_config=pff_config,
                     weather_config=weather_config,
+                    max_workers=per_season_workers,
                 ): season
                 for season in args.seasons
             }
@@ -801,6 +823,7 @@ def main() -> int:
                 num_training_seasons=args.training_years,
                 pff_config=pff_config,
                 weather_config=weather_config,
+                max_workers=per_season_workers,
             )
             results.append(comparison)
 

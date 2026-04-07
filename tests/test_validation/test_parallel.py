@@ -226,3 +226,16 @@ class TestSimulateGamesParallel:
         assert len(results) == 2
         assert len(completed) == 2
         assert completed[-1] == (2, 2)
+
+
+from fantasy_sim.validation.backtester import Backtester
+
+
+class TestBacktesterParallel:
+    def test_default_max_workers_is_one(self):
+        bt = Backtester(test_season=2024, n_sims=10)
+        assert bt.max_workers == 1
+
+    def test_max_workers_param(self):
+        bt = Backtester(test_season=2024, n_sims=10, max_workers=4)
+        assert bt.max_workers == 4
