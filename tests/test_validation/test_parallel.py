@@ -289,6 +289,116 @@ class TestKickingModelIsolation:
         assert pipeline_output["kicking"].fg_make_rate["50_plus"] == 0.65
 
 
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+
+class TestBuildGamesParallel:
+    def _mock_builder(self):
+        """Create a mock GameContextBuilder that returns valid game contexts."""
+        mock = MagicMock()
+        mock.build_game.return_value = (
+            _make_dists("KC"), _make_dists("BUF"),
+            _make_roster("KC"), _make_roster("BUF"),
+        )
+        mock._pff_config = MagicMock(enabled=False)
+        return mock
+
+    def test_empty_input_returns_empty(self):
+        from fantasy_sim.validation.parallel import build_games_parallel
+        results = build_games_parallel(
+            [], cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert results == []
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_single_game(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [("KC", "BUF", [2022, 2023], 2024, 1, "2024_01_KC_BUF", 42)]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert len(results) == 1
+        r = results[0]
+        assert r["status"] == "ok"
+        assert r["game_id"] == "2024_01_KC_BUF"
+        assert r["seed"] == 42
+        assert r["week"] == 1
+        assert r["home_dists"].play_calling.team == "KC"
+        assert r["away_roster"].team == "BUF"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_sequential_multiple_games(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 100),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "game_2", 200),
+            ("KC", "BUF", [2022, 2023], 2024, 2, "game_3", 300),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        assert len(results) == 3
+        # Results should be sorted by (week, game_id)
+        assert results[0]["game_id"] == "game_1"
+        assert results[1]["game_id"] == "game_2"
+        assert results[2]["game_id"] == "game_3"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_error_skips_failed_game(self, mock_builder_cls):
+        mock = self._mock_builder()
+        call_count = 0
+
+        def side_effect(*a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise ValueError("bad team")
+            return (
+                _make_dists("KC"), _make_dists("BUF"),
+                _make_roster("KC"), _make_roster("BUF"),
+            )
+
+        mock.build_game.side_effect = side_effect
+        mock_builder_cls.return_value = mock
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "good_1", 100),
+            ("XX", "YY", [2022, 2023], 2024, 1, "bad_1", 200),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "good_2", 300),
+        ]
+        results = build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+        )
+        ok_results = [r for r in results if r["status"] == "ok"]
+        err_results = [r for r in results if r["status"] == "error"]
+        assert len(ok_results) == 2
+        assert len(err_results) == 1
+        assert err_results[0]["game_id"] == "bad_1"
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_on_complete_callback(self, mock_builder_cls):
+        mock_builder_cls.return_value = self._mock_builder()
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        completed = []
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 1, "g1", 1),
+            ("SF", "DAL", [2022, 2023], 2024, 1, "g2", 2),
+        ]
+        build_games_parallel(
+            game_args, cache_dir=Path("/tmp"), max_workers=1,
+            on_complete=lambda done, total: completed.append((done, total)),
+        )
+        assert len(completed) == 2
+        assert completed[-1] == (2, 2)
+
+
 from fantasy_sim.validation.backtester import Backtester
 
 

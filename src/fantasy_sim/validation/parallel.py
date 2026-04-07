@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,6 +13,9 @@ if TYPE_CHECKING:
     from fantasy_sim.models.player import TeamRoster
 
 logger = logging.getLogger(__name__)
+
+# Module-level builder registry — populated by _init_build_worker_* initializers
+_worker_builders: dict | None = None
 
 
 def default_max_workers(batch_size: int, num_concurrent: int = 1) -> int:
@@ -57,6 +61,7 @@ class GameSimResult:
 
 from typing import Callable
 
+from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.scoring.projections import build_player_projections
 
@@ -149,4 +154,191 @@ def simulate_games_parallel(
             if on_complete:
                 on_complete(completed, total)
 
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 parallelism: game context building
+# ---------------------------------------------------------------------------
+
+# Deferred import inside worker functions to avoid circular imports at module load.
+
+
+def _init_build_worker_single(
+    cache_dir: Path,
+    pff_config: dict | None,
+    weather_config: dict | None,
+) -> None:
+    """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
+    global _worker_builders
+    from fantasy_sim.data.game_context import GameContextBuilder  # deferred
+
+    builder = GameContextBuilder(
+        cache_dir=cache_dir,
+        pff_config=pff_config,
+        weather_config=weather_config,
+    )
+    _worker_builders = {"single": builder}
+
+
+def _build_game_worker_single(args: tuple) -> dict:
+    """Worker function for single-arm game context building.
+
+    Must be module-level (not a closure) for ProcessPoolExecutor.
+
+    Args:
+        args: (home, away, training_seasons, target_season, week, game_id, seed)
+
+    Returns:
+        Result dict with keys: status, game_id, seed, week, home, away,
+        home_dists, away_dists, home_roster, away_roster.
+        On error: status='error', error=str(exc).
+    """
+    home, away, training_seasons, target_season, week, game_id, seed = args
+    try:
+        builder = _worker_builders["single"]
+        home_dists, away_dists, home_roster, away_roster = builder.build_game(
+            home, away,
+            training_seasons=training_seasons,
+            target_season=target_season,
+            week=week,
+        )
+        return {
+            "status": "ok",
+            "game_id": game_id,
+            "seed": seed,
+            "week": week,
+            "home": home,
+            "away": away,
+            "home_dists": home_dists,
+            "away_dists": away_dists,
+            "home_roster": home_roster,
+            "away_roster": away_roster,
+        }
+    except Exception as exc:
+        logger.warning("Build failed for game %s: %s", game_id, exc, exc_info=True)
+        return {
+            "status": "error",
+            "game_id": game_id,
+            "seed": seed,
+            "week": week,
+            "home": home,
+            "away": away,
+            "error": str(exc),
+        }
+
+
+def _build_games_sequential(
+    game_args: list[tuple],
+    cache_dir: Path,
+    pff_config: dict | None,
+    weather_config: dict | None,
+    dual_arm: bool,
+    on_complete: "Callable[[int, int], None] | None",
+) -> list[dict]:
+    """Sequential fallback: build game contexts one at a time."""
+    global _worker_builders
+
+    builder = GameContextBuilder(
+        cache_dir=cache_dir,
+        pff_config=pff_config,
+        weather_config=weather_config,
+    )
+    _worker_builders = {"single": builder}
+
+    total = len(game_args)
+    results: list[dict] = []
+    for i, args in enumerate(game_args):
+        if dual_arm:
+            result = _build_game_worker_dual(args)  # noqa: F821 — added in Task 3
+        else:
+            result = _build_game_worker_single(args)
+        results.append(result)
+        if on_complete:
+            on_complete(i + 1, total)
+    return results
+
+
+def build_games_parallel(
+    game_args: list[tuple],
+    cache_dir: Path,
+    pff_config: dict | None = None,
+    weather_config: dict | None = None,
+    max_workers: int | None = None,
+    dual_arm: bool = False,
+    on_complete: "Callable[[int, int], None] | None" = None,
+) -> list[dict]:
+    """Build game contexts for multiple games, optionally in parallel.
+
+    Args:
+        game_args: List of tuples (home, away, training_seasons, target_season,
+                   week, game_id, seed).
+        cache_dir: Directory for the GameContextBuilder cache.
+        pff_config: PFF configuration dict (None to use defaults).
+        weather_config: Weather configuration dict (None to use defaults).
+        max_workers: Worker processes. None/0=auto, 1=sequential.
+        dual_arm: If True, use dual-arm workers (A/B). Requires Task 3.
+        on_complete: Optional callback(completed_count, total_count).
+
+    Returns:
+        List of result dicts sorted by (week, game_id).
+    """
+    if not game_args:
+        return []
+
+    if max_workers is None or max_workers == 0:
+        max_workers = default_max_workers(len(game_args))
+
+    total = len(game_args)
+
+    if max_workers <= 1:
+        results = _build_games_sequential(
+            game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete
+        )
+    else:
+        from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
+
+        init_fn = _init_build_worker_single
+        worker_fn = _build_game_worker_single if not dual_arm else _build_game_worker_dual  # noqa: F821
+
+        with ProcessPoolExecutor(
+            max_workers=max_workers,
+            initializer=init_fn,
+            initargs=(cache_dir, pff_config, weather_config),
+        ) as pool:
+            futures = {
+                pool.submit(worker_fn, args): args for args in game_args
+            }
+            completed = 0
+            raw_results: list[dict] = []
+            for future in as_completed(futures):
+                args = futures[future]
+                try:
+                    result = future.result()
+                    raw_results.append(result)
+                except BrokenExecutor:
+                    raise RuntimeError(
+                        "Worker process crashed. Try --workers 1 for sequential mode."
+                    )
+                except Exception as exc:
+                    game_id = args[5]
+                    logger.warning(
+                        "Build failed for game %s: %s", game_id, exc, exc_info=True
+                    )
+                    raw_results.append({
+                        "status": "error",
+                        "game_id": game_id,
+                        "seed": args[6],
+                        "week": args[4],
+                        "home": args[0],
+                        "away": args[1],
+                        "error": str(exc),
+                    })
+                completed += 1
+                if on_complete:
+                    on_complete(completed, total)
+        results = raw_results
+
+    # Sort by (week, game_id) for deterministic ordering
+    results.sort(key=lambda r: (r.get("week", 0), r.get("game_id", "")))
     return results
