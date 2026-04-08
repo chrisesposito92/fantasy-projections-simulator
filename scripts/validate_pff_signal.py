@@ -525,19 +525,23 @@ def _build_usage_config(mode: str, overrides: dict | None = None) -> UsageConfig
     # Strip "all+"/"full+" prefix -- these enable all other engines, handled elsewhere
     mode_key = mode.replace("all+", "").replace("full+", "")
 
+    # Default usage config for "all" mode: snap + cpoe (validated by A/B)
+    default_usage = UsageConfig(
+        enabled=True,
+        cpoe=CpoeConfig(enabled=True),
+        ngs=NgsConfig(enabled=False),
+        route_rate=RouteRateConfig(enabled=False),
+    )
+
     usage_modes = {
+        "all": default_usage,
         "usage": UsageConfig(
             enabled=True,
             cpoe=CpoeConfig(enabled=False),
             ngs=NgsConfig(enabled=False),
             route_rate=RouteRateConfig(enabled=False),
         ),
-        "usage+cpoe": UsageConfig(
-            enabled=True,
-            cpoe=CpoeConfig(enabled=True),
-            ngs=NgsConfig(enabled=False),
-            route_rate=RouteRateConfig(enabled=False),
-        ),
+        "usage+cpoe": default_usage,
         "usage+ngs": UsageConfig(
             enabled=True,
             cpoe=CpoeConfig(enabled=False),

@@ -433,9 +433,19 @@ def test_mode_isolation_usage_cpoe_ngs():
 def test_mode_isolation_non_usage_returns_none():
     """_build_usage_config returns None for non-usage modes."""
     _build_usage_config = _import_build_usage_config()
-    assert _build_usage_config("all") is None
     assert _build_usage_config("vegas") is None
     assert _build_usage_config("matchup") is None
+
+
+def test_mode_all_includes_usage_snap_cpoe():
+    """_build_usage_config('all') returns snap+cpoe UsageConfig (A/B validated)."""
+    _build_usage_config = _import_build_usage_config()
+    config = _build_usage_config("all")
+    assert config is not None
+    assert config.enabled is True
+    assert config.cpoe.enabled is True
+    assert config.ngs.enabled is False
+    assert config.route_rate.enabled is False
 
 
 def test_all_plus_usage_mode():
