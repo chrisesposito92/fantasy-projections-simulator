@@ -2,7 +2,7 @@
 
 TDD structure:
 - Passing tests: UsageConfig defaults, DataLoader.load_nextgen_stats (Task 1)
-- Failing stubs: engine behavior (Task 2 will make these pass)
+- Engine behavior tests: snap blend, crosswalk, rolling window (Task 2)
 
 Fixtures:
 - mock_snap_df: polars DataFrame with snap count columns
@@ -14,6 +14,7 @@ Fixtures:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -37,19 +38,58 @@ from fantasy_sim.models.player import PlayerModel, PlayerOutcomes, PlayerUsage, 
 
 @pytest.fixture
 def mock_snap_df() -> pl.DataFrame:
-    """Mock snap count DataFrame matching nflverse load_snap_counts() schema."""
+    """Mock snap count DataFrame matching nflverse load_snap_counts() schema.
+
+    Includes multiple weeks of data for rolling window tests.
+    """
+    rows = [
+        # Week 1 data
+        ("WR001", "WR One",   "WR", "KC", 2024, 1, "REG", 65, 0.93),
+        ("WR002", "WR Two",   "WR", "KC", 2024, 1, "REG", 55, 0.79),
+        ("RB001", "RB One",   "RB", "KC", 2024, 1, "REG", 45, 0.64),
+        ("RB002", "RB Two",   "RB", "KC", 2024, 1, "REG", 20, 0.29),
+        ("QB001", "QB One",   "QB", "KC", 2024, 1, "REG", 70, 1.00),
+        ("WR003", "WR Three", "WR", "KC", 2024, 1, "REG", 40, 0.57),
+        # Week 2 data
+        ("WR001", "WR One",   "WR", "KC", 2024, 2, "REG", 60, 0.86),
+        ("WR002", "WR Two",   "WR", "KC", 2024, 2, "REG", 50, 0.71),
+        ("RB001", "RB One",   "RB", "KC", 2024, 2, "REG", 48, 0.69),
+        ("RB002", "RB Two",   "RB", "KC", 2024, 2, "REG", 22, 0.31),
+        ("QB001", "QB One",   "QB", "KC", 2024, 2, "REG", 70, 1.00),
+        ("WR003", "WR Three", "WR", "KC", 2024, 2, "REG", 38, 0.54),
+        # Week 3 data
+        ("WR001", "WR One",   "WR", "KC", 2024, 3, "REG", 63, 0.90),
+        ("WR002", "WR Two",   "WR", "KC", 2024, 3, "REG", 52, 0.74),
+        ("RB001", "RB One",   "RB", "KC", 2024, 3, "REG", 42, 0.60),
+        ("RB002", "RB Two",   "RB", "KC", 2024, 3, "REG", 18, 0.26),
+        ("QB001", "QB One",   "QB", "KC", 2024, 3, "REG", 70, 1.00),
+        ("WR003", "WR Three", "WR", "KC", 2024, 3, "REG", 35, 0.50),
+        # Week 4 data
+        ("WR001", "WR One",   "WR", "KC", 2024, 4, "REG", 67, 0.96),
+        ("WR002", "WR Two",   "WR", "KC", 2024, 4, "REG", 58, 0.83),
+        ("RB001", "RB One",   "RB", "KC", 2024, 4, "REG", 50, 0.71),
+        ("RB002", "RB Two",   "RB", "KC", 2024, 4, "REG", 25, 0.36),
+        ("QB001", "QB One",   "QB", "KC", 2024, 4, "REG", 70, 1.00),
+        ("WR003", "WR Three", "WR", "KC", 2024, 4, "REG", 42, 0.60),
+        # Week 5 data (should be EXCLUDED when target_week=5)
+        ("WR001", "WR One",   "WR", "KC", 2024, 5, "REG", 70, 1.00),
+        ("WR002", "WR Two",   "WR", "KC", 2024, 5, "REG", 30, 0.43),
+        ("RB001", "RB One",   "RB", "KC", 2024, 5, "REG", 55, 0.79),
+        ("QB001", "QB One",   "QB", "KC", 2024, 5, "REG", 70, 1.00),
+    ]
     return pl.DataFrame(
-        {
-            "pfr_player_id": ["WR001", "WR002", "RB001", "RB002", "QB001", "WR003"],
-            "player_name": ["WR One", "WR Two", "RB One", "RB Two", "QB One", "WR Three"],
-            "position": ["WR", "WR", "RB", "RB", "QB", "WR"],
-            "team": ["KC", "KC", "KC", "KC", "KC", "KC"],
-            "season": [2024, 2024, 2024, 2024, 2024, 2024],
-            "week": [1, 1, 1, 1, 1, 1],
-            "game_type": ["REG", "REG", "REG", "REG", "REG", "REG"],
-            "offense_snaps": [65, 55, 45, 20, 70, 40],
-            "offense_pct": [0.93, 0.79, 0.64, 0.29, 1.00, 0.57],
-        }
+        rows,
+        schema={
+            "pfr_player_id": pl.Utf8,
+            "player_name": pl.Utf8,
+            "position": pl.Utf8,
+            "team": pl.Utf8,
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "game_type": pl.Utf8,
+            "offense_snaps": pl.Int64,
+            "offense_pct": pl.Float64,
+        },
     )
 
 
@@ -58,6 +98,7 @@ def mock_roster_df() -> pl.DataFrame:
     """Mock weekly roster DataFrame matching nflverse load_rosters_weekly() schema.
 
     Note: nflverse uses pfr_id (not pfr_player_id) in rosters.
+    DataLoader.load_rosters() renames gsis_id -> player_id.
     """
     return pl.DataFrame(
         {
@@ -148,6 +189,20 @@ def sample_roster() -> TeamRoster:
         ),
     ]
     return TeamRoster(team="KC", players=players)
+
+
+@pytest.fixture
+def usage_engine(tmp_path, mock_snap_df, mock_roster_df):
+    """UsageEngine wired with mock DataLoader that returns fixture data."""
+    from fantasy_sim.data.loader import DataLoader
+    from fantasy_sim.data.usage.engine import UsageEngine
+
+    loader = MagicMock(spec=DataLoader)
+    loader.load_snap_counts.return_value = mock_snap_df
+    loader.load_rosters.return_value = mock_roster_df
+
+    config = UsageConfig()
+    return UsageEngine(config=config, loader=loader)
 
 
 # ---------------------------------------------------------------------------
@@ -291,85 +346,321 @@ class TestDataLoaderNextgenStats:
 
 
 # ---------------------------------------------------------------------------
-# Task 1 (FAILING stubs): Engine behavior -- will pass after Task 2
+# Task 2: Engine behavior tests
 # ---------------------------------------------------------------------------
 
 
-class TestUsageEngineSnapBlend:
-    """Snap blend stubs -- will be implemented in Task 2."""
-
-    def test_apply_adjusts_wr_target_share(self, sample_roster):
-        """UsageEngine.apply() adjusts WR target_share via Bayesian snap blend."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
-
-    def test_apply_adjusts_rb_carry_share(self, sample_roster):
-        """UsageEngine.apply() adjusts RB carry_share via Bayesian snap blend."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
-
-    def test_apply_sets_snap_share(self, sample_roster):
-        """UsageEngine.apply() sets player.usage.snap_share from rolling snap data."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
-
-
-class TestUsageEngineQbExclusion:
-    """QB exclusion stubs -- will be implemented in Task 2."""
-
-    def test_apply_does_not_modify_qb_carry_share(self, sample_roster):
-        """UsageEngine does NOT modify QB carry_share."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
-
-    def test_apply_does_not_modify_qb_scramble_rate(self, sample_roster):
-        """UsageEngine does NOT modify QB scramble_rate."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
-
-
 class TestUsageEngineCrosswalk:
-    """Crosswalk stubs -- will be implemented in Task 2."""
+    """Tests for _build_snap_crosswalk(): pfr_player_id -> gsis_id join."""
 
-    def test_crosswalk_achieves_nonzero_match(self, mock_snap_df, mock_roster_df):
+    def test_crosswalk_achieves_nonzero_match(self, usage_engine, mock_snap_df, mock_roster_df):
         """Snap crosswalk achieves >0% match on mock skill-position data."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+        crosswalk = usage_engine._build_snap_crosswalk(2024)
+        assert len(crosswalk) > 0
 
-    def test_crosswalk_filtered_to_skill_positions(self, mock_snap_df, mock_roster_df):
+    def test_crosswalk_maps_pfr_id_to_gsis_id(self, usage_engine):
+        """Crosswalk correctly maps pfr_player_id to gsis_id."""
+        crosswalk = usage_engine._build_snap_crosswalk(2024)
+        assert crosswalk.get("WR001") == "gsis-wr1"
+        assert crosswalk.get("RB001") == "gsis-rb1"
+        assert crosswalk.get("QB001") == "gsis-qb1"
+
+    def test_crosswalk_filtered_to_skill_positions(self, usage_engine):
         """Crosswalk filters to SKILL_POSITIONS = {WR, RB, TE, QB, FB}."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+        crosswalk = usage_engine._build_snap_crosswalk(2024)
+        # All players in mock data are skill positions, all should be in crosswalk
+        assert "WR001" in crosswalk
+        assert "RB001" in crosswalk
+        assert "QB001" in crosswalk
+
+    def test_crosswalk_cached_per_season(self, usage_engine):
+        """_build_snap_crosswalk() caches result per season (no duplicate loader calls)."""
+        crosswalk1 = usage_engine._build_snap_crosswalk(2024)
+        crosswalk2 = usage_engine._build_snap_crosswalk(2024)
+        # loader should only be called once
+        assert usage_engine._loader.load_snap_counts.call_count == 1
+        assert crosswalk1 is crosswalk2
+
+    def test_crosswalk_warns_on_unmatched_players(self, mock_snap_df):
+        """Unmatched crosswalk players emit WARNING log, not silently omitted."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Create roster that's missing WR002, WR003 (they'll be unmatched)
+        partial_roster_df = pl.DataFrame(
+            {
+                "pfr_id": ["WR001", "RB001", "QB001"],  # missing WR002, WR003, RB002
+                "player_id": ["gsis-wr1", "gsis-rb1", "gsis-qb1"],
+                "position": ["WR", "RB", "QB"],
+                "team": ["KC", "KC", "KC"],
+                "season": [2024, 2024, 2024],
+                "week": [1, 1, 1],
+            }
+        )
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = partial_roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+
+        with patch("fantasy_sim.data.usage.engine.logger") as mock_logger:
+            engine._build_snap_crosswalk(2024)
+            # Should emit a WARNING for the unmatched players
+            warning_calls = [
+                c for c in mock_logger.warning.call_args_list
+                if "unmatched" in str(c).lower() or "crosswalk" in str(c).lower()
+            ]
+            assert len(warning_calls) > 0, "Expected WARNING log for unmatched players"
 
 
 class TestUsageEngineRollingWindow:
-    """Rolling window stubs -- will be implemented in Task 2."""
+    """Tests for _get_rolling_snap(): leak-free 4-week rolling average."""
 
-    def test_rolling_window_returns_none_for_week_1(self):
-        """_get_rolling_snap() returns None when no prior data exists (week 1)."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+    def test_rolling_window_returns_none_for_week_1_no_prior_data(self, usage_engine):
+        """_get_rolling_snap() returns None when no data exists before week 1."""
+        # There's no data before week 1 in same season; no prior season data
+        result = usage_engine._get_rolling_snap("gsis-wr1", 2024, 1)
+        assert result is None
 
-    def test_temporal_leakage_week_5_excludes_current_week(self, mock_snap_df, mock_roster_df):
-        """Rolling window with week=5 does NOT include week 5 data (temporal leakage guard).
+    def test_rolling_window_returns_mean_for_week_5(self, usage_engine):
+        """_get_rolling_snap() returns mean of last 4 games before target week."""
+        result = usage_engine._get_rolling_snap("gsis-wr1", 2024, 5)
+        # Weeks 1-4: 0.93, 0.86, 0.90, 0.96 -> mean = 0.9125
+        assert result is not None
+        assert abs(result - (0.93 + 0.86 + 0.90 + 0.96) / 4) < 0.01
 
-        Create mock data including week=5 rows, call with target_week=5,
-        verify week 5 rows are NOT used in the rolling average.
+    def test_temporal_leakage_week_5_excludes_current_week(self, usage_engine, mock_snap_df):
+        """Rolling window for week=5 does NOT include week 5 data (temporal leakage guard).
+
+        Week 5 has WR001 at offense_pct=1.00 (vs typical ~0.90).
+        If week 5 data leaked in, mean would be inflated.
         """
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+        result = usage_engine._get_rolling_snap("gsis-wr1", 2024, 5)
+        # Week 5 has 1.00 -- if leaked in, mean > 0.93
+        # Without week 5 data: mean of weeks 1-4 is ~0.9125
+        assert result is not None
+        assert result < 0.95, f"Expected <0.95 (week 5 excluded), got {result}"
+        # Also verify explicitly that if week 5 were included the value would differ
+        week_5_offense_pct = 1.00
+        assert result != week_5_offense_pct
 
-    def test_rolling_window_cold_start_blend(self):
-        """Rolling window with week=3 applies linear ramp blend with league avg."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+    def test_rolling_window_uses_last_4_team_games(self, usage_engine):
+        """Window uses last 4 team games (not calendar weeks), handles bye weeks."""
+        # At week=5, use only weeks 1-4 (4 team games available)
+        result = usage_engine._get_rolling_snap("gsis-wr1", 2024, 5)
+        assert result is not None
+        # Exactly 4 weeks used: weeks 1, 2, 3, 4
+        expected = (0.93 + 0.86 + 0.90 + 0.96) / 4
+        assert abs(result - expected) < 0.01
+
+    def test_rolling_window_cold_start_week_2(self, usage_engine):
+        """_get_rolling_snap() with only 1 prior game applies cold start handling."""
+        result = usage_engine._get_rolling_snap("gsis-wr1", 2024, 2)
+        # 1 game available (week 1 only), blend_weight = 1/4 = 0.25
+        assert result is not None
+
+    def test_rolling_window_missing_player_returns_none(self, usage_engine):
+        """_get_rolling_snap() returns None for player with no snap data."""
+        result = usage_engine._get_rolling_snap("gsis-unknown", 2024, 5)
+        assert result is None
 
 
-class TestUsageEngineUnmatchedLogging:
-    """Unmatched player logging stubs -- will be implemented in Task 2."""
+class TestUsageEngineSnapBlend:
+    """Tests for apply(): Bayesian snap blend on WR/TE/RB shares."""
 
-    def test_unmatched_crosswalk_players_emit_warning(self, mock_snap_df, mock_roster_df):
-        """Unmatched crosswalk players emit WARNING log (not silently omitted)."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+    def test_apply_sets_snap_share_for_wr(self, usage_engine, sample_roster):
+        """apply() sets player.usage.snap_share from rolling snap data."""
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        wr1 = next(p for p in sample_roster.players if p.player_id == "gsis-wr1")
+        assert wr1.usage.snap_share > 0.0
+
+    def test_apply_adjusts_wr_target_share(self, usage_engine, sample_roster):
+        """apply() adjusts WR target_share via Bayesian snap blend.
+
+        Bayesian blend: adjusted = (games * pbp_share + prior_strength * snap_share)
+                                    / (games + prior_strength)
+        """
+        original_wr1_share = 0.30  # from sample_roster
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        wr1 = next(p for p in sample_roster.players if p.player_id == "gsis-wr1")
+        # target_share should have been adjusted (not equal to original for high-snap WR)
+        # WR1 has ~91% snap share -- high snapper should push target_share
+        assert wr1.usage.target_share != original_wr1_share
+
+    def test_apply_adjusts_rb_carry_share(self, usage_engine, sample_roster):
+        """apply() adjusts RB carry_share via Bayesian snap blend."""
+        original_rb1_carry = 0.60  # from sample_roster
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        rb1 = next(p for p in sample_roster.players if p.player_id == "gsis-rb1")
+        # RB1 has ~69% snap share -- adjust carry_share
+        assert rb1.usage.carry_share != original_rb1_carry
+
+    def test_apply_bayesian_blend_formula(self, usage_engine, sample_roster):
+        """apply() uses correct Bayesian blend formula for WR target_share.
+
+        Formula: adjusted = (games * pbp_share + prior_strength * snap_share)
+                             / (games + prior_strength)
+        """
+        config = UsageConfig()
+        prior_strength = config.snap.prior_strength  # 8.0
+        games_played = 10  # from sample_roster
+
+        usage_engine.apply(sample_roster, season=2024, week=5)
+
+        wr1 = next(p for p in sample_roster.players if p.player_id == "gsis-wr1")
+        snap_share = wr1.usage.snap_share  # set by apply()
+
+        # Verify formula: adjusted = (10 * 0.30 + 8.0 * snap_share) / (10 + 8.0)
+        expected = (games_played * 0.30 + prior_strength * snap_share) / (games_played + prior_strength)
+        assert abs(wr1.usage.target_share - expected) < 0.001
+
+
+class TestUsageEngineQbExclusion:
+    """QB carry_share and scramble_rate must NOT be modified."""
+
+    def test_apply_does_not_modify_qb_carry_share(self, usage_engine, sample_roster):
+        """UsageEngine does NOT modify QB carry_share."""
+        qb = next(p for p in sample_roster.players if p.player_id == "gsis-qb1")
+        original_carry = qb.usage.carry_share
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        qb_after = next(p for p in sample_roster.players if p.player_id == "gsis-qb1")
+        assert qb_after.usage.carry_share == original_carry
+
+    def test_apply_does_not_modify_qb_scramble_rate(self, usage_engine, sample_roster):
+        """UsageEngine does NOT modify QB scramble_rate."""
+        qb = next(p for p in sample_roster.players if p.player_id == "gsis-qb1")
+        original_scramble = qb.usage.scramble_rate
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        qb_after = next(p for p in sample_roster.players if p.player_id == "gsis-qb1")
+        assert qb_after.usage.scramble_rate == original_scramble
+
+    def test_apply_sets_qb_snap_share(self, usage_engine, sample_roster):
+        """apply() sets QB snap_share (for get_starting_qb() selection) even though
+        carry_share and scramble_rate are excluded."""
+        usage_engine.apply(sample_roster, season=2024, week=5)
+        qb = next(p for p in sample_roster.players if p.player_id == "gsis-qb1")
+        assert qb.usage.snap_share > 0.0
 
 
 class TestUsageEngineEdgeCases:
-    """Edge case stubs -- will be implemented in Task 2."""
+    """Edge cases: empty data, missing crosswalk, disabled engine."""
 
     def test_apply_noop_when_snap_data_empty(self, sample_roster):
         """apply() is a no-op when snap data is empty (graceful fallback)."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = pl.DataFrame(
+            schema={
+                "pfr_player_id": pl.Utf8,
+                "player_name": pl.Utf8,
+                "position": pl.Utf8,
+                "team": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "game_type": pl.Utf8,
+                "offense_snaps": pl.Int64,
+                "offense_pct": pl.Float64,
+            }
+        )
+        loader.load_rosters.return_value = pl.DataFrame(
+            schema={
+                "pfr_id": pl.Utf8,
+                "player_id": pl.Utf8,
+                "position": pl.Utf8,
+                "team": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+            }
+        )
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        original_shares = {
+            p.player_id: (p.usage.target_share, p.usage.carry_share)
+            for p in sample_roster.players
+        }
+
+        engine.apply(sample_roster, season=2024, week=5)
+
+        # Non-QB shares unchanged (no snap data to blend with)
+        for player in sample_roster.players:
+            if player.position != "QB":
+                orig_target, orig_carry = original_shares[player.player_id]
+                assert player.usage.target_share == orig_target
+                assert player.usage.carry_share == orig_carry
 
     def test_apply_skips_player_with_no_crosswalk_match(self, sample_roster):
-        """apply() skips player gracefully when no crosswalk match (no error)."""
-        pytest.skip("stub: UsageEngine not yet implemented (Task 2)")
+        """apply() skips player gracefully when no crosswalk match (no error raised)."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Roster with players NOT in snap data (no crosswalk match)
+        empty_snap_df = pl.DataFrame(
+            {
+                "pfr_player_id": ["NOBODY001"],
+                "player_name": ["Nobody"],
+                "position": ["WR"],
+                "team": ["KC"],
+                "season": [2024],
+                "week": [1],
+                "game_type": ["REG"],
+                "offense_snaps": [50],
+                "offense_pct": [0.71],
+            }
+        )
+        empty_roster_df = pl.DataFrame(
+            {
+                "pfr_id": ["NOBODY001"],
+                "player_id": ["gsis-nobody"],
+                "position": ["WR"],
+                "team": ["KC"],
+                "season": [2024],
+                "week": [1],
+            }
+        )
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = empty_snap_df
+        loader.load_rosters.return_value = empty_roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+
+        # Should not raise, should be a graceful no-op for the sample_roster players
+        engine.apply(sample_roster, season=2024, week=5)
+
+    def test_apply_disabled_engine_is_noop(self, mock_snap_df, mock_roster_df, sample_roster):
+        """apply() is a no-op when UsageConfig.enabled=False."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = mock_roster_df
+
+        config = UsageConfig(enabled=False)
+        engine = UsageEngine(config=config, loader=loader)
+
+        original_shares = {
+            p.player_id: (p.usage.target_share, p.usage.carry_share)
+            for p in sample_roster.players
+        }
+
+        engine.apply(sample_roster, season=2024, week=5)
+
+        for player in sample_roster.players:
+            orig_target, orig_carry = original_shares[player.player_id]
+            assert player.usage.target_share == orig_target
+            assert player.usage.carry_share == orig_carry
+
+
+class TestUsageEngineDocstring:
+    """Verify apply() docstring documents normalize-after contract."""
+
+    def test_apply_docstring_mentions_normalize(self):
+        """apply() docstring states caller MUST call _normalize_roster_shares() afterward."""
+        from fantasy_sim.data.usage.engine import UsageEngine
+        docstring = UsageEngine.apply.__doc__
+        assert docstring is not None
+        assert "_normalize_roster_shares" in docstring or "normalize" in docstring.lower()
