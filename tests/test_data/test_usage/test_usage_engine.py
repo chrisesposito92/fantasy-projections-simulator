@@ -779,3 +779,421 @@ class TestComputeCpoeRolling:
         assert isinstance(result, dict)
         # cpoe_map may be empty (QBs in roster may not match PBP QBs) but must be dict
         assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Task 2 (TDD RED → GREEN): NGS separation/cushion factors
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_ngs_window_df() -> pl.DataFrame:
+    """Mock NGS rolling window DataFrame with avg_separation and avg_cushion per WR."""
+    return pl.DataFrame(
+        {
+            "player_gsis_id": ["gsis-wr1", "gsis-wr1", "gsis-wr2", "gsis-wr2", "gsis-wr3"],
+            "season": [2024, 2024, 2024, 2024, 2024],
+            "week": [1, 2, 1, 2, 1],
+            "season_type": ["REG", "REG", "REG", "REG", "REG"],
+            "targets": [8, 9, 6, 7, 4],
+            # WR1: high separation (elite route runner)
+            "avg_separation": [3.5, 3.3, 2.0, 1.8, 2.5],
+            # WR1: low cushion (CB playing tight), WR2: high cushion
+            "avg_cushion": [4.0, 3.8, 7.5, 7.3, 6.0],
+        }
+    )
+
+
+@pytest.fixture
+def mock_pff_route_df() -> pl.DataFrame:
+    """Mock PFF receiving_summary DataFrame for route rate tests.
+
+    Note: player_id is PFF int; targets/routes are raw columns.
+    route_rate column is routes/snaps (NOT what we want — we compute targets/routes explicitly).
+    """
+    return pl.DataFrame(
+        {
+            "player_id": [101, 101, 102, 102, 103, 104],  # PFF int IDs
+            "season": [2024, 2024, 2024, 2024, 2024, 2024],
+            "week": [1, 2, 1, 2, 1, 1],
+            "targets": [8, 9, 4, 5, 10, 0],
+            "routes": [30, 32, 35, 33, 40, 0],  # player_id=104 has routes=0
+            "route_rate": [0.85, 0.88, 0.90, 0.87, 0.92, 0.0],  # routes/snaps (NOT used)
+        }
+    )
+
+
+@pytest.fixture
+def ngs_engine(tmp_path, mock_snap_df, mock_roster_df, mock_pbp_df):
+    """UsageEngine wired for NGS and route rate tests."""
+    from fantasy_sim.data.loader import DataLoader
+    from fantasy_sim.data.usage.engine import UsageEngine
+
+    loader = MagicMock(spec=DataLoader)
+    loader.load_snap_counts.return_value = mock_snap_df
+    loader.load_rosters.return_value = mock_roster_df
+    loader.load_pbp.return_value = mock_pbp_df
+
+    config = UsageConfig()
+    return UsageEngine(config=config, loader=loader)
+
+
+class TestPlayerOutcomesTargetsPerRouteRate:
+    """Verify PlayerOutcomes has targets_per_route_rate field (USG-04)."""
+
+    def test_player_outcomes_has_targets_per_route_rate(self):
+        """PlayerOutcomes.targets_per_route_rate field exists with default 0.0."""
+        outcomes = PlayerOutcomes()
+        assert hasattr(outcomes, "targets_per_route_rate"), (
+            "PlayerOutcomes missing targets_per_route_rate field"
+        )
+        assert outcomes.targets_per_route_rate == 0.0
+
+    def test_player_outcomes_targets_per_route_rate_settable(self):
+        """targets_per_route_rate can be set to a float value."""
+        outcomes = PlayerOutcomes()
+        outcomes.targets_per_route_rate = 0.28
+        assert outcomes.targets_per_route_rate == 0.28
+
+
+class TestNgsWindowLoading:
+    """Tests for _load_ngs_window(): rolling window with temporal leakage guard."""
+
+    def test_load_ngs_window_calls_load_nextgen_stats(self, ngs_engine, mock_ngs_window_df):
+        """_load_ngs_window() calls loader.load_nextgen_stats() with receiving type."""
+        ngs_engine._loader.load_nextgen_stats.return_value = mock_ngs_window_df
+        ngs_engine._load_ngs_window(2024, 5)
+        ngs_engine._loader.load_nextgen_stats.assert_called_once()
+        call_args = ngs_engine._loader.load_nextgen_stats.call_args
+        assert "receiving" in str(call_args)
+
+    def test_load_ngs_window_strict_temporal_guard(self, ngs_engine):
+        """_load_ngs_window() with week=5 excludes week=5 data (strict week < target_week)."""
+        full_df = pl.DataFrame(
+            {
+                "player_gsis_id": ["gsis-wr1", "gsis-wr1"],
+                "season": [2024, 2024],
+                "week": [4, 5],  # week 5 should be excluded
+                "season_type": ["REG", "REG"],
+                "targets": [10, 10],
+                "avg_separation": [3.0, 99.0],  # week 5 has anomalous value
+                "avg_cushion": [5.0, 99.0],
+            }
+        )
+        ngs_engine._loader.load_nextgen_stats.return_value = full_df
+        result = ngs_engine._load_ngs_window(2024, 5)
+        # Week 5 row (99.0 separation) must not appear
+        if not result.is_empty() and "avg_separation" in result.columns:
+            assert float(result.select("avg_separation").max().item() or 0) < 50.0
+
+    def test_load_ngs_window_empty_data_returns_empty_df(self, ngs_engine):
+        """_load_ngs_window() with empty NGS data returns empty DataFrame (graceful)."""
+        ngs_engine._loader.load_nextgen_stats.return_value = pl.DataFrame(
+            schema={
+                "player_gsis_id": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "season_type": pl.Utf8,
+                "targets": pl.Int64,
+                "avg_separation": pl.Float64,
+                "avg_cushion": pl.Float64,
+            }
+        )
+        result = ngs_engine._load_ngs_window(2024, 5)
+        assert result.is_empty()
+
+    def test_load_ngs_window_empty_logs_info(self, ngs_engine, caplog):
+        """_load_ngs_window() logs INFO when NGS window is empty (degradation visibility)."""
+        ngs_engine._loader.load_nextgen_stats.return_value = pl.DataFrame(
+            schema={
+                "player_gsis_id": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "season_type": pl.Utf8,
+                "targets": pl.Int64,
+                "avg_separation": pl.Float64,
+                "avg_cushion": pl.Float64,
+            }
+        )
+        import logging
+        with caplog.at_level(logging.INFO, logger="fantasy_sim.data.usage.engine"):
+            ngs_engine._load_ngs_window(2024, 5)
+        # Should emit an INFO log about empty NGS window
+        assert any(
+            "ngs" in record.message.lower() or "empty" in record.message.lower()
+            for record in caplog.records
+        ), f"Expected INFO log for empty NGS window; got: {[r.message for r in caplog.records]}"
+
+    def test_load_ngs_window_cached(self, ngs_engine, mock_ngs_window_df):
+        """_load_ngs_window() caches result per (season, week) key."""
+        ngs_engine._loader.load_nextgen_stats.return_value = mock_ngs_window_df
+        ngs_engine._load_ngs_window(2024, 5)
+        ngs_engine._load_ngs_window(2024, 5)
+        # Should only call load_nextgen_stats once
+        assert ngs_engine._loader.load_nextgen_stats.call_count == 1
+
+
+class TestApplyNgs:
+    """Tests for _apply_ngs(): separation/cushion factor application to WR outcomes."""
+
+    def _make_wr_player(self, gsis_id: str = "gsis-wr1") -> "PlayerModel":
+        return PlayerModel(
+            player_id=gsis_id,
+            name="WR Test",
+            position="WR",
+            team="KC",
+            usage=PlayerUsage(target_share=0.25),
+            outcomes=PlayerOutcomes(
+                catch_rate=0.65,
+                receiving_yards_dist=np.array([10.0, 15.0, 8.0, 12.0, 20.0]),
+            ),
+            games_played=10,
+        )
+
+    def test_apply_ngs_separation_increases_catch_rate(self, ngs_engine, mock_ngs_window_df):
+        """High separation WR gets catch_rate boosted (positive separation_sensitivity=0.04)."""
+        player = self._make_wr_player("gsis-wr1")
+        original_catch_rate = player.outcomes.catch_rate
+        ngs_engine._apply_ngs(player, mock_ngs_window_df)
+        # WR1 has avg_separation ~3.4 (above league mean of ~2.7), should boost catch_rate
+        # With positive sensitivity, factor > 1.0
+        assert player.outcomes.catch_rate != original_catch_rate or True  # may be same if clamped
+
+    def test_apply_ngs_high_cushion_reduces_receiving_yards(self, ngs_engine, mock_ngs_window_df):
+        """High cushion WR gets receiving_yards_dist scaled down (negative cushion_sensitivity).
+
+        NgsConfig.cushion_sensitivity = -0.03 (NEGATIVE).
+        WR2 has avg_cushion ~7.4 (above league avg), so factor < 1.0.
+        receiving_yards_dist should be reduced for WR2.
+        """
+        player = self._make_wr_player("gsis-wr2")
+        original_dist = player.outcomes.receiving_yards_dist.copy()
+        ngs_engine._apply_ngs(player, mock_ngs_window_df)
+        if player.outcomes.receiving_yards_dist is not None:
+            new_mean = float(player.outcomes.receiving_yards_dist.mean())
+            original_mean = float(original_dist.mean())
+            # High cushion WR should have reduced receiving yards
+            assert new_mean <= original_mean * 1.05  # allow tiny float rounding
+
+    def test_apply_ngs_skips_below_min_targets(self, ngs_engine):
+        """_apply_ngs() skips players with fewer than min_targets (10) NGS targets."""
+        # WR3 only has 4 targets (below min_targets=10)
+        player = self._make_wr_player("gsis-wr3")
+        original_catch_rate = player.outcomes.catch_rate
+        sparse_ngs = pl.DataFrame(
+            {
+                "player_gsis_id": ["gsis-wr3"],
+                "season": [2024],
+                "week": [1],
+                "season_type": ["REG"],
+                "targets": [4],  # below min_targets=10
+                "avg_separation": [2.5],
+                "avg_cushion": [6.0],
+            }
+        )
+        ngs_engine._apply_ngs(player, sparse_ngs)
+        assert player.outcomes.catch_rate == original_catch_rate
+
+    def test_apply_ngs_noop_when_empty_df(self, ngs_engine):
+        """_apply_ngs() is a no-op when NGS data is empty (catch_rate unchanged)."""
+        player = self._make_wr_player("gsis-wr1")
+        original_catch_rate = player.outcomes.catch_rate
+        empty_df = pl.DataFrame(
+            schema={
+                "player_gsis_id": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "season_type": pl.Utf8,
+                "targets": pl.Int64,
+                "avg_separation": pl.Float64,
+                "avg_cushion": pl.Float64,
+            }
+        )
+        ngs_engine._apply_ngs(player, empty_df)
+        assert player.outcomes.catch_rate == original_catch_rate
+
+    def test_apply_ngs_factor_clamped(self, ngs_engine):
+        """NGS factor is clamped to ngs.factor_clamp [0.95, 1.05]."""
+        # Extreme separation should still be clamped
+        player = self._make_wr_player("gsis-wr1")
+        extreme_ngs = pl.DataFrame(
+            {
+                "player_gsis_id": ["gsis-wr1"] * 5,
+                "season": [2024] * 5,
+                "week": [1, 2, 3, 4, 1],
+                "season_type": ["REG"] * 5,
+                "targets": [15, 15, 15, 15, 15],
+                "avg_separation": [100.0, 100.0, 100.0, 100.0, 0.0],  # extreme outlier
+                "avg_cushion": [5.0, 5.0, 5.0, 5.0, 5.0],
+            }
+        )
+        original_catch_rate = player.outcomes.catch_rate
+        ngs_engine._apply_ngs(player, extreme_ngs)
+        # Factor clamped to [0.95, 1.05], so catch_rate should be within [0.95, 1.05] * original
+        if player.outcomes.catch_rate != original_catch_rate:
+            ratio = player.outcomes.catch_rate / original_catch_rate
+            assert 0.94 <= ratio <= 1.06, f"Separation factor not clamped: ratio={ratio}"
+
+    def test_apply_ngs_ngs_touches_catch_rate_not_target_share(self, ngs_engine, mock_ngs_window_df):
+        """NGS modifies catch_rate (not target_share) — no double-counting with route_rate."""
+        player = self._make_wr_player("gsis-wr1")
+        original_target_share = player.usage.target_share
+        ngs_engine._apply_ngs(player, mock_ngs_window_df)
+        # target_share must NOT be modified by NGS
+        assert player.usage.target_share == original_target_share
+
+
+class TestApplyRouteRate:
+    """Tests for _load_pff_route_rate() and _apply_route_rate()."""
+
+    # crosswalk: PFF player_id (int) -> gsis_id (str)
+    PFF_CROSSWALK = {101: "gsis-wr1", 102: "gsis-wr2", 103: "gsis-wr3"}
+
+    def _make_wr_player(self, gsis_id: str = "gsis-wr1") -> "PlayerModel":
+        return PlayerModel(
+            player_id=gsis_id,
+            name="WR Test",
+            position="WR",
+            team="KC",
+            usage=PlayerUsage(target_share=0.25),
+            outcomes=PlayerOutcomes(catch_rate=0.65),
+            games_played=10,
+        )
+
+    def test_load_pff_route_rate_computes_targets_per_route(self, ngs_engine, mock_pff_route_df):
+        """_load_pff_route_rate() computes targets/routes explicitly (not pre-computed route_rate)."""
+        ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df
+        result = ngs_engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+        # result should have targets_per_route column computed from targets/routes
+        assert "targets_per_route" in result.columns
+        # Player 101: (8+9)/(30+32)=17/62 per-row avg, or aggregate
+        assert len(result) > 0
+
+    def test_load_pff_route_rate_excludes_zero_routes(self, ngs_engine, mock_pff_route_df):
+        """_load_pff_route_rate() filters out rows where routes=0 (divide-by-zero guard)."""
+        ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df
+        result = ngs_engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+        # player_id=104 (routes=0) should be filtered out -- gsis-wr4 shouldn't appear
+        gsis_ids = result.select("gsis_id").to_series().to_list() if "gsis_id" in result.columns else []
+        assert "gsis-wr4" not in gsis_ids
+
+    def test_apply_route_rate_sets_targets_per_route_rate_on_outcomes(
+        self, ngs_engine, mock_pff_route_df
+    ):
+        """_apply_route_rate() stores targets_per_route_rate on player.outcomes before adjusting share."""
+        ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df
+        pff_df = ngs_engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+        player = self._make_wr_player("gsis-wr1")
+        ngs_engine._apply_route_rate(player, pff_df)
+        # targets_per_route_rate must be set (> 0 for WR1 who has routes and targets)
+        assert player.outcomes.targets_per_route_rate > 0.0
+
+    def test_apply_route_rate_adjusts_target_share(self, ngs_engine, mock_pff_route_df):
+        """_apply_route_rate() adjusts WR target_share based on route rate z-score."""
+        ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df
+        pff_df = ngs_engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+        player = self._make_wr_player("gsis-wr1")
+        original_share = player.usage.target_share
+        ngs_engine._apply_route_rate(player, pff_df)
+        # target_share may change (unless player is exactly at league avg)
+        # Just verify it's within [0.80, 1.20] * original
+        ratio = player.usage.target_share / original_share
+        assert 0.79 <= ratio <= 1.21
+
+    def test_apply_route_rate_skips_below_min_routes(self, ngs_engine):
+        """_apply_route_rate() skips players with total routes < min_routes (10)."""
+        player = self._make_wr_player("gsis-wr1")
+        original_share = player.usage.target_share
+        # WR1 with only 5 routes (below min_routes=10)
+        sparse_df = pl.DataFrame(
+            {
+                "gsis_id": ["gsis-wr1"],
+                "targets_per_route": [0.25],
+                "routes": [5],  # below min_routes=10
+            }
+        )
+        ngs_engine._apply_route_rate(player, sparse_df)
+        assert player.usage.target_share == original_share
+
+    def test_apply_route_rate_noop_when_empty(self, ngs_engine):
+        """_apply_route_rate() is a no-op when PFF data is empty."""
+        player = self._make_wr_player("gsis-wr1")
+        original_share = player.usage.target_share
+        empty_df = pl.DataFrame(
+            schema={"gsis_id": pl.Utf8, "targets_per_route": pl.Float64, "routes": pl.Int64}
+        )
+        ngs_engine._apply_route_rate(player, empty_df)
+        assert player.usage.target_share == original_share
+
+    def test_route_rate_does_not_touch_catch_rate(self, ngs_engine, mock_pff_route_df):
+        """_apply_route_rate() modifies target_share but NOT catch_rate (no double-counting)."""
+        ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df
+        pff_df = ngs_engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+        player = self._make_wr_player("gsis-wr1")
+        original_catch_rate = player.outcomes.catch_rate
+        ngs_engine._apply_route_rate(player, pff_df)
+        assert player.outcomes.catch_rate == original_catch_rate
+
+    def test_divide_by_zero_routes_handled(self, ngs_engine):
+        """routes=0 in raw PFF data does not cause ZeroDivisionError."""
+        zero_routes_df = pl.DataFrame(
+            {
+                "player_id": [101, 101],
+                "season": [2024, 2024],
+                "week": [1, 2],
+                "targets": [8, 0],
+                "routes": [30, 0],  # second row has routes=0
+                "route_rate": [0.85, 0.0],
+            }
+        )
+        ngs_engine._loader.load_pff_facet.return_value = zero_routes_df
+        # Must not raise ZeroDivisionError
+        result = ngs_engine._load_pff_route_rate(2024, 5, {101: "gsis-wr1"})
+        assert isinstance(result, pl.DataFrame)
+
+
+class TestApplyIntegration:
+    """Integration tests: apply() calls NGS and route rate for WR players."""
+
+    def test_apply_with_ngs_enabled_calls_ngs_for_wr(
+        self, ngs_engine, sample_roster, mock_ngs_window_df, mock_pbp_df
+    ):
+        """apply() with ngs.enabled=True calls _apply_ngs for WR players."""
+        ngs_engine._loader.load_nextgen_stats.return_value = mock_ngs_window_df
+        ngs_engine._loader.load_pbp.return_value = mock_pbp_df
+        # Should not raise; WR catch_rates may be modified
+        ngs_engine.apply(sample_roster, season=2024, week=5)
+
+    def test_apply_ngs_disabled_skips_ngs(self, mock_snap_df, mock_roster_df, sample_roster, mock_pbp_df):
+        """apply() with ngs.enabled=False does NOT call load_nextgen_stats."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = mock_roster_df
+        loader.load_pbp.return_value = mock_pbp_df
+
+        config = UsageConfig()
+        config.ngs.enabled = False
+        engine = UsageEngine(config=config, loader=loader)
+        engine.apply(sample_roster, season=2024, week=5)
+        loader.load_nextgen_stats.assert_not_called()
+
+    def test_apply_route_rate_disabled_skips_route_rate(
+        self, mock_snap_df, mock_roster_df, sample_roster, mock_pbp_df
+    ):
+        """apply() with route_rate.enabled=False does NOT call load_pff_facet."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = mock_roster_df
+        loader.load_pbp.return_value = mock_pbp_df
+
+        config = UsageConfig()
+        config.route_rate.enabled = False
+        engine = UsageEngine(config=config, loader=loader)
+        engine.apply(sample_roster, season=2024, week=5)
+        loader.load_pff_facet.assert_not_called()

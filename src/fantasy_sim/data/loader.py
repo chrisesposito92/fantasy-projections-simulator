@@ -87,6 +87,36 @@ class DataLoader:
         self._save_cache(df, cache_path)
         return df
 
+    def load_pff_facet(
+        self,
+        facet: str,
+        seasons: list[int],
+        pff_dir: Path | None = None,
+    ) -> pl.DataFrame:
+        """Load a PFF processed facet from local parquet cache.
+
+        Reads from ``~/.fantasy-sim/pff/processed/`` (or ``pff_dir`` override).
+        Returns empty DataFrame if no files are found.
+
+        Args:
+            facet: PFF facet name (e.g. ``"receiving_summary"``).
+            seasons: List of seasons to load.
+            pff_dir: Override directory; defaults to ``~/.fantasy-sim/pff/processed/``.
+
+        Returns:
+            Concatenated DataFrame, or empty DataFrame if no data found.
+        """
+        DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed"
+        target_dir = pff_dir or DEFAULT_PFF_DIR
+        frames: list[pl.DataFrame] = []
+        for season in seasons:
+            path = target_dir / f"{facet}_{season}.parquet"
+            if path.exists():
+                frames.append(pl.read_parquet(path))
+        if not frames:
+            return pl.DataFrame()
+        return pl.concat(frames, how="diagonal_relaxed")
+
     def load_depth_charts(self, seasons: list[int]) -> pl.DataFrame:
         cache_path = self._cache_key("depth_charts", seasons)
         cached = self._load_cached(cache_path)

@@ -31,6 +31,7 @@ class PlayerOutcomes:
     scramble_yards_dist: np.ndarray | None = None
     fumble_rate: float = 0.0
     pass_fumble_rate: float = 0.0
+    targets_per_route_rate: float = 0.0  # USG-04: targets/routes from PFF receiving_summary
 
 
 @dataclass
