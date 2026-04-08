@@ -490,9 +490,9 @@ class UsageEngine:
         # Apply: separation -> catch_rate, cushion -> receiving yards
         player.outcomes.catch_rate *= sep_factor
         if player.outcomes.receiving_yards_dist is not None:
-            player.outcomes.receiving_yards_dist = (
+            player.outcomes.receiving_yards_dist = np.round(
                 player.outcomes.receiving_yards_dist * cush_factor
-            )
+            ).astype(int)
 
     # ------------------------------------------------------------------
     # PFF route participation rate (USG-04)

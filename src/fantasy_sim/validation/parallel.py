@@ -245,6 +245,9 @@ def _init_build_worker_dual(
     cache_dir: Path,
     pff_config: PffConfig | None,
     weather_config: WeatherConfig | None,
+    vegas_config: "VegasConfig | None" = None,
+    props_config: "PropsConfig | None" = None,
+    usage_config: "UsageConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create off+on builders per worker."""
     global _worker_builders
@@ -256,6 +259,9 @@ def _init_build_worker_dual(
             cache_dir=cache_dir,
             pff_config=pff_config,
             weather_config=weather_config,
+            vegas_config=vegas_config,
+            props_config=props_config,
+            usage_config=usage_config,
         ),
     }
 
@@ -377,7 +383,7 @@ def _build_games_sequential(
     results: list[dict] = []
     for i, args in enumerate(game_args):
         if dual_arm:
-            result = _build_game_worker_dual(args)  # noqa: F821 — added in Task 3
+            result = _build_game_worker_dual(args)
         else:
             result = _build_game_worker_single(args)
         results.append(result)
@@ -438,8 +444,8 @@ def build_games_parallel(
         from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
 
         if dual_arm:
-            init_fn = _init_build_worker_dual  # noqa: F821 — defined in Task 3
-            worker_fn = _build_game_worker_dual  # noqa: F821
+            init_fn = _init_build_worker_dual
+            worker_fn = _build_game_worker_dual
         else:
             init_fn = _init_build_worker_single
             worker_fn = _build_game_worker_single
