@@ -30,6 +30,8 @@ from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
+from fantasy_sim.data.usage.config import load_usage_config
+from fantasy_sim.data.usage.models import UsageConfig, CpoeConfig, NgsConfig, RouteRateConfig
 from fantasy_sim.validation.backtester import Backtester, BacktestResult
 from fantasy_sim.validation.parallel import default_max_workers
 
@@ -513,6 +515,46 @@ def _build_props_config(mode: str, overrides: dict | None = None) -> PropsConfig
     return props_config
 
 
+def _build_usage_config(mode: str, overrides: dict | None = None) -> UsageConfig | None:
+    """Build UsageConfig if the mode includes usage signals.
+
+    Returns None if usage is not part of the mode.
+    Supports isolation modes (usage, usage+cpoe, usage+ngs, usage+cpoe+ngs)
+    and full-stack modes (full+usage, full+usage+cpoe, etc.).
+    """
+    # Strip "full+" prefix -- full+ modes enable all engines, handled elsewhere
+    mode_key = mode.replace("full+", "")
+
+    usage_modes = {
+        "usage": UsageConfig(
+            enabled=True,
+            cpoe=CpoeConfig(enabled=False),
+            ngs=NgsConfig(enabled=False),
+            route_rate=RouteRateConfig(enabled=False),
+        ),
+        "usage+cpoe": UsageConfig(
+            enabled=True,
+            cpoe=CpoeConfig(enabled=True),
+            ngs=NgsConfig(enabled=False),
+            route_rate=RouteRateConfig(enabled=False),
+        ),
+        "usage+ngs": UsageConfig(
+            enabled=True,
+            cpoe=CpoeConfig(enabled=False),
+            ngs=NgsConfig(enabled=True),
+            route_rate=RouteRateConfig(enabled=False),
+        ),
+        "usage+cpoe+ngs": UsageConfig(
+            enabled=True,
+            cpoe=CpoeConfig(enabled=True),
+            ngs=NgsConfig(enabled=True),
+            route_rate=RouteRateConfig(enabled=True),
+        ),
+    }
+
+    return usage_modes.get(mode_key)
+
+
 # ---------------------------------------------------------------------------
 # Backtest runner
 # ---------------------------------------------------------------------------
@@ -552,6 +594,7 @@ def _run_backtest_on(
     mode_label: str,
     vegas_config: VegasConfig | None = None,
     props_config: PropsConfig | None = None,
+    usage_config: UsageConfig | None = None,
 ) -> BacktestResult:
     """Run PFF-ON for one season."""
     print(f"  [{test_season}] Running PFF-ON ({mode_label})...", flush=True)
@@ -564,6 +607,7 @@ def _run_backtest_on(
         weather_config=weather_config,
         vegas_config=vegas_config,
         props_config=props_config,
+        usage_config=usage_config,
         max_workers=max_workers,
     )
     result = bt.run(scoring_config)
@@ -607,6 +651,7 @@ def run_backtest_pair(
     weather_config: WeatherConfig | None = None,
     vegas_config: VegasConfig | None = None,
     props_config: PropsConfig | None = None,
+    usage_config: UsageConfig | None = None,
     max_workers: int = 1,
 ) -> ComparisonResult:
     """Run PFF-off then PFF-on backtests for one season and return comparison."""
@@ -619,6 +664,7 @@ def run_backtest_pair(
         pff_config, weather_config, max_workers, mode_label,
         vegas_config=vegas_config,
         props_config=props_config,
+        usage_config=usage_config,
     )
     return ComparisonResult(test_season=test_season, off=result_off, on=result_on)
 
@@ -758,7 +804,9 @@ def main() -> int:
                  "vegas", "vegas+spread", "vegas+props",
                  "all", "all+weather",
                  "all+vegas", "all+weather+vegas",
-                 "all+weather+vegas+props", "full"],
+                 "all+weather+vegas+props", "full",
+                 "usage", "usage+cpoe", "usage+ngs", "usage+cpoe+ngs",
+                 "full+usage", "full+usage+cpoe", "full+usage+ngs", "full+usage+cpoe+ngs"],
         default="all",
         help=(
             "Which layer(s) to enable in the ON run. "
@@ -769,7 +817,15 @@ def main() -> int:
             "'full' = alias for all+weather+vegas+props, "
             "'vegas' = Vegas ITT only (no spread, no PFF), "
             "'vegas+spread' = Vegas ITT + spread (no PFF), "
-            "'vegas+props' = Vegas + player props (no PFF)."
+            "'vegas+props' = Vegas + player props (no PFF), "
+            "'usage' = snap-only usage engine (isolation), "
+            "'usage+cpoe' = snap + CPOE (isolation), "
+            "'usage+ngs' = snap + NGS (isolation), "
+            "'usage+cpoe+ngs' = all usage signals (isolation), "
+            "'full+usage' = all engines + snap-only usage, "
+            "'full+usage+cpoe' = all engines + snap + CPOE, "
+            "'full+usage+ngs' = all engines + snap + NGS, "
+            "'full+usage+cpoe+ngs' = all engines + full usage."
         ),
     )
     parser.add_argument(
@@ -850,6 +906,9 @@ def main() -> int:
     overrides = json.loads(args.config_override) if args.config_override else None
 
     # Expand "full" alias to canonical mode string
+    # "full" alone maps to all+weather+vegas+props
+    # "full+usage*" modes keep the full+ prefix so _build_*_config functions
+    # recognize it as "enable all engines plus the specified usage variant"
     if args.mode == "full":
         args.mode = "all+weather+vegas+props"
 
@@ -858,6 +917,7 @@ def main() -> int:
     weather_config = _build_weather_config(args.mode, overrides=overrides)
     vegas_config = _build_vegas_config(args.mode, overrides=overrides)
     props_config = _build_props_config(args.mode, overrides=overrides)
+    usage_config = _build_usage_config(args.mode, overrides=overrides)
 
     print("=" * 68)
     print("  PFF SIGNAL A/B VALIDATION")
@@ -933,6 +993,7 @@ def main() -> int:
                     mode_label=mode_label,
                     vegas_config=vegas_config,
                     props_config=props_config,
+                    usage_config=usage_config,
                 ): season
                 for season in args.seasons
             }
@@ -957,6 +1018,7 @@ def main() -> int:
                 weather_config=weather_config,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                usage_config=usage_config,
                 max_workers=per_season_workers,
             )
             results.append(comparison)

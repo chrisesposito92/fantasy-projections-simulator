@@ -283,7 +283,8 @@ class TestKickingModelIsolation:
         builder._pbp_stats_cache = {}
         builder._pbp_stats_cache_key = ((2022, 2023, 2024), ())
         builder._player_models_cache = {}
-        builder._player_cache_key = ((2022, 2023, 2024), None, None, False)
+        # Cache key now includes usage_fingerprint (5-tuple since usage engine wiring)
+        builder._player_cache_key = ((2022, 2023, 2024), None, None, False, (False,))
         builder.cache_dir = "/tmp"
         builder.loader = MagicMock()
 

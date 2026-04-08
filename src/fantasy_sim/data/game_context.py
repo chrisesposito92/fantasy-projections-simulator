@@ -202,13 +202,17 @@ class GameContextBuilder:
         props_enabled = getattr(self, "_props_engine", None) is not None
         # Usage cache fingerprint: captures enabled state + key tuning parameters
         # so cache invalidates when config changes, not just when toggled on/off
-        usage_fingerprint = (
-            self._usage_config.enabled,
-            self._usage_config.snap.prior_strength,
-            self._usage_config.cpoe.enabled,
-            self._usage_config.ngs.enabled,
-            self._usage_config.route_rate.enabled,
-        ) if self._usage_config.enabled else (False,)
+        _usage_cfg = getattr(self, "_usage_config", None)
+        if _usage_cfg is not None and _usage_cfg.enabled:
+            usage_fingerprint = (
+                _usage_cfg.enabled,
+                _usage_cfg.snap.prior_strength,
+                _usage_cfg.cpoe.enabled,
+                _usage_cfg.ngs.enabled,
+                _usage_cfg.route_rate.enabled,
+            )
+        else:
+            usage_fingerprint = (False,)
         cache_key = (ts_key, target_season, week, props_enabled, usage_fingerprint)
         if self._player_models_cache is None or self._player_cache_key != cache_key:
             # Determine current rosters
@@ -573,7 +577,7 @@ class GameContextBuilder:
         # Usage engine (snap counts, CPOE, NGS, route rate) -- before props (D-03)
         home_cpoe_map: dict[str, float] = {}
         away_cpoe_map: dict[str, float] = {}
-        if self._usage_engine is not None and target_season and week:
+        if getattr(self, "_usage_engine", None) is not None and target_season and week:
             self._ensure_pff_crosswalk(training_seasons, target_season)
             home_cpoe_map = self._usage_engine.apply(
                 home_roster, target_season, week,
@@ -654,10 +658,11 @@ class GameContextBuilder:
             combined_cpoe_map = {**home_cpoe_map, **away_cpoe_map}
 
             # Copy CPOE baselines from UsageConfig to TierEngineConfig for isolation
-            if combined_cpoe_map and hasattr(self._tier_engine._config, 'cpoe_sensitivity'):
-                self._tier_engine._config.cpoe_league_avg = self._usage_config.cpoe.cpoe_league_avg
-                self._tier_engine._config.cpoe_league_std = self._usage_config.cpoe.cpoe_league_std
-                self._tier_engine._config.cpoe_sensitivity = self._usage_config.cpoe.sensitivity
+            _uc = getattr(self, "_usage_config", None)
+            if combined_cpoe_map and hasattr(self._tier_engine._config, 'cpoe_sensitivity') and _uc is not None:
+                self._tier_engine._config.cpoe_league_avg = _uc.cpoe.cpoe_league_avg
+                self._tier_engine._config.cpoe_league_std = _uc.cpoe.cpoe_league_std
+                self._tier_engine._config.cpoe_sensitivity = _uc.cpoe.sensitivity
 
             self._tier_engine.apply_tiers(
                 home_roster, self._pff_crosswalk, training_seasons,

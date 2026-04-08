@@ -10,6 +10,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
+from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.models.distributions import (
@@ -101,8 +102,9 @@ def _make_builder(
     weather_flag: bool | None = None,
     vegas_flag: bool | None = None,
     props_flag: bool | None = None,
+    usage_flag: bool | None = None,
 ) -> GameContextBuilder:
-    """Create GameContextBuilder, optionally with PFF, weather, Vegas, and props enabled."""
+    """Create GameContextBuilder, optionally with PFF, weather, Vegas, props, and usage enabled."""
     defaults = load_defaults()
     pff_config = load_pff_config(defaults)
     if pff_flag is True:
@@ -120,6 +122,9 @@ def _make_builder(
     props_config = load_props_config(defaults)
     if props_flag is not None:
         props_config.enabled = props_flag
+    usage_config = load_usage_config(defaults)
+    if usage_flag is not None:
+        usage_config.enabled = usage_flag
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
@@ -127,6 +132,7 @@ def _make_builder(
         weather_config=weather_config,
         vegas_config=vegas_config,
         props_config=props_config,
+        usage_config=usage_config,
     )
 
 
@@ -537,9 +543,10 @@ def _display_projections(player_projs, output_format, output_path, detail=False,
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
 @click.option("--props/--no-props", default=None, help="Enable/disable player props adjustments")
+@click.option("--usage/--no-usage", default=None, help="Enable/disable usage engine adjustments")
 @click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff, weather, vegas, props, training_years):
+def week(ctx, week_num, season, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, pff, weather, vegas, props, usage, training_years):
     """Simulate all games in an NFL week using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     if ctx.get_parameter_source("season") == click.core.ParameterSource.DEFAULT:
@@ -554,7 +561,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
-    builder = _make_builder(pff, weather, vegas)
+    builder = _make_builder(pff, weather, vegas, usage_flag=usage)
     loader = DataLoader()
 
     click.echo(f"Loading schedule for {season} Week {week_num}...")
@@ -664,9 +671,10 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
+@click.option("--usage/--no-usage", default=None, help="Enable/disable usage engine adjustments")
 @click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week, pff, weather, vegas, training_years):
+def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail, by_week, pff, weather, vegas, usage, training_years):
     """Simulate a full NFL season using real nflverse data."""
     season_yaml = config_path or _auto_detect_season_yaml()
     meta = _read_season_yaml_metadata(season_yaml)
@@ -690,7 +698,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         click.echo(f"Error: {e.format_message()}", err=True)
         raise SystemExit(1)
 
-    builder = _make_builder(pff, weather, vegas)
+    builder = _make_builder(pff, weather, vegas, usage_flag=usage)
     loader = DataLoader()
 
     schedules = loader.load_schedules([season_year])
@@ -848,9 +856,10 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
+@click.option("--usage/--no-usage", default=None, help="Enable/disable usage engine adjustments")
 @click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path, pff, weather, vegas, training_years):
+def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_config_path, demo, detail, overrides, config_path, pff, weather, vegas, usage, training_years):
     """Simulate a single game with deep-dive projections.
 
     Example: fantasy-sim game KC BUF --week 5
@@ -880,7 +889,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         away_roster = _make_demo_roster(away_team)
     else:
         training_seasons = _get_training_seasons(season, training_years)
-        builder = _make_builder(pff, weather, vegas)
+        builder = _make_builder(pff, weather, vegas, usage_flag=usage)
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
             home_team=home_team, away_team=away_team, training_seasons=training_seasons,
             target_season=season, week=week_num,
@@ -985,9 +994,10 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
+@click.option("--usage/--no-usage", default=None, help="Enable/disable usage engine adjustments")
 @click.option("--training-years", type=int, default=None, help="Number of historical seasons for training data (default: from config)")
 @click.pass_context
-def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path, pff, weather, vegas, training_years):
+def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_path, demo, overrides, config_path, pff, weather, vegas, usage, training_years):
     """Show projection for a single player.
 
     Uses fuzzy name matching. Example: fantasy-sim player "nico_collins" --week 5
@@ -1016,7 +1026,7 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         game_configs = [(home_dists, away_dists, home_roster, away_roster, "HOME", "AWAY")]
     else:
         training_seasons = _get_training_seasons(season, training_years)
-        builder = _make_builder(pff, weather, vegas)
+        builder = _make_builder(pff, weather, vegas, usage_flag=usage)
         loader = DataLoader()
 
         click.echo(f"Loading schedule for {season} Week {week_num}...")
@@ -1158,7 +1168,8 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
 @click.option("--pff/--no-pff", default=None, help="Enable/disable PFF matchup + talent adjustments")
 @click.option("--weather/--no-weather", default=None, help="Enable/disable weather adjustments")
 @click.option("--vegas/--no-vegas", default=None, help="Enable/disable Vegas line adjustments")
-def backtest(season, sims, scoring, training_years, pff, weather, vegas):
+@click.option("--usage/--no-usage", default=None, help="Enable/disable usage engine adjustments")
+def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     """Run backtest validation against a historical season.
 
     Builds models using only prior-season data (no leakage), runs projections
@@ -1181,6 +1192,9 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas):
     vegas_config = load_vegas_config(defaults)
     if vegas is not None:
         vegas_config.enabled = vegas
+    usage_config = load_usage_config(defaults)
+    if usage is not None:
+        usage_config.enabled = usage
 
     click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
     click.echo(f"Training data: {season - training_years}-{season - 1}\n")
@@ -1193,6 +1207,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas):
         pff_config=pff_config,
         weather_config=weather_config,
         vegas_config=vegas_config,
+        usage_config=usage_config,
     )
     result = bt.run(scoring_config)
 
