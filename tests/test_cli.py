@@ -275,10 +275,12 @@ class TestWeeksValidation:
         result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "0", "--sims", "10"])
         assert result.exit_code != 0 or "invalid" in result.output.lower()
 
-    def test_season_valid_week_range(self, runner):
-        """Valid range should not raise validation error (may fail on data loading)."""
-        result = runner.invoke(main, ["season", "--season", "2024", "--weeks", "1-2", "--sims", "10"])
-        assert "invalid week" not in result.output.lower()
+    def test_season_valid_week_range(self):
+        """Valid range should not raise validation error."""
+        from fantasy_sim.cli import _parse_and_validate_weeks
+
+        result = _parse_and_validate_weeks("1-2")
+        assert result == [1, 2]
 
 
 class TestFormatInference:
