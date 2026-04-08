@@ -400,7 +400,62 @@ def _make_roster(team="KC", players=None):
 
 
 class TestPlayerPropsEngine:
-    """Tests for PlayerPropsEngine Bayesian blending."""
+    """Tests for PlayerPropsEngine Bayesian blending with PFF ID matching."""
+
+    # PFF IDs for test players
+    _PFF_TK = 12345  # Travis Kelce
+    _PFF_PM = 67890  # Patrick Mahomes
+    _PFF_IP = 11111  # Isiah Pacheco
+    _PFF_RR = 22222  # Rashee Rice
+    _PFF_UNKNOWN = 99999  # Player not in roster
+
+    def _pff_crosswalk(self):
+        """Build a test pff_crosswalk: pff_id -> gsis_id."""
+        return {
+            self._PFF_TK: "TK",
+            self._PFF_PM: "PM",
+            self._PFF_IP: "IP",
+            self._PFF_RR: "RR",
+        }
+
+    def _make_pff_props_df(self, rows: list[dict]) -> pl.DataFrame:
+        """Create a PFF-format props DataFrame for testing."""
+        return pl.DataFrame(rows, schema={
+            "player_id": pl.Int64,
+            "first_name": pl.Utf8,
+            "last_name": pl.Utf8,
+            "team_id": pl.Int64,
+            "position": pl.Utf8,
+            "prop_key": pl.Utf8,
+            "consensus_line": pl.Float64,
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "projections_json": pl.Utf8,
+            "averages_json": pl.Utf8,
+            "matchup_json": pl.Utf8,
+            "last_ten_json": pl.Utf8,
+            "option_json": pl.Utf8,
+        })
+
+    def _prop_row(self, player_id: int, prop_key: str, consensus_line: float,
+                  first_name: str = "Test", last_name: str = "Player") -> dict:
+        """Helper to build a single PFF props row."""
+        return {
+            "player_id": player_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "team_id": 1,
+            "position": "TE",
+            "prop_key": prop_key,
+            "consensus_line": consensus_line,
+            "season": 2024,
+            "week": 6,
+            "projections_json": "{}",
+            "averages_json": "{}",
+            "matchup_json": "{}",
+            "last_ten_json": "[]",
+            "option_json": "{}",
+        }
 
     def test_bayesian_blend_math(self):
         """(50*80 + 10*100) / (50+10) = 83.33..."""
@@ -428,84 +483,135 @@ class TestPlayerPropsEngine:
         )
         assert result == pytest.approx(100.0, abs=0.01)
 
-    def test_missing_prop_no_change(self, tmp_path):
-        """Player not in props_df -> PlayerModel fields unchanged."""
+    def test_empty_props_df_no_change(self):
+        """Empty props DataFrame -> PlayerModel fields unchanged."""
+        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
+        from fantasy_sim.data.vegas.models import PropsConfig
+        from fantasy_sim.data.vegas.props_loader import PropsLoader
+
+        player = _make_wr(target_share=0.20)
+        roster = _make_roster(players=[player])
+
+        mock_loader = MagicMock()
+        mock_loader.load_props.return_value = PropsLoader._empty_df()
+
+        config = PropsConfig(enabled=True, prior_strength=10.0)
+        engine = PlayerPropsEngine(config, loader=mock_loader)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+        assert player.usage.target_share == pytest.approx(0.20)
+
+    def test_pff_crosswalk_none_is_noop(self):
+        """apply() with pff_crosswalk=None returns without modifying any player (D-15)."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
         player = _make_wr(target_share=0.20)
         roster = _make_roster(players=[player])
 
-        empty_df = pl.DataFrame(schema={
-            "player_name": pl.Utf8,
-            "market": pl.Utf8,
-            "point": pl.Float64,
-            "season": pl.Int64,
-            "week": pl.Int64,
-        })
-
-        mock_loader = MagicMock()
-        mock_loader.load_props.return_value = empty_df
-
-        config = PropsConfig(enabled=True, prior_strength=10.0)
-        engine = PlayerPropsEngine(config, loader=mock_loader)
-        engine.apply(roster, "KC", 2024, 6)
-
-        assert player.usage.target_share == pytest.approx(0.20)
-
-    def test_min_divergence_skip(self, tmp_path):
-        """prop=80.002, historical=80.0 -> no adjustment (below min_divergence=0.005)."""
-        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
-        from fantasy_sim.data.vegas.models import PropsConfig
-
-        config = PropsConfig(enabled=True, prior_strength=10.0, min_divergence=0.005)
-        engine = PlayerPropsEngine(config, loader=MagicMock())
-
-        # Ratio = 80.002/80.0 = 1.000025, blended_ratio - 1.0 < 0.005
-        player = _make_rb(carry_share=0.40)
-        original_carry_share = player.usage.carry_share
-
-        props_df = pl.DataFrame({
-            "player_name": ["Isiah Pacheco"],
-            "market": ["player_rush_yds"],
-            "point": [80.002],
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_yd", 100.0, "Travis", "Kelce"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
 
-        roster = _make_roster(players=[player])
-        # Need historical rush yds ~ 80.0 for this to test min_divergence
-        player.outcomes.rushing_yards_dist = np.full(17, 80.0 / 17)
+        config = PropsConfig(enabled=True, prior_strength=10.0)
+        engine = PlayerPropsEngine(config, loader=mock_loader)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=None)
 
-        engine.apply(roster, "KC", 2024, 6)
-        # Change should be negligible (within floating point noise)
-        assert player.usage.carry_share == pytest.approx(original_carry_share, abs=0.01)
+        assert player.usage.target_share == pytest.approx(0.20)
 
-    def test_reception_yds_shifts_dist(self):
-        """player_reception_yds prop shifts receiving_yards_dist proportionally."""
+    def test_uses_pff_crosswalk_for_matching(self):
+        """PlayerPropsEngine matches via pff_crosswalk, not name matching."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
         base_dist = np.array([8.0, 10.0, 12.0, 15.0])
-        original_mean = float(np.mean(base_dist))  # 11.25
+        original_mean = float(np.mean(base_dist))
 
         player = _make_wr(recv_yds_dist=base_dist)
-        # historical_recv_yds = mean(dist) * games_played
-        historical_recv = original_mean * player.games_played  # 11.25 * 17 = 191.25
+        roster = _make_roster(players=[player])
 
-        # Prop implies 230 yards (higher than historical)
-        prop_point = 230.0
+        # Use PFF player_id to match, consensus_line for blending
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
+        ])
 
-        props_df = pl.DataFrame({
-            "player_name": ["Travis Kelce"],
-            "market": ["player_reception_yds"],
-            "point": [prop_point],
-            "season": [2024],
-            "week": [6],
-        })
+        mock_loader = MagicMock()
+        mock_loader.load_props.return_value = props_df
+
+        config = PropsConfig(enabled=True, prior_strength=10.0)
+        engine = PlayerPropsEngine(config, loader=mock_loader)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+        assert new_mean > original_mean, "PFF ID match should shift dist mean up"
+
+    def test_reads_consensus_line_not_point(self):
+        """Engine uses consensus_line column (D-05), not old 'point' column."""
+        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
+        from fantasy_sim.data.vegas.models import PropsConfig
+
+        base_dist = np.array([8.0, 10.0, 12.0, 15.0])
+        player = _make_wr(recv_yds_dist=base_dist)
+        roster = _make_roster(players=[player])
+
+        # consensus_line is the signal for blending
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_yd", 300.0, "Travis", "Kelce"),
+        ])
+
+        mock_loader = MagicMock()
+        mock_loader.load_props.return_value = props_df
+
+        config = PropsConfig(enabled=True, prior_strength=10.0)
+        engine = PlayerPropsEngine(config, loader=mock_loader)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+        # If the engine tried to read "point" it would crash or not adjust
+        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+        original_mean = 11.25
+        assert new_mean > original_mean, "consensus_line should be used for blending"
+
+    def test_min_divergence_skip(self):
+        """Near-identical prop/historical -> no adjustment (below min_divergence)."""
+        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
+        from fantasy_sim.data.vegas.models import PropsConfig
+
+        config = PropsConfig(enabled=True, prior_strength=10.0, min_divergence=0.005)
+
+        player = _make_rb(carry_share=0.40)
+        original_carry_share = player.usage.carry_share
+        player.outcomes.rushing_yards_dist = np.full(17, 80.0 / 17)
+
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_IP, "rush_yd", 80.002, "Isiah", "Pacheco"),
+        ])
+
+        mock_loader = MagicMock()
+        mock_loader.load_props.return_value = props_df
+
+        engine = PlayerPropsEngine(config, loader=mock_loader)
+        roster = _make_roster(players=[player])
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+        assert player.usage.carry_share == pytest.approx(original_carry_share, abs=0.01)
+
+    def test_recv_yd_shifts_dist(self):
+        """recv_yd prop (via PFF_TO_ENGINE_MARKET) shifts receiving_yards_dist."""
+        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
+        from fantasy_sim.data.vegas.models import PropsConfig
+
+        base_dist = np.array([8.0, 10.0, 12.0, 15.0])
+        original_mean = float(np.mean(base_dist))
+
+        player = _make_wr(recv_yds_dist=base_dist)
+        roster = _make_roster(players=[player])
+
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -513,28 +619,23 @@ class TestPlayerPropsEngine:
         config = PropsConfig(enabled=True, prior_strength=10.0)
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=[player])
-        engine.apply(roster, "KC", 2024, 6)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
         new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
-        assert new_mean > original_mean, "Higher prop should shift dist mean up"
+        assert new_mean > original_mean
 
     def test_receptions_adjusts_target_share(self):
-        """player_receptions prop adjusts target_share via Bayesian blend."""
+        """recv_rec prop adjusts target_share via Bayesian blend."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
         player = _make_wr(target_share=0.20, games_played=17)
         original_target_share = player.usage.target_share
+        player._test_historical_receptions = 5.0
 
-        # Historical: assume 5 receptions/game * 17 games = 85 total
-        # Prop: 6.5 (higher)
-        props_df = pl.DataFrame({
-            "player_name": ["Travis Kelce"],
-            "market": ["player_receptions"],
-            "point": [6.5],
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_rec", 6.5, "Travis", "Kelce"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -542,16 +643,12 @@ class TestPlayerPropsEngine:
         config = PropsConfig(enabled=True, prior_strength=10.0)
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=[player])
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
-        # Set historical receptions on player (used as scale reference)
-        player._test_historical_receptions = 5.0  # per game
-
-        engine.apply(roster, "KC", 2024, 6)
-        # target_share should be blended upward (prop implies more usage)
         assert player.usage.target_share >= original_target_share
 
     def test_rush_yds_adjusts_carry_share(self):
-        """player_rush_yds prop adjusts carry_share upward when prop > historical."""
+        """rush_yd prop adjusts carry_share upward when prop > historical."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
@@ -559,17 +656,9 @@ class TestPlayerPropsEngine:
         player = _make_rb(carry_share=0.40, rush_yds_dist=base_dist)
         original_carry_share = player.usage.carry_share
 
-        # Historical rush yds per game = mean(dist) * games_played
-        historical_rush = float(np.mean(base_dist)) * player.games_played  # 5.0*17=85
-
-        # Prop implies 105 yards (higher)
-        props_df = pl.DataFrame({
-            "player_name": ["Isiah Pacheco"],
-            "market": ["player_rush_yds"],
-            "point": [105.0],
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_IP, "rush_yd", 105.0, "Isiah", "Pacheco"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -577,31 +666,28 @@ class TestPlayerPropsEngine:
         config = PropsConfig(enabled=True, prior_strength=10.0)
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=[player])
-        engine.apply(roster, "KC", 2024, 6)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
         assert player.usage.carry_share >= original_carry_share
 
     def test_pass_yds_shifts_team_receiving(self):
-        """player_pass_yds prop shifts all WR/TE receiving_yards_dist proportionally."""
+        """pass_yd prop shifts all WR/TE receiving_yards_dist proportionally."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
         qb = _make_qb(name="Patrick Mahomes", player_id="PM")
-        wr1 = _make_wr(name="Travis Kelce", player_id="TK", recv_yds_dist=np.array([10.0, 12.0, 15.0]))
-        wr2 = _make_wr(name="Rashee Rice", player_id="RR", recv_yds_dist=np.array([8.0, 10.0, 12.0]))
+        wr1 = _make_wr(name="Travis Kelce", player_id="TK",
+                       recv_yds_dist=np.array([10.0, 12.0, 15.0]))
+        wr2 = _make_wr(name="Rashee Rice", player_id="RR",
+                       recv_yds_dist=np.array([8.0, 10.0, 12.0]))
         rb = _make_rb(name="Isiah Pacheco", player_id="IP")
 
         mean_wr1_before = float(np.mean(wr1.outcomes.receiving_yards_dist))
         mean_wr2_before = float(np.mean(wr2.outcomes.receiving_yards_dist))
 
-        # Prop: 320 yd passing prop (vs historical ~250)
-        props_df = pl.DataFrame({
-            "player_name": ["Patrick Mahomes"],
-            "market": ["player_pass_yds"],
-            "point": [320.0],
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_PM, "pass_yd", 320.0, "Patrick", "Mahomes"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -609,36 +695,24 @@ class TestPlayerPropsEngine:
         config = PropsConfig(enabled=True, prior_strength=10.0)
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=[qb, wr1, wr2, rb])
-        # Set QB historical pass yds
         qb._test_historical_pass_yds = 250.0
 
-        engine.apply(roster, "KC", 2024, 6)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
-        mean_wr1_after = float(np.mean(wr1.outcomes.receiving_yards_dist))
-        mean_wr2_after = float(np.mean(wr2.outcomes.receiving_yards_dist))
-
-        # Both WR/TE dists should shift upward
-        assert mean_wr1_after > mean_wr1_before
-        assert mean_wr2_after > mean_wr2_before
-        # RB rushing dist should NOT change
-        # (rb has no receiving_yards_dist to shift via pass_yds)
+        assert float(np.mean(wr1.outcomes.receiving_yards_dist)) > mean_wr1_before
+        assert float(np.mean(wr2.outcomes.receiving_yards_dist)) > mean_wr2_before
 
     def test_anytime_td_adjusts_rz_target_share(self):
-        """player_anytime_td prop increases red_zone_target_share."""
+        """anytime_td prop increases red_zone_target_share."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
 
         player = _make_wr(red_zone_target_share=0.10, games_played=17)
         original_rz = player.usage.red_zone_target_share
 
-        # Anytime TD prop of 1.5 implies high scoring likelihood
-        props_df = pl.DataFrame({
-            "player_name": ["Travis Kelce"],
-            "market": ["player_anytime_td"],
-            "point": [1.5],
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "anytime_td", 1.5, "Travis", "Kelce"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -646,32 +720,28 @@ class TestPlayerPropsEngine:
         config = PropsConfig(enabled=True, prior_strength=10.0)
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=[player])
-        engine.apply(roster, "KC", 2024, 6)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
-        # red_zone_target_share should increase when prop > historical
         assert player.usage.red_zone_target_share >= original_rz
 
     def test_share_renormalization_after_apply(self):
-        """After apply(), sum of target_shares is approximately 1.0."""
+        """After apply() + normalize, target_shares sum to ~1.0."""
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
         from fantasy_sim.data.player_builder import _normalize_roster_shares
 
-        # Create 4 WRs with target shares summing to 1.0
+        # Use distinct PFF IDs for the 4 WRs
+        pff_crosswalk = {100: "WR0", 101: "WR1", 102: "WR2", 103: "WR3"}
+
         players = [
             _make_wr(name=f"WR{i}", player_id=f"WR{i}", target_share=0.25,
                      recv_yds_dist=np.array([10.0, 12.0, 15.0]))
             for i in range(4)
         ]
 
-        # Prop increases one player's apparent usage
-        props_df = pl.DataFrame({
-            "player_name": ["WR0"],
-            "market": ["player_receptions"],
-            "point": [10.0],  # High prop line
-            "season": [2024],
-            "week": [6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(100, "recv_rec", 10.0, "WR", "Zero"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -680,15 +750,14 @@ class TestPlayerPropsEngine:
         engine = PlayerPropsEngine(config, loader=mock_loader)
         roster = _make_roster(players=players)
 
-        # Apply engine, then normalize (as done in build_game)
-        engine.apply(roster, "KC", 2024, 6)
+        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=pff_crosswalk)
         _normalize_roster_shares(roster)
 
         total_target_share = sum(p.usage.target_share for p in roster.players)
         assert total_target_share == pytest.approx(1.0, abs=0.01)
 
     def test_crosswalk_audit_logging(self, caplog):
-        """Apply with some matched and some unmatched players -> log contains counts."""
+        """Apply with matched and unmatched PFF IDs -> log contains counts."""
         import logging
         from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
         from fantasy_sim.data.vegas.models import PropsConfig
@@ -696,13 +765,10 @@ class TestPlayerPropsEngine:
         player = _make_wr(name="Travis Kelce", player_id="TK")
         roster = _make_roster(players=[player])
 
-        props_df = pl.DataFrame({
-            "player_name": ["Travis Kelce", "Nonexistent Player XYZ"],
-            "market": ["player_receptions", "player_receptions"],
-            "point": [6.5, 3.0],
-            "season": [2024, 2024],
-            "week": [6, 6],
-        })
+        props_df = self._make_pff_props_df([
+            self._prop_row(self._PFF_TK, "recv_rec", 6.5, "Travis", "Kelce"),
+            self._prop_row(self._PFF_UNKNOWN, "recv_rec", 3.0, "Unknown", "Player"),
+        ])
 
         mock_loader = MagicMock()
         mock_loader.load_props.return_value = props_df
@@ -711,11 +777,17 @@ class TestPlayerPropsEngine:
         engine = PlayerPropsEngine(config, loader=mock_loader)
 
         with caplog.at_level(logging.INFO, logger="fantasy_sim.data.vegas.props_engine"):
-            engine.apply(roster, "KC", 2024, 6)
+            engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
 
-        # Should log crosswalk audit with matched/unmatched counts
         log_text = " ".join(caplog.messages)
         assert "matched" in log_text.lower() or "crosswalk" in log_text.lower()
+
+    def test_no_crosswalk_import_in_props_engine(self):
+        """crosswalk.py is NOT imported by props_engine.py (D-14)."""
+        import fantasy_sim.data.vegas.props_engine as mod
+        source = Path(mod.__file__).read_text()
+        assert "from fantasy_sim.data.vegas.crosswalk" not in source
+        assert "import crosswalk" not in source
 
 
 # ---------------------------------------------------------------------------

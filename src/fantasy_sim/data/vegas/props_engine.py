@@ -1,7 +1,10 @@
 """PlayerPropsEngine: Bayesian blend of player props into PlayerModel fields (VEG-03).
 
-Applies The Odds API prop lines as a Bayesian prior on top of historical
-PBP-derived player models. Follows the TierEngine blending pattern.
+Applies PFF player prop consensus lines as a Bayesian prior on top of
+historical PBP-derived player models. Follows the TierEngine blending pattern.
+
+Player matching uses PFF player IDs via the existing _pff_crosswalk
+(pff_id -> gsis_id), eliminating fuzzy name matching (D-13/D-14).
 
 Prop-to-model mapping scope (per review-driven design, D-07/D-08):
 
@@ -18,9 +21,6 @@ Emergent-stat mappings (team-level propagation):
 Anytime TD mapping:
   player_anytime_td -> WR/TE: red_zone_target_share
                     -> RB:    red_zone_carry_share
-
-Security (T-02-12): standardize_name strips special chars; fuzzy_match has
-threshold + ambiguity detection to prevent injection via player names.
 """
 
 from __future__ import annotations
@@ -30,9 +30,8 @@ import logging
 import numpy as np
 import polars as pl
 
-from fantasy_sim.data.vegas.crosswalk import fuzzy_match, standardize_name
 from fantasy_sim.data.vegas.models import PropsConfig
-from fantasy_sim.data.vegas.props_loader import PropsLoader
+from fantasy_sim.data.vegas.props_loader import PFF_TO_ENGINE_MARKET, PropsLoader
 from fantasy_sim.models.player import TeamRoster
 
 logger = logging.getLogger(__name__)
@@ -53,6 +52,9 @@ class PlayerPropsEngine:
     Follows the engine pattern: __init__(config, loader) + apply() method.
     Props loader is called once per (season, week); result is reused for all
     players on the roster (no repeated API calls).
+
+    Player matching uses PFF player IDs via pff_crosswalk (pff_id -> gsis_id)
+    passed to apply(). No fuzzy name matching (D-13/D-14).
 
     Bayesian blend formula (same as TierEngine):
         n_obs = player.games_played
@@ -78,11 +80,14 @@ class PlayerPropsEngine:
         team: str,
         season: int,
         week: int,
+        pff_crosswalk: dict[int, str] | None = None,
     ) -> None:
         """Apply props adjustments to all players in roster in-place.
 
-        Loads props once, builds name index from roster, iterates prop rows,
+        Loads props once, matches PFF player IDs to roster via pff_crosswalk,
         applies Bayesian-blended adjustments, logs crosswalk audit.
+
+        Graceful no-op when pff_crosswalk is None or props_df is empty (D-15).
 
         After this method returns, caller is responsible for running
         _normalize_roster_shares(roster) to re-sum shares to 1.0.
@@ -92,55 +97,58 @@ class PlayerPropsEngine:
             team: Team abbreviation (for logging).
             season: NFL season year.
             week: NFL week number.
+            pff_crosswalk: Mapping of PFF player ID (int) to gsis_id (str).
+                When None, the engine is a no-op (graceful degradation).
         """
         props_df = self.loader.load_props(season, week)
         if props_df.is_empty():
             return
 
-        # Build {standardized_name -> player} index
-        name_index = self._build_name_index(roster)
+        if pff_crosswalk is None:
+            return
+
+        # Build {gsis_id: PlayerModel} index from roster
+        player_index: dict[str, object] = {
+            p.player_id: p for p in roster.players
+        }
 
         n_matched = 0
         n_unmatched = 0
-        n_ambiguous = 0
 
-        # Group props by player name to apply all their markets together
-        player_names = props_df["player_name"].unique().to_list()
+        # Iterate unique PFF player IDs in the props DataFrame
+        pff_player_ids = props_df["player_id"].unique().to_list()
 
-        for raw_name in player_names:
-            std_name = standardize_name(raw_name)
-            player_id = fuzzy_match(
-                std_name,
-                candidates={k: v for k, v in name_index.items()},
-                threshold=self.config.fuzzy_threshold,
-            )
-
-            if player_id is None:
-                # Check whether it was ambiguous (fuzzy_match logs warning)
-                # We count unmatched+ambiguous both as "unmatched" for the audit
+        for pff_player_id in pff_player_ids:
+            # Look up gsis_id via crosswalk
+            gsis_id = pff_crosswalk.get(pff_player_id)
+            if gsis_id is None:
                 n_unmatched += 1
                 continue
 
-            # Find the PlayerModel
-            player = next(
-                (p for p in roster.players if p.player_id == player_id), None
-            )
+            # Find PlayerModel by gsis_id
+            player = player_index.get(gsis_id)
             if player is None:
                 n_unmatched += 1
                 continue
 
             n_matched += 1
 
-            # Get all props rows for this player
+            # Get all props rows for this PFF player
             player_props = props_df.filter(
-                pl.col("player_name") == raw_name
+                pl.col("player_id") == pff_player_id
             )
 
-            # Apply each market
+            # Apply each prop market
             for row in player_props.iter_rows(named=True):
-                market = row["market"]
-                prop_point = float(row["point"])
-                self._apply_market(player, roster, market, prop_point, team)
+                prop_key = row["prop_key"]
+                consensus_line = float(row["consensus_line"])
+
+                # Translate PFF prop_key to engine market key
+                market = PFF_TO_ENGINE_MARKET.get(prop_key)
+                if market is None:
+                    continue
+
+                self._apply_market(player, roster, market, consensus_line, team)
 
         logger.info(
             "Props crosswalk [%s week %d]: matched=%d, unmatched=%d",
@@ -186,18 +194,6 @@ class PlayerPropsEngine:
         to avoid noise from near-identical prop/historical values.
         """
         return abs(blended_ratio - 1.0) >= self.config.min_divergence
-
-    # ------------------------------------------------------------------
-    # Name index
-    # ------------------------------------------------------------------
-
-    def _build_name_index(self, roster: TeamRoster) -> dict[str, str]:
-        """Build {standardized_name: player_id} from roster."""
-        return {
-            standardize_name(p.name): p.player_id
-            for p in roster.players
-            if p.name
-        }
 
     # ------------------------------------------------------------------
     # Market dispatch

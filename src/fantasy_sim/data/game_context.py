@@ -554,8 +554,15 @@ class GameContextBuilder:
         # Player props (VEG-03): Bayesian blend of prop lines into player models
         # Applied before matchup engine so PFF adjustments layer on top.
         if self._props_engine is not None and target_season and week:
-            self._props_engine.apply(home_roster, home_team, target_season, week)
-            self._props_engine.apply(away_roster, away_team, target_season, week)
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            self._props_engine.apply(
+                home_roster, home_team, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
+            self._props_engine.apply(
+                away_roster, away_team, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
             # Re-normalize shares after props mutation (addresses MEDIUM review concern)
             from fantasy_sim.data.player_builder import _normalize_roster_shares
             _normalize_roster_shares(home_roster)
