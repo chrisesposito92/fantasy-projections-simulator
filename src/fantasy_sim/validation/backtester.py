@@ -9,6 +9,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
+from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
@@ -64,6 +65,7 @@ class Backtester:
         weather_config: WeatherConfig | None = None,
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
+        usage_config: UsageConfig | None = None,
         max_workers: int = 1,
     ):
         if test_season >= _HOLDOUT_SEASON:
@@ -82,6 +84,7 @@ class Backtester:
         self._weather_config = weather_config
         self._vegas_config = vegas_config
         self._props_config = props_config
+        self._usage_config = usage_config
         self.max_workers = max_workers
 
     def run(self, scoring_config: dict) -> BacktestResult:
@@ -125,6 +128,7 @@ class Backtester:
             weather_config=self._weather_config,
             vegas_config=self._vegas_config,
             props_config=self._props_config,
+            usage_config=self._usage_config,
             max_workers=self.max_workers,
             dual_arm=False,
         )

@@ -209,3 +209,26 @@ vegas:
     prior_strength: 10.0
     min_divergence: 0.005
     cache_dir: null  # defaults to ~/.fantasy-sim/pff/props/
+
+usage:
+  enabled: true
+  snap:
+    prior_strength: 8.0
+    min_games: 4
+    factor_clamp: [0.70, 1.30]
+  cpoe:
+    enabled: true
+    sensitivity: 0.30
+    min_plays: 20
+    cpoe_league_avg: 1.0
+    cpoe_league_std: 4.0
+  ngs:
+    enabled: true
+    separation_sensitivity: 0.04
+    cushion_sensitivity: -0.03    # NEGATIVE: high cushion = less threatening WR
+    factor_clamp: [0.95, 1.05]
+    min_targets: 10
+  route_rate:
+    enabled: true
+    sensitivity: 0.5
+    min_routes: 10

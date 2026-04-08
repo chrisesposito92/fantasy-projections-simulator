@@ -14,6 +14,7 @@ from fantasy_sim.data.player_builder import (
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
+from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -46,6 +47,7 @@ class GameContextBuilder:
         weather_config: WeatherConfig | None = None,
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
+        usage_config: UsageConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -151,6 +153,14 @@ class GameContextBuilder:
             self._props_engine = PlayerPropsEngine(props_config, props_loader)
             logger.info("Player props engine enabled")
 
+        # Usage engine setup (USG-01/02/03/04): snap counts, CPOE, NGS, route rate
+        self._usage_engine = None
+        self._usage_config = usage_config or UsageConfig(enabled=False)
+        if self._usage_config.enabled:
+            from fantasy_sim.data.usage.engine import UsageEngine
+            self._usage_engine = UsageEngine(self._usage_config, self.loader)
+            logger.info("Usage engine enabled")
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -190,7 +200,16 @@ class GameContextBuilder:
 
         # --- Layer 3: Player models (cached on training_seasons + target_season + week + props) ---
         props_enabled = getattr(self, "_props_engine", None) is not None
-        cache_key = (ts_key, target_season, week, props_enabled)
+        # Usage cache fingerprint: captures enabled state + key tuning parameters
+        # so cache invalidates when config changes, not just when toggled on/off
+        usage_fingerprint = (
+            self._usage_config.enabled,
+            self._usage_config.snap.prior_strength,
+            self._usage_config.cpoe.enabled,
+            self._usage_config.ngs.enabled,
+            self._usage_config.route_rate.enabled,
+        ) if self._usage_config.enabled else (False,)
+        cache_key = (ts_key, target_season, week, props_enabled, usage_fingerprint)
         if self._player_models_cache is None or self._player_cache_key != cache_key:
             # Determine current rosters
             if rosters is not None:
@@ -551,6 +570,25 @@ class GameContextBuilder:
             self._apply_vegas(home_dists, home_vegas_ctx)
             self._apply_vegas(away_dists, away_vegas_ctx)
 
+        # Usage engine (snap counts, CPOE, NGS, route rate) -- before props (D-03)
+        home_cpoe_map: dict[str, float] = {}
+        away_cpoe_map: dict[str, float] = {}
+        if self._usage_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            home_cpoe_map = self._usage_engine.apply(
+                home_roster, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
+            away_cpoe_map = self._usage_engine.apply(
+                away_roster, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+            )
+            # MUST normalize after usage mutations (review HIGH concern: shares must sum to 1.0
+            # before props engine runs, otherwise subsequent engines operate on invalid shares)
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
+
         # Player props (VEG-03): Bayesian blend of prop lines into player models
         # Applied before matchup engine so PFF adjustments layer on top.
         if self._props_engine is not None and target_season and week:
@@ -612,15 +650,26 @@ class GameContextBuilder:
                     pbp=pbp_df,
                 )
 
+            # Merge home + away CPOE maps (QB IDs are unique across teams)
+            combined_cpoe_map = {**home_cpoe_map, **away_cpoe_map}
+
+            # Copy CPOE baselines from UsageConfig to TierEngineConfig for isolation
+            if combined_cpoe_map and hasattr(self._tier_engine._config, 'cpoe_sensitivity'):
+                self._tier_engine._config.cpoe_league_avg = self._usage_config.cpoe.cpoe_league_avg
+                self._tier_engine._config.cpoe_league_std = self._usage_config.cpoe.cpoe_league_std
+                self._tier_engine._config.cpoe_sensitivity = self._usage_config.cpoe.sensitivity
+
             self._tier_engine.apply_tiers(
                 home_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
                 team_context=home_ctx,
+                cpoe_map=combined_cpoe_map if combined_cpoe_map else None,
             )
             self._tier_engine.apply_tiers(
                 away_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
                 team_context=away_ctx,
+                cpoe_map=combined_cpoe_map if combined_cpoe_map else None,
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)

@@ -8,5 +8,6 @@ Pipeline position: after Vegas, before props (D-03).
 
 from fantasy_sim.data.usage.engine import UsageEngine
 from fantasy_sim.data.usage.models import UsageConfig
+from fantasy_sim.data.usage.config import load_usage_config
 
-__all__ = ["UsageEngine", "UsageConfig"]
+__all__ = ["UsageEngine", "UsageConfig", "load_usage_config"]
