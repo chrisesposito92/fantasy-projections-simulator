@@ -78,6 +78,15 @@ class DataLoader:
         self._save_cache(df, cache_path)
         return df
 
+    def load_nextgen_stats(self, seasons: list[int], stat_type: str = "receiving") -> pl.DataFrame:
+        cache_path = self._cache_key(f"ngs_{stat_type}", seasons)
+        cached = self._load_cached(cache_path)
+        if cached is not None:
+            return cached
+        df = nflreadpy.load_nextgen_stats(seasons, stat_type=stat_type)
+        self._save_cache(df, cache_path)
+        return df
+
     def load_depth_charts(self, seasons: list[int]) -> pl.DataFrame:
         cache_path = self._cache_key("depth_charts", seasons)
         cached = self._load_cached(cache_path)
