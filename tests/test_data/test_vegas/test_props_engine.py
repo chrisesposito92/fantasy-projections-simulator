@@ -122,195 +122,212 @@ class TestPlayerNameCrosswalk:
 
 
 # ---------------------------------------------------------------------------
-# TestPropsLoader
+# TestPropsLoader (PFF parquet cache reader)
 # ---------------------------------------------------------------------------
 
-_MOCK_ODDS_RESPONSE = {
-    "id": "event-001",
-    "sport_key": "americanfootball_nfl",
-    "bookmakers": [
-        {
-            "key": "fanduel",
-            "markets": [
-                {
-                    "key": "player_reception_yds",
-                    "outcomes": [
-                        {"name": "Patrick Mahomes", "description": "Over", "point": 285.5},
-                        {"name": "Travis Kelce", "description": "Over", "point": 72.5},
-                    ],
-                },
-                {
-                    "key": "player_receptions",
-                    "outcomes": [
-                        {"name": "Travis Kelce", "description": "Over", "point": 6.5},
-                    ],
-                },
-            ],
-        },
-        {
-            "key": "draftkings",
-            "markets": [
-                {
-                    "key": "player_reception_yds",
-                    "outcomes": [
-                        {"name": "Patrick Mahomes", "description": "Over", "point": 286.5},
-                        {"name": "Travis Kelce", "description": "Over", "point": 71.5},
-                    ],
-                },
-                {
-                    "key": "player_receptions",
-                    "outcomes": [
-                        {"name": "Travis Kelce", "description": "Over", "point": 6.5},
-                    ],
-                },
-            ],
-        },
-    ],
-}
+def _make_pff_props_parquet(path: Path, season: int, week: int, rows: list[dict] | None = None):
+    """Write a PFF-format props parquet file for testing."""
+    if rows is None:
+        rows = [
+            {
+                "player_id": 12345,
+                "first_name": "Travis",
+                "last_name": "Kelce",
+                "team_id": 1,
+                "position": "TE",
+                "prop_key": "recv_yd",
+                "consensus_line": 72.5,
+                "season": season,
+                "week": week,
+                "projections_json": "{}",
+                "averages_json": "{}",
+                "matchup_json": "{}",
+                "last_ten_json": "[]",
+                "option_json": "{}",
+            },
+            {
+                "player_id": 67890,
+                "first_name": "Patrick",
+                "last_name": "Mahomes",
+                "team_id": 1,
+                "position": "QB",
+                "prop_key": "pass_yd",
+                "consensus_line": 285.5,
+                "season": season,
+                "week": week,
+                "projections_json": "{}",
+                "averages_json": "{}",
+                "matchup_json": "{}",
+                "last_ten_json": "[]",
+                "option_json": "{}",
+            },
+        ]
+    df = pl.DataFrame(rows, schema={
+        "player_id": pl.Int64,
+        "first_name": pl.Utf8,
+        "last_name": pl.Utf8,
+        "team_id": pl.Int64,
+        "position": pl.Utf8,
+        "prop_key": pl.Utf8,
+        "consensus_line": pl.Float64,
+        "season": pl.Int64,
+        "week": pl.Int64,
+        "projections_json": pl.Utf8,
+        "averages_json": pl.Utf8,
+        "matchup_json": pl.Utf8,
+        "last_ten_json": pl.Utf8,
+        "option_json": pl.Utf8,
+    })
+    df.write_parquet(path)
+    return df
 
 
 class TestPropsLoader:
-    """Tests for PropsLoader (The Odds API fetcher with caching)."""
+    """Tests for PropsLoader (PFF parquet cache reader, no HTTP)."""
 
-    def test_load_props_returns_dataframe(self, tmp_path):
-        """Mock httpx response -> polars DataFrame with required columns."""
+    def test_load_props_reads_parquet(self, tmp_path):
+        """PropsLoader reads PFF parquet and returns DataFrame with correct columns."""
         from fantasy_sim.data.vegas.models import PropsConfig
         from fantasy_sim.data.vegas.props_loader import PropsLoader
 
-        config = PropsConfig(enabled=True, cache_dir=str(tmp_path))
-        loader = PropsLoader(config, cache_dir=tmp_path)
-        loader._api_key = "fake-key"
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = _MOCK_ODDS_RESPONSE
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
-            mock_client.get.return_value = mock_response
-            mock_client_cls.return_value = mock_client
-
-            # Patch _fetch_events to return one event
-            with patch.object(loader, "_fetch_events", return_value=[
-                {"id": "event-001", "commence_time": "2024-10-13T17:00:00Z",
-                 "home_team": "KC", "away_team": "BUF"}
-            ]):
-                df = loader.load_props(season=2024, week=6)
-
-        assert isinstance(df, pl.DataFrame)
-        required_cols = {"player_name", "market", "point", "season", "week"}
-        assert required_cols.issubset(set(df.columns))
-        assert len(df) > 0
-
-    def test_cache_hit_no_fetch(self, tmp_path):
-        """Second load_props call reads from cache; no HTTP request made."""
-        from fantasy_sim.data.vegas.models import PropsConfig
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
-
-        # Write a props parquet to tmp_path manually
         cache_path = tmp_path / "props_2024_week06.parquet"
-        cached_df = pl.DataFrame({
-            "player_name": ["Travis Kelce"],
-            "market": ["player_receptions"],
-            "point": [6.5],
-            "season": [2024],
-            "week": [6],
-        })
-        cached_df.write_parquet(cache_path)
+        _make_pff_props_parquet(cache_path, season=2024, week=6)
 
         config = PropsConfig(enabled=True, cache_dir=str(tmp_path))
         loader = PropsLoader(config, cache_dir=tmp_path)
-        loader._api_key = "fake-key"
-
-        with patch("httpx.Client") as mock_client_cls:
-            df = loader.load_props(season=2024, week=6)
-            mock_client_cls.assert_not_called()
-
-        assert isinstance(df, pl.DataFrame)
-        assert len(df) == 1
-
-    def test_no_api_key_returns_empty(self, tmp_path):
-        """PropsLoader with no env var returns empty DataFrame, no error."""
-        from fantasy_sim.data.vegas.models import PropsConfig
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
-
-        config = PropsConfig(enabled=True, cache_dir=str(tmp_path), api_key_env="NO_SUCH_ENV_VAR_XYZ")
-        with patch.dict(os.environ, {}, clear=False):
-            # Ensure env var is not set
-            os.environ.pop("NO_SUCH_ENV_VAR_XYZ", None)
-            loader = PropsLoader(config, cache_dir=tmp_path)
 
         df = loader.load_props(season=2024, week=6)
         assert isinstance(df, pl.DataFrame)
-        assert len(df) == 0
+        assert len(df) == 2
+        # Must have PFF columns
+        required_cols = {"player_id", "prop_key", "consensus_line", "season", "week"}
+        assert required_cols.issubset(set(df.columns))
 
-    def test_2022_returns_empty(self, tmp_path):
-        """PropsLoader for season < 2023 returns empty DataFrame."""
+    def test_load_props_missing_cache_returns_empty(self, tmp_path):
+        """PropsLoader returns empty DataFrame when cache file missing (D-15)."""
         from fantasy_sim.data.vegas.models import PropsConfig
         from fantasy_sim.data.vegas.props_loader import PropsLoader
 
         config = PropsConfig(enabled=True, cache_dir=str(tmp_path))
         loader = PropsLoader(config, cache_dir=tmp_path)
-        loader._api_key = "fake-key"
 
         df = loader.load_props(season=2022, week=6)
         assert isinstance(df, pl.DataFrame)
         assert len(df) == 0
 
-    def test_thursday_open_sunday_game(self):
-        """Sunday 2024-10-13 -> snapshot Thursday 2024-10-10T12:00:00-04:00."""
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
+    def test_load_props_disabled_returns_empty(self, tmp_path):
+        """PropsLoader returns empty when config.enabled is False."""
         from fantasy_sim.data.vegas.models import PropsConfig
+        from fantasy_sim.data.vegas.props_loader import PropsLoader
+
+        # Write a cache file (should still return empty because disabled)
+        cache_path = tmp_path / "props_2024_week06.parquet"
+        _make_pff_props_parquet(cache_path, season=2024, week=6)
+
+        config = PropsConfig(enabled=False, cache_dir=str(tmp_path))
+        loader = PropsLoader(config, cache_dir=tmp_path)
+
+        df = loader.load_props(season=2024, week=6)
+        assert isinstance(df, pl.DataFrame)
+        assert len(df) == 0
+
+    def test_no_httpx_import(self):
+        """PropsLoader module does not import httpx (pure cache reader)."""
+        import importlib
+        import fantasy_sim.data.vegas.props_loader as mod
+        importlib.reload(mod)
+        source = Path(mod.__file__).read_text()
+        assert "httpx" not in source
+
+    def test_default_cache_dir(self):
+        """PropsLoader defaults to ~/.fantasy-sim/pff/props/ when no cache_dir."""
+        from fantasy_sim.data.vegas.models import PropsConfig
+        from fantasy_sim.data.vegas.props_loader import PropsLoader
 
         config = PropsConfig(enabled=True)
         loader = PropsLoader(config)
+        expected = Path.home() / ".fantasy-sim" / "pff" / "props"
+        assert loader.cache_dir == expected
 
-        gameday = date(2024, 10, 13)  # Sunday
-        result = loader._compute_thursday_open(gameday)
-        assert "2024-10-10" in result
-        assert "12:00:00" in result
+    def test_pff_to_engine_market_mapping(self):
+        """PFF_TO_ENGINE_MARKET maps PFF prop_key values to engine market keys."""
+        from fantasy_sim.data.vegas.props_loader import PFF_TO_ENGINE_MARKET
 
-    def test_thursday_open_thursday_game(self):
-        """Thursday 2024-10-10 -> snapshot Wednesday 2024-10-09T12:00:00-04:00 (gameday - 1)."""
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
+        assert PFF_TO_ENGINE_MARKET["recv_yd"] == "player_reception_yds"
+        assert PFF_TO_ENGINE_MARKET["recv_rec"] == "player_receptions"
+        assert PFF_TO_ENGINE_MARKET["rush_yd"] == "player_rush_yds"
+        assert PFF_TO_ENGINE_MARKET["pass_yd"] == "player_pass_yds"
+        assert PFF_TO_ENGINE_MARKET["pass_td"] == "player_pass_tds"
+        assert PFF_TO_ENGINE_MARKET["anytime_td"] == "player_anytime_td"
+
+
+class TestPropsConfig:
+    """Tests for PropsConfig dataclass field changes."""
+
+    def test_no_api_key_env_field(self):
+        """PropsConfig no longer has api_key_env field."""
         from fantasy_sim.data.vegas.models import PropsConfig
+        assert not hasattr(PropsConfig, "api_key_env") or "api_key_env" not in PropsConfig.__dataclass_fields__
 
-        config = PropsConfig(enabled=True)
-        loader = PropsLoader(config)
-
-        gameday = date(2024, 10, 10)  # Thursday
-        result = loader._compute_thursday_open(gameday)
-        assert "2024-10-09" in result
-        assert "12:00:00" in result
-
-    def test_thursday_open_saturday_game(self):
-        """Saturday 2024-10-12 -> snapshot Thursday 2024-10-10T12:00:00-04:00."""
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
+    def test_no_fuzzy_threshold_field(self):
+        """PropsConfig no longer has fuzzy_threshold field."""
         from fantasy_sim.data.vegas.models import PropsConfig
+        assert not hasattr(PropsConfig, "fuzzy_threshold") or "fuzzy_threshold" not in PropsConfig.__dataclass_fields__
 
-        config = PropsConfig(enabled=True)
-        loader = PropsLoader(config)
-
-        gameday = date(2024, 10, 12)  # Saturday
-        result = loader._compute_thursday_open(gameday)
-        assert "2024-10-10" in result
-        assert "12:00:00" in result
-
-    def test_thursday_open_monday_game(self):
-        """Monday 2024-10-14 -> snapshot Thursday 2024-10-10T12:00:00-04:00."""
-        from fantasy_sim.data.vegas.props_loader import PropsLoader
+    def test_no_markets_field(self):
+        """PropsConfig no longer has markets field."""
         from fantasy_sim.data.vegas.models import PropsConfig
+        assert not hasattr(PropsConfig, "markets") or "markets" not in PropsConfig.__dataclass_fields__
 
-        config = PropsConfig(enabled=True)
-        loader = PropsLoader(config)
+    def test_has_cache_dir(self):
+        """PropsConfig still has cache_dir field."""
+        from fantasy_sim.data.vegas.models import PropsConfig
+        assert "cache_dir" in PropsConfig.__dataclass_fields__
 
-        gameday = date(2024, 10, 14)  # Monday
-        result = loader._compute_thursday_open(gameday)
-        assert "2024-10-10" in result
-        assert "12:00:00" in result
+    def test_cache_dir_defaults_none(self):
+        """PropsConfig.cache_dir defaults to None."""
+        from fantasy_sim.data.vegas.models import PropsConfig
+        config = PropsConfig()
+        assert config.cache_dir is None
+
+    def test_load_props_config_from_yaml(self):
+        """load_props_config reads updated defaults.yaml and returns correct PropsConfig."""
+        from fantasy_sim.data.vegas.config import load_props_config
+
+        yaml_dict = {
+            "vegas": {
+                "props": {
+                    "enabled": True,
+                    "prior_strength": 12.0,
+                    "min_divergence": 0.01,
+                    "cache_dir": "/tmp/test-cache",
+                }
+            }
+        }
+        config = load_props_config(yaml_dict)
+        assert config.enabled is True
+        assert config.prior_strength == 12.0
+        assert config.min_divergence == 0.01
+        assert config.cache_dir == "/tmp/test-cache"
+
+    def test_load_props_config_no_removed_fields(self):
+        """load_props_config does not set api_key_env, fuzzy_threshold, or markets."""
+        from fantasy_sim.data.vegas.config import load_props_config
+
+        yaml_dict = {
+            "vegas": {
+                "props": {
+                    "enabled": True,
+                    "prior_strength": 10.0,
+                    "min_divergence": 0.005,
+                }
+            }
+        }
+        config = load_props_config(yaml_dict)
+        # These fields should no longer exist on the dataclass
+        assert not hasattr(config, "api_key_env")
+        assert not hasattr(config, "fuzzy_threshold")
+        assert not hasattr(config, "markets")
 
 
 # ---------------------------------------------------------------------------
