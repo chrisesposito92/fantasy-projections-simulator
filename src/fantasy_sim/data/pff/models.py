@@ -163,6 +163,10 @@ class TierConfig:
     blend_pool_size: int = 500
     ncaa_rookie: NcaaRookieConfig = field(default_factory=NcaaRookieConfig)
     archetypes: ArchetypeConfig = field(default_factory=ArchetypeConfig)
+    # CPOE grade modifier (USG-02): config-driven baselines, sweepable via A/B
+    cpoe_sensitivity: float = 0.30      # grade points per 1-sigma CPOE
+    cpoe_league_avg: float = 1.0        # mirrors UsageConfig.cpoe.cpoe_league_avg
+    cpoe_league_std: float = 4.0        # mirrors UsageConfig.cpoe.cpoe_league_std
 
 
 @dataclass

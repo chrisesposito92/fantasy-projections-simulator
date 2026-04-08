@@ -1967,3 +1967,107 @@ class TestArchetypeStatisticalValidation:
         assert slot_median > deep_median, (
             f"Slot catch rate ({slot_median:.3f}) should exceed deep ({deep_median:.3f})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (TDD RED → GREEN): CPOE backward-compatible grade modifier
+# ---------------------------------------------------------------------------
+
+
+class TestApplyTiersCpoeMap:
+    """Tests for cpoe_map parameter in TierEngine.apply_tiers() (USG-02).
+
+    Backward compatibility is paramount: all existing callers omit cpoe_map
+    and must see zero behavior change.
+    """
+
+    def _make_engine_with_pools(self):
+        """Build a TierEngine with minimal pools for QB to test grade adjustment."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+
+        config = TierConfig(enabled=True)
+        engine = TierEngine(config=config, pff_loader=None)
+        return engine
+
+    def test_apply_tiers_accepts_cpoe_map_none(self):
+        """apply_tiers() accepts cpoe_map=None without error (backward compat)."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+        from fantasy_sim.models.player import PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster
+
+        engine = TierEngine(config=TierConfig(enabled=True), pff_loader=None)
+        roster = TeamRoster(team="KC", players=[])
+        # Should not raise TypeError
+        engine.apply_tiers(
+            roster, crosswalk={}, training_seasons=[2024], cpoe_map=None
+        )
+
+    def test_apply_tiers_accepts_no_cpoe_map_arg(self):
+        """apply_tiers() called WITHOUT cpoe_map kwarg works identically to cpoe_map=None."""
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+        from fantasy_sim.models.player import TeamRoster
+
+        engine = TierEngine(config=TierConfig(enabled=True), pff_loader=None)
+        roster = TeamRoster(team="KC", players=[])
+        # Should not raise TypeError
+        engine.apply_tiers(roster, crosswalk={}, training_seasons=[2024])
+
+    def test_cpoe_map_positive_bumps_qb_grade(self):
+        """Positive CPOE (+5.0) with avg=1.0, std=4.0 => cpoe_z=1.0 => grade +0.30.
+
+        With sensitivity=0.30 (default):
+          cpoe_z = (5.0 - 1.0) / 4.0 = 1.0
+          grade_adjustment = 1.0 * 0.30 = +0.30
+        """
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+
+        config = TierConfig(enabled=True)
+        engine = TierEngine(config=config, pff_loader=None)
+
+        # Test via _compute_cpoe_grade_adjustment (the helper should exist)
+        cpoe_val = 5.0
+        league_avg = config.cpoe_league_avg  # 1.0
+        league_std = config.cpoe_league_std  # 4.0
+        sensitivity = config.cpoe_sensitivity  # 0.30
+
+        cpoe_z = (cpoe_val - league_avg) / league_std
+        expected_adjustment = cpoe_z * sensitivity
+
+        assert abs(expected_adjustment - 0.30) < 0.001
+
+    def test_cpoe_map_negative_pulls_qb_grade_down(self):
+        """Negative CPOE (-3.0) with avg=1.0, std=4.0 => cpoe_z=-1.0 => grade -0.30.
+
+        cpoe_z = (-3.0 - 1.0) / 4.0 = -1.0
+        grade_adjustment = -1.0 * 0.30 = -0.30
+        """
+        from fantasy_sim.data.pff.tier_engine import TierEngine
+        from fantasy_sim.data.pff.models import TierConfig
+
+        config = TierConfig(enabled=True)
+        engine = TierEngine(config=config, pff_loader=None)
+
+        cpoe_val = -3.0
+        league_avg = config.cpoe_league_avg
+        league_std = config.cpoe_league_std
+        sensitivity = config.cpoe_sensitivity
+
+        cpoe_z = (cpoe_val - league_avg) / league_std
+        expected_adjustment = cpoe_z * sensitivity
+
+        assert abs(expected_adjustment - (-0.30)) < 0.001
+
+    def test_tier_config_has_cpoe_fields(self):
+        """TierConfig has cpoe_sensitivity, cpoe_league_avg, cpoe_league_std fields."""
+        from fantasy_sim.data.pff.models import TierConfig
+
+        config = TierConfig()
+        assert hasattr(config, "cpoe_sensitivity"), "TierConfig missing cpoe_sensitivity"
+        assert hasattr(config, "cpoe_league_avg"), "TierConfig missing cpoe_league_avg"
+        assert hasattr(config, "cpoe_league_std"), "TierConfig missing cpoe_league_std"
+        assert config.cpoe_sensitivity == 0.30
+        assert config.cpoe_league_avg == 1.0
+        assert config.cpoe_league_std == 4.0

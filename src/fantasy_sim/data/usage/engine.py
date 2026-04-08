@@ -147,7 +147,15 @@ class UsageEngine:
                     prior_strength=prior_strength,
                 )
 
-        return {}  # cpoe_map populated in Plan 02
+        # Compute CPOE rolling map for downstream TierEngine consumption (USG-02)
+        cpoe_map: dict[str, float] = {}
+        if self._config.cpoe.enabled:
+            try:
+                cpoe_map = self._compute_cpoe_rolling(season, week)
+            except Exception as exc:
+                logger.warning("UsageEngine: CPOE computation failed (%s), using empty map", exc)
+
+        return cpoe_map
 
     # ------------------------------------------------------------------
     # Snap crosswalk: pfr_player_id -> gsis_id
@@ -291,35 +299,83 @@ class UsageEngine:
         return float(blended)
 
     # ------------------------------------------------------------------
-    # Plan 02 stubs: CPOE, NGS, route rate
+    # CPOE rolling computation (USG-02)
     # ------------------------------------------------------------------
 
     def _compute_cpoe_rolling(
         self,
-        gsis_id: str,
         season: int,
         week: int,
-    ) -> float | None:
-        """Stub: compute rolling CPOE for a QB. Implemented in Plan 02."""
-        return None
+    ) -> dict[str, float]:
+        """Compute rolling 4-week CPOE per QB with strict temporal leak guard.
+
+        Filters PBP to (season, week strictly < target_week) to prevent
+        temporal leakage (T-03-10). Groups by passer_player_id, aggregates
+        mean CPOE, filters to >= min_plays threshold.
+
+        Args:
+            season: NFL season year.
+            week: Target week (current game week). Only uses data from prior weeks.
+
+        Returns:
+            Dict mapping gsis_id (passer_player_id) -> rolling mean CPOE.
+            Empty dict when no data available or week <= 1.
+        """
+        if week <= 1:
+            return {}
+
+        pbp = self._loader.load_pbp([season])
+        if pbp is None or pbp.is_empty():
+            return {}
+
+        min_week = max(1, week - self._config.snap.min_games)
+
+        try:
+            pass_plays = pbp.filter(
+                (pl.col("season") == season)
+                & (pl.col("week") >= min_week)
+                & (pl.col("week") < week)        # STRICT: never includes current week (T-03-10)
+                & pl.col("cpoe").is_not_null()
+                & pl.col("passer_player_id").is_not_null()
+            )
+        except Exception:
+            return {}
+
+        if pass_plays.is_empty():
+            return {}
+
+        grouped = (
+            pass_plays
+            .group_by("passer_player_id")
+            .agg([
+                pl.col("cpoe").mean().alias("rolling_cpoe"),
+                pl.len().alias("n_plays"),
+            ])
+            .filter(pl.col("n_plays") >= self._config.cpoe.min_plays)
+        )
+
+        result: dict[str, float] = {}
+        for row in grouped.iter_rows(named=True):
+            result[row["passer_player_id"]] = float(row["rolling_cpoe"])
+        return result
+
+    # ------------------------------------------------------------------
+    # NGS separation/cushion stubs (Plan 02 Task 2 implements these)
+    # ------------------------------------------------------------------
 
     def _apply_ngs(
         self,
         player,
-        season: int,
-        week: int,
-    ) -> float:
-        """Stub: compute NGS factor (separation/cushion) for a WR. Implemented in Plan 02."""
-        return 1.0
+        ngs_df: "pl.DataFrame",
+    ) -> None:
+        """Stub: apply NGS separation/cushion factors to WR. Implemented in Task 2."""
 
     def _apply_route_rate(
         self,
         player,
-        season: int,
-        week: int,
-    ) -> float:
-        """Stub: compute route participation rate factor. Implemented in Plan 02."""
-        return 1.0
+        pff_df: "pl.DataFrame",
+    ) -> None:
+        """Stub: apply PFF route rate factor to WR target_share. Implemented in Task 2."""
 
     # ------------------------------------------------------------------
     # Internal helpers

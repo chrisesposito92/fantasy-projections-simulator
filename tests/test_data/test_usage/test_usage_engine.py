@@ -664,3 +664,118 @@ class TestUsageEngineDocstring:
         docstring = UsageEngine.apply.__doc__
         assert docstring is not None
         assert "_normalize_roster_shares" in docstring or "normalize" in docstring.lower()
+
+
+# ---------------------------------------------------------------------------
+# Task 1 (TDD RED → GREEN): CPOE rolling computation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_pbp_df() -> pl.DataFrame:
+    """Mock PBP DataFrame with cpoe and passer_player_id columns for weeks 1-5."""
+    rows = [
+        # QB1: 25 pass plays weeks 1-4, CPOE of +5.0
+        *[("gsis-qb1", 2024, w, 5.0) for w in [1, 2, 3, 4] for _ in range(6)],
+        # QB2: 25 pass plays weeks 1-4, CPOE of -3.0
+        *[("gsis-qb2", 2024, w, -3.0) for w in [1, 2, 3, 4] for _ in range(6)],
+        # QB3: only 10 plays (below min_plays=20 threshold), CPOE of +10.0
+        *[("gsis-qb3", 2024, w, 10.0) for w in [1, 2] for _ in range(5)],
+        # Week 5 plays (should be EXCLUDED when target_week=5)
+        ("gsis-qb1", 2024, 5, 99.0),
+        ("gsis-qb2", 2024, 5, 99.0),
+    ]
+    return pl.DataFrame(
+        rows,
+        schema={
+            "passer_player_id": pl.Utf8,
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "cpoe": pl.Float64,
+        },
+        orient="row",
+    )
+
+
+@pytest.fixture
+def cpoe_engine(tmp_path, mock_snap_df, mock_roster_df):
+    """UsageEngine with mocked loader returning PBP data for CPOE tests."""
+    from fantasy_sim.data.loader import DataLoader
+    from fantasy_sim.data.usage.engine import UsageEngine
+
+    loader = MagicMock(spec=DataLoader)
+    loader.load_snap_counts.return_value = mock_snap_df
+    loader.load_rosters.return_value = mock_roster_df
+
+    config = UsageConfig()
+    return UsageEngine(config=config, loader=loader)
+
+
+class TestComputeCpoeRolling:
+    """Tests for _compute_cpoe_rolling(): leak-free rolling CPOE per QB."""
+
+    def test_cpoe_rolling_returns_dict(self, cpoe_engine, mock_pbp_df):
+        """_compute_cpoe_rolling() returns a dict mapping gsis_id to float."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        assert isinstance(result, dict)
+
+    def test_cpoe_rolling_includes_qb_with_enough_plays(self, cpoe_engine, mock_pbp_df):
+        """QB with >= min_plays (20) in rolling window is included in result."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        assert "gsis-qb1" in result
+        assert "gsis-qb2" in result
+
+    def test_cpoe_rolling_excludes_qb_below_min_plays(self, cpoe_engine, mock_pbp_df):
+        """QB with < min_plays (20) in rolling window is excluded from result."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        assert "gsis-qb3" not in result
+
+    def test_cpoe_rolling_values_correct(self, cpoe_engine, mock_pbp_df):
+        """Rolling CPOE values are mean of filtered plays."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        assert abs(result["gsis-qb1"] - 5.0) < 0.01
+        assert abs(result["gsis-qb2"] - (-3.0)) < 0.01
+
+    def test_cpoe_temporal_leakage_week_5_excluded(self, cpoe_engine, mock_pbp_df):
+        """Calling with week=5 does NOT include week 5 plays (99.0 CPOE would skew result).
+
+        Week 5 plays have CPOE=99.0. If leaked in, the mean would be >> 5.0.
+        """
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        # If week 5 leaked in, QB1 CPOE would be far above 5.0
+        assert "gsis-qb1" in result
+        assert result["gsis-qb1"] < 10.0, (
+            f"Expected CPOE near 5.0 (week 5 excluded), got {result['gsis-qb1']}"
+        )
+
+    def test_cpoe_rolling_week_1_returns_empty(self, cpoe_engine, mock_pbp_df):
+        """_compute_cpoe_rolling() with week=1 returns empty dict (no prior weeks)."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine._compute_cpoe_rolling(2024, 1)
+        assert result == {}
+
+    def test_cpoe_rolling_empty_pbp_returns_empty(self, cpoe_engine):
+        """_compute_cpoe_rolling() returns empty dict when PBP data is empty."""
+        cpoe_engine._loader.load_pbp.return_value = pl.DataFrame(
+            schema={
+                "passer_player_id": pl.Utf8,
+                "season": pl.Int64,
+                "week": pl.Int64,
+                "cpoe": pl.Float64,
+            }
+        )
+        result = cpoe_engine._compute_cpoe_rolling(2024, 5)
+        assert result == {}
+
+    def test_apply_returns_cpoe_map(self, cpoe_engine, sample_roster, mock_pbp_df):
+        """apply() returns cpoe_map dict (from _compute_cpoe_rolling) as its return value."""
+        cpoe_engine._loader.load_pbp.return_value = mock_pbp_df
+        result = cpoe_engine.apply(sample_roster, season=2024, week=5)
+        assert isinstance(result, dict)
+        # cpoe_map may be empty (QBs in roster may not match PBP QBs) but must be dict
+        assert result is not None

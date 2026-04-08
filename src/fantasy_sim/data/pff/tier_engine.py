@@ -1341,6 +1341,7 @@ class TierEngine:
         nfl_roster: "pl.DataFrame | None" = None,
         target_season: int | None = None,
         team_context: "TeamContext | None" = None,
+        cpoe_map: "dict[str, float] | None" = None,
     ) -> None:
         """Apply tier-based distribution adjustments to all players in a roster.
 
@@ -1414,6 +1415,29 @@ class TierEngine:
 
             if pff_grades is None:
                 continue
+
+            # CPOE grade modifier (USG-02): adjust QB primary grade before tier assignment.
+            # Uses config-driven baselines (cpoe_league_avg, cpoe_league_std) from TierConfig.
+            # Backward compatible: cpoe_map=None (default) → no adjustment.
+            if position == "QB" and cpoe_map is not None:
+                cpoe_val = cpoe_map.get(player.player_id)
+                if cpoe_val is not None:
+                    grade_cfg = self._config.position_grades.get("QB")
+                    if grade_cfg is not None and grade_cfg.primary in pff_grades:
+                        cpoe_z = (
+                            (cpoe_val - self._config.cpoe_league_avg)
+                            / self._config.cpoe_league_std
+                        )
+                        grade_adjustment = cpoe_z * self._config.cpoe_sensitivity
+                        # Mutate a copy to avoid modifying cached grade data
+                        pff_grades = dict(pff_grades)
+                        pff_grades[grade_cfg.primary] = (
+                            pff_grades[grade_cfg.primary] + grade_adjustment
+                        )
+                        logger.debug(
+                            "CPOE grade adjustment for %s: cpoe=%.2f z=%.2f adj=%.2f",
+                            player.player_id, cpoe_val, cpoe_z, grade_adjustment,
+                        )
 
             # Select distributions from tier pool
             result = self.select_distributions(pff_grades, position)
