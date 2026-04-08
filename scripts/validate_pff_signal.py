@@ -440,8 +440,9 @@ def _build_weather_config(mode: str, overrides: dict | None = None) -> WeatherCo
 
     Returns None if weather is not part of the mode, or a WeatherConfig
     with enabled=True (and optional overrides applied) if it is.
+    Enabled by: "all", "full", or any mode containing "weather".
     """
-    if "weather" not in mode:
+    if not (mode.startswith("all") or mode.startswith("full") or "weather" in mode):
         return None
 
     from fantasy_sim.config.loader import load_defaults
@@ -469,11 +470,12 @@ def _build_vegas_config(mode: str, overrides: dict | None = None) -> VegasConfig
 
     Returns None if Vegas is not part of the mode, or a VegasConfig
     with enabled=True (and optional overrides applied) if it is.
+    Enabled by: "all", "full", or any mode containing "vegas".
 
     - mode "vegas": ITT volume factor only (spread_sensitivity=0).
     - mode "vegas+spread": both ITT and spread pass-rate factors active.
     """
-    if "vegas" not in mode:
+    if not (mode.startswith("all") or mode.startswith("full") or "vegas" in mode):
         return None
 
     defaults = load_defaults()
@@ -502,11 +504,9 @@ def _build_props_config(mode: str, overrides: dict | None = None) -> PropsConfig
 
     Returns None if props are not part of the mode, or a PropsConfig with
     enabled=True when mode contains "props".
-
-    - mode "vegas+props": Both VegasConfig and PropsConfig enabled.
-    - Any other mode: returns None.
+    Enabled by: "all", "full", or any mode containing "props".
     """
-    if "props" not in mode:
+    if not (mode.startswith("all") or mode.startswith("full") or "props" in mode):
         return None
 
     defaults = load_defaults()
@@ -522,8 +522,8 @@ def _build_usage_config(mode: str, overrides: dict | None = None) -> UsageConfig
     Supports isolation modes (usage, usage+cpoe, usage+ngs, usage+cpoe+ngs)
     and full-stack modes (full+usage, full+usage+cpoe, etc.).
     """
-    # Strip "full+" prefix -- full+ modes enable all engines, handled elsewhere
-    mode_key = mode.replace("full+", "")
+    # Strip "all+"/"full+" prefix -- these enable all other engines, handled elsewhere
+    mode_key = mode.replace("all+", "").replace("full+", "")
 
     usage_modes = {
         "usage": UsageConfig(
@@ -802,19 +802,15 @@ def main() -> int:
                  "kicker+dst_baseline+tier+matchup+coverage",
                  "weather", "weather+tier", "weather+tier+matchup",
                  "vegas", "vegas+spread", "vegas+props",
-                 "all", "all+weather",
-                 "all+vegas", "all+weather+vegas",
-                 "all+weather+vegas+props", "full",
-                 "usage", "usage+cpoe", "usage+ngs", "usage+cpoe+ngs",
-                 "full+usage", "full+usage+cpoe", "full+usage+ngs", "full+usage+cpoe+ngs"],
+                 "all",
+                 "all+usage", "all+usage+cpoe", "all+usage+ngs", "all+usage+cpoe+ngs"],
         default="all",
         help=(
             "Which layer(s) to enable in the ON run. "
-            "'all' = PFF tier + matchup + coverage + kicker + dst_baseline, "
-            "'all+vegas' = all PFF + Vegas (ITT + spread), "
-            "'all+weather+vegas' = all PFF + weather + Vegas, "
-            "'all+weather+vegas+props' = everything (full stack), "
-            "'full' = alias for all+weather+vegas+props, "
+            "'all' = PFF (tier+matchup+coverage+kicker+dst) + weather + vegas + props, "
+            "'all+usage' = all + snap blend, "
+            "'all+usage+cpoe' = all + snap + CPOE, "
+            "'all+usage+cpoe+ngs' = all + snap + CPOE + NGS + route rate, "
             "'vegas' = Vegas ITT only (no spread, no PFF), "
             "'vegas+spread' = Vegas ITT + spread (no PFF), "
             "'vegas+props' = Vegas + player props (no PFF), "

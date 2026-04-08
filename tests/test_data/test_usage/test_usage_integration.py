@@ -438,10 +438,10 @@ def test_mode_isolation_non_usage_returns_none():
     assert _build_usage_config("matchup") is None
 
 
-def test_full_plus_usage_mode():
-    """_build_usage_config('full+usage') returns snap-only UsageConfig."""
+def test_all_plus_usage_mode():
+    """_build_usage_config('all+usage') returns snap-only UsageConfig."""
     _build_usage_config = _import_build_usage_config()
-    config = _build_usage_config("full+usage")
+    config = _build_usage_config("all+usage")
     assert config is not None
     assert config.enabled is True
     assert config.cpoe.enabled is False
