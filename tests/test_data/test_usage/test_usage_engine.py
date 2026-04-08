@@ -81,7 +81,7 @@ def mock_snap_df() -> pl.DataFrame:
         rows,
         schema={
             "pfr_player_id": pl.Utf8,
-            "player_name": pl.Utf8,
+            "player": pl.Utf8,
             "position": pl.Utf8,
             "team": pl.Utf8,
             "season": pl.Int64,
@@ -104,6 +104,7 @@ def mock_roster_df() -> pl.DataFrame:
         {
             "pfr_id": ["WR001", "WR002", "RB001", "RB002", "QB001", "WR003"],
             "player_id": ["gsis-wr1", "gsis-wr2", "gsis-rb1", "gsis-rb2", "gsis-qb1", "gsis-wr3"],
+            "full_name": ["WR One", "WR Two", "RB One", "RB Two", "QB One", "WR Three"],
             "position": ["WR", "WR", "RB", "RB", "QB", "WR"],
             "team": ["KC", "KC", "KC", "KC", "KC", "KC"],
             "season": [2024, 2024, 2024, 2024, 2024, 2024],
@@ -386,11 +387,13 @@ class TestUsageEngineCrosswalk:
         from fantasy_sim.data.loader import DataLoader
         from fantasy_sim.data.usage.engine import UsageEngine
 
-        # Create roster that's missing WR002, WR003 (they'll be unmatched)
+        # Create roster that's missing WR002, WR003, RB002 (they'll be unmatched)
+        # Tier 2 name+team fallback also won't find them since they're absent from roster entirely
         partial_roster_df = pl.DataFrame(
             {
-                "pfr_id": ["WR001", "RB001", "QB001"],  # missing WR002, WR003, RB002
+                "pfr_id": ["WR001", "RB001", "QB001"],
                 "player_id": ["gsis-wr1", "gsis-rb1", "gsis-qb1"],
+                "full_name": ["WR One", "RB One", "QB One"],
                 "position": ["WR", "RB", "QB"],
                 "team": ["KC", "KC", "KC"],
                 "season": [2024, 2024, 2024],
@@ -555,7 +558,7 @@ class TestUsageEngineEdgeCases:
         loader.load_snap_counts.return_value = pl.DataFrame(
             schema={
                 "pfr_player_id": pl.Utf8,
-                "player_name": pl.Utf8,
+                "player": pl.Utf8,
                 "position": pl.Utf8,
                 "team": pl.Utf8,
                 "season": pl.Int64,
@@ -600,7 +603,7 @@ class TestUsageEngineEdgeCases:
         empty_snap_df = pl.DataFrame(
             {
                 "pfr_player_id": ["NOBODY001"],
-                "player_name": ["Nobody"],
+                "player": ["Nobody"],
                 "position": ["WR"],
                 "team": ["KC"],
                 "season": [2024],
@@ -614,6 +617,7 @@ class TestUsageEngineEdgeCases:
             {
                 "pfr_id": ["NOBODY001"],
                 "player_id": ["gsis-nobody"],
+                "full_name": ["Nobody"],
                 "position": ["WR"],
                 "team": ["KC"],
                 "season": [2024],

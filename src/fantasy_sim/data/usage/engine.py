@@ -189,8 +189,11 @@ class UsageEngine:
     def _build_snap_crosswalk(self, season: int) -> dict[str, str]:
         """Build {pfr_player_id: gsis_id} crosswalk for a given season.
 
-        Joins snap_counts.pfr_player_id against rosters.pfr_id to get gsis_id.
-        Filters to SKILL_POSITIONS only. Logs WARNING for unmatched skill players.
+        Two-tier matching:
+          1. pfr_player_id -> pfr_id join (nflverse rosters)
+          2. Name+team fallback for players with null pfr_id in rosters
+
+        Filters to SKILL_POSITIONS only. Logs WARNING for any remaining unmatched.
         Result cached per season.
 
         Mitigation T-03-01: logs WARNING with unmatched player list.
@@ -213,7 +216,7 @@ class UsageEngine:
             self._crosswalk_cache[season] = {}
             return {}
 
-        # Build pfr_id -> gsis_id map from rosters (unique per pfr_id)
+        # --- Tier 1: pfr_player_id -> pfr_id join ---
         roster_map_df = (
             roster_df
             .filter(pl.col("pfr_id").is_not_null())
@@ -221,7 +224,6 @@ class UsageEngine:
             .unique(subset=["pfr_id"], keep="first")
         )
 
-        # Join snap pfr_player_id against roster pfr_id
         joined = skill_snap_df.join(
             roster_map_df,
             left_on="pfr_player_id",
@@ -229,32 +231,65 @@ class UsageEngine:
             how="left",
         )
 
-        # Build crosswalk from matched rows
         matched = joined.filter(pl.col("gsis_id").is_not_null())
         crosswalk: dict[str, str] = {}
         for row in matched.unique(subset=["pfr_player_id"]).iter_rows(named=True):
             crosswalk[row["pfr_player_id"]] = row["gsis_id"]
 
-        # Log WARNING for unmatched skill players (T-03-01)
-        unmatched = joined.filter(pl.col("gsis_id").is_null())
+        # --- Tier 2: name+team fallback for unmatched players ---
+        unmatched_pfr_ids = (
+            joined.filter(pl.col("gsis_id").is_null())
+            .select(["pfr_player_id", "player", "team"])
+            .unique(subset=["pfr_player_id"], keep="first")
+        )
+
+        if len(unmatched_pfr_ids) > 0:
+            # Detect the name column in rosters (full_name or player_name)
+            name_col = (
+                "full_name" if "full_name" in roster_df.columns
+                else "player_name" if "player_name" in roster_df.columns
+                else None
+            )
+            if name_col is not None:
+                roster_name_map = (
+                    roster_df
+                    .filter(pl.col("gsis_id").is_not_null())
+                    .select([name_col, "team", "gsis_id"])
+                    .unique(subset=[name_col, "team"], keep="first")
+                )
+                name_joined = unmatched_pfr_ids.join(
+                    roster_name_map,
+                    left_on=["player", "team"],
+                    right_on=[name_col, "team"],
+                    how="inner",
+                )
+                tier2_count = 0
+                for row in name_joined.iter_rows(named=True):
+                    if row["pfr_player_id"] not in crosswalk:
+                        crosswalk[row["pfr_player_id"]] = row["gsis_id"]
+                        tier2_count += 1
+                if tier2_count > 0:
+                    logger.info(
+                        "Snap crosswalk: %d players matched via name+team fallback",
+                        tier2_count,
+                    )
+
+        # Log WARNING for any remaining unmatched skill players (T-03-01)
         total_skill = len(skill_snap_df.unique(subset=["pfr_player_id"]))
-        unmatched_count = len(unmatched.unique(subset=["pfr_player_id"]))
+        unmatched_count = total_skill - len(crosswalk)
         if unmatched_count > 0:
             pct = unmatched_count / max(1, total_skill) * 100
-            unmatched_names = (
-                unmatched
-                .unique(subset=["pfr_player_id"])
-                .select("pfr_player_id")
-                .to_series()
-                .to_list()
+            all_pfr_ids = set(
+                skill_snap_df.select("pfr_player_id").unique().to_series().to_list()
             )
+            remaining = sorted(all_pfr_ids - set(crosswalk.keys()))
             logger.warning(
                 "Snap crosswalk: %d/%d skill players unmatched (%.1f%%). "
                 "Unmatched: %s",
                 unmatched_count,
                 total_skill,
                 pct,
-                unmatched_names[:10],
+                remaining[:10],
             )
 
         self._crosswalk_cache[season] = crosswalk
