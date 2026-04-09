@@ -20,8 +20,6 @@ import time
 import zlib
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
-
 import numpy as np
 import polars as pl
 
@@ -363,8 +361,8 @@ def run_season(
         pos = actual_pos.get(pid, arm_b_meta.get(pid, {}).get("position", ""))
         if pos not in positions:
             continue
-        name = actual_name.get(pid, arm_b_meta.get(pid, {}).get("name", ""))
-        team = actual_team.get(pid, arm_b_meta.get(pid, {}).get("team", ""))
+        name = str(actual_name.get(pid) or arm_b_meta.get(pid, {}).get("name", "") or "")
+        team = str(actual_team.get(pid) or arm_b_meta.get(pid, {}).get("team", "") or "")
         common_weeks = set(arm_a_proj[pid].keys()) & set(arm_b_proj[pid].keys())
         for wk in common_weeks:
             if pid not in actual_by_pw or wk not in actual_by_pw[pid]:
@@ -490,9 +488,7 @@ def print_weekly_results(
         actuals_by_player: dict[str, list] = defaultdict(list)
         for season in seasons:
             ps = loader.load_player_stats([season])
-            defaults = load_defaults()
-            sc = resolve_scoring(defaults["scoring"], "ppr")
-            season_actuals = load_actual_scores(ps, sc, season)
+            season_actuals = load_actual_scores(ps, scoring_config, season)
             for a in season_actuals:
                 actuals_by_player[a.player_id].append(a)
         dir_accuracy = compute_directional_accuracy(all_records, actuals_by_player)
