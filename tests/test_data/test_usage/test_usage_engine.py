@@ -445,6 +445,57 @@ class TestUsageEngineCrosswalk:
             ]
             assert len(warning_calls) > 0, "Expected WARNING log for unmatched players"
 
+    def test_crosswalk_manual_override_applied_first(self, mock_snap_df, mock_roster_df):
+        """Manual crosswalk entries are applied before automated matching (Tier 0)."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = mock_roster_df
+
+        config = UsageConfig(
+            snap=SnapConfig(manual_crosswalk={"WR001": "manual-gsis-override"})
+        )
+        engine = UsageEngine(config=config, loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        # Manual override takes precedence over Tier 1 pfr_id join
+        assert crosswalk["WR001"] == "manual-gsis-override"
+        # Other players still matched via Tier 1
+        assert crosswalk["RB001"] == "gsis-rb1"
+
+    def test_crosswalk_manual_override_for_missing_player(self, mock_snap_df, mock_roster_df):
+        """Manual crosswalk resolves players that Tier 1 and Tier 2 cannot match."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Add an unmatched player to snap data
+        extra_row = pl.DataFrame({
+            "pfr_player_id": ["UNKNOWN01"],
+            "player": ["Mystery Player"],
+            "position": ["WR"],
+            "team": ["KC"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [40],
+            "offense_pct": [0.57],
+        })
+        snap_with_extra = pl.concat([mock_snap_df, extra_row])
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_with_extra
+        loader.load_rosters.return_value = mock_roster_df
+
+        config = UsageConfig(
+            snap=SnapConfig(manual_crosswalk={"UNKNOWN01": "gsis-mystery"})
+        )
+        engine = UsageEngine(config=config, loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk["UNKNOWN01"] == "gsis-mystery"
+
 
 class TestUsageEngineRollingWindow:
     """Tests for _get_rolling_snap(): leak-free 4-week rolling average."""

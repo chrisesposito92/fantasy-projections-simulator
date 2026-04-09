@@ -251,8 +251,24 @@ class UsageEngine:
 
         matched = joined.filter(pl.col("gsis_id").is_not_null())
         crosswalk: dict[str, str] = {}
+
+        # --- Tier 0: manual crosswalk overrides (authoritative) ---
+        manual = self._config.snap.manual_crosswalk
+        if manual:
+            all_pfr_ids_in_snap = set(
+                skill_snap_df.select("pfr_player_id").unique().to_series().to_list()
+            )
+            for pfr_id, gsis_id in manual.items():
+                if pfr_id in all_pfr_ids_in_snap:
+                    crosswalk[pfr_id] = gsis_id
+            if crosswalk:
+                logger.info(
+                    "Snap crosswalk: %d manual overrides applied", len(crosswalk)
+                )
+
         for row in matched.unique(subset=["pfr_player_id"]).iter_rows(named=True):
-            crosswalk[row["pfr_player_id"]] = row["gsis_id"]
+            if row["pfr_player_id"] not in crosswalk:  # don't override Tier 0
+                crosswalk[row["pfr_player_id"]] = row["gsis_id"]
 
         # --- Tier 2: name+team fallback for unmatched players ---
         unmatched_pfr_ids = (
