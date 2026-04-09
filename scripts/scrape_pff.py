@@ -359,7 +359,7 @@ def scrape_fantasy_stats(
                 continue
 
             # Fantasy stats use www.pff.com, not premium.pff.com
-            url = f"https://www.pff.com/api/fantasy/stats/{api_facet}?season={season}&weeks={week}&scoring=preset_ppr&count=500"
+            url = f"https://www.pff.com/api/fantasy/stats/{api_facet}?season={season}&weeks={week}&scoring=preset_ppr"
             try:
                 resp = client.get(url)
                 if resp.status_code in (401, 403):
