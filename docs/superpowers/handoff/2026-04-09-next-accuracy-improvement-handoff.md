@@ -1,78 +1,65 @@
 # Brainstorming Handoff: Next Big Accuracy Improvement
 
-## What to do
+## What was done (2026-04-09)
 
-Start a brainstorming session (`/superpowers:brainstorming`) for the next major accuracy improvement to the fantasy projections simulator. The goal is to find the next "usage.snap" — a single change that gives a step-change lift in projection accuracy, particularly weekly metrics.
+### Player-Level TD Tendency — IMPLEMENTED (PR #26, merged)
 
-## Current State
+Designed and implemented per-player red zone TD conversion factors. The simulation's TD gate (`_red_zone_td_gate()`) was uniform — Travis Kelce at the goal line got the same 55% pass TD gate as a backup TE. Now each player gets a Bayesian-blended factor that modifies the gate probability.
 
-### Engine Stack (all in defaults.yaml)
-- **PFF**: tier_engine, matchup, coverage, kicker, dst_baseline (all enabled)
-- **Weather**: wind, temp, precipitation (enabled)
-- **Vegas**: ITT pace, spread pass_rate, player props (all enabled)
-- **Usage**: snap blend (enabled, CPOE enabled but stubbed), NGS (disabled), route_rate (disabled)
-- **Disabled**: team_context, talent stabilizer
+**Key files:**
+- `src/fantasy_sim/data/td_tendency.py` — `TdTendencyEngine` with Bayesian blend, PFF + PBP fallback
+- `src/fantasy_sim/engine/play_resolver.py` — `_red_zone_td_gate()` now accepts `td_factor` param
+- `src/fantasy_sim/models/player.py` — `receiving_td_factor` and `rushing_td_factor` on `PlayerOutcomes`
+- `config/defaults.yaml` — `td_tendency:` section (disabled by default, flip after A/B validation)
+- `scripts/scrape_pff.py` — New `--fantasy-only` mode scrapes `fantasy_receiving` + `fantasy_passing` facets
 
-### Latest A/B Results (from unified validate.py, 50 sims, 3 seasons)
+**Data source:** PFF Fantasy Stats API (`/api/fantasy/stats/receiving`, `/api/fantasy/stats/passing`) scraped per-week. Key fields: `rz_rec_targ`, `rz_rec_tds`, `rz_rush_carries`, `rz_rush_tds`, `i5_rush_carries`, `i5_rush_tds`. PBP fallback via `rz_tds` counters added to `_aggregate_pbp_stats()`.
+
+**Factor computation:**
 ```
-Baseline (bare vs defaults):
-  SEASONAL rank_corr: +0.1502 delta (absolute: QB 0.93, RB 0.87, WR 0.85, TE 0.82)
-  WEEKLY rank_corr:   QB +0.035, RB +0.102, WR +0.105, TE +0.064
-  Weekly MAE:         -0.606 (from ~5.3 to ~4.7)
-  Season MAE:         -10.5 (from ~44.5 to ~34.0)
+observed = rz_tds / rz_opportunities (per player, weeks < target_week)
+prior = positional average (WR ~0.17, RB ~0.28, TE ~0.15, QB ~0.25)
+blended = (n * observed + prior_strength * prior) / (n + prior_strength)
+factor = blended / prior  (centered on 1.0, clamped to [0.70, 1.30])
 ```
 
-### Key Insight from Last Phase
-Usage snap counts gave a **massive** +0.15 rank_corr lift (up from ~0.03 with previous best). The insight: fixing "who is actually playing and how much" matters far more than fine-tuning matchup factors. The equivalent question for weekly accuracy is: what systematic signal are we missing that drives week-to-week variance?
-
-### Where the Gaps Are (from codebase exploration)
-
-**Weekly rank_corr (0.38-0.57) has the most room to grow.** Seasonal (0.83-0.93) is strong.
-
-1. **Player-level TD tendency (CRITICAL)** — The simulation uses a uniform TD gate per play (pass: 55%-15% by yard line, run: 35%-8%). No player-level TD probability. Kelce in the red zone gets the same gate as a backup TE. TDs are the single biggest source of weekly fantasy variance (~12 points per TD in PPR). Fixing "who actually scores" is the weekly equivalent of fixing "who actually plays."
-
-2. **CPOE is stubbed (MODERATE)** — Config says `cpoe.enabled: true` but `_compute_cpoe_rolling()` returns an empty dict. Never applied. This is a 4-week rolling QB accuracy signal that would modulate WR catch rates weekly.
-
-3. **Game script / garbage time (HIGH but HARD)** — The sim tracks score differential in GameStateBucket and adjusts pass/run split, but doesn't model: garbage time (backup usage), pace changes from blowouts, or desperation target concentration. Blowouts are the biggest weekly correlation killers.
-
-4. **NGS separation/cushion (TESTED, HURT)** — Already built and tested. **Brought numbers DOWN** when enabled. Don't re-test without a hypothesis for why it hurt (likely: separation data is noisy at small samples, cushion directionality is questionable).
-
-5. **Route rate (UNTESTED)** — Built but never A/B tested. Targets-per-route z-score → target_share multiplier. Worth a quick test.
-
-6. **Team context engine (DISABLED)** — Season-level team environment (pass rate, OL quality, QB quality). Was disabled — check A/B results in the old ledger to see why.
-
-### Testing Infrastructure
-New unified A/B script makes testing easy:
+**A/B testing:**
 ```bash
-# Test any change against current defaults
-uv run python scripts/validate.py --sims 50 --set <key>=<value> --label "test-name"
-
-# Marginal impact of a change
-uv run python scripts/validate.py --sims 50 --baseline defaults --set <key>=<value> --label "test-name"
-
-# View history
-uv run python scripts/validate.py --show-ledger
+uv run python scripts/validate.py --sims 50 --set td_tendency.enabled=true --label "td-tendency"
+uv run python scripts/validate.py --sims 50 --set td_tendency.prior_strength=10 --label "td-ps10"
+uv run python scripts/validate.py --sims 50 --set 'td_tendency.factor_clamp=[0.80,1.20]' --label "td-clamp-tight"
 ```
 
-Bare baseline is cached — repeat runs take ~60% of the time.
+**Test count:** 1414 → 1447 (+33 tests across 6 test files)
 
-### Constraints
-- A/B validation before merging any change
-- Must maintain 1414+ test suite
-- PFF premium data available; open to free sources; will consider paid if justified
-- 2025 season is hold-out (reserved for final validation)
-- User preference: quality/accuracy over simplicity
+**Review fixes (from Codex/Copilot):**
+- Disabled by default in defaults.yaml (was accidentally enabled during sweep)
+- Fixed partial PFF fallback: if one PFF channel loads but the other is missing, the missing channel now gets backfilled from PBP instead of staying neutral
 
-### Files to Read
-- `config/defaults.yaml` — all engine configs and current settings
-- `src/fantasy_sim/engine/play_resolver.py` — TD gate logic, play resolution
-- `src/fantasy_sim/data/usage/engine.py` — snap blend, CPOE (stubbed), NGS, route_rate
-- `src/fantasy_sim/data/player_builder.py` — how player models are built
-- `src/fantasy_sim/validation/` — A/B testing infrastructure
-- `docs/AB-TESTING.md` — how to run A/B tests
-- `CLAUDE.md` — full project reference
+### A/B Sweep Status
 
-### Recommendation
-Start with the **player-level TD tendency** design. It's the highest-impact opportunity that parallels the "snap counts" insight: snap counts fixed volume estimation, TD tendency would fix scoring estimation. Both attack the same problem — the simulation is good at modeling play-by-play mechanics but bad at modeling individual player tendencies that drive fantasy points.
+User is actively sweeping prior_strength and factor_clamp parameters. Results pending.
 
-Second priority: get CPOE actually working (it's half-built). Third: quick A/B test of route_rate since it's free to try.
+---
+
+## Still To Do (from original handoff)
+
+### 2. CPOE Activation (MODERATE)
+Config says `cpoe.enabled: true` but `_compute_cpoe_rolling()` returns data that is never applied to player outcomes. The computation works (returns QB gsis_id → rolling CPOE map) and the cpoe_map is passed to TierEngine, but the actual modulation of WR catch rates was never wired up. This is half-built — the signal exists, just needs to be consumed.
+
+**Files:** `src/fantasy_sim/data/usage/engine.py`, `src/fantasy_sim/data/pff/tier_engine.py`
+
+### 3. Route Rate A/B Test (QUICK)
+Built but never tested. Just flip the config and run:
+```bash
+uv run python scripts/validate.py --sims 50 --set usage.route_rate.enabled=true --label "route-rate"
+```
+
+### 4. Game Script / Garbage Time (HIGH but HARD)
+The sim tracks score differential in GameStateBucket and adjusts pass/run split, but doesn't model backup usage in blowouts, pace changes, or desperation target concentration. Biggest weekly correlation killer.
+
+### 5. Inside-5 Sub-Factor (FOLLOW-UP from TD tendency)
+The PFF data includes `i5_rush_carries` and `i5_rush_tds` (goal-line rushing). Currently scraped and stored but not consumed. Could add a separate inside-5 factor that applies to the tighter gate bands (1-5 yard line) for more granular goal-line differentiation.
+
+### 6. Goal-Line Concentration (FOLLOW-UP from TD tendency)
+Split `red_zone_target_share` into outer-RZ (6-20) and goal-line (1-5) sub-shares. Architecturally independent from TD tendency. Would let goal-line specialists (Derrick Henry at the 1) get proportionally more touches near the end zone.
