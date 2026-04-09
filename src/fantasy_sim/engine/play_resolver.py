@@ -53,18 +53,23 @@ RUN_TD_GATE = {
 RZ_CATCH_RATE_MODIFIER = 0.92
 
 
-def _red_zone_td_gate(yard_line: int, play_type: str, rng: np.random.Generator) -> bool:
+def _red_zone_td_gate(yard_line: int, play_type: str, rng: np.random.Generator, td_factor: float = 1.0) -> bool:
     """Check if a would-be TD actually scores, based on field position.
 
     Returns True if the TD stands, False if the player is tackled short.
     Outside the red zone (yard_line > 20), always returns True.
+
+    Args:
+        td_factor: Player-level multiplier on the base gate probability.
+            Centered on 1.0 (neutral). Values > 1.0 increase TD rate,
+            < 1.0 decrease it. Clamped so effective probability never exceeds 1.0.
     """
     if yard_line > 20:
         return True
     gate_table = PASS_TD_GATE if play_type == "pass" else RUN_TD_GATE
     for (lo, hi), prob in gate_table.items():
         if lo <= yard_line <= hi:
-            return rng.random() < prob
+            return rng.random() < min(1.0, prob * td_factor)
     return True  # Safety fallback
 
 
@@ -220,7 +225,7 @@ def _resolve_pass(
 
         # TD determination with red zone gate
         if is_complete and state.yard_line <= 20 and (state.yard_line - yards) <= 0:
-            if _red_zone_td_gate(state.yard_line, "pass", rng):
+            if _red_zone_td_gate(state.yard_line, "pass", rng, receiver.outcomes.receiving_td_factor):
                 is_td = True
             else:
                 yards = _tackled_short(state.yard_line, rng)
@@ -294,7 +299,7 @@ def _resolve_run(
 
         # TD determination with red zone gate
         if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
-            if _red_zone_td_gate(state.yard_line, "run", rng):
+            if _red_zone_td_gate(state.yard_line, "run", rng, rusher.outcomes.rushing_td_factor):
                 is_td = True
             else:
                 yards = _tackled_short(state.yard_line, rng)

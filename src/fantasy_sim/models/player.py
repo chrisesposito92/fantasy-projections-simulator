@@ -32,6 +32,8 @@ class PlayerOutcomes:
     fumble_rate: float = 0.0
     pass_fumble_rate: float = 0.0
     targets_per_route_rate: float = 0.0  # USG-04: targets/routes from PFF receiving_summary
+    receiving_td_factor: float = 1.0     # TD tendency: multiplier for pass TD gate
+    rushing_td_factor: float = 1.0       # TD tendency: multiplier for run TD gate
 
 
 @dataclass
