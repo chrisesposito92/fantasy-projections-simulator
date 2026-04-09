@@ -112,3 +112,94 @@ class TestTdTendencyApplyFromPbp:
         engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
         assert roster.players[3].outcomes.rushing_td_factor > 1.0
         assert roster.players[3].outcomes.receiving_td_factor == 1.0
+
+
+class TestTdTendencyI5PffLoading:
+
+    def test_load_pff_rates_returns_i5_rush_rates(self):
+        """_load_pff_rates returns 3-tuple with i5_rush_rates."""
+        import polars as pl
+        from unittest.mock import MagicMock
+
+        rec_df = pl.DataFrame({
+            "player_id": [100, 100, 200],
+            "week": [1, 2, 1],
+            "rz_rec_targ": [3, 2, 1],
+            "rz_rec_tds": [1, 1, 0],
+            "rz_rush_carries": [2, 1, 0],
+            "rz_rush_tds": [1, 0, 0],
+            "i5_rush_carries": [1, 1, 0],
+            "i5_rush_tds": [1, 0, 0],
+        })
+
+        loader = MagicMock()
+        loader.load_facet.side_effect = lambda facet, seasons: (
+            rec_df if facet == "fantasy_receiving" else pl.DataFrame()
+        )
+
+        config = TdTendencyConfig(enabled=True, i5_enabled=True)
+        engine = TdTendencyEngine(config, pff_loader=loader)
+        crosswalk = {100: "gsis_rb1", 200: "gsis_wr1"}
+
+        rec_rates, rush_rates, i5_rush_rates = engine._load_pff_rates(2024, 10, crosswalk)
+
+        assert "gsis_rb1" in i5_rush_rates
+        assert i5_rush_rates["gsis_rb1"] == (1, 2)  # 1 TD from 2 i5 carries
+        assert "gsis_wr1" not in i5_rush_rates  # 0 i5 carries
+
+    def test_load_pff_rates_i5_disabled_returns_empty(self):
+        """When i5_enabled=False, i5_rush_rates is empty."""
+        import polars as pl
+        from unittest.mock import MagicMock
+
+        rec_df = pl.DataFrame({
+            "player_id": [100],
+            "week": [1],
+            "rz_rec_targ": [3],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [2],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [2],
+            "i5_rush_tds": [1],
+        })
+
+        loader = MagicMock()
+        loader.load_facet.side_effect = lambda facet, seasons: (
+            rec_df if facet == "fantasy_receiving" else pl.DataFrame()
+        )
+
+        config = TdTendencyConfig(enabled=True, i5_enabled=False)
+        engine = TdTendencyEngine(config, pff_loader=loader)
+        crosswalk = {100: "gsis_rb1"}
+
+        rec_rates, rush_rates, i5_rush_rates = engine._load_pff_rates(2024, 10, crosswalk)
+
+        assert i5_rush_rates == {}
+
+    def test_load_pff_rates_qb_i5_from_passing(self):
+        """QB inside-5 data comes from fantasy_passing facet."""
+        import polars as pl
+        from unittest.mock import MagicMock
+
+        pass_df = pl.DataFrame({
+            "player_id": [300],
+            "week": [1],
+            "rz_rush_carries": [3],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [2],
+            "i5_rush_tds": [1],
+        })
+
+        loader = MagicMock()
+        loader.load_facet.side_effect = lambda facet, seasons: (
+            pass_df if facet == "fantasy_passing" else pl.DataFrame()
+        )
+
+        config = TdTendencyConfig(enabled=True, i5_enabled=True)
+        engine = TdTendencyEngine(config, pff_loader=loader)
+        crosswalk = {300: "gsis_qb1"}
+
+        rec_rates, rush_rates, i5_rush_rates = engine._load_pff_rates(2024, 10, crosswalk)
+
+        assert "gsis_qb1" in i5_rush_rates
+        assert i5_rush_rates["gsis_qb1"] == (1, 2)

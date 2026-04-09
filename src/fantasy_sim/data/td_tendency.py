@@ -86,16 +86,18 @@ class TdTendencyEngine:
             return
 
         # Try PFF data first
-        rec_rates, rush_rates = self._load_pff_rates(season, week, pff_crosswalk)
+        rec_rates, rush_rates, i5_rush_rates = self._load_pff_rates(season, week, pff_crosswalk)
 
         # Fall back to PBP for any missing channel (not just when both are empty)
         if pbp_stats:
             if not rec_rates or not rush_rates:
-                pbp_rec, pbp_rush = self._rates_from_pbp(pbp_stats)
+                pbp_rec, pbp_rush, pbp_i5 = self._rates_from_pbp(pbp_stats)
                 if not rec_rates:
                     rec_rates = pbp_rec
                 if not rush_rates:
                     rush_rates = pbp_rush
+                if not i5_rush_rates:
+                    i5_rush_rates = pbp_i5
 
         if not rec_rates and not rush_rates:
             logger.debug("TdTendencyEngine: no data for season=%d week=%d", season, week)
@@ -135,15 +137,16 @@ class TdTendencyEngine:
 
     def _load_pff_rates(self, season: int, week: int,
                         pff_crosswalk: dict[int, str] | None,
-                        ) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[int, int]]]:
+                        ) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[int, int]], dict[str, tuple[int, int]]]:
         """Load RZ TD rates from PFF fantasy stats parquet files.
-        Returns (receiving_rates, rushing_rates) where each is {gsis_id: (rz_tds, rz_opportunities)}.
+        Returns (receiving_rates, rushing_rates, i5_rush_rates) where each is {gsis_id: (tds, opportunities)}.
         """
         if self._pff_loader is None or pff_crosswalk is None:
-            return {}, {}
+            return {}, {}, {}
 
         rec_rates: dict[str, tuple[int, int]] = {}
         rush_rates: dict[str, tuple[int, int]] = {}
+        i5_rush_rates: dict[str, tuple[int, int]] = {}
 
         try:
             rec_df = self._pff_loader.load_facet("fantasy_receiving", [season])
@@ -155,12 +158,21 @@ class TdTendencyEngine:
             if not rec_df.is_empty():
                 required = {"player_id", "rz_rec_targ", "rz_rec_tds", "rz_rush_carries", "rz_rush_tds"}
                 if required.issubset(set(rec_df.columns)):
-                    agg = rec_df.group_by("player_id").agg([
+                    has_i5 = (self._config.i5_enabled
+                               and "i5_rush_carries" in rec_df.columns
+                               and "i5_rush_tds" in rec_df.columns)
+                    agg_exprs = [
                         pl.col("rz_rec_targ").sum().alias("rz_rec_targ"),
                         pl.col("rz_rec_tds").sum().alias("rz_rec_tds"),
                         pl.col("rz_rush_carries").sum().alias("rz_rush_carries"),
                         pl.col("rz_rush_tds").sum().alias("rz_rush_tds"),
-                    ])
+                    ]
+                    if has_i5:
+                        agg_exprs += [
+                            pl.col("i5_rush_carries").sum().alias("i5_rush_carries"),
+                            pl.col("i5_rush_tds").sum().alias("i5_rush_tds"),
+                        ]
+                    agg = rec_df.group_by("player_id").agg(agg_exprs)
                     for row in agg.iter_rows(named=True):
                         pff_id = row["player_id"]
                         gsis_id = pff_crosswalk.get(pff_id)
@@ -170,6 +182,8 @@ class TdTendencyEngine:
                             rec_rates[gsis_id] = (row["rz_rec_tds"], row["rz_rec_targ"])
                         if row["rz_rush_carries"] > 0:
                             rush_rates[gsis_id] = (row["rz_rush_tds"], row["rz_rush_carries"])
+                        if has_i5 and row["i5_rush_carries"] > 0:
+                            i5_rush_rates[gsis_id] = (row["i5_rush_tds"], row["i5_rush_carries"])
 
         try:
             pass_df = self._pff_loader.load_facet("fantasy_passing", [season])
@@ -181,10 +195,19 @@ class TdTendencyEngine:
             if not pass_df.is_empty():
                 rush_cols = {"player_id", "rz_rush_carries", "rz_rush_tds"}
                 if rush_cols.issubset(set(pass_df.columns)):
-                    agg = pass_df.group_by("player_id").agg([
+                    has_i5 = (self._config.i5_enabled
+                               and "i5_rush_carries" in pass_df.columns
+                               and "i5_rush_tds" in pass_df.columns)
+                    agg_exprs = [
                         pl.col("rz_rush_carries").sum().alias("rz_rush_carries"),
                         pl.col("rz_rush_tds").sum().alias("rz_rush_tds"),
-                    ])
+                    ]
+                    if has_i5:
+                        agg_exprs += [
+                            pl.col("i5_rush_carries").sum().alias("i5_rush_carries"),
+                            pl.col("i5_rush_tds").sum().alias("i5_rush_tds"),
+                        ]
+                    agg = pass_df.group_by("player_id").agg(agg_exprs)
                     for row in agg.iter_rows(named=True):
                         pff_id = row["player_id"]
                         gsis_id = pff_crosswalk.get(pff_id)
@@ -192,17 +215,20 @@ class TdTendencyEngine:
                             continue
                         if row["rz_rush_carries"] > 0:
                             rush_rates[gsis_id] = (row["rz_rush_tds"], row["rz_rush_carries"])
+                        if has_i5 and row["i5_rush_carries"] > 0:
+                            i5_rush_rates[gsis_id] = (row["i5_rush_tds"], row["i5_rush_carries"])
 
-        if rec_rates or rush_rates:
-            logger.info("TdTendency PFF: %d receiving, %d rushing rates (season=%d, week<%d)",
-                        len(rec_rates), len(rush_rates), season, week)
-        return rec_rates, rush_rates
+        if rec_rates or rush_rates or i5_rush_rates:
+            logger.info("TdTendency PFF: %d receiving, %d rushing, %d i5_rush rates (season=%d, week<%d)",
+                        len(rec_rates), len(rush_rates), len(i5_rush_rates), season, week)
+        return rec_rates, rush_rates, i5_rush_rates
 
     @staticmethod
-    def _rates_from_pbp(pbp_stats: dict) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[int, int]]]:
+    def _rates_from_pbp(pbp_stats: dict) -> tuple[dict[str, tuple[int, int]], dict[str, tuple[int, int]], dict[str, tuple[int, int]]]:
         """Extract RZ TD rates from PBP aggregated stats (fallback)."""
         rec_rates: dict[str, tuple[int, int]] = {}
         rush_rates: dict[str, tuple[int, int]] = {}
+        i5_rush_rates: dict[str, tuple[int, int]] = {}
 
         for pid, rs in pbp_stats.get("receiving", {}).items():
             rz_targ = rs.get("rz_targets", 0)
@@ -216,7 +242,12 @@ class TdTendencyEngine:
             if rz_carries > 0:
                 rush_rates[pid] = (rz_tds, rz_carries)
 
-        if rec_rates or rush_rates:
-            logger.info("TdTendency PBP fallback: %d receiving, %d rushing rates",
-                        len(rec_rates), len(rush_rates))
-        return rec_rates, rush_rates
+            i5_carries = rs.get("i5_rush_carries", 0)
+            i5_tds = rs.get("i5_rush_tds", 0)
+            if i5_carries > 0:
+                i5_rush_rates[pid] = (i5_tds, i5_carries)
+
+        if rec_rates or rush_rates or i5_rush_rates:
+            logger.info("TdTendency PBP fallback: %d receiving, %d rushing, %d i5_rush rates",
+                        len(rec_rates), len(rush_rates), len(i5_rush_rates))
+        return rec_rates, rush_rates, i5_rush_rates
