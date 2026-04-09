@@ -95,7 +95,7 @@ class TdTendencyEngine:
 
         # Fall back to PBP for any missing channel (not just when both are empty)
         if pbp_stats:
-            if not rec_rates or not rush_rates:
+            if not rec_rates or not rush_rates or (self._config.i5_enabled and not i5_rush_rates):
                 pbp_rec, pbp_rush, pbp_i5 = self._rates_from_pbp(pbp_stats)
                 if not rec_rates:
                     rec_rates = pbp_rec
@@ -140,15 +140,13 @@ class TdTendencyEngine:
                     prior = i5_priors.get(player.position)
                     if prior is not None and prior > 0:
                         observed = tds / opps
-                        blended = self._i5_bayesian_blend(observed, prior, opps)
+                        blended = self._bayesian_blend(observed, prior, opps,
+                                                          self._config.i5_prior_strength)
                         player.outcomes.i5_rushing_td_factor = self._clamp(blended / prior)
 
-    def _bayesian_blend(self, observed: float, prior: float, n_obs: int) -> float:
-        ps = self._config.prior_strength
-        return (n_obs * observed + ps * prior) / (n_obs + ps)
-
-    def _i5_bayesian_blend(self, observed: float, prior: float, n_obs: int) -> float:
-        ps = self._config.i5_prior_strength
+    def _bayesian_blend(self, observed: float, prior: float, n_obs: int,
+                        prior_strength: float | None = None) -> float:
+        ps = prior_strength if prior_strength is not None else self._config.prior_strength
         return (n_obs * observed + ps * prior) / (n_obs + ps)
 
     def _clamp(self, factor: float) -> float:
