@@ -359,7 +359,7 @@ def scrape_fantasy_stats(
                 continue
 
             # Fantasy stats use www.pff.com, not premium.pff.com
-            url = f"https://www.pff.com/api/fantasy/stats/{api_facet}?season={season}&weeks={week}&scoring=preset_ppr"
+            url = f"https://www.pff.com/api/fantasy/stats/{api_facet}?season={season}&weeks={week}&scoring=preset_ppr&count=500"
             try:
                 resp = client.get(url)
                 if resp.status_code in (401, 403):
@@ -497,6 +497,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--process-only", action="store_true", help="Re-process raw JSON to parquet without scraping")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help=f"Delay between API requests in seconds (default: {DEFAULT_DELAY})")
     parser.add_argument("--fantasy", action="store_true", help="Also scrape fantasy stats (receiving, passing)")
+    parser.add_argument("--fantasy-only", action="store_true", dest="fantasy_only", help="Only scrape fantasy stats (skip game-level facets)")
     return parser.parse_args()
 
 
@@ -576,6 +577,30 @@ def main() -> None:
         console.print(f"[bold]Processing raw data for {args.season}...[/bold]")
         process_season(PFF_DIR, args.season, league)
         console.print("\n[bold green]Done.[/bold green]")
+        return
+
+    if args.fantasy_only:
+        # Fantasy-only mode: skip game-level scrape, only fetch fantasy stats
+        cookie = load_cookie()
+        if cookie is None:
+            console.print("[bold red]Error:[/bold red] No PFF cookie found.")
+            sys.exit(1)
+        client = build_client(cookie, league)
+        if not validate_cookie(client, args.season, league):
+            console.print("[bold red]Error:[/bold red] PFF cookie is invalid or expired.")
+            client.close()
+            sys.exit(1)
+        console.print("[green]Cookie validated[/green]\n")
+        try:
+            console.print(f"[bold]Scraping fantasy stats for {args.season}...[/bold]")
+            fantasy_stats = scrape_fantasy_stats(client, args.season, weeks, args.delay)
+            console.print(
+                f"Fantasy stats: {fantasy_stats['requests']} requests, "
+                f"{fantasy_stats['skipped']} cached, {fantasy_stats['failures']} failures"
+            )
+            console.print("\n[bold green]Done.[/bold green]")
+        finally:
+            client.close()
         return
 
     # Load and validate cookie
