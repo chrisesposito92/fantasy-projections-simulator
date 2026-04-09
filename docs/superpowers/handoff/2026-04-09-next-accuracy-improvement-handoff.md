@@ -40,6 +40,12 @@ uv run python scripts/validate.py --sims 50 --set 'td_tendency.factor_clamp=[0.8
 
 User is actively sweeping prior_strength and factor_clamp parameters. Results pending.
 
+### 3. Route Rate A/B Test (QUICK) - TESTED AND THERE WAS NO IMPROVEMENT AT ALL
+Built but never tested. Just flip the config and run:
+```bash
+uv run python scripts/validate.py --sims 50 --set usage.route_rate.enabled=true --label "route-rate"
+```
+
 ---
 
 ## Still To Do (from original handoff)
@@ -48,12 +54,6 @@ User is actively sweeping prior_strength and factor_clamp parameters. Results pe
 Config says `cpoe.enabled: true` but `_compute_cpoe_rolling()` returns data that is never applied to player outcomes. The computation works (returns QB gsis_id → rolling CPOE map) and the cpoe_map is passed to TierEngine, but the actual modulation of WR catch rates was never wired up. This is half-built — the signal exists, just needs to be consumed.
 
 **Files:** `src/fantasy_sim/data/usage/engine.py`, `src/fantasy_sim/data/pff/tier_engine.py`
-
-### 3. Route Rate A/B Test (QUICK)
-Built but never tested. Just flip the config and run:
-```bash
-uv run python scripts/validate.py --sims 50 --set usage.route_rate.enabled=true --label "route-rate"
-```
 
 ### 4. Game Script / Garbage Time (HIGH but HARD)
 The sim tracks score differential in GameStateBucket and adjusts pass/run split, but doesn't model backup usage in blowouts, pace changes, or desperation target concentration. Biggest weekly correlation killer.
