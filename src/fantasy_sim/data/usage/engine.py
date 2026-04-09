@@ -281,7 +281,7 @@ class UsageEngine:
         # --- Tier 2: name+team fallback for unmatched players ---
         unmatched_pfr_ids = (
             joined.filter(pl.col("gsis_id").is_null())
-            .select(["pfr_player_id", "player", "team", "position"])
+            .select(["pfr_player_id", "player", "team"])
             .unique(subset=["pfr_player_id"], keep="first")
         )
 
@@ -306,12 +306,12 @@ class UsageEngine:
                             _normalize_name, return_dtype=pl.Utf8
                         ).alias("norm_name")
                     )
-                    .select(["norm_name", "team", "position", "gsis_id"])
-                    .unique(subset=["norm_name", "team", "position"], keep="first")
+                    .select(["norm_name", "team", "gsis_id"])
+                    .unique(subset=["norm_name", "team"], keep="first")
                 )
                 name_joined = unmatched_with_norm.join(
                     roster_name_map,
-                    on=["norm_name", "team", "position"],
+                    on=["norm_name", "team"],
                     how="inner",
                 )
                 tier2_count = 0
