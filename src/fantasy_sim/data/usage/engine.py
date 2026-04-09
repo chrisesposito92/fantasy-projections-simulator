@@ -18,6 +18,7 @@ Threat mitigations:
 from __future__ import annotations
 
 import logging
+import re
 
 import numpy as np
 import polars as pl
@@ -32,6 +33,23 @@ logger = logging.getLogger(__name__)
 # League average snap share used for cold start linear ramp blending.
 # Based on NFL starting players typically seeing 50-65% of snaps.
 _LEAGUE_AVG_SNAP_SHARE = 0.50
+
+_SUFFIXES_RE = re.compile(r'\s+(jr\.?|sr\.?|ii|iii|iv|v)\s*$', re.IGNORECASE)
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize player name for fuzzy Tier 2 matching.
+
+    Lowercases, strips suffixes (Jr./Sr./II/III/IV/V),
+    removes periods, collapses to first + last name only.
+    """
+    name = name.lower().strip()
+    name = _SUFFIXES_RE.sub('', name)
+    name = name.replace('.', '').strip()
+    parts = name.split()
+    if len(parts) > 2:
+        parts = [parts[0], parts[-1]]
+    return ' '.join(parts)
 
 
 class UsageEngine:
@@ -189,9 +207,11 @@ class UsageEngine:
     def _build_snap_crosswalk(self, season: int) -> dict[str, str]:
         """Build {pfr_player_id: gsis_id} crosswalk for a given season.
 
-        Two-tier matching:
+        Three-tier matching:
+          0. Manual overrides from config (authoritative, checked first)
           1. pfr_player_id -> pfr_id join (nflverse rosters)
-          2. Name+team fallback for players with null pfr_id in rosters
+          2. Normalized name+team+position fallback (case-insensitive,
+             suffix-stripped, middle-name collapsed)
 
         Filters to SKILL_POSITIONS only. Logs WARNING for any remaining unmatched.
         Result cached per season.
@@ -217,8 +237,14 @@ class UsageEngine:
             return {}
 
         # --- Tier 1: pfr_player_id -> pfr_id join ---
+        # Cast pfr_id to Utf8 first to guard against Null dtype when all values are None
+        roster_for_tier1 = roster_df
+        if roster_df.schema.get("pfr_id") == pl.Null:
+            roster_for_tier1 = roster_df.with_columns(
+                pl.col("pfr_id").cast(pl.Utf8)
+            )
         roster_map_df = (
-            roster_df
+            roster_for_tier1
             .filter(pl.col("pfr_id").is_not_null())
             .select(["pfr_id", "gsis_id"])
             .unique(subset=["pfr_id"], keep="first")
@@ -233,34 +259,59 @@ class UsageEngine:
 
         matched = joined.filter(pl.col("gsis_id").is_not_null())
         crosswalk: dict[str, str] = {}
+
+        # --- Tier 0: manual crosswalk overrides (authoritative) ---
+        manual = self._config.snap.manual_crosswalk
+        if manual:
+            all_pfr_ids_in_snap = set(
+                skill_snap_df.select("pfr_player_id").unique().to_series().to_list()
+            )
+            for pfr_id, gsis_id in manual.items():
+                if pfr_id in all_pfr_ids_in_snap:
+                    crosswalk[pfr_id] = gsis_id
+            if crosswalk:
+                logger.info(
+                    "Snap crosswalk: %d manual overrides applied", len(crosswalk)
+                )
+
         for row in matched.unique(subset=["pfr_player_id"]).iter_rows(named=True):
-            crosswalk[row["pfr_player_id"]] = row["gsis_id"]
+            if row["pfr_player_id"] not in crosswalk:  # don't override Tier 0
+                crosswalk[row["pfr_player_id"]] = row["gsis_id"]
 
         # --- Tier 2: name+team fallback for unmatched players ---
         unmatched_pfr_ids = (
             joined.filter(pl.col("gsis_id").is_null())
-            .select(["pfr_player_id", "player", "team"])
+            .select(["pfr_player_id", "player", "team", "position"])
             .unique(subset=["pfr_player_id"], keep="first")
         )
 
         if len(unmatched_pfr_ids) > 0:
-            # Detect the name column in rosters (full_name or player_name)
             name_col = (
                 "full_name" if "full_name" in roster_df.columns
                 else "player_name" if "player_name" in roster_df.columns
                 else None
             )
             if name_col is not None:
+                # Add normalized name columns for fuzzy matching
+                unmatched_with_norm = unmatched_pfr_ids.with_columns(
+                    pl.col("player").map_elements(
+                        _normalize_name, return_dtype=pl.Utf8
+                    ).alias("norm_name")
+                )
                 roster_name_map = (
                     roster_df
                     .filter(pl.col("gsis_id").is_not_null())
-                    .select([name_col, "team", "gsis_id"])
-                    .unique(subset=[name_col, "team"], keep="first")
+                    .with_columns(
+                        pl.col(name_col).map_elements(
+                            _normalize_name, return_dtype=pl.Utf8
+                        ).alias("norm_name")
+                    )
+                    .select(["norm_name", "team", "position", "gsis_id"])
+                    .unique(subset=["norm_name", "team", "position"], keep="first")
                 )
-                name_joined = unmatched_pfr_ids.join(
+                name_joined = unmatched_with_norm.join(
                     roster_name_map,
-                    left_on=["player", "team"],
-                    right_on=[name_col, "team"],
+                    on=["norm_name", "team", "position"],
                     how="inner",
                 )
                 tier2_count = 0

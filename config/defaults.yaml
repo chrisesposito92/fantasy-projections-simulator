@@ -216,6 +216,11 @@ usage:
     prior_strength: 8.0
     min_games: 4
     factor_clamp: [0.70, 1.30]
+    manual_crosswalk:
+      # Name variants that automated matching cannot resolve
+      WoodMi00: "00-0037300"   # Michael Woods II -> Mike Woods (CLE)
+      # PFR ID mismatches between snap data and roster data
+      LassKw00: "00-0037420"   # Kwamie Lassiter II (snap LassKw00 != roster LassKw20)
   cpoe:
     enabled: true
     sensitivity: 0.30

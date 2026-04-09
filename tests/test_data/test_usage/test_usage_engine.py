@@ -288,6 +288,35 @@ class TestUsageConfigDefaults:
         cfg = UsageConfig()
         assert cfg.route_rate.min_routes == 10
 
+    def test_snap_manual_crosswalk_default_empty(self):
+        cfg = SnapConfig()
+        assert cfg.manual_crosswalk == {}
+        assert isinstance(cfg.manual_crosswalk, dict)
+
+    def test_load_usage_config_parses_manual_crosswalk(self):
+        from fantasy_sim.data.usage.config import load_usage_config
+        defaults = {
+            "usage": {
+                "snap": {
+                    "manual_crosswalk": {
+                        "WoodMi00": "00-0037300",
+                        "LassKw00": "00-0037420",
+                    }
+                }
+            }
+        }
+        cfg = load_usage_config(defaults)
+        assert cfg.snap.manual_crosswalk == {
+            "WoodMi00": "00-0037300",
+            "LassKw00": "00-0037420",
+        }
+
+    def test_load_usage_config_manual_crosswalk_defaults_empty(self):
+        from fantasy_sim.data.usage.config import load_usage_config
+        defaults = {"usage": {"snap": {}}}
+        cfg = load_usage_config(defaults)
+        assert cfg.snap.manual_crosswalk == {}
+
 
 # ---------------------------------------------------------------------------
 # Task 1 (PASSING): DataLoader.load_nextgen_stats
@@ -415,6 +444,163 @@ class TestUsageEngineCrosswalk:
                 if "unmatched" in str(c).lower() or "crosswalk" in str(c).lower()
             ]
             assert len(warning_calls) > 0, "Expected WARNING log for unmatched players"
+
+    def test_crosswalk_manual_override_applied_first(self, mock_snap_df, mock_roster_df):
+        """Manual crosswalk entries are applied before automated matching (Tier 0)."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = mock_snap_df
+        loader.load_rosters.return_value = mock_roster_df
+
+        config = UsageConfig(
+            snap=SnapConfig(manual_crosswalk={"WR001": "manual-gsis-override"})
+        )
+        engine = UsageEngine(config=config, loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        # Manual override takes precedence over Tier 1 pfr_id join
+        assert crosswalk["WR001"] == "manual-gsis-override"
+        # Other players still matched via Tier 1
+        assert crosswalk["RB001"] == "gsis-rb1"
+
+    def test_crosswalk_manual_override_for_missing_player(self, mock_snap_df, mock_roster_df):
+        """Manual crosswalk resolves players that Tier 1 and Tier 2 cannot match."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Add an unmatched player to snap data
+        extra_row = pl.DataFrame({
+            "pfr_player_id": ["UNKNOWN01"],
+            "player": ["Mystery Player"],
+            "position": ["WR"],
+            "team": ["KC"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [40],
+            "offense_pct": [0.57],
+        })
+        snap_with_extra = pl.concat([mock_snap_df, extra_row])
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_with_extra
+        loader.load_rosters.return_value = mock_roster_df
+
+        config = UsageConfig(
+            snap=SnapConfig(manual_crosswalk={"UNKNOWN01": "gsis-mystery"})
+        )
+        engine = UsageEngine(config=config, loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk["UNKNOWN01"] == "gsis-mystery"
+
+    def test_crosswalk_tier2_case_insensitive(self, mock_roster_df):
+        """Tier 2 matches despite capitalization differences (e.g., Dubose vs DuBose)."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Snap data has "Grant Dubose" (lowercase b), roster has "Grant DuBose" (capital B)
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["DuboGr00"],
+            "player": ["Grant Dubose"],
+            "position": ["WR"],
+            "team": ["MIA"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [30],
+            "offense_pct": [0.43],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-dubose"],
+            "pfr_id": [None],  # null pfr_id -> Tier 1 fails -> falls to Tier 2
+            "full_name": ["Grant DuBose"],
+            "position": ["WR"],
+            "team": ["MIA"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("DuboGr00") == "gsis-dubose"
+
+    def test_crosswalk_tier2_suffix_stripped(self, mock_roster_df):
+        """Tier 2 matches when snap has 'Kevin Austin' but roster has 'Kevin Austin Jr.'."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["AustKe00"],
+            "player": ["Kevin Austin"],
+            "position": ["WR"],
+            "team": ["NO"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [25],
+            "offense_pct": [0.36],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-austin"],
+            "pfr_id": [None],
+            "full_name": ["Kevin Austin Jr."],
+            "position": ["WR"],
+            "team": ["NO"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("AustKe00") == "gsis-austin"
+
+    def test_crosswalk_tier2_middle_name_collapsed(self):
+        """Tier 2 matches when snap has 'John Samuel Shenker' but roster has 'John Shenker'."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["ShenJo00"],
+            "player": ["John Samuel Shenker"],
+            "position": ["TE"],
+            "team": ["LV"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [20],
+            "offense_pct": [0.29],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-shenker"],
+            "pfr_id": [None],
+            "full_name": ["John Shenker"],
+            "position": ["TE"],
+            "team": ["LV"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("ShenJo00") == "gsis-shenker"
 
 
 class TestUsageEngineRollingWindow:
