@@ -23,8 +23,12 @@ uv run pytest tests/ -v -m statistical     # statistical validation only
 uv run python scripts/validate_sim.py              # 5000-game sim validation
 uv run python scripts/validate_players.py          # player validation (offline)
 uv run python scripts/validate_data.py             # data validation (network)
-uv run python scripts/validate_pff_signal.py --mode talent --sims 50 --label "run-name"
-uv run python scripts/validate_pff_signal.py --show-ledger
+uv run python scripts/validate.py --sims 50 --label "run-name"
+uv run python scripts/validate.py --set usage.ngs.enabled=true --sims 50 --label "test-ngs"
+uv run python scripts/validate.py --baseline defaults --set usage.ngs.enabled=true --sims 50
+uv run python scripts/validate.py --show-ledger
+# Legacy (deprecated — use scripts/validate.py):
+uv run python scripts/validate_pff_signal.py --mode all --sims 50
 uv run python scripts/validate_weekly_signal.py --mode all --sims 50
 
 # PFF scraper (premium subscription required, see docs/pff-setup.md)
@@ -58,7 +62,7 @@ Pipeline: Data → Models → Engine → Scoring → Output
 4. **Config** (`config/`) — YAML config with `_inherit` scoring preset chains (PPR → half_ppr → standard)
 5. **Scoring** (`scoring/`) — Fantasy point calculation for players/DST/kickers; projection aggregation
 6. **Output** (`output/`) — Rich terminal tables, CSV/JSON export
-7. **Validation** (`validation/`) — Spearman/MAE/boom-bust metrics, hold-out backtesting
+7. **Validation** (`validation/`) — A/B backtesting with config resolution (`config.py`), bare baseline caching (`cache.py`), unified ledger (`ledger.py`), Spearman/MAE/boom-bust metrics, hold-out backtesting
 8. **Overrides** (`overrides/`) — Player/team override engine with share redistribution, fuzzy name matching
 9. **CLI** (`cli.py`) — Click-based with `demo`, `week`, `season`, `game`, `player`, `backtest` commands
 
