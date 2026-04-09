@@ -35,6 +35,7 @@ def load_usage_config(defaults: dict) -> UsageConfig:
             prior_strength=snap_d.get("prior_strength", 8.0),
             min_games=snap_d.get("min_games", 4),
             factor_clamp=tuple(snap_d.get("factor_clamp", [0.70, 1.30])),
+            manual_crosswalk=snap_d.get("manual_crosswalk", {}),
         ),
         cpoe=CpoeConfig(
             enabled=cpoe_d.get("enabled", True),

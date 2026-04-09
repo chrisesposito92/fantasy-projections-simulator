@@ -288,6 +288,35 @@ class TestUsageConfigDefaults:
         cfg = UsageConfig()
         assert cfg.route_rate.min_routes == 10
 
+    def test_snap_manual_crosswalk_default_empty(self):
+        cfg = SnapConfig()
+        assert cfg.manual_crosswalk == {}
+        assert isinstance(cfg.manual_crosswalk, dict)
+
+    def test_load_usage_config_parses_manual_crosswalk(self):
+        from fantasy_sim.data.usage.config import load_usage_config
+        defaults = {
+            "usage": {
+                "snap": {
+                    "manual_crosswalk": {
+                        "WoodMi00": "00-0037300",
+                        "LassKw00": "00-0037420",
+                    }
+                }
+            }
+        }
+        cfg = load_usage_config(defaults)
+        assert cfg.snap.manual_crosswalk == {
+            "WoodMi00": "00-0037300",
+            "LassKw00": "00-0037420",
+        }
+
+    def test_load_usage_config_manual_crosswalk_defaults_empty(self):
+        from fantasy_sim.data.usage.config import load_usage_config
+        defaults = {"usage": {"snap": {}}}
+        cfg = load_usage_config(defaults)
+        assert cfg.snap.manual_crosswalk == {}
+
 
 # ---------------------------------------------------------------------------
 # Task 1 (PASSING): DataLoader.load_nextgen_stats

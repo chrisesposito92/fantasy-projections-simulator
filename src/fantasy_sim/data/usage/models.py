@@ -12,6 +12,7 @@ class SnapConfig:
     prior_strength: float = 8.0         # Bayesian weight vs games_played
     min_games: int = 4                  # rolling window size (D-04)
     factor_clamp: tuple[float, float] = (0.70, 1.30)
+    manual_crosswalk: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
