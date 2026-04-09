@@ -203,3 +203,120 @@ class TestTdTendencyI5PffLoading:
 
         assert "gsis_qb1" in i5_rush_rates
         assert i5_rush_rates["gsis_qb1"] == (1, 2)
+
+
+class TestTdTendencyI5Factor:
+
+    def test_i5_factor_computed_from_pbp(self):
+        """Inside-5 factor is set when PBP data has i5 fields."""
+        config = TdTendencyConfig(enabled=True, i5_enabled=True,
+                                  prior_strength=15, i5_prior_strength=25,
+                                  min_opportunities=3, i5_min_opportunities=3)
+        engine = TdTendencyEngine(config)
+        roster = _make_roster()
+
+        pbp_stats = {
+            "receiving": {},
+            "rushing": {
+                "rb1": {
+                    "rz_carries": 30, "rz_tds": 9,
+                    "i5_rush_carries": 10, "i5_rush_tds": 6,
+                    "team": "KC",
+                },
+            },
+        }
+
+        engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
+
+        rb = roster.players[2]  # rb1
+        assert rb.outcomes.rushing_td_factor != 1.0  # general factor set
+        assert rb.outcomes.i5_rushing_td_factor != 1.0  # i5 factor set
+        # 6/10 = 0.60 observed vs ~0.50 prior => factor > 1.0
+        assert rb.outcomes.i5_rushing_td_factor > 1.0
+
+    def test_i5_factor_neutral_below_min_opportunities(self):
+        """Players with fewer than i5_min_opportunities stay at 1.0."""
+        config = TdTendencyConfig(enabled=True, i5_enabled=True,
+                                  i5_min_opportunities=3)
+        engine = TdTendencyEngine(config)
+        roster = _make_roster()
+
+        pbp_stats = {
+            "receiving": {},
+            "rushing": {
+                "rb1": {
+                    "rz_carries": 30, "rz_tds": 9,
+                    "i5_rush_carries": 2, "i5_rush_tds": 1,
+                    "team": "KC",
+                },
+            },
+        }
+
+        engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
+        assert roster.players[2].outcomes.i5_rushing_td_factor == 1.0
+
+    def test_i5_disabled_leaves_factor_neutral(self):
+        """When i5_enabled=False, i5_rushing_td_factor stays 1.0."""
+        config = TdTendencyConfig(enabled=True, i5_enabled=False)
+        engine = TdTendencyEngine(config)
+        roster = _make_roster()
+
+        pbp_stats = {
+            "receiving": {},
+            "rushing": {
+                "rb1": {
+                    "rz_carries": 30, "rz_tds": 9,
+                    "i5_rush_carries": 10, "i5_rush_tds": 6,
+                    "team": "KC",
+                },
+            },
+        }
+
+        engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
+        assert roster.players[2].outcomes.i5_rushing_td_factor == 1.0
+
+    def test_i5_factor_wr_stays_neutral(self):
+        """WR/TE never get i5_rushing_td_factor (rushing only for RB/QB/FB)."""
+        config = TdTendencyConfig(enabled=True, i5_enabled=True,
+                                  i5_min_opportunities=3)
+        engine = TdTendencyEngine(config)
+        roster = _make_roster()
+
+        pbp_stats = {
+            "receiving": {
+                "wr1": {"rz_targets": 20, "rz_tds": 5, "team": "KC"},
+            },
+            "rushing": {},
+        }
+
+        engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
+        assert roster.players[0].outcomes.i5_rushing_td_factor == 1.0
+
+    def test_i5_bayesian_blend_exact_value(self):
+        """Verify exact Bayesian blend for inside-5 with known inputs."""
+        config = TdTendencyConfig(enabled=True, i5_enabled=True,
+                                  i5_prior_strength=25, i5_min_opportunities=3,
+                                  factor_clamp=(0.65, 1.35))
+        engine = TdTendencyEngine(config)
+        roster = _make_roster()
+
+        pbp_stats = {
+            "receiving": {},
+            "rushing": {
+                "rb1": {
+                    "rz_carries": 30, "rz_tds": 9,
+                    "i5_rush_carries": 10, "i5_rush_tds": 6,
+                    "team": "KC",
+                },
+            },
+        }
+
+        engine.apply(roster, season=2024, week=10, pbp_stats=pbp_stats)
+
+        # Verify exact computation:
+        # observed = 6/10 = 0.60, prior = 0.50 (RB), prior_strength = 25
+        # blended = (10 * 0.60 + 25 * 0.50) / (10 + 25) = 18.5 / 35 = 0.52857...
+        # factor = 0.52857 / 0.50 = 1.05714...
+        expected_blend = (10 * 0.60 + 25 * 0.50) / (10 + 25)
+        expected_factor = expected_blend / 0.50
+        assert abs(roster.players[2].outcomes.i5_rushing_td_factor - expected_factor) < 1e-6

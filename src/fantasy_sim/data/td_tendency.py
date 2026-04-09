@@ -65,6 +65,11 @@ _DEFAULT_RUSHING_TD_PRIORS: dict[str, float] = {
     "QB": 0.25,
     "FB": 0.30,
 }
+_DEFAULT_I5_RUSHING_TD_PRIORS: dict[str, float] = {
+    "RB": 0.50,
+    "QB": 0.40,
+    "FB": 0.55,
+}
 
 
 class TdTendencyEngine:
@@ -105,6 +110,7 @@ class TdTendencyEngine:
 
         rec_priors = dict(_DEFAULT_RECEIVING_TD_PRIORS)
         rush_priors = dict(_DEFAULT_RUSHING_TD_PRIORS)
+        i5_priors = dict(_DEFAULT_I5_RUSHING_TD_PRIORS)
 
         for player in roster.players:
             gsis_id = player.player_id
@@ -127,8 +133,22 @@ class TdTendencyEngine:
                         blended = self._bayesian_blend(observed, prior, opps)
                         player.outcomes.rushing_td_factor = self._clamp(blended / prior)
 
+            # Inside-5 rushing factor
+            if self._config.i5_enabled and gsis_id in i5_rush_rates:
+                tds, opps = i5_rush_rates[gsis_id]
+                if opps >= self._config.i5_min_opportunities:
+                    prior = i5_priors.get(player.position)
+                    if prior is not None and prior > 0:
+                        observed = tds / opps
+                        blended = self._i5_bayesian_blend(observed, prior, opps)
+                        player.outcomes.i5_rushing_td_factor = self._clamp(blended / prior)
+
     def _bayesian_blend(self, observed: float, prior: float, n_obs: int) -> float:
         ps = self._config.prior_strength
+        return (n_obs * observed + ps * prior) / (n_obs + ps)
+
+    def _i5_bayesian_blend(self, observed: float, prior: float, n_obs: int) -> float:
+        ps = self._config.i5_prior_strength
         return (n_obs * observed + ps * prior) / (n_obs + ps)
 
     def _clamp(self, factor: float) -> float:
