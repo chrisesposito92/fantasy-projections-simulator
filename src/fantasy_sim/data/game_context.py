@@ -15,6 +15,7 @@ from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModif
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.usage.models import UsageConfig
+from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, TurnoverRates,
@@ -48,6 +49,7 @@ class GameContextBuilder:
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
+        td_tendency_config: TdTendencyConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -160,6 +162,15 @@ class GameContextBuilder:
             from fantasy_sim.data.usage.engine import UsageEngine
             self._usage_engine = UsageEngine(self._usage_config, self.loader)
             logger.info("Usage engine enabled")
+
+        # TD tendency engine: per-player RZ TD conversion factors
+        self._td_tendency_engine = None
+        self._td_tendency_config = td_tendency_config or TdTendencyConfig(enabled=False)
+        if self._td_tendency_config.enabled:
+            self._td_tendency_engine = TdTendencyEngine(
+                self._td_tendency_config, self._pff_loader,
+            )
+            logger.info("TD tendency engine enabled")
 
     def _ensure_pipeline(
         self,
@@ -769,6 +780,20 @@ class GameContextBuilder:
                     kicker_model = self._kicker_engine.compute(kicker.player_id)
                     if kicker_model is not None:
                         team_dists.kicking = kicker_model
+
+        # TD tendency: per-player RZ TD conversion factors
+        if self._td_tendency_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            self._td_tendency_engine.apply(
+                home_roster, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+                pbp_stats=self._pbp_stats_cache,
+            )
+            self._td_tendency_engine.apply(
+                away_roster, target_season, week,
+                pff_crosswalk=self._pff_crosswalk,
+                pbp_stats=self._pbp_stats_cache,
+            )
 
         # Weather adjustments (final layer — game-condition modifier)
         if self._weather_engine is not None and target_season and week:

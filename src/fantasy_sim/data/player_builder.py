@@ -208,6 +208,7 @@ def _aggregate_pbp_stats(
             receiving_stats[rid] = {
                 "targets": 0, "catches": 0, "yards": [],
                 "rz_targets": 0, "rz_catches": 0, "rz_yards": [],
+                "rz_tds": 0,
                 "air_yards": 0.0,
                 "team": row["posteam"], "game_ids": set(),
             }
@@ -220,6 +221,8 @@ def _aggregate_pbp_stats(
             if row["complete_pass"] == 1:
                 receiving_stats[rid]["rz_catches"] += 1
                 receiving_stats[rid]["rz_yards"].append(row["yards_gained"])
+            if row.get("pass_touchdown") == 1 or (row.get("touchdown") == 1 and row["complete_pass"] == 1):
+                receiving_stats[rid]["rz_tds"] += 1
 
         # Air yards
         if has_air_yards and row.get("air_yards") is not None:
@@ -238,7 +241,7 @@ def _aggregate_pbp_stats(
             continue
         if rid not in rushing_stats:
             rushing_stats[rid] = {
-                "carries": 0, "yards": [], "rz_carries": 0,
+                "carries": 0, "yards": [], "rz_carries": 0, "rz_tds": 0,
                 "team": row["posteam"], "game_ids": set(),
             }
         rushing_stats[rid]["carries"] += 1
@@ -248,6 +251,8 @@ def _aggregate_pbp_stats(
         # Red zone carry
         if row["yardline_100"] <= 20:
             rushing_stats[rid]["rz_carries"] += 1
+            if row.get("rush_touchdown") == 1:
+                rushing_stats[rid]["rz_tds"] += 1
 
     # --- QB stats (passer on pass plays) ---
     qb_stats: dict[str, dict] = {}

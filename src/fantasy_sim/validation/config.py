@@ -11,6 +11,7 @@ from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_vegas_config, load_props_config
 from fantasy_sim.data.usage.config import load_usage_config
+from fantasy_sim.data.td_tendency import load_td_tendency_config
 
 
 def _parse_value(s: str) -> bool | int | float | str | list:
@@ -77,12 +78,14 @@ def build_engine_configs(config: dict) -> dict:
     vegas = load_vegas_config(config)
     props = load_props_config(config)
     usage = load_usage_config(config)
+    td_tendency = load_td_tendency_config(config)
     return {
         "pff_config": pff if pff.enabled else None,
         "weather_config": weather if weather.enabled else None,
         "vegas_config": vegas if vegas.enabled else None,
         "props_config": props if props.enabled else None,
         "usage_config": usage if usage.enabled else None,
+        "td_tendency_config": td_tendency if td_tendency.enabled else None,
     }
 
 
@@ -94,4 +97,5 @@ def build_bare_engine_configs() -> dict:
         "vegas_config": None,
         "props_config": None,
         "usage_config": None,
+        "td_tendency_config": None,
     }

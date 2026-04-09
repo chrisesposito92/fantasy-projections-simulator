@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from fantasy_sim.data.weather.models import WeatherConfig
     from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
     from fantasy_sim.data.usage.models import UsageConfig
+    from fantasy_sim.data.td_tendency import TdTendencyConfig
     from fantasy_sim.engine.types import TeamDistributions
     from fantasy_sim.models.player import TeamRoster
 
@@ -177,6 +178,7 @@ def _init_build_worker_single(
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
+    td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
     global _worker_builders
@@ -189,6 +191,7 @@ def _init_build_worker_single(
         vegas_config=vegas_config,
         props_config=props_config,
         usage_config=usage_config,
+        td_tendency_config=td_tendency_config,
     )
     _worker_builders = {"single": builder}
 
@@ -248,6 +251,7 @@ def _init_build_worker_dual(
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
+    td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create off+on builders per worker."""
     global _worker_builders
@@ -262,6 +266,7 @@ def _init_build_worker_dual(
             vegas_config=vegas_config,
             props_config=props_config,
             usage_config=usage_config,
+            td_tendency_config=td_tendency_config,
         ),
     }
 
@@ -351,6 +356,7 @@ def _build_games_sequential(
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
+    td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
     global _worker_builders
@@ -365,6 +371,7 @@ def _build_games_sequential(
                 vegas_config=vegas_config,
                 props_config=props_config,
                 usage_config=usage_config,
+                td_tendency_config=td_tendency_config,
             ),
         }
     else:
@@ -376,6 +383,7 @@ def _build_games_sequential(
                 vegas_config=vegas_config,
                 props_config=props_config,
                 usage_config=usage_config,
+                td_tendency_config=td_tendency_config,
             ),
         }
 
@@ -400,6 +408,7 @@ def build_games_parallel(
     vegas_config=None,
     props_config=None,
     usage_config=None,
+    td_tendency_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
     on_complete: "Callable[[int, int], None] | None" = None,
@@ -439,6 +448,7 @@ def build_games_parallel(
             vegas_config=vegas_config,
             props_config=props_config,
             usage_config=usage_config,
+            td_tendency_config=td_tendency_config,
         )
     else:
         from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
@@ -453,7 +463,7 @@ def build_games_parallel(
         with ProcessPoolExecutor(
             max_workers=max_workers,
             initializer=init_fn,
-            initargs=(cache_dir, pff_config, weather_config, vegas_config, props_config, usage_config),
+            initargs=(cache_dir, pff_config, weather_config, vegas_config, props_config, usage_config, td_tendency_config),
         ) as pool:
             futures = {
                 pool.submit(worker_fn, args): args for args in game_args
