@@ -232,3 +232,9 @@ usage:
     enabled: false
     sensitivity: 0.5
     min_routes: 10
+
+td_tendency:
+  enabled: false              # flip to true after A/B validation
+  prior_strength: 15          # pseudo-opportunities for Bayesian shrinkage
+  min_opportunities: 5        # minimum RZ targets/carries to compute factor
+  factor_clamp: [0.70, 1.30]  # prevent extreme gate modifications
