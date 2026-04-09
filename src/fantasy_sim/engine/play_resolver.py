@@ -299,7 +299,12 @@ def _resolve_run(
 
         # TD determination with red zone gate
         if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
-            if _red_zone_td_gate(state.yard_line, "run", rng, rusher.outcomes.rushing_td_factor):
+            # Use inside-5 factor at goal line when available
+            if state.yard_line <= 5 and rusher.outcomes.i5_rushing_td_factor != 1.0:
+                td_factor = rusher.outcomes.i5_rushing_td_factor
+            else:
+                td_factor = rusher.outcomes.rushing_td_factor
+            if _red_zone_td_gate(state.yard_line, "run", rng, td_factor):
                 is_td = True
             else:
                 yards = _tackled_short(state.yard_line, rng)

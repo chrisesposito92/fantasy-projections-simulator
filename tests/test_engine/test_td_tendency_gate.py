@@ -54,3 +54,49 @@ class TestRedZoneTdGateWithFactor:
         rng = np.random.default_rng(42)
         assert _red_zone_td_gate(25, "pass", rng, td_factor=0.01) is True
         assert _red_zone_td_gate(50, "run", rng, td_factor=0.01) is True
+
+
+class TestI5GateFactorSelection:
+    """Verify i5_rushing_td_factor is used at yard_line <= 5."""
+
+    def test_i5_factor_used_at_yard_line_3(self):
+        """At yard_line=3, i5 factor should produce different TD rate."""
+        n = 5000
+        import numpy as np
+
+        td_count_i5 = sum(
+            _red_zone_td_gate(3, "run", np.random.default_rng(i), 1.3)
+            for i in range(n)
+        )
+        td_count_general = sum(
+            _red_zone_td_gate(3, "run", np.random.default_rng(i), 0.7)
+            for i in range(n)
+        )
+        assert td_count_i5 > td_count_general
+
+    def test_i5_factor_used_at_yard_line_5(self):
+        """At yard_line=5, i5 factor should still be used (boundary)."""
+        n = 5000
+        import numpy as np
+
+        td_count_high = sum(
+            _red_zone_td_gate(5, "run", np.random.default_rng(i), 1.3)
+            for i in range(n)
+        )
+        td_count_low = sum(
+            _red_zone_td_gate(5, "run", np.random.default_rng(i + n), 0.7)
+            for i in range(n)
+        )
+        assert td_count_high > td_count_low
+
+    def test_general_factor_used_at_yard_line_10(self):
+        """At yard_line=10, general rushing_td_factor is always used (outside i5)."""
+        n = 5000
+        import numpy as np
+
+        td_count = sum(
+            _red_zone_td_gate(10, "run", np.random.default_rng(i), 1.0)
+            for i in range(n)
+        )
+        # RUN_TD_GATE for (6,10) is 0.20, so ~1000/5000 expected
+        assert 500 < td_count < 1500
