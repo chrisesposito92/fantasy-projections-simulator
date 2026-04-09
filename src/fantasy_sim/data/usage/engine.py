@@ -18,6 +18,7 @@ Threat mitigations:
 from __future__ import annotations
 
 import logging
+import re
 
 import numpy as np
 import polars as pl
@@ -32,6 +33,23 @@ logger = logging.getLogger(__name__)
 # League average snap share used for cold start linear ramp blending.
 # Based on NFL starting players typically seeing 50-65% of snaps.
 _LEAGUE_AVG_SNAP_SHARE = 0.50
+
+_SUFFIXES_RE = re.compile(r'\s+(jr\.?|sr\.?|ii|iii|iv|v)\s*$', re.IGNORECASE)
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize player name for fuzzy Tier 2 matching.
+
+    Lowercases, strips suffixes (Jr./Sr./II/III/IV/V),
+    removes periods, collapses to first + last name only.
+    """
+    name = name.lower().strip()
+    name = _SUFFIXES_RE.sub('', name)
+    name = name.replace('.', '').strip()
+    parts = name.split()
+    if len(parts) > 2:
+        parts = [parts[0], parts[-1]]
+    return ' '.join(parts)
 
 
 class UsageEngine:
