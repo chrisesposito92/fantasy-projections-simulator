@@ -5,6 +5,8 @@ from __future__ import annotations
 from fantasy_sim.data.pff.models import (
     ArchetypeConfig,
     CoverageConfig,
+    DstBaselineConfig,
+    KickerConfig,
     MatchupConfig,
     NcaaPriorsConfig,
     NcaaRookieConfig,
@@ -175,6 +177,22 @@ def load_pff_config(config: dict) -> PffConfig:
         min_games=cov_raw.get("min_games", 4),
     )
 
+    kicker_raw = pff.get("kicker", {})
+    kicker = KickerConfig(
+        enabled=kicker_raw.get("enabled", True),
+        prior_strength=kicker_raw.get("prior_strength", 20),
+        min_attempts=kicker_raw.get("min_attempts", 5),
+    )
+
+    dst_raw = pff.get("dst_baseline", {})
+    dst_baseline = DstBaselineConfig(
+        enabled=dst_raw.get("enabled", True),
+        sensitivities=dst_raw.get("sensitivities", {"fumble_rate": 0.06}),
+        prior_strength=dst_raw.get("prior_strength", 10),
+        min_games=dst_raw.get("min_games", 4),
+        clamp=dst_raw.get("clamp", [0.85, 1.15]),
+    )
+
     return PffConfig(
         enabled=pff.get("enabled", False),
         data_dir=pff.get("data_dir"),
@@ -183,4 +201,6 @@ def load_pff_config(config: dict) -> PffConfig:
         tier_engine=tier_engine,
         team_context=team_context,
         coverage=coverage,
+        kicker=kicker,
+        dst_baseline=dst_baseline,
     )
