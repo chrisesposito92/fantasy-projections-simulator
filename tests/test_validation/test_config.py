@@ -82,6 +82,11 @@ class TestApplyOverrides:
         result = apply_overrides(config, ["pff.kicker.prior_strength=30"])
         assert result["pff"]["kicker"]["prior_strength"] == 30
 
+    def test_invalid_leaf_key_raises(self):
+        config = {"pff": {"matchup": {"enabled": True}}}
+        with pytest.raises(KeyError, match="enabledd"):
+            apply_overrides(config, ["pff.matchup.enabledd=false"])
+
 
 class TestBuildEngineConfigs:
     def test_defaults_produces_enabled_configs(self):

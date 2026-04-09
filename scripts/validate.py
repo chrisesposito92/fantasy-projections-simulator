@@ -59,6 +59,20 @@ from fantasy_sim.validation.weekly import (
 POSITIONS = ("QB", "RB", "WR", "TE")
 _HOLDOUT_SEASON = 2025
 
+# Position -> applicable MatchupContext fields (same as old weekly script)
+POSITION_MATCHUP_FACTORS: dict[str, tuple[str, ...]] = {
+    "QB": ("sack_rate_factor", "int_rate_factor", "ol_pass_block_factor"),
+    "RB": ("rush_yards_factor", "ol_run_block_factor"),
+    "WR": ("catch_rate_factor", "pass_yards_factor"),
+    "TE": ("catch_rate_factor", "pass_yards_factor"),
+}
+
+
+def _filter_matchup_factors(position: str, ctx: object) -> dict[str, float]:
+    """Filter MatchupContext to position-relevant factors."""
+    fields = POSITION_MATCHUP_FACTORS.get(position, ())
+    return {f: getattr(ctx, f, 1.0) for f in fields}
+
 
 def build_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -156,6 +170,8 @@ def run_season(
     # --- Build + simulate ---
     arm_a_proj: dict[str, dict[int, float]] = {}
     arm_a_meta: dict[str, dict] = {}
+    # matchup_data: (team, week) -> {matchup_ctx, coverage} — populated by dual-arm builds only
+    matchup_data: dict[tuple[str, int], dict] = {}
 
     if cached_arm_a is not None:
         # Arm A from cache -- only build and simulate Arm B
@@ -188,8 +204,9 @@ def run_season(
         # Index Arm B projections
         arm_b_proj: dict[str, dict[int, float]] = defaultdict(dict)
         arm_b_meta: dict[str, dict] = {}
+        spec_by_id_b = {s.game_id: s for s in specs_b}
         for result in sim_b:
-            spec = next(s for s in specs_b if s.game_id == result.game_id)
+            spec = spec_by_id_b[result.game_id]
             for proj in result.projections:
                 pid = proj["player_id"]
                 arm_b_proj[pid][spec.week] = proj["fpts"]
@@ -234,6 +251,18 @@ def run_season(
                     home_roster=on[2], away_roster=on[3],
                     seed=r["seed"], week=r["week"], metadata={"arm": "b"},
                 ))
+                # Collect matchup/coverage aux for weekly metrics
+                aux = r.get("matchup_aux", {})
+                if aux:
+                    wk = r["week"]
+                    matchup_data[(r["home"], wk)] = {
+                        "matchup_ctx": aux.get("home_matchup_ctx"),
+                        "coverage": aux.get("home_coverage", {}),
+                    }
+                    matchup_data[(r["away"], wk)] = {
+                        "matchup_ctx": aux.get("away_matchup_ctx"),
+                        "coverage": aux.get("away_coverage", {}),
+                    }
 
             all_specs = specs_a + specs_b
 
@@ -367,12 +396,20 @@ def run_season(
         for wk in common_weeks:
             if pid not in actual_by_pw or wk not in actual_by_pw[pid]:
                 continue
+            # Look up matchup/coverage aux (populated by dual-arm builds only)
+            maux = matchup_data.get((team, wk), {})
+            mctx = maux.get("matchup_ctx")
+            mfactors = _filter_matchup_factors(pos, mctx) if mctx else {}
+            cov_map = maux.get("coverage", {})
+            cov_mods = cov_map.get(pid) if pos == "WR" else None
             records.append(WeeklyPlayerRecord(
                 player_id=pid, name=name, position=pos, team=team,
                 week=wk, season=test_season,
                 projected_fpts_on=arm_b_proj[pid][wk],
                 projected_fpts_off=arm_a_proj[pid][wk],
                 actual_fpts=actual_by_pw[pid][wk],
+                matchup_factors=mfactors,
+                coverage_modifiers=cov_mods,
             ))
     weekly_records = records
 

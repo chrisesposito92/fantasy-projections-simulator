@@ -39,7 +39,7 @@ def apply_overrides(config: dict, overrides: list[str]) -> dict:
     Each override is 'dotted.key.path=value'. Deep-copies config first
     so the original is never mutated.
 
-    Raises KeyError if an intermediate key doesn't exist.
+    Raises KeyError if any key in the path doesn't exist (including the leaf).
     """
     config = copy.deepcopy(config)
     for override in overrides:
@@ -48,7 +48,13 @@ def apply_overrides(config: dict, overrides: list[str]) -> dict:
         target = config
         for k in keys[:-1]:
             target = target[k]
-        target[keys[-1]] = _parse_value(raw_value)
+        leaf = keys[-1]
+        if leaf not in target:
+            raise KeyError(
+                f"Unknown config key '{key_path}': "
+                f"'{leaf}' not found in {'.'.join(keys[:-1]) or 'root'}"
+            )
+        target[leaf] = _parse_value(raw_value)
     return config
 
 
