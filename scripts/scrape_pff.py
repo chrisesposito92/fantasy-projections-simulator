@@ -72,6 +72,13 @@ ALL_FACETS: list[tuple[str, str]] = [
     ("punting", "summary"),
 ]
 
+# PFF Fantasy Stats endpoints (different API from game-level facets)
+# These are aggregate per-player stats, not per-game.
+FANTASY_FACETS: list[tuple[str, str]] = [
+    ("receiving", "fantasy_receiving"),   # WR/RB/TE rushing+receiving
+    ("passing", "fantasy_passing"),       # QB passing+rushing
+]
+
 
 console = Console()
 
@@ -315,6 +322,87 @@ def scrape_season(
     return stats
 
 
+def scrape_fantasy_stats(
+    client: httpx.Client,
+    season: int,
+    weeks: list[int] | None,
+    delay: float,
+) -> dict:
+    """Scrape PFF fantasy stats (receiving + passing) per-week.
+
+    Unlike game-level facets, these are aggregate endpoints that return
+    all players for a given season+week combination.
+
+    Stores:
+      - Raw JSON per week: ~/.fantasy-sim/pff/raw/nfl/fantasy/{facet}_{season}_week{wk}.json
+      - Combined parquet: ~/.fantasy-sim/pff/processed/nfl/{facet}_{season}.parquet
+    """
+    stats = {"requests": 0, "skipped": 0, "failures": 0}
+
+    if weeks is None:
+        weeks = list(range(1, 19))
+
+    for api_facet, output_name in FANTASY_FACETS:
+        all_rows: list[dict] = []
+
+        for week in weeks:
+            raw_path = RAW_DIR / "nfl" / "fantasy" / f"{output_name}_{season}_week{week}.json"
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if raw_path.exists():
+                cached = json.loads(raw_path.read_text())
+                for row in cached:
+                    row["season"] = season
+                    row["week"] = week
+                all_rows.extend(cached)
+                stats["skipped"] += 1
+                continue
+
+            # Fantasy stats use www.pff.com, not premium.pff.com
+            url = f"https://www.pff.com/api/fantasy/stats/{api_facet}?season={season}&weeks={week}&scoring=preset_ppr"
+            try:
+                resp = client.get(url)
+                if resp.status_code in (401, 403):
+                    raise AuthError(f"Fantasy stats auth failed: {resp.status_code}")
+                if resp.status_code == 404:
+                    console.print(f"  [yellow]No data:[/yellow] {output_name} week {week}")
+                    stats["failures"] += 1
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                time.sleep(delay)
+            except httpx.HTTPError as exc:
+                console.print(f"  [yellow]Error:[/yellow] {output_name} week {week}: {exc}")
+                stats["failures"] += 1
+                continue
+
+            stats["requests"] += 1
+
+            if not isinstance(data, list):
+                console.print(f"  [yellow]Unexpected response:[/yellow] {output_name} week {week}")
+                stats["failures"] += 1
+                continue
+
+            raw_path.write_text(json.dumps(data, indent=2))
+
+            for row in data:
+                row["season"] = season
+                row["week"] = week
+            all_rows.extend(data)
+            console.print(f"  {output_name} week {week}: {len(data)} players")
+
+        # Write combined parquet
+        if all_rows:
+            import polars as pl_local
+            df = pl_local.DataFrame(all_rows)
+            parquet_path = PROCESSED_DIR / "nfl" / f"{output_name}_{season}.parquet"
+            parquet_path.parent.mkdir(parents=True, exist_ok=True)
+            df.write_parquet(parquet_path)
+            console.print(f"  [green]Wrote {output_name}_{season}.parquet ({len(all_rows)} rows)[/green]")
+
+    return stats
+
+
 def build_team_lookup(base_dir: Path, season: int, league: LeagueConfig) -> dict[int, str]:
     """Build franchise_id -> abbreviation mapping from teams JSON."""
     teams_path = base_dir / "raw" / league.name / "teams" / f"{season}.json"
@@ -408,6 +496,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--weeks", type=str, default=None, help="Week range (e.g., '1-8' or '12')")
     parser.add_argument("--process-only", action="store_true", help="Re-process raw JSON to parquet without scraping")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help=f"Delay between API requests in seconds (default: {DEFAULT_DELAY})")
+    parser.add_argument("--fantasy", action="store_true", help="Also scrape fantasy stats (receiving, passing)")
     return parser.parse_args()
 
 
@@ -516,6 +605,15 @@ def main() -> None:
 
         console.print(f"\n[bold]Processing raw data for {args.season}...[/bold]")
         process_season(PFF_DIR, args.season, league)
+
+        if args.fantasy:
+            console.print(f"\n[bold]Scraping fantasy stats for {args.season}...[/bold]")
+            fantasy_stats = scrape_fantasy_stats(client, args.season, weeks, args.delay)
+            console.print(
+                f"Fantasy stats: {fantasy_stats['requests']} requests, "
+                f"{fantasy_stats['skipped']} cached, {fantasy_stats['failures']} failures"
+            )
+
         console.print("\n[bold green]Done.[/bold green]")
     finally:
         client.close()
