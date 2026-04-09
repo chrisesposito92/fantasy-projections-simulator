@@ -207,9 +207,11 @@ class UsageEngine:
     def _build_snap_crosswalk(self, season: int) -> dict[str, str]:
         """Build {pfr_player_id: gsis_id} crosswalk for a given season.
 
-        Two-tier matching:
+        Three-tier matching:
+          0. Manual overrides from config (authoritative, checked first)
           1. pfr_player_id -> pfr_id join (nflverse rosters)
-          2. Name+team fallback for players with null pfr_id in rosters
+          2. Normalized name+team+position fallback (case-insensitive,
+             suffix-stripped, middle-name collapsed)
 
         Filters to SKILL_POSITIONS only. Logs WARNING for any remaining unmatched.
         Result cached per season.
@@ -279,7 +281,7 @@ class UsageEngine:
         # --- Tier 2: name+team fallback for unmatched players ---
         unmatched_pfr_ids = (
             joined.filter(pl.col("gsis_id").is_null())
-            .select(["pfr_player_id", "player", "team"])
+            .select(["pfr_player_id", "player", "team", "position"])
             .unique(subset=["pfr_player_id"], keep="first")
         )
 
@@ -304,12 +306,12 @@ class UsageEngine:
                             _normalize_name, return_dtype=pl.Utf8
                         ).alias("norm_name")
                     )
-                    .select(["norm_name", "team", "gsis_id"])
-                    .unique(subset=["norm_name", "team"], keep="first")
+                    .select(["norm_name", "team", "position", "gsis_id"])
+                    .unique(subset=["norm_name", "team", "position"], keep="first")
                 )
                 name_joined = unmatched_with_norm.join(
                     roster_name_map,
-                    on=["norm_name", "team"],
+                    on=["norm_name", "team", "position"],
                     how="inner",
                 )
                 tier2_count = 0

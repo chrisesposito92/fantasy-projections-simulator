@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from fantasy_sim.data.usage.engine import _normalize_name
 
 
