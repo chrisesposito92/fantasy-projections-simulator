@@ -11,6 +11,7 @@ from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.data.usage.config import load_usage_config
+from fantasy_sim.data.td_tendency import load_td_tendency_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
 from fantasy_sim.models.distributions import (
@@ -125,6 +126,7 @@ def _make_builder(
     usage_config = load_usage_config(defaults)
     if usage_flag is not None:
         usage_config.enabled = usage_flag
+    td_tendency_config = load_td_tendency_config(defaults)
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
@@ -133,6 +135,7 @@ def _make_builder(
         vegas_config=vegas_config,
         props_config=props_config,
         usage_config=usage_config,
+        td_tendency_config=td_tendency_config,
     )
 
 
