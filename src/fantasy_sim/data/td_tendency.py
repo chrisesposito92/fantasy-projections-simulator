@@ -29,6 +29,9 @@ class TdTendencyConfig:
     prior_strength: float = 15.0
     min_opportunities: int = 5
     factor_clamp: tuple[float, float] = (0.70, 1.30)
+    i5_enabled: bool = False
+    i5_prior_strength: float = 25.0
+    i5_min_opportunities: int = 3
 
 
 def load_td_tendency_config(defaults: dict) -> TdTendencyConfig:
@@ -45,6 +48,9 @@ def load_td_tendency_config(defaults: dict) -> TdTendencyConfig:
         prior_strength=td.get("prior_strength", 15.0),
         min_opportunities=td.get("min_opportunities", 5),
         factor_clamp=tuple(td.get("factor_clamp", [0.70, 1.30])),
+        i5_enabled=td.get("i5_enabled", False),
+        i5_prior_strength=td.get("i5_prior_strength", 25.0),
+        i5_min_opportunities=td.get("i5_min_opportunities", 3),
     )
 
 

@@ -34,6 +34,7 @@ class PlayerOutcomes:
     targets_per_route_rate: float = 0.0  # USG-04: targets/routes from PFF receiving_summary
     receiving_td_factor: float = 1.0     # TD tendency: multiplier for pass TD gate
     rushing_td_factor: float = 1.0       # TD tendency: multiplier for run TD gate
+    i5_rushing_td_factor: float = 1.0    # inside-5 goal-line rushing
 
 
 @dataclass

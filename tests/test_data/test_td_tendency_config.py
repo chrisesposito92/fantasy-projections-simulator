@@ -36,3 +36,29 @@ class TestTdTendencyConfig:
         config = load_td_tendency_config(raw)
         assert config.enabled is True
         assert config.prior_strength == 15.0
+
+    def test_default_config_i5_fields(self):
+        config = TdTendencyConfig()
+        assert config.i5_enabled is False
+        assert config.i5_prior_strength == 25.0
+        assert config.i5_min_opportunities == 3
+
+    def test_load_i5_fields_from_dict(self):
+        raw = {
+            "td_tendency": {
+                "enabled": True,
+                "i5_enabled": True,
+                "i5_prior_strength": 30.0,
+                "i5_min_opportunities": 4,
+            }
+        }
+        config = load_td_tendency_config(raw)
+        assert config.i5_enabled is True
+        assert config.i5_prior_strength == 30.0
+        assert config.i5_min_opportunities == 4
+
+    def test_load_partial_i5_uses_defaults(self):
+        raw = {"td_tendency": {"enabled": True, "i5_enabled": True}}
+        config = load_td_tendency_config(raw)
+        assert config.i5_prior_strength == 25.0
+        assert config.i5_min_opportunities == 3
