@@ -496,6 +496,112 @@ class TestUsageEngineCrosswalk:
 
         assert crosswalk["UNKNOWN01"] == "gsis-mystery"
 
+    def test_crosswalk_tier2_case_insensitive(self, mock_roster_df):
+        """Tier 2 matches despite capitalization differences (e.g., Dubose vs DuBose)."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        # Snap data has "Grant Dubose" (lowercase b), roster has "Grant DuBose" (capital B)
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["DuboGr00"],
+            "player": ["Grant Dubose"],
+            "position": ["WR"],
+            "team": ["MIA"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [30],
+            "offense_pct": [0.43],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-dubose"],
+            "pfr_id": [None],  # null pfr_id -> Tier 1 fails -> falls to Tier 2
+            "full_name": ["Grant DuBose"],
+            "position": ["WR"],
+            "team": ["MIA"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("DuboGr00") == "gsis-dubose"
+
+    def test_crosswalk_tier2_suffix_stripped(self, mock_roster_df):
+        """Tier 2 matches when snap has 'Kevin Austin' but roster has 'Kevin Austin Jr.'."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["AustKe00"],
+            "player": ["Kevin Austin"],
+            "position": ["WR"],
+            "team": ["NO"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [25],
+            "offense_pct": [0.36],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-austin"],
+            "pfr_id": [None],
+            "full_name": ["Kevin Austin Jr."],
+            "position": ["WR"],
+            "team": ["NO"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("AustKe00") == "gsis-austin"
+
+    def test_crosswalk_tier2_middle_name_collapsed(self):
+        """Tier 2 matches when snap has 'John Samuel Shenker' but roster has 'John Shenker'."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        snap_df = pl.DataFrame({
+            "pfr_player_id": ["ShenJo00"],
+            "player": ["John Samuel Shenker"],
+            "position": ["TE"],
+            "team": ["LV"],
+            "season": [2024],
+            "week": [1],
+            "game_type": ["REG"],
+            "offense_snaps": [20],
+            "offense_pct": [0.29],
+        })
+        roster_df = pl.DataFrame({
+            "player_id": ["gsis-shenker"],
+            "pfr_id": [None],
+            "full_name": ["John Shenker"],
+            "position": ["TE"],
+            "team": ["LV"],
+            "season": [2024],
+            "week": [1],
+        })
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_snap_counts.return_value = snap_df
+        loader.load_rosters.return_value = roster_df
+
+        engine = UsageEngine(config=UsageConfig(), loader=loader)
+        crosswalk = engine._build_snap_crosswalk(2024)
+
+        assert crosswalk.get("ShenJo00") == "gsis-shenker"
+
 
 class TestUsageEngineRollingWindow:
     """Tests for _get_rolling_snap(): leak-free 4-week rolling average."""

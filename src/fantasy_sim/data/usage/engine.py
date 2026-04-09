@@ -235,8 +235,14 @@ class UsageEngine:
             return {}
 
         # --- Tier 1: pfr_player_id -> pfr_id join ---
+        # Cast pfr_id to Utf8 first to guard against Null dtype when all values are None
+        roster_for_tier1 = roster_df
+        if roster_df.schema.get("pfr_id") == pl.Null:
+            roster_for_tier1 = roster_df.with_columns(
+                pl.col("pfr_id").cast(pl.Utf8)
+            )
         roster_map_df = (
-            roster_df
+            roster_for_tier1
             .filter(pl.col("pfr_id").is_not_null())
             .select(["pfr_id", "gsis_id"])
             .unique(subset=["pfr_id"], keep="first")
@@ -278,23 +284,32 @@ class UsageEngine:
         )
 
         if len(unmatched_pfr_ids) > 0:
-            # Detect the name column in rosters (full_name or player_name)
             name_col = (
                 "full_name" if "full_name" in roster_df.columns
                 else "player_name" if "player_name" in roster_df.columns
                 else None
             )
             if name_col is not None:
+                # Add normalized name columns for fuzzy matching
+                unmatched_with_norm = unmatched_pfr_ids.with_columns(
+                    pl.col("player").map_elements(
+                        _normalize_name, return_dtype=pl.Utf8
+                    ).alias("norm_name")
+                )
                 roster_name_map = (
                     roster_df
                     .filter(pl.col("gsis_id").is_not_null())
-                    .select([name_col, "team", "gsis_id"])
-                    .unique(subset=[name_col, "team"], keep="first")
+                    .with_columns(
+                        pl.col(name_col).map_elements(
+                            _normalize_name, return_dtype=pl.Utf8
+                        ).alias("norm_name")
+                    )
+                    .select(["norm_name", "team", "gsis_id"])
+                    .unique(subset=["norm_name", "team"], keep="first")
                 )
-                name_joined = unmatched_pfr_ids.join(
+                name_joined = unmatched_with_norm.join(
                     roster_name_map,
-                    left_on=["player", "team"],
-                    right_on=[name_col, "team"],
+                    on=["norm_name", "team"],
                     how="inner",
                 )
                 tier2_count = 0
