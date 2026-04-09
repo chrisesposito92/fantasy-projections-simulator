@@ -13,15 +13,22 @@ from fantasy_sim.data.vegas.config import load_vegas_config, load_props_config
 from fantasy_sim.data.usage.config import load_usage_config
 
 
-def _parse_value(s: str) -> bool | int | float | str:
+def _parse_value(s: str) -> bool | int | float | str | list:
     """Parse a CLI string value to its Python type.
 
-    Handles: 'true'/'false' -> bool, integers, floats, else str.
+    Handles: 'true'/'false' -> bool, [a,b,...] -> list of parsed values,
+    integers, floats, else str.
     """
     if s.lower() == "true":
         return True
     if s.lower() == "false":
         return False
+    # List syntax: [0.85,1.15] or [1,2,3]
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_value(item.strip()) for item in inner.split(",")]
     try:
         return int(s)
     except ValueError:

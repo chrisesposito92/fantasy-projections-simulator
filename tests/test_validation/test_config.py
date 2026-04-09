@@ -41,6 +41,21 @@ class TestParseValue:
     def test_empty_string(self):
         assert _parse_value("") == ""
 
+    def test_list_of_floats(self):
+        result = _parse_value("[0.85,1.15]")
+        assert result == [0.85, 1.15]
+
+    def test_list_of_ints(self):
+        result = _parse_value("[1,2,3]")
+        assert result == [1, 2, 3]
+
+    def test_empty_list(self):
+        assert _parse_value("[]") == []
+
+    def test_list_with_spaces(self):
+        result = _parse_value("[0.60, 1.40]")
+        assert result == [0.60, 1.40]
+
 
 class TestApplyOverrides:
     def test_set_nested_bool(self):
@@ -81,6 +96,11 @@ class TestApplyOverrides:
         config = {"pff": {"kicker": {"prior_strength": 20}}}
         result = apply_overrides(config, ["pff.kicker.prior_strength=30"])
         assert result["pff"]["kicker"]["prior_strength"] == 30
+
+    def test_set_list(self):
+        config = {"usage": {"snap": {"factor_clamp": [0.70, 1.30]}}}
+        result = apply_overrides(config, ["usage.snap.factor_clamp=[0.85,1.15]"])
+        assert result["usage"]["snap"]["factor_clamp"] == [0.85, 1.15]
 
     def test_invalid_leaf_key_raises(self):
         config = {"pff": {"matchup": {"enabled": True}}}
