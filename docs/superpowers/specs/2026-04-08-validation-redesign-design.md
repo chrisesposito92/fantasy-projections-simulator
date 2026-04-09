@@ -26,11 +26,6 @@ uv run python scripts/validate.py --sims 50 --set usage.ngs.enabled=true --label
 uv run python scripts/validate.py --sims 50 --baseline defaults \
     --set usage.ngs.enabled=true --label "ngs-marginal"
 
-# Granularity control
-uv run python scripts/validate.py --sims 50 --granularity weekly
-uv run python scripts/validate.py --sims 50 --granularity season
-uv run python scripts/validate.py --sims 50 --granularity both    # default
-
 # Ledger
 uv run python scripts/validate.py --show-ledger
 
@@ -47,7 +42,7 @@ uv run python scripts/validate.py --show-ledger
 - No `--mode` flag. The entire mode system is eliminated.
 - `--set key=value` (repeatable) replaces both `--mode` and `--config-override`.
 - `--baseline bare|defaults` controls Arm A (default: `bare`).
-- `--granularity season|weekly|both` replaces choosing between two scripts (default: `both`).
+- No `--granularity` flag — always computes and shows both season-level and weekly metrics (simulation cost is the same either way; metric computation is negligible).
 - No automated verdict (PASS/SOFT_PASS/FAIL). Just numbers.
 
 ### Config Resolution
@@ -99,7 +94,7 @@ Same pattern for weather, vegas, props, usage configs. Each builder takes its se
 - Cache location: `results/cache/bare_{season}_{sims}_{scoring}_{training_years}.json`
 - If cache hit for all requested seasons → skip Arm A entirely, load cached results.
 - `--no-cache` bypasses this.
-- Cache stores full `BacktestResult` + `WeeklyPlayerRecord` data so both granularity modes work from cache.
+- Cache stores full `BacktestResult` + `WeeklyPlayerRecord` data so both season-level and weekly metrics work from cache.
 - Cache is valid regardless of `defaults.yaml` changes — the bare baseline has all engines off, so it's independent of engine config. Only the keyed parameters (season, sims, scoring, training_years) affect bare results.
 
 **Step 3: Build + simulate per season** (parallel across seasons)
@@ -126,10 +121,7 @@ When bare cache hits for a season, only Arm B is built and simulated.
 
 **Step 4: Aggregate + report**
 - Combine per-season results.
-- Compute metrics based on `--granularity`:
-  - `season`: rank_corr by position, season MAE, weekly MAE, calibration — for both arms plus delta.
-  - `weekly`: weekly rank_corr, weekly MAE, MAE by difficulty tercile, WR directional accuracy.
-  - `both`: all of the above.
+- Compute all metrics: season-level (rank_corr by position, season MAE, weekly MAE, calibration) and weekly (weekly rank_corr, weekly MAE, MAE by difficulty tercile, WR directional accuracy).
 - Print results to console.
 - If `--label` provided, append to unified ledger.
 
@@ -162,12 +154,11 @@ class LedgerEntry:
     training_years: int
     scoring: str
     baseline: str               # "bare" or "defaults"
-    granularity: str            # "season", "weekly", or "both"
     overrides: list[str]        # --set strings applied (e.g. ["usage.ngs.enabled=true"])
     config_snapshot: dict       # fully-resolved Arm B config dict
     season_results: list[SeasonResult]
-    weekly_results: list[WeeklyPositionSummary] | None  # when granularity includes weekly
-    directional_accuracy: DirectionalAccuracy | None     # WR only, when weekly
+    weekly_summaries: list[WeeklyPositionSummary] | None
+    directional_accuracy: DirectionalAccuracy | None     # WR only
 ```
 
 `SeasonResult` carries per-season, per-arm metrics: rank_corr by position, weekly MAE, season MAE, calibration.
@@ -196,7 +187,6 @@ class LedgerEntry:
   arm B       : defaults + [usage.ngs.enabled=true]
   sims        : 50
   seasons     : [2022, 2023, 2024]
-  granularity : both
   scoring     : ppr
   bare cache  : HIT (2022, 2023), MISS (2024)
 ════════════════════════════════════════════════════════════════════
@@ -257,7 +247,7 @@ Preserved from current scripts: seasons >= 2025 are blocked with an error messag
 - `docs/AB-TESTING.md` — usage guide, examples, config reference
 
 **Modified files:**
-- `src/fantasy_sim/validation/parallel.py` — ensure dual-arm building works for both granularity modes, shared data loading within a season
+- `src/fantasy_sim/validation/parallel.py` — ensure dual-arm building works with shared data loading within a season
 - `src/fantasy_sim/validation/backtester.py` — accept pre-loaded data for shared actuals optimization
 
 **Deprecated (left in place, not deleted):**
