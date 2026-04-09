@@ -428,6 +428,13 @@ def run_weekly_comparison(
 
 
 def main() -> int:
+    import warnings
+    warnings.warn(
+        "validate_weekly_signal.py is deprecated. Use scripts/validate.py instead. "
+        "See docs/AB-TESTING.md for usage.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description="Weekly A/B validation: per-week PFF signal evaluation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,

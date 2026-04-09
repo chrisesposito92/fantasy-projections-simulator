@@ -786,6 +786,13 @@ def _format_rank_corr(result: BacktestResult) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    import warnings
+    warnings.warn(
+        "validate_pff_signal.py is deprecated. Use scripts/validate.py instead. "
+        "See docs/AB-TESTING.md for usage.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     parser = argparse.ArgumentParser(
         description=(
             "A/B backtest: compare PFF-on vs PFF-off projections.\n\n"
