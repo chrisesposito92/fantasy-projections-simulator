@@ -82,9 +82,14 @@ class TdTendencyEngine:
         # Try PFF data first
         rec_rates, rush_rates = self._load_pff_rates(season, week, pff_crosswalk)
 
-        # Fall back to PBP
-        if not rec_rates and not rush_rates and pbp_stats:
-            rec_rates, rush_rates = self._rates_from_pbp(pbp_stats)
+        # Fall back to PBP for any missing channel (not just when both are empty)
+        if pbp_stats:
+            if not rec_rates or not rush_rates:
+                pbp_rec, pbp_rush = self._rates_from_pbp(pbp_stats)
+                if not rec_rates:
+                    rec_rates = pbp_rec
+                if not rush_rates:
+                    rush_rates = pbp_rush
 
         if not rec_rates and not rush_rates:
             logger.debug("TdTendencyEngine: no data for season=%d week=%d", season, week)
