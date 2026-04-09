@@ -242,6 +242,7 @@ def _aggregate_pbp_stats(
         if rid not in rushing_stats:
             rushing_stats[rid] = {
                 "carries": 0, "yards": [], "rz_carries": 0, "rz_tds": 0,
+                "i5_rush_carries": 0, "i5_rush_tds": 0,
                 "team": row["posteam"], "game_ids": set(),
             }
         rushing_stats[rid]["carries"] += 1
@@ -253,6 +254,12 @@ def _aggregate_pbp_stats(
             rushing_stats[rid]["rz_carries"] += 1
             if row.get("rush_touchdown") == 1:
                 rushing_stats[rid]["rz_tds"] += 1
+
+        # Inside-5 carry
+        if row["yardline_100"] <= 5:
+            rushing_stats[rid]["i5_rush_carries"] += 1
+            if row.get("rush_touchdown") == 1:
+                rushing_stats[rid]["i5_rush_tds"] += 1
 
     # --- QB stats (passer on pass plays) ---
     qb_stats: dict[str, dict] = {}

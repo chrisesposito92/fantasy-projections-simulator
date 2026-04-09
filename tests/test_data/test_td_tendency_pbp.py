@@ -60,3 +60,44 @@ class TestPbpRzTdCounting:
         })
         stats = _aggregate_pbp_stats(pbp, [2024])
         assert stats["receiving"]["wr2"]["rz_tds"] == 0
+
+
+class TestPbpI5Counting:
+
+    def test_rushing_i5_carries_counted(self):
+        """Rushing plays at yardline_100 <= 5 are counted as inside-5."""
+        pbp = _make_pbp_with_rz_tds()
+        stats = _aggregate_pbp_stats(pbp, [2024])
+        # rb1 has carries at yardline_100=4 and yardline_100=2 (both <= 5)
+        assert stats["rushing"]["rb1"]["i5_rush_carries"] == 2
+
+    def test_rushing_i5_tds_counted(self):
+        """Inside-5 rushing TDs counted correctly."""
+        pbp = _make_pbp_with_rz_tds()
+        stats = _aggregate_pbp_stats(pbp, [2024])
+        # rb1 has a TD at yardline_100=2 (inside 5)
+        assert stats["rushing"]["rb1"]["i5_rush_tds"] == 1
+
+    def test_rushing_outside_i5_not_counted(self):
+        """Rushing plays at yardline_100 > 5 are not inside-5."""
+        pbp = pl.DataFrame({
+            "play_type": ["run"],
+            "season": [2024],
+            "game_id": ["g1"],
+            "posteam": ["KC"],
+            "passer_player_id": [None],
+            "receiver_player_id": [None],
+            "rusher_player_id": ["rb2"],
+            "complete_pass": [0],
+            "yards_gained": [8],
+            "yardline_100": [10],
+            "touchdown": [1],
+            "pass_touchdown": [0],
+            "rush_touchdown": [1],
+            "sack": [0],
+            "interception": [0],
+            "fumble_lost": [0],
+        })
+        stats = _aggregate_pbp_stats(pbp, [2024])
+        assert stats["rushing"]["rb2"]["i5_rush_carries"] == 0
+        assert stats["rushing"]["rb2"]["i5_rush_tds"] == 0
