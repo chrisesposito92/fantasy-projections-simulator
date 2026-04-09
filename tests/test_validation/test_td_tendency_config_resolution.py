@@ -34,3 +34,22 @@ class TestTdTendencyConfigResolution:
         }
         result = build_engine_configs(config)
         assert result["td_tendency_config"] is None
+
+    def test_i5_config_flows_through(self):
+        config = {
+            "pff": {"enabled": False},
+            "weather": {"enabled": False},
+            "vegas": {"enabled": False},
+            "usage": {"enabled": False},
+            "td_tendency": {
+                "enabled": True,
+                "i5_enabled": True,
+                "i5_prior_strength": 30,
+                "i5_min_opportunities": 4,
+            },
+        }
+        result = build_engine_configs(config)
+        td_config = result["td_tendency_config"]
+        assert td_config.i5_enabled is True
+        assert td_config.i5_prior_strength == 30
+        assert td_config.i5_min_opportunities == 4
