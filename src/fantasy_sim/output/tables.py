@@ -5,6 +5,8 @@ from rich.table import Table
 def _render_table(table: Table) -> str:
     """Render a Rich table to a string."""
     console = Console(width=120, force_terminal=True)
+    table.padding = (0, 0)
+    table.collapse_padding = True
     with console.capture() as capture:
         console.print(table)
     return capture.get()
