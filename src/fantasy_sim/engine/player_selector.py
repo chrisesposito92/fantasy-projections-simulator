@@ -5,6 +5,7 @@ game-state awareness (e.g., red zone detection, week-based availability).
 """
 
 import numpy as np
+from fantasy_sim.engine.game_script import RuntimeGameScript
 from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.player import PlayerModel, TeamRoster
 
@@ -44,11 +45,54 @@ def select_receiver(
     roster: TeamRoster,
     state: GameState,
     rng: np.random.Generator,
+    script: RuntimeGameScript | None = None,
 ) -> PlayerModel:
     """Select a receiver weighted by target share, filtering out missed-week players."""
     filtered = _filter_available(roster, state)
+    eligible = [player for player in filtered.players if player.usage.target_share > 0]
+    if not eligible:
+        eligible = [player for player in filtered.players if player.position != "QB"]
+    if not eligible:
+        raise ValueError(f"No eligible receivers on roster for {filtered.team}")
+
     is_red_zone = state.yard_line <= 20
-    return filtered.select_receiver(rng, is_red_zone=is_red_zone)
+    base_weights = np.array(
+        [
+            (
+                player.usage.red_zone_target_share
+                if is_red_zone and player.usage.red_zone_target_share > 0
+                else player.usage.target_share
+            )
+            for player in eligible
+        ],
+        dtype=float,
+    )
+
+    rank_order = sorted(
+        range(len(eligible)),
+        key=lambda idx: base_weights[idx],
+        reverse=True,
+    )
+    rank_factors = np.ones(len(eligible), dtype=float)
+    for rank, idx in enumerate(rank_order, start=1):
+        rank_factors[idx] = _receiver_rank_factor(rank, script)
+
+    weights = base_weights * rank_factors
+    if weights.sum() == 0:
+        weights = np.ones(len(eligible), dtype=float)
+    weights = weights / weights.sum()
+    return eligible[rng.choice(len(eligible), p=weights)]
+
+
+def _receiver_rank_factor(rank: int, script: RuntimeGameScript | None) -> float:
+    """Return transient trailing-late target concentration for a receiver rank."""
+    if script is None or script.regime != "trailing_late":
+        return 1.0
+    if rank == 1:
+        return script.target_factors.rank1
+    if rank == 2:
+        return script.target_factors.rank2
+    return script.target_factors.rank3_plus
 
 
 def select_rusher(
