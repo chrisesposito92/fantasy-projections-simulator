@@ -142,6 +142,10 @@ def _aggregate_pbp_stats(
         - team_rush_attempts:    dict[team -> int]
         - team_rz_pass_attempts: dict[team -> int]
         - team_rz_rush_attempts: dict[team -> int]
+        - team_outer_rz_pass_attempts: dict[team -> int]
+        - team_goal_line_pass_attempts: dict[team -> int]
+        - team_outer_rz_rush_attempts: dict[team -> int]
+        - team_goal_line_rush_attempts: dict[team -> int]
         - team_air_yards:        dict[team -> float]
         - has_air_yards:         bool
     """
@@ -170,6 +174,10 @@ def _aggregate_pbp_stats(
     team_rush_attempts: dict[str, int] = {}
     team_rz_pass_attempts: dict[str, int] = {}
     team_rz_rush_attempts: dict[str, int] = {}
+    team_outer_rz_pass_attempts: dict[str, int] = {}
+    team_goal_line_pass_attempts: dict[str, int] = {}
+    team_outer_rz_rush_attempts: dict[str, int] = {}
+    team_goal_line_rush_attempts: dict[str, int] = {}
     team_air_yards: dict[str, float] = {}
 
     has_air_yards = "air_yards" in plays.columns
@@ -188,6 +196,18 @@ def _aggregate_pbp_stats(
         ).shape[0]
         team_rz_rush_attempts[team] = rush_plays_team.filter(
             pl.col("yardline_100") <= 20
+        ).shape[0]
+        team_goal_line_pass_attempts[team] = pass_plays_team.filter(
+            pl.col("yardline_100") <= 5
+        ).shape[0]
+        team_outer_rz_pass_attempts[team] = pass_plays_team.filter(
+            (pl.col("yardline_100") >= 6) & (pl.col("yardline_100") <= 20)
+        ).shape[0]
+        team_goal_line_rush_attempts[team] = rush_plays_team.filter(
+            pl.col("yardline_100") <= 5
+        ).shape[0]
+        team_outer_rz_rush_attempts[team] = rush_plays_team.filter(
+            (pl.col("yardline_100") >= 6) & (pl.col("yardline_100") <= 20)
         ).shape[0]
 
         # Air yards total per team
@@ -208,6 +228,7 @@ def _aggregate_pbp_stats(
             receiving_stats[rid] = {
                 "targets": 0, "catches": 0, "yards": [],
                 "rz_targets": 0, "rz_catches": 0, "rz_yards": [],
+                "outer_rz_targets": 0, "goal_line_targets": 0,
                 "rz_tds": 0,
                 "air_yards": 0.0,
                 "team": row["posteam"], "game_ids": set(),
@@ -223,6 +244,10 @@ def _aggregate_pbp_stats(
                 receiving_stats[rid]["rz_yards"].append(row["yards_gained"])
             if row.get("pass_touchdown") == 1 or (row.get("touchdown") == 1 and row["complete_pass"] == 1):
                 receiving_stats[rid]["rz_tds"] += 1
+        if row["yardline_100"] <= 5:
+            receiving_stats[rid]["goal_line_targets"] += 1
+        elif 6 <= row["yardline_100"] <= 20:
+            receiving_stats[rid]["outer_rz_targets"] += 1
 
         # Air yards
         if has_air_yards and row.get("air_yards") is not None:
@@ -242,6 +267,7 @@ def _aggregate_pbp_stats(
         if rid not in rushing_stats:
             rushing_stats[rid] = {
                 "carries": 0, "yards": [], "rz_carries": 0, "rz_tds": 0,
+                "outer_rz_carries": 0, "goal_line_carries": 0,
                 "i5_rush_carries": 0, "i5_rush_tds": 0,
                 "team": row["posteam"], "game_ids": set(),
             }
@@ -254,6 +280,10 @@ def _aggregate_pbp_stats(
             rushing_stats[rid]["rz_carries"] += 1
             if row.get("rush_touchdown") == 1:
                 rushing_stats[rid]["rz_tds"] += 1
+        if row["yardline_100"] <= 5:
+            rushing_stats[rid]["goal_line_carries"] += 1
+        elif 6 <= row["yardline_100"] <= 20:
+            rushing_stats[rid]["outer_rz_carries"] += 1
 
         # Inside-5 carry
         if row["yardline_100"] <= 5:
@@ -307,6 +337,10 @@ def _aggregate_pbp_stats(
         "team_rush_attempts": team_rush_attempts,
         "team_rz_pass_attempts": team_rz_pass_attempts,
         "team_rz_rush_attempts": team_rz_rush_attempts,
+        "team_outer_rz_pass_attempts": team_outer_rz_pass_attempts,
+        "team_goal_line_pass_attempts": team_goal_line_pass_attempts,
+        "team_outer_rz_rush_attempts": team_outer_rz_rush_attempts,
+        "team_goal_line_rush_attempts": team_goal_line_rush_attempts,
         "team_air_yards": team_air_yards,
         "has_air_yards": has_air_yards,
         "qb_scrambles": qb_scrambles,
@@ -338,6 +372,10 @@ def _assemble_models(
     team_rush_attempts = aggregated_stats["team_rush_attempts"]
     team_rz_pass_attempts = aggregated_stats["team_rz_pass_attempts"]
     team_rz_rush_attempts = aggregated_stats["team_rz_rush_attempts"]
+    team_outer_rz_pass_attempts = aggregated_stats["team_outer_rz_pass_attempts"]
+    team_goal_line_pass_attempts = aggregated_stats["team_goal_line_pass_attempts"]
+    team_outer_rz_rush_attempts = aggregated_stats["team_outer_rz_rush_attempts"]
+    team_goal_line_rush_attempts = aggregated_stats["team_goal_line_rush_attempts"]
     team_air_yards = aggregated_stats["team_air_yards"]
     has_air_yards = aggregated_stats["has_air_yards"]
     qb_scrambles = aggregated_stats.get("qb_scrambles", {})
@@ -399,6 +437,12 @@ def _assemble_models(
             team_rz_pa = team_rz_pass_attempts.get(hist_team, 0)
             if team_rz_pa > 0:
                 usage.red_zone_target_share = rs["rz_targets"] / team_rz_pa
+            team_outer_rz_pa = team_outer_rz_pass_attempts.get(hist_team, 0)
+            if team_outer_rz_pa > 0:
+                usage.outer_rz_target_share = rs["outer_rz_targets"] / team_outer_rz_pa
+            team_goal_line_pa = team_goal_line_pass_attempts.get(hist_team, 0)
+            if team_goal_line_pa > 0:
+                usage.goal_line_target_share = rs["goal_line_targets"] / team_goal_line_pa
 
             # Air yards share
             if has_air_yards:
@@ -422,6 +466,12 @@ def _assemble_models(
             team_rz_ra = team_rz_rush_attempts.get(hist_team, 0)
             if team_rz_ra > 0:
                 usage.red_zone_carry_share = rs["rz_carries"] / team_rz_ra
+            team_outer_rz_ra = team_outer_rz_rush_attempts.get(hist_team, 0)
+            if team_outer_rz_ra > 0:
+                usage.outer_rz_carry_share = rs["outer_rz_carries"] / team_outer_rz_ra
+            team_goal_line_ra = team_goal_line_rush_attempts.get(hist_team, 0)
+            if team_goal_line_ra > 0:
+                usage.goal_line_carry_share = rs["goal_line_carries"] / team_goal_line_ra
 
         # --- Outcomes ---
         outcomes = PlayerOutcomes()
@@ -556,6 +606,22 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
     ]
     _scale_shares(eligible_rz_rushers, "red_zone_carry_share")
 
+    # --- Outer red zone carry shares ---
+    eligible_outer_rz_rushers = [
+        p for p in roster.players
+        if p.usage.outer_rz_carry_share > 0
+        and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+    ]
+    _scale_shares(eligible_outer_rz_rushers, "outer_rz_carry_share")
+
+    # --- Goal line carry shares ---
+    eligible_goal_line_rushers = [
+        p for p in roster.players
+        if p.usage.goal_line_carry_share > 0
+        and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+    ]
+    _scale_shares(eligible_goal_line_rushers, "goal_line_carry_share")
+
     # --- Target shares ---
     eligible_receivers = [
         p for p in roster.players if p.usage.target_share > 0
@@ -567,6 +633,18 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         p for p in roster.players if p.usage.red_zone_target_share > 0
     ]
     _scale_shares(eligible_rz_receivers, "red_zone_target_share")
+
+    # --- Outer red zone target shares ---
+    eligible_outer_rz_receivers = [
+        p for p in roster.players if p.usage.outer_rz_target_share > 0
+    ]
+    _scale_shares(eligible_outer_rz_receivers, "outer_rz_target_share")
+
+    # --- Goal line target shares ---
+    eligible_goal_line_receivers = [
+        p for p in roster.players if p.usage.goal_line_target_share > 0
+    ]
+    _scale_shares(eligible_goal_line_receivers, "goal_line_target_share")
 
 
 def _scale_shares(players: list[PlayerModel], attr: str) -> None:
