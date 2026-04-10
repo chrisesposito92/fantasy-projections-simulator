@@ -422,9 +422,9 @@ def _create_builders(
     props_config,
     usage_config,
     game_script_config,
-    td_tendency_config,
-    dual_arm: bool,
+    td_tendency_config=None,
     goal_line_concentration_config=None,
+    dual_arm: bool = False,
 ) -> dict:
     """Create GameContextBuilder instances for the build phase.
 
@@ -673,9 +673,16 @@ def build_games_parallel(
     else:
         # Default thread pool path: shared pre-warmed builders, no worker cap
         builders = _create_builders(
-            cache_dir, pff_config, weather_config, vegas_config,
-            props_config, usage_config, game_script_config,
-            td_tendency_config, dual_arm, goal_line_concentration_config,
+            cache_dir=cache_dir,
+            pff_config=pff_config,
+            weather_config=weather_config,
+            vegas_config=vegas_config,
+            props_config=props_config,
+            usage_config=usage_config,
+            game_script_config=game_script_config,
+            goal_line_concentration_config=goal_line_concentration_config,
+            td_tendency_config=td_tendency_config,
+            dual_arm=dual_arm,
         )
         warm_results = _warm_builders(builders, game_args, dual_arm)
 
