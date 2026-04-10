@@ -12,6 +12,39 @@ MIN_PLAYER_PLAYS = 5
 MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
 FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
 ACTIVE_STATUSES = {"ACT"}
+GOAL_LINE_MAX_YARDLINE = 5
+OUTER_RZ_MIN_YARDLINE = 6
+RED_ZONE_MAX_YARDLINE = 20
+
+
+def _goal_line_expr() -> pl.Expr:
+    return pl.col("yardline_100") <= GOAL_LINE_MAX_YARDLINE
+
+
+def _outer_rz_expr() -> pl.Expr:
+    return (
+        (pl.col("yardline_100") >= OUTER_RZ_MIN_YARDLINE) &
+        (pl.col("yardline_100") <= RED_ZONE_MAX_YARDLINE)
+    )
+
+
+def _red_zone_expr() -> pl.Expr:
+    return pl.col("yardline_100") <= RED_ZONE_MAX_YARDLINE
+
+
+def _is_goal_line_yardline(yardline_100: int | float | None) -> bool:
+    return yardline_100 is not None and yardline_100 <= GOAL_LINE_MAX_YARDLINE
+
+
+def _is_outer_rz_yardline(yardline_100: int | float | None) -> bool:
+    return (
+        yardline_100 is not None
+        and OUTER_RZ_MIN_YARDLINE <= yardline_100 <= RED_ZONE_MAX_YARDLINE
+    )
+
+
+def _is_red_zone_yardline(yardline_100: int | float | None) -> bool:
+    return yardline_100 is not None and yardline_100 <= RED_ZONE_MAX_YARDLINE
 
 
 def _build_season_weights(
@@ -192,22 +225,22 @@ def _aggregate_pbp_stats(
 
         # Red zone totals (yardline_100 <= 20)
         team_rz_pass_attempts[team] = pass_plays_team.filter(
-            pl.col("yardline_100") <= 20
+            _red_zone_expr()
         ).shape[0]
         team_rz_rush_attempts[team] = rush_plays_team.filter(
-            pl.col("yardline_100") <= 20
+            _red_zone_expr()
         ).shape[0]
         team_goal_line_pass_attempts[team] = pass_plays_team.filter(
-            pl.col("yardline_100") <= 5
+            _goal_line_expr()
         ).shape[0]
         team_outer_rz_pass_attempts[team] = pass_plays_team.filter(
-            (pl.col("yardline_100") >= 6) & (pl.col("yardline_100") <= 20)
+            _outer_rz_expr()
         ).shape[0]
         team_goal_line_rush_attempts[team] = rush_plays_team.filter(
-            pl.col("yardline_100") <= 5
+            _goal_line_expr()
         ).shape[0]
         team_outer_rz_rush_attempts[team] = rush_plays_team.filter(
-            (pl.col("yardline_100") >= 6) & (pl.col("yardline_100") <= 20)
+            _outer_rz_expr()
         ).shape[0]
 
         # Air yards total per team
@@ -237,16 +270,16 @@ def _aggregate_pbp_stats(
         receiving_stats[rid]["game_ids"].add(row["game_id"])
 
         # Red zone target
-        if row["yardline_100"] <= 20:
+        if _is_red_zone_yardline(row["yardline_100"]):
             receiving_stats[rid]["rz_targets"] += 1
             if row["complete_pass"] == 1:
                 receiving_stats[rid]["rz_catches"] += 1
                 receiving_stats[rid]["rz_yards"].append(row["yards_gained"])
             if row.get("pass_touchdown") == 1 or (row.get("touchdown") == 1 and row["complete_pass"] == 1):
                 receiving_stats[rid]["rz_tds"] += 1
-        if row["yardline_100"] <= 5:
+        if _is_goal_line_yardline(row["yardline_100"]):
             receiving_stats[rid]["goal_line_targets"] += 1
-        elif 6 <= row["yardline_100"] <= 20:
+        elif _is_outer_rz_yardline(row["yardline_100"]):
             receiving_stats[rid]["outer_rz_targets"] += 1
 
         # Air yards
@@ -276,17 +309,17 @@ def _aggregate_pbp_stats(
         rushing_stats[rid]["game_ids"].add(row["game_id"])
 
         # Red zone carry
-        if row["yardline_100"] <= 20:
+        if _is_red_zone_yardline(row["yardline_100"]):
             rushing_stats[rid]["rz_carries"] += 1
             if row.get("rush_touchdown") == 1:
                 rushing_stats[rid]["rz_tds"] += 1
-        if row["yardline_100"] <= 5:
+        if _is_goal_line_yardline(row["yardline_100"]):
             rushing_stats[rid]["goal_line_carries"] += 1
-        elif 6 <= row["yardline_100"] <= 20:
+        elif _is_outer_rz_yardline(row["yardline_100"]):
             rushing_stats[rid]["outer_rz_carries"] += 1
 
         # Inside-5 carry
-        if row["yardline_100"] <= 5:
+        if _is_goal_line_yardline(row["yardline_100"]):
             rushing_stats[rid]["i5_rush_carries"] += 1
             if row.get("rush_touchdown") == 1:
                 rushing_stats[rid]["i5_rush_tds"] += 1

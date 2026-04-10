@@ -194,8 +194,8 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "pass",
-                "yardline_100": 4,
-                "yards_gained": 4,
+                "yardline_100": 5,
+                "yards_gained": 5,
                 "complete_pass": 1,
                 "pass_attempt": 1,
                 "rush_attempt": 0,
@@ -205,8 +205,8 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "pass",
-                "yardline_100": 8,
-                "yards_gained": 8,
+                "yardline_100": 6,
+                "yards_gained": 6,
                 "complete_pass": 1,
                 "pass_attempt": 1,
                 "rush_attempt": 0,
@@ -216,7 +216,7 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "pass",
-                "yardline_100": 12,
+                "yardline_100": 20,
                 "yards_gained": 12,
                 "complete_pass": 1,
                 "pass_attempt": 1,
@@ -227,7 +227,7 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "run",
-                "yardline_100": 3,
+                "yardline_100": 5,
                 "yards_gained": 2,
                 "complete_pass": 0,
                 "pass_attempt": 0,
@@ -237,7 +237,7 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "run",
-                "yardline_100": 4,
+                "yardline_100": 6,
                 "yards_gained": 1,
                 "complete_pass": 0,
                 "pass_attempt": 0,
@@ -247,27 +247,7 @@ class TestGoalLineConcentrationShares:
             {
                 **base,
                 "play_type": "run",
-                "yardline_100": 7,
-                "yards_gained": 3,
-                "complete_pass": 0,
-                "pass_attempt": 0,
-                "rush_attempt": 1,
-                "rusher_player_id": "IP01",
-            },
-            {
-                **base,
-                "play_type": "run",
-                "yardline_100": 10,
-                "yards_gained": 4,
-                "complete_pass": 0,
-                "pass_attempt": 0,
-                "rush_attempt": 1,
-                "rusher_player_id": "CH02",
-            },
-            {
-                **base,
-                "play_type": "run",
-                "yardline_100": 18,
+                "yardline_100": 20,
                 "yards_gained": 5,
                 "complete_pass": 0,
                 "pass_attempt": 0,
@@ -277,6 +257,10 @@ class TestGoalLineConcentrationShares:
         ])
 
     def test_goal_line_and_outer_red_zone_target_shares_are_computed_from_yardline_bands(self):
+        aggregated = _aggregate_pbp_stats(
+            self._goal_line_concentration_pbp(),
+            training_seasons=[2024],
+        )
         models = build_player_models(
             self._goal_line_concentration_pbp(),
             self._goal_line_concentration_rosters(),
@@ -286,12 +270,34 @@ class TestGoalLineConcentrationShares:
         re = models["RE11"]
         tk = models["TK87"]
 
+        assert aggregated["team_goal_line_pass_attempts"]["KC"] == 1
+        assert aggregated["team_outer_rz_pass_attempts"]["KC"] == 2
+        assert aggregated["team_rz_pass_attempts"]["KC"] == 3
+        assert aggregated["receiving"]["RE11"]["goal_line_targets"] == 1
+        assert aggregated["receiving"]["RE11"]["outer_rz_targets"] == 1
+        assert aggregated["receiving"]["RE11"]["rz_targets"] == 2
+        assert aggregated["receiving"]["TK87"]["goal_line_targets"] == 0
+        assert aggregated["receiving"]["TK87"]["outer_rz_targets"] == 1
+        assert aggregated["receiving"]["TK87"]["rz_targets"] == 1
+
         assert re.usage.goal_line_target_share == pytest.approx(1.0)
         assert re.usage.outer_rz_target_share == pytest.approx(0.5)
+        assert re.usage.red_zone_target_share == pytest.approx(2 / 3)
         assert tk.usage.goal_line_target_share == pytest.approx(0.0)
         assert tk.usage.outer_rz_target_share == pytest.approx(0.5)
+        assert tk.usage.red_zone_target_share == pytest.approx(1 / 3)
+        assert re.usage.red_zone_target_share == pytest.approx(
+            (re.usage.goal_line_target_share * 1 + re.usage.outer_rz_target_share * 2) / 3
+        )
+        assert tk.usage.red_zone_target_share == pytest.approx(
+            (tk.usage.goal_line_target_share * 1 + tk.usage.outer_rz_target_share * 2) / 3
+        )
 
     def test_goal_line_and_outer_red_zone_carry_shares_are_computed_from_yardline_bands(self):
+        aggregated = _aggregate_pbp_stats(
+            self._goal_line_concentration_pbp(),
+            training_seasons=[2024],
+        )
         models = build_player_models(
             self._goal_line_concentration_pbp(),
             self._goal_line_concentration_rosters(),
@@ -301,10 +307,28 @@ class TestGoalLineConcentrationShares:
         ip = models["IP01"]
         ch = models["CH02"]
 
-        assert ip.usage.goal_line_carry_share == pytest.approx(0.5)
-        assert ip.usage.outer_rz_carry_share == pytest.approx(2 / 3)
-        assert ch.usage.goal_line_carry_share == pytest.approx(0.5)
-        assert ch.usage.outer_rz_carry_share == pytest.approx(1 / 3)
+        assert aggregated["team_goal_line_rush_attempts"]["KC"] == 1
+        assert aggregated["team_outer_rz_rush_attempts"]["KC"] == 2
+        assert aggregated["team_rz_rush_attempts"]["KC"] == 3
+        assert aggregated["rushing"]["IP01"]["goal_line_carries"] == 1
+        assert aggregated["rushing"]["IP01"]["outer_rz_carries"] == 1
+        assert aggregated["rushing"]["IP01"]["rz_carries"] == 2
+        assert aggregated["rushing"]["CH02"]["goal_line_carries"] == 0
+        assert aggregated["rushing"]["CH02"]["outer_rz_carries"] == 1
+        assert aggregated["rushing"]["CH02"]["rz_carries"] == 1
+
+        assert ip.usage.goal_line_carry_share == pytest.approx(1.0)
+        assert ip.usage.outer_rz_carry_share == pytest.approx(0.5)
+        assert ip.usage.red_zone_carry_share == pytest.approx(2 / 3)
+        assert ch.usage.goal_line_carry_share == pytest.approx(0.0)
+        assert ch.usage.outer_rz_carry_share == pytest.approx(0.5)
+        assert ch.usage.red_zone_carry_share == pytest.approx(1 / 3)
+        assert ip.usage.red_zone_carry_share == pytest.approx(
+            (ip.usage.goal_line_carry_share * 1 + ip.usage.outer_rz_carry_share * 2) / 3
+        )
+        assert ch.usage.red_zone_carry_share == pytest.approx(
+            (ch.usage.goal_line_carry_share * 1 + ch.usage.outer_rz_carry_share * 2) / 3
+        )
 
     def test_build_team_roster_normalizes_goal_line_and_outer_red_zone_shares(self):
         models = {
