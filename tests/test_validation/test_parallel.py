@@ -439,6 +439,28 @@ class TestBuildGamesParallelDualArm:
         assert len(r["results"]["on"]) == 4
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_only_threads_game_script_config_to_on_builder(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import _create_builders
+
+        config = object()
+
+        _create_builders(
+            cache_dir=Path("/tmp"),
+            pff_config=None,
+            weather_config=None,
+            vegas_config=None,
+            props_config=None,
+            usage_config=None,
+            game_script_config=config,
+            td_tendency_config=None,
+            dual_arm=True,
+        )
+
+        assert mock_builder_cls.call_count == 2
+        assert "game_script_config" not in mock_builder_cls.call_args_list[0].kwargs
+        assert mock_builder_cls.call_args_list[1].kwargs["game_script_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_captures_matchup_aux(self, mock_builder_cls):
         from fantasy_sim.data.pff.models import MatchupContext
         mock_on = self._mock_builder()

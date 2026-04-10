@@ -116,6 +116,8 @@ class GameScriptEngine:
 
     def _trailing_late_expr(self, df: pl.DataFrame) -> pl.Expr:
         cfg = self.config.trailing_late
+        if not cfg.enabled:
+            return pl.lit(False)
         return (
             pl.col("play_type").is_in(["pass", "run"])
             & (pl.col("qtr") == 4)
@@ -130,6 +132,8 @@ class GameScriptEngine:
 
     def _leading_late_rb_expr(self, df: pl.DataFrame) -> pl.Expr:
         cfg = self.config.leading_late_rb
+        if not cfg.enabled:
+            return pl.lit(False)
         return (
             pl.col("play_type").is_in(["pass", "run"])
             & (pl.col("qtr") == 4)
@@ -287,20 +291,17 @@ class GameScriptEngine:
         neutral_all: pl.DataFrame,
         rosters: pl.DataFrame | None = None,
     ) -> tuple[RbRankFactors, dict[str, float], int]:
-        allowed_ids_by_team = self._rb_ids_by_team(rosters)
         ratios, late_total = self._rank_bucket_ratios(
             leading_team,
             neutral_team,
             event_type="run",
             id_col="rusher_player_id",
-            allowed_ids_by_team=allowed_ids_by_team,
         )
         prior_ratios, _ = self._rank_bucket_ratios(
             leading_all,
             neutral_all,
             event_type="run",
             id_col="rusher_player_id",
-            allowed_ids_by_team=allowed_ids_by_team,
         )
 
         return (
@@ -457,20 +458,6 @@ class GameScriptEngine:
                     continue
             rows.append((team, player_id))
         return rows
-
-    @staticmethod
-    def _rb_ids_by_team(rosters: pl.DataFrame | None) -> dict[str, set[str]] | None:
-        if rosters is None:
-            return None
-        required = {"team", "player_id", "position"}
-        if not required.issubset(rosters.columns):
-            return None
-
-        rb_rows = rosters.filter(pl.col("position") == "RB").select(["team", "player_id"]).unique()
-        ids_by_team: dict[str, set[str]] = defaultdict(set)
-        for row in rb_rows.iter_rows(named=True):
-            ids_by_team[row["team"]].add(row["player_id"])
-        return dict(ids_by_team)
 
     @staticmethod
     def _bayesian_ratio(

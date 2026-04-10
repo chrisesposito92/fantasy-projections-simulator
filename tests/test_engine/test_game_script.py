@@ -80,24 +80,24 @@ def test_resolve_game_script_returns_leading_late_rb_for_late_lead():
     assert script.regime == "leading_late_rb"
 
 
-def test_resolve_game_script_ignores_trailing_subconfig_enabled_gate():
+def test_resolve_game_script_respects_trailing_subconfig_enabled_gate():
     state = make_state(quarter=4, clock=720, home_score=10, away_score=20)
     config = make_config()
     config.trailing_late.enabled = False
 
     script = resolve_game_script(state, config, make_profile())
 
-    assert script.regime == "trailing_late"
+    assert script.regime == "neutral"
 
 
-def test_resolve_game_script_ignores_leading_subconfig_enabled_gate():
+def test_resolve_game_script_respects_leading_subconfig_enabled_gate():
     state = make_state(quarter=4, clock=300, home_score=24, away_score=10)
     config = make_config()
     config.leading_late_rb.enabled = False
 
     script = resolve_game_script(state, config, make_profile())
 
-    assert script.regime == "leading_late_rb"
+    assert script.regime == "neutral"
 
 
 def test_resolve_game_script_returns_neutral_when_disabled():

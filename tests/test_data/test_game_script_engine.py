@@ -346,6 +346,46 @@ def test_compute_leading_late_rb_profile_shifts_to_rb2():
     assert profile.leading_late_rb_factors.rb2 > 1.0
 
 
+def test_disabled_trailing_late_learning_stays_neutral():
+    config = make_config()
+    config.trailing_late.enabled = False
+    engine = GameScriptEngine(config)
+
+    profile = engine.compute(
+        team="KC",
+        pbp=make_game_script_pbp(),
+        training_seasons=[2024],
+        rosters=make_rosters(),
+    )
+
+    assert profile.trailing_late_pass_rate_factor == 1.0
+    assert profile.trailing_late_pace_factor == 1.0
+    assert profile.trailing_late_target_factors.rank1 == 1.0
+    assert profile.trailing_late_target_factors.rank2 == 1.0
+    assert profile.trailing_late_target_factors.rank3_plus == 1.0
+    assert profile.diagnostics.trailing_late_play_count == 0
+    assert profile.diagnostics.trailing_late_target_sample == 0
+
+
+def test_disabled_leading_late_rb_learning_stays_neutral():
+    config = make_config()
+    config.leading_late_rb.enabled = False
+    engine = GameScriptEngine(config)
+
+    profile = engine.compute(
+        team="KC",
+        pbp=make_game_script_pbp(),
+        training_seasons=[2024],
+        rosters=make_rosters(),
+    )
+
+    assert profile.leading_late_rb_factors.rb1 == 1.0
+    assert profile.leading_late_rb_factors.rb2 == 1.0
+    assert profile.leading_late_rb_factors.rb3_plus == 1.0
+    assert profile.diagnostics.leading_late_rb_play_count == 0
+    assert profile.diagnostics.leading_late_rb_sample == 0
+
+
 def test_target_week_is_excluded():
     engine = GameScriptEngine(make_config())
     pbp = make_game_script_pbp()
@@ -490,3 +530,70 @@ def test_compute_cache_does_not_reuse_stale_profile_for_different_explicit_frame
 
     assert pass_heavy.trailing_late_pass_rate_factor > run_heavy.trailing_late_pass_rate_factor
     assert pass_heavy.diagnostics.trailing_late_pass_rate_ratio > run_heavy.diagnostics.trailing_late_pass_rate_ratio
+
+
+def test_rb_learning_uses_historical_backs_even_when_current_roster_turns_over():
+    engine = GameScriptEngine(make_config())
+    historical_pbp = pl.DataFrame(
+        [
+            {
+                "season": 2023,
+                "week": 1,
+                "posteam": "KC",
+                "play_type": "run",
+                "pass_attempt": 0,
+                "rush_attempt": 1,
+                "receiver_player_id": None,
+                "rusher_player_id": rusher,
+                "score_differential": 0,
+                "qtr": 2,
+                "game_seconds_remaining": 2400,
+            }
+            for rusher in [
+                "KC_OLD_RB1",
+                "KC_OLD_RB1",
+                "KC_OLD_RB1",
+                "KC_OLD_RB2",
+            ]
+        ]
+        + [
+            {
+                "season": 2023,
+                "week": 2,
+                "posteam": "KC",
+                "play_type": "run",
+                "pass_attempt": 0,
+                "rush_attempt": 1,
+                "receiver_player_id": None,
+                "rusher_player_id": rusher,
+                "score_differential": 17,
+                "qtr": 4,
+                "game_seconds_remaining": 420,
+            }
+            for rusher in [
+                "KC_OLD_RB2",
+                "KC_OLD_RB2",
+                "KC_OLD_RB2",
+                "KC_OLD_RB3",
+            ]
+        ]
+    )
+    current_rosters = pl.DataFrame(
+        [
+            {"season": 2025, "week": 1, "team": "KC", "player_id": "KC_NEW_RB1", "position": "RB"},
+            {"season": 2025, "week": 1, "team": "KC", "player_id": "KC_NEW_RB2", "position": "RB"},
+        ]
+    )
+
+    profile = engine.compute(
+        team="KC",
+        pbp=historical_pbp,
+        training_seasons=[2023],
+        target_season=2025,
+        week=1,
+        rosters=current_rosters,
+    )
+
+    assert profile.diagnostics.leading_late_rb_play_count == 4
+    assert profile.leading_late_rb_factors.rb1 < 1.0
+    assert profile.leading_late_rb_factors.rb2 > 1.0

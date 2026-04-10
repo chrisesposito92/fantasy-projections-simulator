@@ -15,7 +15,7 @@ def test_builder_accepts_game_script_config_and_creates_engine_when_enabled():
     assert builder._game_script_engine is not None
 
 
-def test_dual_arm_builder_creation_threads_game_script_config_to_both_arms():
+def test_dual_arm_builder_creation_only_threads_game_script_config_to_on_arm():
     config = GameScriptConfig(enabled=True)
 
     with patch("fantasy_sim.validation.parallel.GameContextBuilder") as mock_builder:
@@ -34,8 +34,8 @@ def test_dual_arm_builder_creation_threads_game_script_config_to_both_arms():
         )
 
     assert mock_builder.call_count == 2
-    for call in mock_builder.call_args_list:
-        assert call.kwargs["game_script_config"] == config
+    assert "game_script_config" not in mock_builder.call_args_list[0].kwargs
+    assert mock_builder.call_args_list[1].kwargs["game_script_config"] == config
 
 
 def test_build_game_attaches_game_script_profiles(expanded_pbp, sample_rosters):

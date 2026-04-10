@@ -7,17 +7,21 @@ import multiprocessing
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from fantasy_sim.data.game_script import GameScriptConfig
     from fantasy_sim.data.pff.models import PffConfig
-    from fantasy_sim.data.weather.models import WeatherConfig
-    from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
-    from fantasy_sim.data.usage.models import UsageConfig
     from fantasy_sim.data.td_tendency import TdTendencyConfig
+    from fantasy_sim.data.usage.models import UsageConfig
+    from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
+    from fantasy_sim.data.weather.models import WeatherConfig
     from fantasy_sim.engine.types import TeamDistributions
     from fantasy_sim.models.player import TeamRoster
+
+from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.engine.monte_carlo import run_simulations
+from fantasy_sim.scoring.projections import build_player_projections
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +68,6 @@ class GameSimResult:
     game_id: str
     projections: list[dict]
     metadata: dict = field(default_factory=dict)
-
-
-from typing import Callable
-
-from fantasy_sim.data.game_context import GameContextBuilder
-from fantasy_sim.engine.monte_carlo import run_simulations
-from fantasy_sim.scoring.projections import build_player_projections
-
 
 def _simulate_worker(args: tuple) -> GameSimResult:
     """Worker function for parallel simulation.
@@ -259,7 +255,6 @@ def _init_build_worker_dual(
     _worker_builders = {
         "off": GameContextBuilder(
             cache_dir=cache_dir,
-            game_script_config=game_script_config,
         ),
         "on": GameContextBuilder(
             cache_dir=cache_dir,
@@ -372,7 +367,6 @@ def _build_games_sequential(
         _worker_builders = {
             "off": GameContextBuilder(
                 cache_dir=cache_dir,
-                game_script_config=game_script_config,
             ),
             "on": GameContextBuilder(
                 cache_dir=cache_dir,
@@ -432,7 +426,6 @@ def _create_builders(
         return {
             "off": GameContextBuilder(
                 cache_dir=cache_dir,
-                game_script_config=game_script_config,
             ),
             "on": GameContextBuilder(
                 cache_dir=cache_dir,
