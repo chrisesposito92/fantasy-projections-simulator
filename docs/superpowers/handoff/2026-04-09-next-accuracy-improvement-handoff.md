@@ -50,16 +50,36 @@ uv run python scripts/validate.py --sims 50 --set usage.route_rate.enabled=true 
 
 ## Still To Do (from original handoff)
 
-### 2. CPOE Activation (MODERATE)
-Config says `cpoe.enabled: true` but `_compute_cpoe_rolling()` returns data that is never applied to player outcomes. The computation works (returns QB gsis_id → rolling CPOE map) and the cpoe_map is passed to TierEngine, but the actual modulation of WR catch rates was never wired up. This is half-built — the signal exists, just needs to be consumed.
+### 2. CPOE Activation — ALREADY DONE (Phase 3, USG-02)
+CPOE was wired up during Phase 3. Enabled at sensitivity 0.30, `cpoe_map` feeds into TierEngine for QB adjustments. No further work needed.
 
-**Files:** `src/fantasy_sim/data/usage/engine.py`, `src/fantasy_sim/data/pff/tier_engine.py`
+### 5. Inside-5 Sub-Factor — IMPLEMENTED
+Per-player inside-5 rushing TD factor using PFF `i5_rush_carries`/`i5_rush_tds`. Replaces general `rushing_td_factor` for gate bands (1,3) and (4,5) when sufficient data exists. Bayesian blend with inside-5-specific priors (RB ~0.50, QB ~0.40, FB ~0.55) and heavier shrinkage (prior_strength=25). PBP fallback for yardline_100 <= 5.
+
+**Key changes:**
+- `src/fantasy_sim/data/td_tendency.py` — `_DEFAULT_I5_RUSHING_TD_PRIORS`, i5 factor computation in `apply()`, extended `_load_pff_rates()` to 3-tuple
+- `src/fantasy_sim/models/player.py` — `i5_rushing_td_factor` on `PlayerOutcomes`
+- `src/fantasy_sim/engine/play_resolver.py` — gate selects i5 factor at yard_line <= 5
+- `src/fantasy_sim/data/player_builder.py` — `i5_rush_carries`/`i5_rush_tds` in `_aggregate_pbp_stats()`
+- `config/defaults.yaml` — `i5_enabled: false`, `i5_prior_strength: 25`, `i5_min_opportunities: 3`
+
+**Test count:** 1447 → 1488 (+41 tests)
+
+**A/B testing:**
+```bash
+uv run python scripts/validate.py --sims 50 --set td_tendency.i5_enabled=true --label "i5-subfactor"
+uv run python scripts/validate.py --sims 50 --set td_tendency.i5_prior_strength=15 --label "i5-ps15"
+uv run python scripts/validate.py --sims 50 --set td_tendency.i5_prior_strength=35 --label "i5-ps35"
+```
+
+**Design spec:** `docs/superpowers/specs/2026-04-09-inside-5-subfactor-design.md`
+
+---
+
+## Still To Do
 
 ### 4. Game Script / Garbage Time (HIGH but HARD)
 The sim tracks score differential in GameStateBucket and adjusts pass/run split, but doesn't model backup usage in blowouts, pace changes, or desperation target concentration. Biggest weekly correlation killer.
-
-### 5. Inside-5 Sub-Factor (FOLLOW-UP from TD tendency)
-The PFF data includes `i5_rush_carries` and `i5_rush_tds` (goal-line rushing). Currently scraped and stored but not consumed. Could add a separate inside-5 factor that applies to the tighter gate bands (1-5 yard line) for more granular goal-line differentiation.
 
 ### 6. Goal-Line Concentration (FOLLOW-UP from TD tendency)
 Split `red_zone_target_share` into outer-RZ (6-20) and goal-line (1-5) sub-shares. Architecturally independent from TD tendency. Would let goal-line specialists (Derrick Henry at the 1) get proportionally more touches near the end zone.
