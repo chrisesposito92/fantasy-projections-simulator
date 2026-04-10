@@ -16,6 +16,7 @@ from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModif
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.usage.models import UsageConfig
+from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
@@ -57,6 +58,7 @@ class GameContextBuilder:
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
+        game_script_config: GameScriptConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
@@ -171,6 +173,10 @@ class GameContextBuilder:
             from fantasy_sim.data.usage.engine import UsageEngine
             self._usage_engine = UsageEngine(self._usage_config, self.loader)
             logger.info("Usage engine enabled")
+
+        # Game script scaffolding: config is stored now, engine is added later.
+        self._game_script_engine = None
+        self._game_script_config = game_script_config or GameScriptConfig(enabled=False)
 
         # TD tendency engine: per-player RZ TD conversion factors
         self._td_tendency_engine = None
