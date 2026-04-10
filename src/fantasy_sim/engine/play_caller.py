@@ -1,11 +1,15 @@
 import numpy as np
+from fantasy_sim.engine.game_script import RuntimeGameScript, apply_pass_rate_factor
 from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.distributions import PlayCallingDist, KickingModel
 from fantasy_sim.models.game_state import bucket_play
 
 
 def select_play_type(
-    state: GameState, play_calling: PlayCallingDist, rng: np.random.Generator
+    state: GameState,
+    play_calling: PlayCallingDist,
+    rng: np.random.Generator,
+    script: RuntimeGameScript | None = None,
 ) -> str:
     """Select run or pass based on game state and team tendencies."""
     bucket = bucket_play(
@@ -13,6 +17,8 @@ def select_play_type(
         state.quarter, state.yard_line,
     )
     probs = play_calling.get_probs(bucket)
+    if script is not None and script.pass_rate_factor != 1.0:
+        probs = apply_pass_rate_factor(probs, script.pass_rate_factor)
     play_types = list(probs.keys())
     probabilities = list(probs.values())
     return rng.choice(play_types, p=probabilities)

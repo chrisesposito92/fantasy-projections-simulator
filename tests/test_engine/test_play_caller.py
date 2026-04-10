@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from fantasy_sim.engine.game_script import RuntimeGameScript
 from fantasy_sim.engine.play_caller import select_play_type, fourth_down_decision
 from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.distributions import PlayCallingDist, KickingModel
@@ -62,6 +63,17 @@ class TestSelectPlayType:
         results = [select_play_type(state, play_calling, rng) for _ in range(100)]
         pass_rate = sum(1 for r in results if r == "pass") / 100
         assert pass_rate > 0.85
+
+    def test_script_pass_rate_factor_pushes_pass_frequency_above_neutral_baseline(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=0.5)
+        script = RuntimeGameScript(pass_rate_factor=1.30)
+
+        results = [select_play_type(state, play_calling, rng, script=script) for _ in range(1000)]
+        pass_rate = sum(1 for r in results if r == "pass") / len(results)
+
+        assert pass_rate > 0.58
 
 
 class TestFourthDownDecision:
