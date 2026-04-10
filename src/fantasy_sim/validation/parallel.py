@@ -257,7 +257,10 @@ def _init_build_worker_dual(
     from fantasy_sim.data.game_context import GameContextBuilder
 
     _worker_builders = {
-        "off": GameContextBuilder(cache_dir=cache_dir),
+        "off": GameContextBuilder(
+            cache_dir=cache_dir,
+            game_script_config=game_script_config,
+        ),
         "on": GameContextBuilder(
             cache_dir=cache_dir,
             pff_config=pff_config,
@@ -367,7 +370,10 @@ def _build_games_sequential(
 
     if dual_arm:
         _worker_builders = {
-            "off": GameContextBuilder(cache_dir=cache_dir),
+            "off": GameContextBuilder(
+                cache_dir=cache_dir,
+                game_script_config=game_script_config,
+            ),
             "on": GameContextBuilder(
                 cache_dir=cache_dir,
                 pff_config=pff_config,
@@ -424,7 +430,10 @@ def _create_builders(
     """
     if dual_arm:
         return {
-            "off": GameContextBuilder(cache_dir=cache_dir),
+            "off": GameContextBuilder(
+                cache_dir=cache_dir,
+                game_script_config=game_script_config,
+            ),
             "on": GameContextBuilder(
                 cache_dir=cache_dir,
                 pff_config=pff_config,
