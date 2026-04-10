@@ -51,7 +51,10 @@ class GameScriptEngine:
 
         offense = window.filter(pl.col("posteam") == team)
         if offense.is_empty():
-            profile = GameScriptProfile(team=team)
+            profile = GameScriptProfile(
+                team=team,
+                diagnostics=GameScriptDiagnostics(),
+            )
             self._profile_cache[cache_key] = profile
             return profile
 
@@ -80,20 +83,17 @@ class GameScriptEngine:
             trailing_late_pace_sample=pace_sample,
             trailing_late_target_sample=target_sample,
             leading_late_rb_sample=rb_sample,
+            trailing_late_play_count=trailing_play_count,
+            trailing_late_pass_rate_ratio=pass_ratio,
+            trailing_late_pace_ratio=pace_ratio,
+            trailing_late_rank1_ratio=target_ratios["rank1"],
+            trailing_late_rank2_ratio=target_ratios["rank2"],
+            trailing_late_rank3_plus_ratio=target_ratios["rank3_plus"],
+            leading_late_rb_play_count=rb_sample,
+            leading_late_rb1_ratio=rb_ratios["rb1"],
+            leading_late_rb2_ratio=rb_ratios["rb2"],
+            leading_late_rb3_plus_ratio=rb_ratios["rb3_plus"],
         )
-        for key, value in {
-            "trailing_late_play_count": trailing_play_count,
-            "trailing_late_pass_rate_ratio": pass_ratio,
-            "trailing_late_pace_ratio": pace_ratio,
-            "trailing_late_rank1_ratio": target_ratios["rank1"],
-            "trailing_late_rank2_ratio": target_ratios["rank2"],
-            "trailing_late_rank3_plus_ratio": target_ratios["rank3_plus"],
-            "leading_late_rb_play_count": rb_sample,
-            "leading_late_rb1_ratio": rb_ratios["rb1"],
-            "leading_late_rb2_ratio": rb_ratios["rb2"],
-            "leading_late_rb3_plus_ratio": rb_ratios["rb3_plus"],
-        }.items():
-            object.__setattr__(diagnostics, key, value)
 
         profile = GameScriptProfile(
             team=team,

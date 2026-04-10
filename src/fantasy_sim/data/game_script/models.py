@@ -67,6 +67,16 @@ class GameScriptDiagnostics:
     trailing_late_pace_sample: int = 0
     trailing_late_target_sample: int = 0
     leading_late_rb_sample: int = 0
+    trailing_late_play_count: int = 0
+    trailing_late_pass_rate_ratio: float = 1.0
+    trailing_late_pace_ratio: float = 1.0
+    trailing_late_rank1_ratio: float = 1.0
+    trailing_late_rank2_ratio: float = 1.0
+    trailing_late_rank3_plus_ratio: float = 1.0
+    leading_late_rb_play_count: int = 0
+    leading_late_rb1_ratio: float = 1.0
+    leading_late_rb2_ratio: float = 1.0
+    leading_late_rb3_plus_ratio: float = 1.0
 
 
 @dataclass(frozen=True)

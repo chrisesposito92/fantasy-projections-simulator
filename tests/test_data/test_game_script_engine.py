@@ -202,8 +202,8 @@ def test_target_week_is_excluded():
         rosters=rosters,
     )
 
-    assert getattr(excluded.diagnostics, "trailing_late_play_count") == 16
-    assert getattr(included.diagnostics, "trailing_late_play_count") == 20
+    assert excluded.diagnostics.trailing_late_play_count == 16
+    assert included.diagnostics.trailing_late_play_count == 20
     assert excluded.trailing_late_pass_rate_factor < included.trailing_late_pass_rate_factor
 
 
@@ -218,3 +218,71 @@ def test_missing_clock_column_keeps_pace_neutral():
     )
 
     assert profile.trailing_late_pace_factor == 1.0
+    assert profile.diagnostics.trailing_late_pace_ratio == 1.0
+
+
+def test_diagnostics_contract_is_typed_and_populated():
+    engine = GameScriptEngine(make_config())
+
+    profile = engine.compute(
+        team="KC",
+        pbp=make_game_script_pbp(),
+        training_seasons=[2024],
+        rosters=make_rosters(),
+    )
+
+    assert profile.diagnostics.trailing_late_play_count == 20
+    assert profile.diagnostics.trailing_late_pass_rate_ratio > 1.0
+    assert profile.diagnostics.trailing_late_pace_ratio == 1.0
+    assert profile.diagnostics.trailing_late_rank1_ratio > 1.0
+    assert profile.diagnostics.trailing_late_rank2_ratio < 1.0
+    assert profile.diagnostics.trailing_late_rank3_plus_ratio < 1.0
+    assert profile.diagnostics.leading_late_rb_play_count == 16
+    assert profile.diagnostics.leading_late_rb1_ratio < 1.0
+    assert profile.diagnostics.leading_late_rb2_ratio > 1.0
+    assert profile.diagnostics.leading_late_rb3_plus_ratio == 1.0
+
+
+def test_empty_data_returns_typed_default_diagnostics():
+    engine = GameScriptEngine(make_config())
+    empty_pbp = pl.DataFrame(
+        {
+            "season": [],
+            "week": [],
+            "posteam": [],
+            "play_type": [],
+            "pass_attempt": [],
+            "rush_attempt": [],
+            "receiver_player_id": [],
+            "rusher_player_id": [],
+            "score_differential": [],
+            "qtr": [],
+        },
+        schema={
+            "season": pl.Int64,
+            "week": pl.Int64,
+            "posteam": pl.Utf8,
+            "play_type": pl.Utf8,
+            "pass_attempt": pl.Int64,
+            "rush_attempt": pl.Int64,
+            "receiver_player_id": pl.Utf8,
+            "rusher_player_id": pl.Utf8,
+            "score_differential": pl.Int64,
+            "qtr": pl.Int64,
+        },
+    )
+
+    profile = engine.compute(team="KC", pbp=empty_pbp, training_seasons=[2024])
+
+    assert profile.trailing_late_pass_rate_factor == 1.0
+    assert profile.trailing_late_pace_factor == 1.0
+    assert profile.diagnostics.trailing_late_play_count == 0
+    assert profile.diagnostics.trailing_late_pass_rate_ratio == 1.0
+    assert profile.diagnostics.trailing_late_pace_ratio == 1.0
+    assert profile.diagnostics.trailing_late_rank1_ratio == 1.0
+    assert profile.diagnostics.trailing_late_rank2_ratio == 1.0
+    assert profile.diagnostics.trailing_late_rank3_plus_ratio == 1.0
+    assert profile.diagnostics.leading_late_rb_play_count == 0
+    assert profile.diagnostics.leading_late_rb1_ratio == 1.0
+    assert profile.diagnostics.leading_late_rb2_ratio == 1.0
+    assert profile.diagnostics.leading_late_rb3_plus_ratio == 1.0
