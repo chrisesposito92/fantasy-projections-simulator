@@ -118,8 +118,8 @@ class TestSimulateGame:
             game_script_config=GameScriptConfig(enabled=True),
             game_script_profile=GameScriptProfile(team="T"),
         )
-        home_dists.goal_line_concentration_enabled = True
-        away_dists.goal_line_concentration_enabled = True
+        setattr(home_dists, "goal_line_concentration_enabled", True)
+        setattr(away_dists, "goal_line_concentration_enabled", True)
         simulate_game(home_dists, away_dists, np.random.default_rng(42))
 
         assert seen["config"] is not None
