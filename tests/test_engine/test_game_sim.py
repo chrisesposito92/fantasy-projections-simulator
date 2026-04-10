@@ -93,7 +93,8 @@ class TestSimulateGame:
             return "run"
 
         def fake_resolve_play(
-            state, play_type, play_outcomes, turnover_rates, rng, roster=None, is_home=False, pace_factor=1.0
+            state, play_type, play_outcomes, turnover_rates, rng, roster=None, is_home=False, pace_factor=1.0,
+            script=None,
         ):
             seen["play_type"] = play_type
             seen["pace_factor"] = pace_factor
