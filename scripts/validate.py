@@ -47,6 +47,10 @@ from fantasy_sim.validation.parallel import (
     default_max_workers,
     simulate_games_parallel,
 )
+from fantasy_sim.validation.game_script import (
+    collect_game_script_profiles,
+    format_game_script_summary,
+)
 from fantasy_sim.validation.weekly import (
     WeeklyPlayerRecord,
     WeeklyPositionSummary,
@@ -170,6 +174,7 @@ def run_season(
     # --- Build + simulate ---
     arm_a_proj: dict[str, dict[int, float]] = {}
     arm_a_meta: dict[str, dict] = {}
+    specs_b: list[GameSpec] = []
     # matchup_data: (team, week) -> {matchup_ctx, coverage} — populated by dual-arm builds only
     matchup_data: dict[tuple[str, int], dict] = {}
 
@@ -185,7 +190,6 @@ def run_season(
             max_workers=max_workers, dual_arm=False,
             **arm_b_configs,
         )
-        specs_b: list[GameSpec] = []
         for r in build_results:
             if r["status"] != "ok":
                 continue
@@ -236,7 +240,6 @@ def run_season(
             )
 
             specs_a: list[GameSpec] = []
-            specs_b: list[GameSpec] = []
             for r in build_results:
                 if r["status"] != "ok":
                     continue
@@ -290,7 +293,6 @@ def run_season(
                     away_roster=r["away_roster"],
                     seed=r["seed"], week=r["week"], metadata={"arm": "a"},
                 ))
-            specs_b = []
             for r in build_b:
                 if r["status"] != "ok":
                     continue
@@ -332,6 +334,11 @@ def run_season(
                         "team": proj.get("team", actual_team.get(pid, "")),
                         "name": proj.get("name", actual_name.get(pid, "")),
                     }
+
+    if arm_b_configs.get("game_script_config") is not None:
+        profiles = collect_game_script_profiles(specs_b)
+        if profiles:
+            print(format_game_script_summary(profiles), flush=True)
 
     # --- Compute season-level metrics ---
     def _compute_arm_metrics(
