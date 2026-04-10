@@ -20,3 +20,7 @@ class TestGoalLineConcentrationConfig:
     def test_missing_section_returns_disabled_config(self):
         config = load_goal_line_concentration_config({})
         assert config.enabled is False
+
+    def test_empty_section_uses_disabled_default(self):
+        config = load_goal_line_concentration_config({"goal_line_concentration": {}})
+        assert config.enabled is False
