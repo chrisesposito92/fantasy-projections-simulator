@@ -243,6 +243,6 @@ td_tendency:
   prior_strength: 20          # pseudo-opportunities for Bayesian shrinkage
   min_opportunities: 5        # minimum RZ targets/carries to compute factor
   factor_clamp: [0.65, 1.35]  # prevent extreme gate modifications
-  i5_enabled: false             # flip after A/B validation
+  i5_enabled: true             # flip after A/B validation
   i5_prior_strength: 25
   i5_min_opportunities: 3
