@@ -239,7 +239,7 @@ usage:
     min_routes: 10
 
 game_script:
-  enabled: false
+  enabled: true
   trailing_late:
     enabled: true
     deficit_threshold: 8
@@ -256,7 +256,7 @@ game_script:
     lead_threshold: 14
     late_minutes: 600
     rb_carry_prior_strength: 100
-    rb_rank_factor_clamp: [0.80, 1.20]
+    rb_rank_factor_clamp: [0.85, 1.15]
 
 td_tendency:
   enabled: true              # flip to true after A/B validation

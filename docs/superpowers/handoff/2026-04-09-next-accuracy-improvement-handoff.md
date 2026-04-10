@@ -46,6 +46,68 @@ Built but never tested. Just flip the config and run:
 uv run python scripts/validate.py --sims 50 --set usage.route_rate.enabled=true --label "route-rate"
 ```
 
+### 4. Game Script / Garbage Time — IMPLEMENTED (PR #28, merged)
+Built a two-phase game-script layer:
+
+1. `trailing_late`
+   - team-specific pass-rate overlay
+   - team-specific pace overlay
+   - rank-based target concentration toward top pass catchers
+2. `leading_late_rb`
+   - RB-only carry redistribution in obvious late-lead states
+
+The architecture is intentionally split:
+- `src/fantasy_sim/data/game_script/engine.py` learns historical team profiles from nflverse PBP
+- `src/fantasy_sim/engine/game_script.py` resolves the live runtime regime from `GameState`
+- `src/fantasy_sim/engine/play_caller.py`, `src/fantasy_sim/engine/player_selector.py`, and `src/fantasy_sim/engine/game_sim.py` apply transient overlays at play-selection time
+- `src/fantasy_sim/validation/game_script.py` prints learned-profile summaries during A/B runs
+
+**Key files:**
+- `src/fantasy_sim/data/game_script/models.py`
+- `src/fantasy_sim/data/game_script/config.py`
+- `src/fantasy_sim/data/game_script/engine.py`
+- `src/fantasy_sim/engine/game_script.py`
+- `src/fantasy_sim/engine/play_caller.py`
+- `src/fantasy_sim/engine/player_selector.py`
+- `src/fantasy_sim/engine/game_sim.py`
+- `src/fantasy_sim/validation/game_script.py`
+- `scripts/validate.py`
+- `config/defaults.yaml`
+
+**Validation outcome:**
+
+At `--sims 50`, the feature clearly helped, but the marginal value of the RB late-lead subfeature was small relative to the trailing-late pass/pace/target effects.
+
+At `--sims 200` and `--sims 400`, the picture stayed the same:
+- `trailing_late` is the main win
+- `leading_late_rb` is plausible but marginal / mixed
+- a tighter RB clamp (`[0.85,1.15]`) performed slightly better than the looser default `[0.80,1.20]`, but still did not cleanly beat trailing-only on every top-line metric
+
+Representative runs:
+```bash
+uv run python scripts/validate.py --sims 50 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=true --label "game-script-rb-baseline"
+uv run python scripts/validate.py --sims 50 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=false --label "game-script-trailing-control"
+uv run python scripts/validate.py --sims 200 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=false --label "game-script-trailing-control-200"
+uv run python scripts/validate.py --sims 200 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=true --set 'game_script.leading_late_rb.rb_rank_factor_clamp=[0.85,1.15]' --label "game-script-rb-clamp-tight-200"
+uv run python scripts/validate.py --sims 400 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=false --label "game-script-trailing-control-400"
+uv run python scripts/validate.py --sims 400 --set game_script.enabled=true --set game_script.trailing_late.enabled=true --set game_script.leading_late_rb.enabled=true --set 'game_script.leading_late_rb.rb_rank_factor_clamp=[0.85,1.15]' --label "game-script-rb-clamp-tight-400"
+```
+
+**Recommended default posture after validation:**
+- `game_script.enabled: true`
+- `game_script.trailing_late.enabled: true`
+- `game_script.leading_late_rb.enabled: false`
+- `game_script.leading_late_rb.rb_rank_factor_clamp: [0.85, 1.15]`
+
+In other words: ship the strong trailing-late feature by default, keep the RB late-lead behavior off unless explicitly testing it.
+
+**Important implementation fixes that landed during review:**
+- phase-specific nested `enabled` flags are now respected in both runtime and build-time learning
+- dual-arm validation keeps `game_script` off the bare/off Arm A builder
+- QB rushes are excluded from RB late-lead learning
+- season-level validation summaries no longer overstate sample counts by summing cumulative weekly windows
+- Python 3.14 CI regression fixed in cache-token test coverage
+
 ---
 
 ## Still To Do (from original handoff)
@@ -78,8 +140,8 @@ uv run python scripts/validate.py --sims 50 --set td_tendency.i5_prior_strength=
 
 ## Still To Do
 
-### 4. Game Script / Garbage Time (HIGH but HARD)
-The sim tracks score differential in GameStateBucket and adjusts pass/run split, but doesn't model backup usage in blowouts, pace changes, or desperation target concentration. Biggest weekly correlation killer.
-
 ### 6. Goal-Line Concentration (FOLLOW-UP from TD tendency)
 Split `red_zone_target_share` into outer-RZ (6-20) and goal-line (1-5) sub-shares. Architecturally independent from TD tendency. Would let goal-line specialists (Derrick Henry at the 1) get proportionally more touches near the end zone.
+
+### Recommendation for next accuracy work
+If continuing the accuracy initiative, `Goal-Line Concentration` is now the clearest next standalone lever. `Game Script / Garbage Time` was the biggest remaining system-level gap and is no longer the next item.
