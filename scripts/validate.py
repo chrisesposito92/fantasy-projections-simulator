@@ -338,7 +338,7 @@ def run_season(
     if arm_b_configs.get("game_script_config") is not None:
         profiles = collect_game_script_profiles(specs_b)
         if profiles:
-            print(format_game_script_summary(profiles), flush=True)
+            print(format_game_script_summary(profiles), end="", flush=True)
 
     # --- Compute season-level metrics ---
     def _compute_arm_metrics(
