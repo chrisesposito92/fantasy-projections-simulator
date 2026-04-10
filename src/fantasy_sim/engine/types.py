@@ -1,4 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+
+from fantasy_sim.data.game_script import GameScriptConfig, GameScriptProfile
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
@@ -21,6 +25,8 @@ class TeamDistributions:
     drive_start: DriveStartModel
     pace_factor: float = 1.0
     defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
+    game_script_config: GameScriptConfig | None = None
+    game_script_profile: GameScriptProfile | None = None
 
 
 @dataclass

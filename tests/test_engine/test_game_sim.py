@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
+import fantasy_sim.engine.game_sim as game_sim_module
+from fantasy_sim.data.game_script import GameScriptConfig, GameScriptProfile
+from fantasy_sim.engine.game_script import RuntimeGameScript
 from fantasy_sim.engine.game_sim import simulate_game
-from fantasy_sim.engine.types import GameResult, TeamDistributions
+from fantasy_sim.engine.types import GameResult, PlayResult, TeamDistributions
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
@@ -75,6 +78,52 @@ class TestSimulateGame:
         result = simulate_game(make_team_dists(), make_team_dists(), rng)
         total = result.home_score + result.away_score
         assert 0 <= total <= 100
+
+    def test_threads_runtime_script_into_play_selection_and_pace(self, monkeypatch):
+        script = RuntimeGameScript(regime="trailing_late", pass_rate_factor=1.3, pace_factor=1.15)
+        seen: dict[str, object] = {}
+
+        def fake_resolve_game_script(state, config, profile):
+            seen["config"] = config
+            seen["profile"] = profile
+            return script
+
+        def fake_select_play_type(state, play_calling, rng, script=None):
+            seen["script"] = script
+            return "run"
+
+        def fake_resolve_play(
+            state, play_type, play_outcomes, turnover_rates, rng, roster=None, is_home=False, pace_factor=1.0,
+            script=None,
+        ):
+            seen["play_type"] = play_type
+            seen["pace_factor"] = pace_factor
+            seen["resolve_script"] = script
+            state.game_over = True
+            return PlayResult(play_type=play_type, yards=0, clock_runoff=0)
+
+        monkeypatch.setattr(game_sim_module, "resolve_game_script", fake_resolve_game_script)
+        monkeypatch.setattr(game_sim_module, "select_play_type", fake_select_play_type)
+        monkeypatch.setattr(game_sim_module, "resolve_play", fake_resolve_play)
+
+        home_dists = make_team_dists(
+            pace_factor=1.05,
+            game_script_config=GameScriptConfig(enabled=True),
+            game_script_profile=GameScriptProfile(team="T"),
+        )
+        away_dists = make_team_dists(
+            pace_factor=1.05,
+            game_script_config=GameScriptConfig(enabled=True),
+            game_script_profile=GameScriptProfile(team="T"),
+        )
+        simulate_game(home_dists, away_dists, np.random.default_rng(42))
+
+        assert seen["config"] is not None
+        assert seen["profile"] is not None
+        assert seen["script"] is script
+        assert seen["resolve_script"] is script
+        assert seen["play_type"] == "run"
+        assert seen["pace_factor"] == pytest.approx(1.05 * script.pace_factor)
 
 
 def make_roster_for_sim(team: str = "T") -> TeamRoster:

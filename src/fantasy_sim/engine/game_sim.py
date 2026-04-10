@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from fantasy_sim.engine.game_script import effective_pace_factor, resolve_game_script
 from fantasy_sim.engine.types import GameState, GameResult, TeamBoxScore, TeamDistributions, PlayResult, PlayerBoxScore
 from fantasy_sim.engine.play_caller import select_play_type, fourth_down_decision
 from fantasy_sim.engine.play_resolver import resolve_play, check_penalty
@@ -84,14 +85,20 @@ def simulate_game(
                 continue
 
         # Select and resolve play
-        play_type = select_play_type(state, off_dists.play_calling, rng)
+        script = resolve_game_script(
+            state,
+            off_dists.game_script_config,
+            off_dists.game_script_profile,
+        )
+        play_type = select_play_type(state, off_dists.play_calling, rng, script=script)
         roster = home_roster if state.possession == "home" else away_roster
         is_home_team = (state.possession == "home")
         result = resolve_play(
             state, play_type, off_dists.play_outcomes,
             off_dists.turnover_rates, rng, roster=roster,
             is_home=is_home_team,
-            pace_factor=off_dists.pace_factor,
+            pace_factor=effective_pace_factor(off_dists.pace_factor, script),
+            script=script,
         )
         total_plays += 1
 

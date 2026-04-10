@@ -107,25 +107,7 @@ class TeamRoster:
         all RBs are eligible with uniform probability.
         Raises ValueError if no eligible rushers exist.
         """
-        eligible = [
-            p for p in self.players
-            if p.usage.carry_share > 0
-            and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
-        ]
-        if not eligible:
-            # Fallback: any RB with uniform weights
-            eligible = [p for p in self.players if p.position == "RB"]
-        if not eligible:
-            raise ValueError(f"No eligible rushers on roster for {self.team}")
-
-        if is_red_zone:
-            weights = np.array([
-                p.usage.red_zone_carry_share if p.usage.red_zone_carry_share > 0
-                else p.usage.carry_share
-                for p in eligible
-            ])
-        else:
-            weights = np.array([p.usage.carry_share for p in eligible])
+        eligible, weights = self.rusher_candidates_and_weights(is_red_zone=is_red_zone)
 
         # Use uniform weights if all weights are zero (fallback path)
         if weights.sum() == 0:
@@ -133,3 +115,36 @@ class TeamRoster:
         weights = weights / weights.sum()
         idx = rng.choice(len(eligible), p=weights)
         return eligible[idx]
+
+    def rusher_candidates_and_weights(
+        self, is_red_zone: bool = False
+    ) -> tuple[list[PlayerModel], np.ndarray]:
+        """Return the baseline designed-run rusher pool and raw carry weights."""
+        eligible = [
+            p for p in self.players
+            if p.usage.carry_share > 0
+            and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
+        ]
+        if not eligible:
+            eligible = [p for p in self.players if p.position == "RB"]
+        if not eligible:
+            raise ValueError(f"No eligible rushers on roster for {self.team}")
+
+        weights = np.array(
+            [
+                (
+                    p.usage.red_zone_carry_share
+                    if is_red_zone and p.usage.red_zone_carry_share > 0
+                    else p.usage.carry_share
+                )
+                for p in eligible
+            ],
+            dtype=float,
+        )
+        return eligible, weights
+
+    def _rusher_candidates_and_weights(
+        self, is_red_zone: bool = False
+    ) -> tuple[list[PlayerModel], np.ndarray]:
+        """Backward-compatible alias for the public rusher candidate helper."""
+        return self.rusher_candidates_and_weights(is_red_zone=is_red_zone)

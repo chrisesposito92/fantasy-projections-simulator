@@ -238,6 +238,26 @@ usage:
     sensitivity: 0.5
     min_routes: 10
 
+game_script:
+  enabled: false
+  trailing_late:
+    enabled: true
+    deficit_threshold: 8
+    final_five_minutes: 300
+    final_five_deficit_threshold: 4
+    pass_rate_prior_strength: 250
+    pace_prior_strength: 250
+    target_prior_strength: 80
+    pass_rate_clamp: [1.00, 1.35]
+    pace_factor_clamp: [1.00, 1.20]
+    target_rank_factor_clamp: [0.85, 1.25]
+  leading_late_rb:
+    enabled: false
+    lead_threshold: 14
+    late_minutes: 600
+    rb_carry_prior_strength: 100
+    rb_rank_factor_clamp: [0.80, 1.20]
+
 td_tendency:
   enabled: true              # flip to true after A/B validation
   prior_strength: 20          # pseudo-opportunities for Bayesian shrinkage

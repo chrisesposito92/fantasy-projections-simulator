@@ -8,6 +8,7 @@ from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 # Avoid circular imports — TYPE_CHECKING is compile-time only
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
+    from fantasy_sim.engine.game_script import RuntimeGameScript
     from fantasy_sim.models.player import TeamRoster
 
 # Average clock runoff in seconds — calibrated for ~65 plays/team/game
@@ -101,11 +102,12 @@ def resolve_play(
     roster: TeamRoster | None = None,
     is_home: bool = False,
     pace_factor: float = 1.0,
+    script: RuntimeGameScript | None = None,
 ) -> PlayResult:
     if play_type == "pass":
-        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor)
+        return _resolve_pass(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor, script)
     if play_type == "run":
-        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor)
+        return _resolve_run(state, play_outcomes, turnover_rates, rng, roster, is_home, pace_factor, script)
     raise ValueError(f"Unexpected play_type: {play_type!r}")
 
 
@@ -117,9 +119,10 @@ def _resolve_pass(
     roster: TeamRoster | None = None,
     is_home: bool = False,
     pace_factor: float = 1.0,
+    script: RuntimeGameScript | None = None,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
-    from fantasy_sim.engine.player_selector import select_passer, select_receiver, select_rusher
+    from fantasy_sim.engine.player_selector import select_passer, select_receiver
 
     passer_id: str | None = None
     receiver_id: str | None = None
@@ -189,7 +192,7 @@ def _resolve_pass(
 
     # Select receiver when roster is available (after sack/INT checks)
     if roster is not None:
-        receiver = select_receiver(roster, state, rng)
+        receiver = select_receiver(roster, state, rng, script=script)
         receiver_id = receiver.player_id
 
     if roster is not None and receiver_id is not None:
@@ -277,13 +280,14 @@ def _resolve_run(
     roster: TeamRoster | None = None,
     is_home: bool = False,
     pace_factor: float = 1.0,
+    script: RuntimeGameScript | None = None,
 ) -> PlayResult:
     from fantasy_sim.engine.player_selector import select_rusher
 
     rusher_id: str | None = None
 
     if roster is not None:
-        rusher = select_rusher(roster, state, rng)
+        rusher = select_rusher(roster, state, rng, script=script)
         rusher_id = rusher.player_id
 
         # Use player's rushing yards dist if available
