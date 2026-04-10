@@ -17,6 +17,7 @@ from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
+from fantasy_sim.data.game_script.engine import GameScriptEngine
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
@@ -174,9 +175,11 @@ class GameContextBuilder:
             self._usage_engine = UsageEngine(self._usage_config, self.loader)
             logger.info("Usage engine enabled")
 
-        # Game script scaffolding: config is stored now, engine is added later.
-        self._game_script_engine = None
         self._game_script_config = game_script_config or GameScriptConfig(enabled=False)
+        self._game_script_engine = None
+        if self._game_script_config.enabled:
+            self._game_script_engine = GameScriptEngine(self._game_script_config)
+            logger.info("Game script engine enabled")
 
         # TD tendency engine: per-player RZ TD conversion factors
         self._td_tendency_engine = None
@@ -886,6 +889,36 @@ class GameContextBuilder:
             if weather_ctx is not None:
                 self._apply_weather(home_dists, home_roster, weather_ctx)
                 self._apply_weather(away_dists, away_roster, weather_ctx)
+
+        if self._game_script_engine is not None and target_season and week:
+            profile_pbp = (
+                pbp
+                if pbp is not None
+                else self.loader.load_pbp(_seasons_with_target(training_seasons, target_season))
+            )
+            profile_rosters = (
+                rosters
+                if rosters is not None
+                else self.loader.load_rosters([target_season or max(training_seasons)])
+            )
+            home_dists.game_script_config = self._game_script_config
+            away_dists.game_script_config = self._game_script_config
+            home_dists.game_script_profile = self._game_script_engine.compute(
+                team=home_team,
+                pbp=profile_pbp,
+                training_seasons=training_seasons,
+                target_season=target_season,
+                week=week,
+                rosters=profile_rosters,
+            )
+            away_dists.game_script_profile = self._game_script_engine.compute(
+                team=away_team,
+                pbp=profile_pbp,
+                training_seasons=training_seasons,
+                target_season=target_season,
+                week=week,
+                rosters=profile_rosters,
+            )
 
         return home_dists, away_dists, home_roster, away_roster
 

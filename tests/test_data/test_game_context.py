@@ -1,6 +1,7 @@
 import pytest
 import polars as pl
 from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.player import TeamRoster
 
@@ -37,6 +38,14 @@ class TestGameContextBuilder:
         assert away_dists.play_calling.team == "BUF"
         assert home_roster.team == "KC"
         assert away_roster.team == "BUF"
+
+    def test_game_script_engine_created_when_enabled(self, tmp_path):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            game_script_config=GameScriptConfig(enabled=True),
+        )
+
+        assert builder._game_script_engine is not None
 
     def test_missing_team_gets_league_defaults(self, builder, expanded_pbp, sample_rosters):
         """A team not in PBP data should get league-average distributions."""
