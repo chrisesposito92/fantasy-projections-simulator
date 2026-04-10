@@ -232,6 +232,7 @@ def run_season(
                 vegas_config=arm_b_configs.get("vegas_config"),
                 props_config=arm_b_configs.get("props_config"),
                 usage_config=arm_b_configs.get("usage_config"),
+                game_script_config=arm_b_configs.get("game_script_config"),
             )
 
             specs_a: list[GameSpec] = []
