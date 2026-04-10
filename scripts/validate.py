@@ -237,6 +237,9 @@ def run_season(
                 props_config=arm_b_configs.get("props_config"),
                 usage_config=arm_b_configs.get("usage_config"),
                 game_script_config=arm_b_configs.get("game_script_config"),
+                goal_line_concentration_config=arm_b_configs.get(
+                    "goal_line_concentration_config"
+                ),
             )
 
             specs_a: list[GameSpec] = []

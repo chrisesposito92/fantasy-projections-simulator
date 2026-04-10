@@ -41,10 +41,29 @@ def select_passer(roster: TeamRoster, state: GameState | None = None) -> PlayerM
     return roster.get_starting_qb()
 
 
+def _receiver_usage_weight(
+    player: PlayerModel,
+    yard_line: int,
+    goal_line_concentration_enabled: bool,
+) -> float:
+    """Return receiver usage weight with explicit band and fallback order."""
+    if yard_line > 20:
+        return player.usage.target_share
+    if goal_line_concentration_enabled:
+        if yard_line <= 5 and player.usage.goal_line_target_share > 0:
+            return player.usage.goal_line_target_share
+        if 6 <= yard_line <= 20 and player.usage.outer_rz_target_share > 0:
+            return player.usage.outer_rz_target_share
+    if player.usage.red_zone_target_share > 0:
+        return player.usage.red_zone_target_share
+    return player.usage.target_share
+
+
 def select_receiver(
     roster: TeamRoster,
     state: GameState,
     rng: np.random.Generator,
+    goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
 ) -> PlayerModel:
     """Select a receiver weighted by target share, filtering out missed-week players."""
@@ -55,13 +74,12 @@ def select_receiver(
     if not eligible:
         raise ValueError(f"No eligible receivers on roster for {filtered.team}")
 
-    is_red_zone = state.yard_line <= 20
     base_weights = np.array(
         [
-            (
-                player.usage.red_zone_target_share
-                if is_red_zone and player.usage.red_zone_target_share > 0
-                else player.usage.target_share
+            _receiver_usage_weight(
+                player,
+                state.yard_line,
+                goal_line_concentration_enabled,
             )
             for player in eligible
         ],
@@ -136,11 +154,30 @@ def _apply_rb_rank_factors(
     return adjusted
 
 
+def _rusher_usage_weight(
+    player: PlayerModel,
+    yard_line: int,
+    goal_line_concentration_enabled: bool,
+) -> float:
+    """Return rusher usage weight with explicit band and fallback order."""
+    if yard_line > 20:
+        return player.usage.carry_share
+    if goal_line_concentration_enabled:
+        if yard_line <= 5 and player.usage.goal_line_carry_share > 0:
+            return player.usage.goal_line_carry_share
+        if 6 <= yard_line <= 20 and player.usage.outer_rz_carry_share > 0:
+            return player.usage.outer_rz_carry_share
+    if player.usage.red_zone_carry_share > 0:
+        return player.usage.red_zone_carry_share
+    return player.usage.carry_share
+
+
 def select_rusher(
     roster: TeamRoster,
     state: GameState,
     rng: np.random.Generator,
     is_scramble: bool = False,
+    goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
 ) -> PlayerModel:
     """Select a ball carrier, filtering out missed-week players."""
@@ -154,8 +191,18 @@ def select_rusher(
         return roster.get_starting_qb()
 
     filtered = _filter_available(roster, state)
-    is_red_zone = state.yard_line <= 20
-    eligible, base_weights = filtered.rusher_candidates_and_weights(is_red_zone=is_red_zone)
+    eligible, _ = filtered.rusher_candidates_and_weights(is_red_zone=False)
+    base_weights = np.array(
+        [
+            _rusher_usage_weight(
+                player,
+                state.yard_line,
+                goal_line_concentration_enabled,
+            )
+            for player in eligible
+        ],
+        dtype=float,
+    )
     weights = _apply_rb_rank_factors(eligible, base_weights, script)
     if weights.sum() == 0:
         weights = np.ones(len(eligible), dtype=float)

@@ -120,13 +120,14 @@ class TestBuildEngineConfigs:
         assert configs["props_config"] is not None
         assert configs["usage_config"] is not None
 
-    def test_defaults_include_game_script_config_none_by_default(self):
+    def test_defaults_include_enabled_game_script_config(self):
         defaults = load_defaults()
 
         configs = build_engine_configs(defaults)
 
         assert "game_script_config" in configs
-        assert configs["game_script_config"] is None
+        assert configs["game_script_config"] is not None
+        assert configs["game_script_config"].enabled is True
 
     def test_disabled_engine_returns_none(self):
         defaults = load_defaults()

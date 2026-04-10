@@ -258,6 +258,9 @@ game_script:
     rb_carry_prior_strength: 100
     rb_rank_factor_clamp: [0.85, 1.15]
 
+goal_line_concentration:
+  enabled: false
+
 td_tendency:
   enabled: true              # flip to true after A/B validation
   prior_strength: 20          # pseudo-opportunities for Bayesian shrinkage

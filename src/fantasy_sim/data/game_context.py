@@ -17,6 +17,7 @@ from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
+from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
@@ -60,6 +61,7 @@ class GameContextBuilder:
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
         game_script_config: GameScriptConfig | None = None,
+        goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
@@ -181,6 +183,12 @@ class GameContextBuilder:
             self._game_script_engine = GameScriptEngine(self._game_script_config)
             logger.info("Game script engine enabled")
 
+        # Goal-line concentration is feature-gated via config and applied when enabled.
+        # Keep the config on the builder so it can be threaded into downstream distributions.
+        self._goal_line_concentration_config = (
+            goal_line_concentration_config or GoalLineConcentrationConfig(enabled=False)
+        )
+
         # TD tendency engine: per-player RZ TD conversion factors
         self._td_tendency_engine = None
         self._td_tendency_config = td_tendency_config or TdTendencyConfig(enabled=False)
@@ -189,6 +197,16 @@ class GameContextBuilder:
                 self._td_tendency_config, self._pff_loader,
             )
             logger.info("TD tendency engine enabled")
+
+    def _is_goal_line_concentration_enabled(self) -> bool:
+        """Return the runtime feature flag for built team distributions."""
+        return bool(
+            getattr(
+                getattr(self, "_goal_line_concentration_config", None),
+                "enabled",
+                False,
+            )
+        )
 
     def _ensure_pipeline(
         self,
@@ -305,6 +323,7 @@ class GameContextBuilder:
             turnover_rates=turnover_rates,
             kicking=copy.deepcopy(pipeline_output["kicking"]),
             drive_start=pipeline_output["drive_start"],
+            goal_line_concentration_enabled=self._is_goal_line_concentration_enabled(),
         )
 
     def build_team_roster(
