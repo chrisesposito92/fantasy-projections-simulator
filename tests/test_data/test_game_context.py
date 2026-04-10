@@ -1,6 +1,7 @@
 import pytest
 import polars as pl
 from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.player import TeamRoster
@@ -38,6 +39,36 @@ class TestGameContextBuilder:
         assert away_dists.play_calling.team == "BUF"
         assert home_roster.team == "KC"
         assert away_roster.team == "BUF"
+
+    def test_build_team_distributions_stamps_goal_line_concentration_flag(
+        self, tmp_path, expanded_pbp, sample_rosters
+    ):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            goal_line_concentration_config=GoalLineConcentrationConfig(enabled=True),
+        )
+
+        dists = builder.build_team_distributions(
+            "KC", pbp=expanded_pbp, rosters=sample_rosters, training_seasons=[2024]
+        )
+
+        assert dists.goal_line_concentration_enabled is True
+
+    def test_build_game_stamps_goal_line_concentration_flag_on_both_teams(
+        self, tmp_path, expanded_pbp, sample_rosters
+    ):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            goal_line_concentration_config=GoalLineConcentrationConfig(enabled=True),
+        )
+
+        home_dists, away_dists, _, _ = builder.build_game(
+            home_team="KC", away_team="BUF",
+            pbp=expanded_pbp, rosters=sample_rosters, training_seasons=[2024],
+        )
+
+        assert home_dists.goal_line_concentration_enabled is True
+        assert away_dists.goal_line_concentration_enabled is True
 
     def test_game_script_engine_created_when_enabled(self, tmp_path):
         builder = GameContextBuilder(

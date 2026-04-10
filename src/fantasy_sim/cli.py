@@ -12,6 +12,7 @@ from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
+from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
@@ -128,6 +129,7 @@ def _make_builder(
     if usage_flag is not None:
         usage_config.enabled = usage_flag
     game_script_config = load_game_script_config(defaults)
+    goal_line_concentration_config = load_goal_line_concentration_config(defaults)
     td_tendency_config = load_td_tendency_config(defaults)
     loader = DataLoader()
     return GameContextBuilder(
@@ -138,6 +140,7 @@ def _make_builder(
         props_config=props_config,
         usage_config=usage_config,
         game_script_config=game_script_config,
+        goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
     )
 

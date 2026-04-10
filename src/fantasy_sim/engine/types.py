@@ -23,6 +23,7 @@ class TeamDistributions:
     turnover_rates: TurnoverRates
     kicking: KickingModel
     drive_start: DriveStartModel
+    goal_line_concentration_enabled: bool = False
     pace_factor: float = 1.0
     defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
     game_script_config: GameScriptConfig | None = None

@@ -198,6 +198,16 @@ class GameContextBuilder:
             )
             logger.info("TD tendency engine enabled")
 
+    def _is_goal_line_concentration_enabled(self) -> bool:
+        """Return the runtime feature flag for built team distributions."""
+        return bool(
+            getattr(
+                getattr(self, "_goal_line_concentration_config", None),
+                "enabled",
+                False,
+            )
+        )
+
     def _ensure_pipeline(
         self,
         training_seasons: list[int],
@@ -313,6 +323,7 @@ class GameContextBuilder:
             turnover_rates=turnover_rates,
             kicking=copy.deepcopy(pipeline_output["kicking"]),
             drive_start=pipeline_output["drive_start"],
+            goal_line_concentration_enabled=self._is_goal_line_concentration_enabled(),
         )
 
     def build_team_roster(

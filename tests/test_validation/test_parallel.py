@@ -479,20 +479,15 @@ class TestBuildGamesParallelDualArm:
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_only_threads_goal_line_concentration_to_on_builder(self, mock_builder_cls):
-        from fantasy_sim.validation.parallel import _create_builders
+        from fantasy_sim.validation.parallel import build_games_parallel
 
         config = object()
 
-        _create_builders(
+        build_games_parallel(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
             cache_dir=Path("/tmp"),
-            pff_config=None,
-            weather_config=None,
-            vegas_config=None,
-            props_config=None,
-            usage_config=None,
-            game_script_config=None,
-            td_tendency_config=None,
             goal_line_concentration_config=config,
+            max_workers=1,
             dual_arm=True,
         )
 

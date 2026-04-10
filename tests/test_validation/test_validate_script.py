@@ -101,7 +101,7 @@ def test_run_season_threads_goal_line_concentration_config_into_dual_arm_build()
             {"season": pl.Series([], dtype=pl.Int32)}
         )
 
-        goal_line_concentration_config = object()
+        arm_b_goal_line_concentration_config = object()
         arm_a_configs = {
             "pff_config": None,
             "weather_config": None,
@@ -119,7 +119,7 @@ def test_run_season_threads_goal_line_concentration_config_into_dual_arm_build()
             "props_config": None,
             "usage_config": None,
             "game_script_config": None,
-            "goal_line_concentration_config": goal_line_concentration_config,
+            "goal_line_concentration_config": arm_b_goal_line_concentration_config,
             "td_tendency_config": None,
         }
 
@@ -136,7 +136,7 @@ def test_run_season_threads_goal_line_concentration_config_into_dual_arm_build()
 
     call_kwargs = mock_build_games_parallel.call_args.kwargs
     assert call_kwargs["dual_arm"] is True
-    assert call_kwargs["goal_line_concentration_config"] is goal_line_concentration_config
+    assert call_kwargs["goal_line_concentration_config"] is arm_b_goal_line_concentration_config
 
 
 def test_run_season_prints_game_script_summary_when_profiles_are_collected():
