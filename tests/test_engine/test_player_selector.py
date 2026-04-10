@@ -253,3 +253,51 @@ class TestGoalLineConcentrationSelection:
 
         assert receiver_counts["TE1"] > receiver_counts["WR1"]
         assert rusher_counts["RB2"] > rusher_counts["RB1"]
+
+    def test_outside_red_zone_receiver_selection_stays_on_base_target_share(
+        self,
+        make_goal_line_roster: TeamRoster,
+    ):
+        state = make_state(yard_line=35)
+        baseline_rng = np.random.default_rng(42)
+        enabled_rng = np.random.default_rng(42)
+
+        baseline = [
+            select_receiver(make_goal_line_roster, state, baseline_rng).player_id
+            for _ in range(250)
+        ]
+        enabled = [
+            select_receiver(
+                make_goal_line_roster,
+                state,
+                enabled_rng,
+                goal_line_concentration_enabled=True,
+            ).player_id
+            for _ in range(250)
+        ]
+
+        assert enabled == baseline
+
+    def test_outside_red_zone_rusher_selection_stays_on_base_carry_share(
+        self,
+        make_goal_line_roster: TeamRoster,
+    ):
+        state = make_state(yard_line=42)
+        baseline_rng = np.random.default_rng(42)
+        enabled_rng = np.random.default_rng(42)
+
+        baseline = [
+            select_rusher(make_goal_line_roster, state, baseline_rng).player_id
+            for _ in range(250)
+        ]
+        enabled = [
+            select_rusher(
+                make_goal_line_roster,
+                state,
+                enabled_rng,
+                goal_line_concentration_enabled=True,
+            ).player_id
+            for _ in range(250)
+        ]
+
+        assert enabled == baseline

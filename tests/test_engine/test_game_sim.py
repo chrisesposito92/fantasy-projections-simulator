@@ -94,10 +94,12 @@ class TestSimulateGame:
 
         def fake_resolve_play(
             state, play_type, play_outcomes, turnover_rates, rng, roster=None, is_home=False, pace_factor=1.0,
+            goal_line_concentration_enabled=False,
             script=None,
         ):
             seen["play_type"] = play_type
             seen["pace_factor"] = pace_factor
+            seen["goal_line_concentration_enabled"] = goal_line_concentration_enabled
             seen["resolve_script"] = script
             state.game_over = True
             return PlayResult(play_type=play_type, yards=0, clock_runoff=0)
@@ -116,12 +118,15 @@ class TestSimulateGame:
             game_script_config=GameScriptConfig(enabled=True),
             game_script_profile=GameScriptProfile(team="T"),
         )
+        home_dists.goal_line_concentration_enabled = True
+        away_dists.goal_line_concentration_enabled = True
         simulate_game(home_dists, away_dists, np.random.default_rng(42))
 
         assert seen["config"] is not None
         assert seen["profile"] is not None
         assert seen["script"] is script
         assert seen["resolve_script"] is script
+        assert seen["goal_line_concentration_enabled"] is True
         assert seen["play_type"] == "run"
         assert seen["pace_factor"] == pytest.approx(1.05 * script.pace_factor)
 
