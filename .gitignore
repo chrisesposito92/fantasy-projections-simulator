@@ -13,6 +13,7 @@ htmlcov/
 *.so
 .omc/
 .omx/
+.worktrees/
 
 # A/B test results (machine-specific)
 results/
