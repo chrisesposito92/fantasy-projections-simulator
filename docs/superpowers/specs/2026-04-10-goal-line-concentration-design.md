@@ -7,7 +7,7 @@ The simulator currently learns one receiving red-zone share and one rushing red-
 - `red_zone_target_share` for targets inside the 20
 - `red_zone_carry_share` for carries inside the 20
 
-That single split is too coarse for goal-line work. A player can have ordinary red-zone volume from the 6-20 yard band but still dominate touches at the 1-5 yard line, or the reverse. The current model loses that distinction because [`player_builder.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/player_builder.py) collapses both bands into one share and [`player_selector.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/engine/player_selector.py) uses that same share everywhere inside the 20.
+That single split is too coarse for goal-line work. A player can have ordinary red-zone volume from the 6-20 yard band but still dominate touches at the 1-5 yard line, or the reverse. The current model loses that distinction because [`player_builder.py`](../../../src/fantasy_sim/data/player_builder.py) collapses both bands into one share and [`player_selector.py`](../../../src/fantasy_sim/engine/player_selector.py) uses that same share everywhere inside the 20.
 
 This shows up most clearly in goal-line rushing, but the same structural issue exists for goal-line receiving. The next accuracy lever is to split red-zone opportunity concentration into two buckets:
 
@@ -39,7 +39,7 @@ The implementation stays inside the existing usage pipeline rather than adding a
 
 ### PlayerUsage additions
 
-Add four internal fields to `PlayerUsage` in [`models/player.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/models/player.py):
+Add four internal fields to `PlayerUsage` in [`models/player.py`](../../../src/fantasy_sim/models/player.py):
 
 - `outer_rz_target_share: float = 0.0`
 - `goal_line_target_share: float = 0.0`
@@ -50,7 +50,7 @@ These are internal model fields, not override-facing API.
 
 ### Data layer
 
-Extend `_aggregate_pbp_stats()` in [`player_builder.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/player_builder.py) to collect per-player and per-team opportunity counts in two bands.
+Extend `_aggregate_pbp_stats()` in [`player_builder.py`](../../../src/fantasy_sim/data/player_builder.py) to collect per-player and per-team opportunity counts in two bands.
 
 Receiving counts:
 
@@ -84,7 +84,7 @@ Extend `_assemble_models()` to compute the four new internal usage shares from t
 
 ### Runtime selection
 
-Update [`select_receiver()`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/engine/player_selector.py) and `select_rusher()` in the same file so the selected weight source depends on both yard line and config:
+Update [`select_receiver()`](../../../src/fantasy_sim/engine/player_selector.py) and `select_rusher()` in the same file so the selected weight source depends on both yard line and config:
 
 - feature off: current behavior
 - feature on and `yard_line <= 5`: prefer `goal_line_*_share`
@@ -140,7 +140,7 @@ If `goal_line_concentration.enabled` is `false`, behavior must be identical to t
 
 ## Normalization
 
-[`build_team_roster()`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/player_builder.py) currently normalizes:
+[`build_team_roster()`](../../../src/fantasy_sim/data/player_builder.py) currently normalizes:
 
 - `carry_share`
 - `red_zone_carry_share`
@@ -164,7 +164,7 @@ This keeps selector weights interpretable and prevents stale historical teammate
 
 ## Configuration
 
-Add a new top-level section to [`config/defaults.yaml`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml):
+Add a new top-level section to [`config/defaults.yaml`](../../../config/defaults.yaml):
 
 ```yaml
 goal_line_concentration:
@@ -185,7 +185,7 @@ If that first run is promising, follow-up confirmation should use higher-sim run
 
 ### Data extraction and assembly
 
-Add tests in [`tests/test_data/test_player_builder.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/tests/test_data/test_player_builder.py) to verify:
+Add tests in [`tests/test_data/test_player_builder.py`](../../../tests/test_data/test_player_builder.py) to verify:
 
 - `yardline_100 <= 5` counts feed goal-line buckets
 - `6 <= yardline_100 <= 20` counts feed outer-red-zone buckets
@@ -195,7 +195,7 @@ Add tests in [`tests/test_data/test_player_builder.py`](/Users/chrisesposito/Doc
 
 ### Runtime selector behavior
 
-Add deterministic selector tests under [`tests/test_engine`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/tests/test_engine) for:
+Add deterministic selector tests under [`tests/test_engine`](../../../tests/test_engine) for:
 
 - feature enabled + `yard_line <= 5` uses goal-line shares
 - feature enabled + `6 <= yard_line <= 20` uses outer-red-zone shares

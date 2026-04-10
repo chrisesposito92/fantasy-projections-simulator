@@ -183,8 +183,8 @@ class GameContextBuilder:
             self._game_script_engine = GameScriptEngine(self._game_script_config)
             logger.info("Game script engine enabled")
 
-        # Goal-line concentration config is threaded now for validation plumbing.
-        # Runtime behavior is intentionally a no-op until later tasks land.
+        # Goal-line concentration is feature-gated via config and applied when enabled.
+        # Keep the config on the builder so it can be threaded into downstream distributions.
         self._goal_line_concentration_config = (
             goal_line_concentration_config or GoalLineConcentrationConfig(enabled=False)
         )

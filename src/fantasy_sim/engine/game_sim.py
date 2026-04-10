@@ -98,11 +98,7 @@ def simulate_game(
             off_dists.turnover_rates, rng, roster=roster,
             is_home=is_home_team,
             pace_factor=effective_pace_factor(off_dists.pace_factor, script),
-            goal_line_concentration_enabled=getattr(
-                off_dists,
-                "goal_line_concentration_enabled",
-                False,
-            ),
+            goal_line_concentration_enabled=off_dists.goal_line_concentration_enabled,
             script=script,
         )
         total_plays += 1
