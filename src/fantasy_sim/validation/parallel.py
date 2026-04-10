@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -138,7 +139,8 @@ def simulate_games_parallel(
     # Parallel path
     from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
 
-    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+    _mp_ctx = multiprocessing.get_context("forkserver")
+    with ProcessPoolExecutor(max_workers=max_workers, mp_context=_mp_ctx) as pool:
         futures = {
             pool.submit(_simulate_worker, (spec, n_sims, scoring_config)): spec
             for spec in specs
@@ -460,8 +462,10 @@ def build_games_parallel(
             init_fn = _init_build_worker_single
             worker_fn = _build_game_worker_single
 
+        _mp_ctx = multiprocessing.get_context("forkserver")
         with ProcessPoolExecutor(
             max_workers=max_workers,
+            mp_context=_mp_ctx,
             initializer=init_fn,
             initargs=(cache_dir, pff_config, weather_config, vegas_config, props_config, usage_config, td_tendency_config),
         ) as pool:
