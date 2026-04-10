@@ -12,6 +12,7 @@ from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_vegas_config, load_props_config
 from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
+from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 
 
@@ -80,6 +81,7 @@ def build_engine_configs(config: dict) -> dict:
     props = load_props_config(config)
     usage = load_usage_config(config)
     game_script = load_game_script_config(config)
+    goal_line_concentration = load_goal_line_concentration_config(config)
     td_tendency = load_td_tendency_config(config)
     return {
         "pff_config": pff if pff.enabled else None,
@@ -88,6 +90,9 @@ def build_engine_configs(config: dict) -> dict:
         "props_config": props if props.enabled else None,
         "usage_config": usage if usage.enabled else None,
         "game_script_config": game_script if game_script.enabled else None,
+        "goal_line_concentration_config": (
+            goal_line_concentration if goal_line_concentration.enabled else None
+        ),
         "td_tendency_config": td_tendency if td_tendency.enabled else None,
     }
 
@@ -101,5 +106,6 @@ def build_bare_engine_configs() -> dict:
         "props_config": None,
         "usage_config": None,
         "game_script_config": None,
+        "goal_line_concentration_config": None,
         "td_tendency_config": None,
     }
