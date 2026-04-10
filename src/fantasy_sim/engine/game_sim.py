@@ -93,27 +93,13 @@ def simulate_game(
         play_type = select_play_type(state, off_dists.play_calling, rng, script=script)
         roster = home_roster if state.possession == "home" else away_roster
         is_home_team = (state.possession == "home")
-        resolve_kwargs = dict(
-            roster=roster,
+        result = resolve_play(
+            state, play_type, off_dists.play_outcomes,
+            off_dists.turnover_rates, rng, roster=roster,
             is_home=is_home_team,
             pace_factor=effective_pace_factor(off_dists.pace_factor, script),
             script=script,
         )
-        # Keep older monkeypatched call sites working while the runtime script
-        # path rolls out through resolver tests.
-        try:
-            result = resolve_play(
-                state, play_type, off_dists.play_outcomes,
-                off_dists.turnover_rates, rng, **resolve_kwargs,
-            )
-        except TypeError as exc:
-            if "unexpected keyword argument 'script'" not in str(exc):
-                raise
-            resolve_kwargs.pop("script")
-            result = resolve_play(
-                state, play_type, off_dists.play_outcomes,
-                off_dists.turnover_rates, rng, **resolve_kwargs,
-            )
         total_plays += 1
 
         # --- Penalty check FIRST — if penalty, skip stats and play outcome ---
