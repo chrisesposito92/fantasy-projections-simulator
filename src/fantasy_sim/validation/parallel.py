@@ -198,22 +198,10 @@ def _init_build_worker_single(
     _worker_builders = {"single": builder}
 
 
-def _build_game_worker_single(args: tuple) -> dict:
-    """Worker function for single-arm game context building.
-
-    Must be module-level (not a closure) for ProcessPoolExecutor.
-
-    Args:
-        args: (home, away, training_seasons, target_season, week, game_id, seed)
-
-    Returns:
-        Result dict with keys: status, game_id, seed, week, home, away,
-        home_dists, away_dists, home_roster, away_roster.
-        On error: status='error', error=str(exc).
-    """
+def _do_build_single(args: tuple, builder) -> dict:
+    """Core single-arm build logic shared by process and thread workers."""
     home, away, training_seasons, target_season, week, game_id, seed = args
     try:
-        builder = _worker_builders["single"]
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
             home, away,
             training_seasons=training_seasons,
@@ -246,6 +234,11 @@ def _build_game_worker_single(args: tuple) -> dict:
         }
 
 
+def _build_game_worker_single(args: tuple) -> dict:
+    """ProcessPoolExecutor worker: uses module-level _worker_builders."""
+    return _do_build_single(args, _worker_builders["single"])
+
+
 def _init_build_worker_dual(
     cache_dir: Path,
     pff_config: PffConfig | None,
@@ -273,47 +266,45 @@ def _init_build_worker_dual(
     }
 
 
-def _build_game_worker_dual(args: tuple) -> dict:
-    """Worker: build game context for one game, both off+on arms."""
+def _do_build_dual(args: tuple, off_builder, on_builder) -> dict:
+    """Core dual-arm build logic shared by process and thread workers."""
     home, away, training_seasons, target_season, week, game_id, seed = args
     from fantasy_sim.data.pff.models import MatchupContext
 
     try:
-        hd_off, ad_off, hr_off, ar_off = _worker_builders["off"].build_game(
+        hd_off, ad_off, hr_off, ar_off = off_builder.build_game(
             home, away, training_seasons=training_seasons,
             target_season=target_season, week=week,
         )
-        hd_on, ad_on, hr_on, ar_on = _worker_builders["on"].build_game(
+        hd_on, ad_on, hr_on, ar_on = on_builder.build_game(
             home, away, training_seasons=training_seasons,
             target_season=target_season, week=week,
         )
-
-        builder_on = _worker_builders["on"]
 
         home_matchup_ctx = MatchupContext()
         away_matchup_ctx = MatchupContext()
-        if builder_on._matchup_engine is not None:
-            home_matchup_ctx = builder_on._matchup_engine.compute(
+        if on_builder._matchup_engine is not None:
+            home_matchup_ctx = on_builder._matchup_engine.compute(
                 defense_team=away, offense_team=home,
                 target_season=target_season, max_week=week,
             )
-            away_matchup_ctx = builder_on._matchup_engine.compute(
+            away_matchup_ctx = on_builder._matchup_engine.compute(
                 defense_team=home, offense_team=away,
                 target_season=target_season, max_week=week,
             )
 
         home_coverage: dict = {}
         away_coverage: dict = {}
-        if builder_on._coverage_engine is not None:
-            home_coverage = builder_on._coverage_engine.compute(
+        if on_builder._coverage_engine is not None:
+            home_coverage = on_builder._coverage_engine.compute(
                 defense_team=away, offense_roster=hr_on,
                 target_season=target_season, max_week=week,
-                pff_crosswalk=builder_on._pff_crosswalk,
+                pff_crosswalk=on_builder._pff_crosswalk,
             )
-            away_coverage = builder_on._coverage_engine.compute(
+            away_coverage = on_builder._coverage_engine.compute(
                 defense_team=home, offense_roster=ar_on,
                 target_season=target_season, max_week=week,
-                pff_crosswalk=builder_on._pff_crosswalk,
+                pff_crosswalk=on_builder._pff_crosswalk,
             )
 
         return {
@@ -346,6 +337,11 @@ def _build_game_worker_dual(args: tuple) -> dict:
             "error": str(exc),
             "error_type": type(exc).__name__,
         }
+
+
+def _build_game_worker_dual(args: tuple) -> dict:
+    """ProcessPoolExecutor worker: uses module-level _worker_builders."""
+    return _do_build_dual(args, _worker_builders["off"], _worker_builders["on"])
 
 
 def _build_games_sequential(
@@ -402,6 +398,135 @@ def _build_games_sequential(
     return results
 
 
+def _create_builders(
+    cache_dir: Path,
+    pff_config,
+    weather_config,
+    vegas_config,
+    props_config,
+    usage_config,
+    td_tendency_config,
+    dual_arm: bool,
+) -> dict:
+    """Create GameContextBuilder instances for the build phase.
+
+    Uses module-level GameContextBuilder reference (line 70) so tests can
+    mock-patch ``fantasy_sim.validation.parallel.GameContextBuilder``.
+    """
+    if dual_arm:
+        return {
+            "off": GameContextBuilder(cache_dir=cache_dir),
+            "on": GameContextBuilder(
+                cache_dir=cache_dir,
+                pff_config=pff_config,
+                weather_config=weather_config,
+                vegas_config=vegas_config,
+                props_config=props_config,
+                usage_config=usage_config,
+                td_tendency_config=td_tendency_config,
+            ),
+        }
+    return {
+        "single": GameContextBuilder(
+            cache_dir=cache_dir,
+            pff_config=pff_config,
+            weather_config=weather_config,
+            vegas_config=vegas_config,
+            props_config=props_config,
+            usage_config=usage_config,
+            td_tendency_config=td_tendency_config,
+        ),
+    }
+
+
+def _warm_builders(
+    builders: dict,
+    game_args: list[tuple],
+    dual_arm: bool,
+) -> list[dict]:
+    """Pre-warm builder caches and build the first game to populate PFF engine caches.
+
+    Returns a list containing the first game's result (already built).
+    """
+    training_seasons = game_args[0][2]
+    target_season = game_args[0][3]
+    weeks = sorted({args[4] for args in game_args})
+
+    for builder in builders.values():
+        builder.warm(training_seasons, target_season, weeks)
+
+    # Build first game sequentially to warm PFF engine per-game caches
+    # (matchup z-scores, coverage matchups, tier pools).
+    first_args = game_args[0]
+    if dual_arm:
+        result = _build_game_worker_dual_threaded(first_args, builders)
+    else:
+        result = _build_game_worker_single_threaded(first_args, builders)
+    return [result]
+
+
+def _build_game_worker_single_threaded(args: tuple, builders: dict) -> dict:
+    """Thread worker: delegates to shared _do_build_single."""
+    return _do_build_single(args, builders["single"])
+
+
+def _build_game_worker_dual_threaded(args: tuple, builders: dict) -> dict:
+    """Thread worker: delegates to shared _do_build_dual."""
+    return _do_build_dual(args, builders["off"], builders["on"])
+
+
+def _build_games_threaded(
+    game_args: list[tuple],
+    builders: dict,
+    dual_arm: bool,
+    on_complete: "Callable[[int, int], None] | None",
+    max_workers: int,
+) -> list[dict]:
+    """Build game contexts using ThreadPoolExecutor with shared pre-warmed builders."""
+    from concurrent.futures import BrokenExecutor, ThreadPoolExecutor, as_completed
+
+    if dual_arm:
+        def worker_fn(args: tuple) -> dict:
+            return _build_game_worker_dual_threaded(args, builders)
+    else:
+        def worker_fn(args: tuple) -> dict:
+            return _build_game_worker_single_threaded(args, builders)
+
+    total = len(game_args)
+    results: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(worker_fn, args): args for args in game_args}
+        completed = 0
+        for future in as_completed(futures):
+            args = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except BrokenExecutor:
+                raise RuntimeError(
+                    "Worker thread crashed. Try --workers 1 for sequential mode."
+                )
+            except Exception as exc:
+                game_id = args[5]
+                logger.warning(
+                    "Build failed for game %s: %s", game_id, exc, exc_info=True
+                )
+                results.append({
+                    "status": "error",
+                    "game_id": game_id,
+                    "seed": args[6],
+                    "week": args[4],
+                    "home": args[0],
+                    "away": args[1],
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                })
+            completed += 1
+            if on_complete:
+                on_complete(completed, total)
+    return results
+
+
 def build_games_parallel(
     game_args: list[tuple],
     cache_dir: Path,
@@ -417,13 +542,16 @@ def build_games_parallel(
 ) -> list[dict]:
     """Build game contexts for multiple games, optionally in parallel.
 
+    Default: ThreadPoolExecutor with shared pre-warmed GameContextBuilder.
+    Fallback: Set FANTASY_SIM_BUILD_MODE=process for the old ProcessPoolExecutor path.
+
     Args:
         game_args: List of tuples (home, away, training_seasons, target_season,
                    week, game_id, seed).
         cache_dir: Directory for the GameContextBuilder cache.
         pff_config: PffConfig or None (passed to GameContextBuilder).
         weather_config: WeatherConfig or None (passed to GameContextBuilder).
-        max_workers: Worker processes. None/0=auto, 1=sequential.
+        max_workers: Worker count. None/0=auto, 1=sequential.
         dual_arm: If True, use dual-arm workers (off+on).
         on_complete: Optional callback(completed_count, total_count).
 
@@ -433,75 +561,108 @@ def build_games_parallel(
     if not game_args:
         return []
 
-    if max_workers is None or max_workers == 0:
-        max_workers = default_max_workers(len(game_args))
-
-    # Cap build workers: each worker independently warms pipeline/PBP/PFF
-    # caches, so more workers = more I/O contention and memory pressure.
-    _MAX_BUILD_WORKERS = 4
-    if max_workers > _MAX_BUILD_WORKERS:
-        max_workers = _MAX_BUILD_WORKERS
-
     total = len(game_args)
 
-    if max_workers <= 1:
-        results = _build_games_sequential(
-            game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete,
-            vegas_config=vegas_config,
-            props_config=props_config,
-            usage_config=usage_config,
-            td_tendency_config=td_tendency_config,
-        )
-    else:
-        from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
+    if max_workers is None or max_workers == 0:
+        max_workers = default_max_workers(total)
 
-        if dual_arm:
-            init_fn = _init_build_worker_dual
-            worker_fn = _build_game_worker_dual
+    use_processes = os.environ.get("FANTASY_SIM_BUILD_MODE") == "process"
+
+    if use_processes:
+        # Legacy process pool path: cap workers due to redundant data loading
+        _MAX_BUILD_WORKERS = 4
+        if max_workers > _MAX_BUILD_WORKERS:
+            max_workers = _MAX_BUILD_WORKERS
+
+        if max_workers <= 1:
+            results = _build_games_sequential(
+                game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete,
+                vegas_config=vegas_config,
+                props_config=props_config,
+                usage_config=usage_config,
+                td_tendency_config=td_tendency_config,
+            )
         else:
-            init_fn = _init_build_worker_single
-            worker_fn = _build_game_worker_single
+            from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
 
-        _mp_ctx = multiprocessing.get_context("forkserver")
-        with ProcessPoolExecutor(
-            max_workers=max_workers,
-            mp_context=_mp_ctx,
-            initializer=init_fn,
-            initargs=(cache_dir, pff_config, weather_config, vegas_config, props_config, usage_config, td_tendency_config),
-        ) as pool:
-            futures = {
-                pool.submit(worker_fn, args): args for args in game_args
-            }
-            completed = 0
-            raw_results: list[dict] = []
-            for future in as_completed(futures):
-                args = futures[future]
-                try:
-                    result = future.result()
-                    raw_results.append(result)
-                except BrokenExecutor:
-                    raise RuntimeError(
-                        "Worker process crashed. Try --workers 1 for sequential mode."
-                    )
-                except Exception as exc:
-                    game_id = args[5]
-                    logger.warning(
-                        "Build failed for game %s: %s", game_id, exc, exc_info=True
-                    )
-                    raw_results.append({
-                        "status": "error",
-                        "game_id": game_id,
-                        "seed": args[6],
-                        "week": args[4],
-                        "home": args[0],
-                        "away": args[1],
-                        "error": str(exc),
-                        "error_type": type(exc).__name__,
-                    })
-                completed += 1
+            if dual_arm:
+                init_fn = _init_build_worker_dual
+                worker_fn = _build_game_worker_dual
+            else:
+                init_fn = _init_build_worker_single
+                worker_fn = _build_game_worker_single
+
+            _mp_ctx = multiprocessing.get_context("forkserver")
+            with ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=_mp_ctx,
+                initializer=init_fn,
+                initargs=(cache_dir, pff_config, weather_config, vegas_config, props_config, usage_config, td_tendency_config),
+            ) as pool:
+                futures = {
+                    pool.submit(worker_fn, args): args for args in game_args
+                }
+                completed = 0
+                raw_results: list[dict] = []
+                for future in as_completed(futures):
+                    args = futures[future]
+                    try:
+                        result = future.result()
+                        raw_results.append(result)
+                    except BrokenExecutor:
+                        raise RuntimeError(
+                            "Worker process crashed. Try --workers 1 for sequential mode."
+                        )
+                    except Exception as exc:
+                        game_id = args[5]
+                        logger.warning(
+                            "Build failed for game %s: %s", game_id, exc, exc_info=True
+                        )
+                        raw_results.append({
+                            "status": "error",
+                            "game_id": game_id,
+                            "seed": args[6],
+                            "week": args[4],
+                            "home": args[0],
+                            "away": args[1],
+                            "error": str(exc),
+                            "error_type": type(exc).__name__,
+                        })
+                    completed += 1
+                    if on_complete:
+                        on_complete(completed, total)
+            results = raw_results
+    else:
+        # Default thread pool path: shared pre-warmed builders, no worker cap
+        builders = _create_builders(
+            cache_dir, pff_config, weather_config, vegas_config,
+            props_config, usage_config, td_tendency_config, dual_arm,
+        )
+        warm_results = _warm_builders(builders, game_args, dual_arm)
+
+        if max_workers <= 1:
+            # Sequential with pre-warmed builders
+            if on_complete and warm_results:
+                on_complete(1, total)
+            remaining_results: list[dict] = []
+            for i, args in enumerate(game_args[1:], start=2):
+                if dual_arm:
+                    result = _build_game_worker_dual_threaded(args, builders)
+                else:
+                    result = _build_game_worker_single_threaded(args, builders)
+                remaining_results.append(result)
                 if on_complete:
-                    on_complete(completed, total)
-        results = raw_results
+                    on_complete(i, total)
+            results = warm_results + remaining_results
+        else:
+            # Thread pool for remaining games (first game already built during warm)
+            if on_complete and warm_results:
+                on_complete(1, total)
+            offset_cb = (lambda c, t: on_complete(c + 1, total)) if on_complete else None
+            remaining_results = _build_games_threaded(
+                game_args[1:], builders, dual_arm, offset_cb, max_workers,
+            )
+            results = warm_results + remaining_results
 
     # Sort by (week, game_id) for deterministic ordering
     results.sort(key=lambda r: (r.get("week", 0), r.get("game_id", "")))

@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import threading
 from pathlib import Path
 import polars as pl
 import numpy as np
@@ -26,6 +27,13 @@ from fantasy_sim.overrides.engine import apply_player_override, apply_team_overr
 from fantasy_sim.overrides.resolver import PlayerResolver
 
 logger = logging.getLogger(__name__)
+
+
+def _seasons_with_target(training_seasons: list[int], target_season: int | None) -> list[int]:
+    """Return training_seasons with target_season appended if not already present."""
+    if target_season is None or target_season in training_seasons:
+        return training_seasons
+    return training_seasons + [target_season]
 
 
 # League average fallbacks for teams with no data
@@ -57,8 +65,9 @@ class GameContextBuilder:
         self._cached_training_seasons: tuple[int, ...] | None = None
         self._pbp_stats_cache: dict | None = None
         self._pbp_stats_cache_key: tuple | None = None
-        self._player_models_cache: dict | None = None
-        self._player_cache_key: tuple | None = None
+        self._player_models_cache: dict[tuple, dict[str, PlayerModel]] = {}
+        self._pipeline_lock = threading.Lock()
+        self._cpoe_warmed = False
 
         # PFF setup: create loader once, share it across matchup + talent engines
         self._pff_config = pff_config or PffConfig()
@@ -188,64 +197,62 @@ class GameContextBuilder:
         2. PBP stats — cached on (training_seasons, season_weights).
         3. Player models — cached on (training_seasons, target_season, week).
         """
-        # Load PBP if not provided (needed for both pipeline and player models)
-        if pbp is None:
-            pbp = self.loader.load_pbp(training_seasons)
+        # Lock protects cache-check-and-populate for thread safety.
+        # After warm(), all paths hit cache so the lock is uncontended.
+        with self._pipeline_lock:
+            # Load PBP if not provided (needed for both pipeline and player models)
+            if pbp is None:
+                pbp = self.loader.load_pbp(training_seasons)
 
-        # --- Layer 1: Pipeline output (cached on training_seasons) ---
-        ts_key = tuple(sorted(training_seasons))
-        if (
-            self._pipeline_cache is None
-            or self._cached_training_seasons != ts_key
-        ):
-            pipeline = DataPipeline(cache_dir=self.cache_dir, seasons=training_seasons)
-            self._pipeline_cache = pipeline.build(pbp=pbp, season_weights=season_weights)
-            self._cached_training_seasons = ts_key
-            self._pbp_stats_cache = None
+            # --- Layer 1: Pipeline output (cached on training_seasons) ---
+            ts_key = tuple(sorted(training_seasons))
+            if (
+                self._pipeline_cache is None
+                or self._cached_training_seasons != ts_key
+            ):
+                pipeline = DataPipeline(cache_dir=self.cache_dir, seasons=training_seasons)
+                self._pipeline_cache = pipeline.build(pbp=pbp, season_weights=season_weights)
+                self._cached_training_seasons = ts_key
+                self._pbp_stats_cache = None
+                self._player_models_cache.clear()
 
-        # --- Layer 2: PBP stats (cached on training_seasons + season_weights) ---
-        _pbp_key = (ts_key, tuple(sorted((season_weights or {}).items())))
-        if self._pbp_stats_cache is None or self._pbp_stats_cache_key != _pbp_key:
-            self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons, season_weights=season_weights)
-            self._pbp_stats_cache_key = _pbp_key
+            # --- Layer 2: PBP stats (cached on training_seasons + season_weights) ---
+            _pbp_key = (ts_key, tuple(sorted((season_weights or {}).items())))
+            if self._pbp_stats_cache is None or self._pbp_stats_cache_key != _pbp_key:
+                self._pbp_stats_cache = _aggregate_pbp_stats(pbp, training_seasons, season_weights=season_weights)
+                self._pbp_stats_cache_key = _pbp_key
 
-        # --- Layer 3: Player models (cached on training_seasons + target_season + week + props) ---
-        props_enabled = getattr(self, "_props_engine", None) is not None
-        # Usage cache fingerprint: captures enabled state + key tuning parameters
-        # so cache invalidates when config changes, not just when toggled on/off
-        _usage_cfg = getattr(self, "_usage_config", None)
-        if _usage_cfg is not None and _usage_cfg.enabled:
-            usage_fingerprint = (
-                _usage_cfg.enabled,
-                _usage_cfg.snap.prior_strength,
-                _usage_cfg.cpoe.enabled,
-                _usage_cfg.ngs.enabled,
-                _usage_cfg.route_rate.enabled,
-            )
-        else:
-            usage_fingerprint = (False,)
-        cache_key = (ts_key, target_season, week, props_enabled, usage_fingerprint)
-        if self._player_models_cache is None or self._player_cache_key != cache_key:
-            # Determine current rosters
-            if rosters is not None:
-                current_rosters = rosters
-                # Filter to target_season if provided to prevent wrong-season assignments
-                if target_season is not None and "season" in current_rosters.columns:
-                    current_rosters = current_rosters.filter(pl.col("season") == target_season)
+            # --- Layer 3: Player models (cached on training_seasons + target_season + week + props) ---
+            props_enabled = getattr(self, "_props_engine", None) is not None
+            _usage_cfg = getattr(self, "_usage_config", None)
+            if _usage_cfg is not None and _usage_cfg.enabled:
+                usage_fingerprint = (
+                    _usage_cfg.enabled,
+                    _usage_cfg.snap.prior_strength,
+                    _usage_cfg.cpoe.enabled,
+                    _usage_cfg.ngs.enabled,
+                    _usage_cfg.route_rate.enabled,
+                )
             else:
-                roster_season = target_season or (max(training_seasons) + 1)
-                current_rosters = self.loader.load_rosters([roster_season])
+                usage_fingerprint = (False,)
+            cache_key = (ts_key, target_season, week, props_enabled, usage_fingerprint)
+            if cache_key not in self._player_models_cache:
+                if rosters is not None:
+                    current_rosters = rosters
+                    if target_season is not None and "season" in current_rosters.columns:
+                        current_rosters = current_rosters.filter(pl.col("season") == target_season)
+                else:
+                    roster_season = target_season or (max(training_seasons) + 1)
+                    current_rosters = self.loader.load_rosters([roster_season])
 
-            # Filter by week if specified
-            if week is not None:
-                current_rosters = current_rosters.filter(pl.col("week") <= week)
+                if week is not None:
+                    current_rosters = current_rosters.filter(pl.col("week") <= week)
 
-            self._player_models_cache = _assemble_models(
-                self._pbp_stats_cache, current_rosters
-            )
-            self._player_cache_key = cache_key
+                self._player_models_cache[cache_key] = _assemble_models(
+                    self._pbp_stats_cache, current_rosters
+                )
 
-        return self._pipeline_cache, self._player_models_cache
+            return self._pipeline_cache, self._player_models_cache[cache_key]
 
     def build_team_distributions(
         self,
@@ -264,20 +271,24 @@ class GameContextBuilder:
             season_weights=season_weights,
         )
 
-        play_calling = pipeline_output["play_calling"].get(team, _DEFAULT_PLAY_CALLING)
-        if play_calling.team != team:
-            play_calling = PlayCallingDist(
-                team=team, distributions={}, default=play_calling.default
-            )
+        # Always copy mutable objects from pipeline cache — build_game() mutates
+        # play_calling.default (via _apply_vegas) and turnover_rates.fumble_rate
+        # (via DST baseline), so shared references cause thread corruption.
+        play_calling_src = pipeline_output["play_calling"].get(team, _DEFAULT_PLAY_CALLING)
+        play_calling = PlayCallingDist(
+            team=team,
+            distributions=play_calling_src.distributions,
+            default=dict(play_calling_src.default),
+        )
 
-        turnover_rates = pipeline_output["turnover_rates"].get(team, _DEFAULT_TURNOVER_RATES)
-        if turnover_rates.team != team:
-            turnover_rates = TurnoverRates(
-                team=team, int_rate=turnover_rates.int_rate,
-                fumble_rate=turnover_rates.fumble_rate,
-                sack_rate=turnover_rates.sack_rate,
-                sack_fumble_rate=turnover_rates.sack_fumble_rate,
-            )
+        tr_src = pipeline_output["turnover_rates"].get(team, _DEFAULT_TURNOVER_RATES)
+        turnover_rates = TurnoverRates(
+            team=team,
+            int_rate=tr_src.int_rate,
+            fumble_rate=tr_src.fumble_rate,
+            sack_rate=tr_src.sack_rate,
+            sack_fumble_rate=tr_src.sack_fumble_rate,
+        )
 
         return TeamDistributions(
             play_calling=play_calling,
@@ -542,6 +553,86 @@ class GameContextBuilder:
             pff_data, nfl_roster, roster_season
         )
 
+    def _ensure_kicker_engine(
+        self, training_seasons: list[int], target_season: int | None,
+    ) -> None:
+        """Lazily initialize KickerEngine with correct seasons and crosswalk."""
+        if self._kicker_engine is None:
+            return
+        if self._kicker_engine._data.is_empty() or not self._kicker_engine._nfl_to_pff:
+            from fantasy_sim.data.pff.kicker import KickerEngine
+            self._kicker_engine = KickerEngine(
+                self._pff_config.kicker, self._pff_loader,
+                _seasons_with_target(training_seasons, target_season),
+            )
+            roster_season = target_season or max(training_seasons)
+            nfl_roster = self.loader.load_rosters([roster_season])
+            self._kicker_engine.build_crosswalk(nfl_roster, roster_season)
+
+    def _ensure_dst_baseline_engine(
+        self, training_seasons: list[int], target_season: int | None,
+    ) -> None:
+        """Lazily initialize DstBaselineEngine with correct seasons."""
+        if self._dst_baseline_engine is None:
+            return
+        if self._dst_baseline_engine._seasons != training_seasons:
+            from fantasy_sim.data.pff.dst_baseline import DstBaselineEngine
+            self._dst_baseline_engine = DstBaselineEngine(
+                self._pff_config.dst_baseline, self._pff_loader,
+                _seasons_with_target(training_seasons, target_season),
+            )
+
+    def warm(
+        self,
+        training_seasons: list[int],
+        target_season: int,
+        weeks: list[int],
+        season_weights: dict[int, float] | None = None,
+    ) -> None:
+        """Pre-populate all caches for thread-safe parallel building.
+
+        After calling warm(), build_game() hits only cached paths and is
+        safe to call concurrently from a ThreadPoolExecutor.
+        """
+        # Layer 1+2: Pipeline output and PBP stats (same for all weeks)
+        # Layer 3: Player models per week (different rosters per week)
+        for week in weeks:
+            self._ensure_pipeline(
+                training_seasons,
+                target_season=target_season,
+                week=week,
+                season_weights=season_weights,
+            )
+
+        # Pre-load DataLoader memory cache for season-key variants used in build_game()
+        roster_season = target_season or max(training_seasons)
+        all_roster_seasons = _seasons_with_target(training_seasons, target_season)
+        self.loader.load_rosters([roster_season])
+        self.loader.load_rosters(all_roster_seasons)
+        self.loader.load_pbp(training_seasons)
+
+        self._ensure_pff_crosswalk(training_seasons, target_season)
+
+        # CPOE baselines: set once so build_game() skips per-call mutation
+        if (
+            self._tier_engine is not None
+            and self._usage_config.enabled
+            and self._usage_config.cpoe.enabled
+            and hasattr(self._tier_engine._config, 'cpoe_sensitivity')
+        ):
+            self._tier_engine._config.cpoe_league_avg = self._usage_config.cpoe.cpoe_league_avg
+            self._tier_engine._config.cpoe_league_std = self._usage_config.cpoe.cpoe_league_std
+            self._tier_engine._config.cpoe_sensitivity = self._usage_config.cpoe.sensitivity
+            self._cpoe_warmed = True
+
+        self._ensure_kicker_engine(training_seasons, target_season)
+        self._ensure_dst_baseline_engine(training_seasons, target_season)
+
+        logger.info(
+            "GameContextBuilder warmed: %d weeks, %d player model cache entries",
+            len(weeks), len(self._player_models_cache),
+        )
+
     def build_game(
         self,
         home_team: str,
@@ -668,9 +759,10 @@ class GameContextBuilder:
             # Merge home + away CPOE maps (QB IDs are unique across teams)
             combined_cpoe_map = {**home_cpoe_map, **away_cpoe_map}
 
-            # Copy CPOE baselines from UsageConfig to TierEngineConfig for isolation
+            # Copy CPOE baselines from UsageConfig to TierEngineConfig for isolation.
+            # Skip if already set by warm() to avoid per-call mutation under threads.
             _uc = getattr(self, "_usage_config", None)
-            if combined_cpoe_map and hasattr(self._tier_engine._config, 'cpoe_sensitivity') and _uc is not None:
+            if not self._cpoe_warmed and combined_cpoe_map and hasattr(self._tier_engine._config, 'cpoe_sensitivity') and _uc is not None:
                 self._tier_engine._config.cpoe_league_avg = _uc.cpoe.cpoe_league_avg
                 self._tier_engine._config.cpoe_league_std = _uc.cpoe.cpoe_league_std
                 self._tier_engine._config.cpoe_sensitivity = _uc.cpoe.sensitivity
@@ -729,13 +821,7 @@ class GameContextBuilder:
 
         # PFF DST baseline: fumble rate + defensive TD rates
         if self._dst_baseline_engine is not None and target_season and week:
-            # Re-create engine with correct seasons if needed
-            if self._dst_baseline_engine._seasons != training_seasons:
-                from fantasy_sim.data.pff.dst_baseline import DstBaselineEngine
-                self._dst_baseline_engine = DstBaselineEngine(
-                    self._pff_config.dst_baseline, self._pff_loader,
-                    training_seasons + ([target_season] if target_season not in training_seasons else []),
-                )
+            self._ensure_dst_baseline_engine(training_seasons, target_season)
             # Away defense adjusts home offense fumble rate, home defense adjusts away
             home_dst_ctx = self._dst_baseline_engine.compute(
                 away_team, target_season, max_week=week,
@@ -760,16 +846,7 @@ class GameContextBuilder:
 
         # PFF kicker: replace team-level KickingModel with per-kicker rates
         if self._kicker_engine is not None:
-            # Re-create engine with correct seasons if needed
-            if self._kicker_engine._data.is_empty() or not self._kicker_engine._nfl_to_pff:
-                from fantasy_sim.data.pff.kicker import KickerEngine
-                all_seasons = training_seasons + ([target_season] if target_season and target_season not in training_seasons else [])
-                self._kicker_engine = KickerEngine(
-                    self._pff_config.kicker, self._pff_loader, all_seasons,
-                )
-                roster_season = target_season or max(training_seasons)
-                nfl_roster = self.loader.load_rosters([roster_season])
-                self._kicker_engine.build_crosswalk(nfl_roster, roster_season)
+            self._ensure_kicker_engine(training_seasons, target_season)
             for team_roster, team_dists in [
                 (home_roster, home_dists), (away_roster, away_dists),
             ]:

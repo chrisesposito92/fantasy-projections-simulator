@@ -74,3 +74,60 @@ class TestDataLoaderMethods:
         assert any(cache_dir.iterdir())
         loader.clear_cache()
         assert not any(cache_dir.iterdir())
+
+
+class TestDataLoaderMemoryCache:
+    """Tests for in-memory DataFrame caching to avoid redundant parquet reads."""
+
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_memory_cache_returns_same_object(self, mock_nfl, loader):
+        """Second call returns the exact same DataFrame object (no parquet re-read)."""
+        mock_df = pl.DataFrame({"play_type": ["pass"], "yards_gained": [10]})
+        mock_nfl.load_pbp.return_value = mock_df
+        first = loader.load_pbp(seasons=[2024])
+        second = loader.load_pbp(seasons=[2024])
+        assert first is second
+
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_memory_cache_different_seasons_separate_entries(self, mock_nfl, loader):
+        """Different season lists produce separate cache entries."""
+        df_2023 = pl.DataFrame({"season": [2023]})
+        df_2024 = pl.DataFrame({"season": [2024]})
+        mock_nfl.load_pbp.side_effect = [df_2023, df_2024]
+        r1 = loader.load_pbp(seasons=[2023])
+        r2 = loader.load_pbp(seasons=[2024])
+        assert r1 is not r2
+        assert r1["season"][0] == 2023
+        assert r2["season"][0] == 2024
+
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_memory_cache_survives_parquet_read(self, mock_nfl, loader):
+        """After initial load, parquet file exists but memory cache is used (no disk read)."""
+        mock_df = pl.DataFrame({"x": [1]})
+        mock_nfl.load_pbp.return_value = mock_df
+        loader.load_pbp(seasons=[2024])
+        # Verify memory cache populated
+        assert len(loader._memory_cache) == 1
+        # Third call should still use memory cache
+        result = loader.load_pbp(seasons=[2024])
+        assert result is mock_df  # exact same object from _save_cache
+
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_clear_cache_clears_memory(self, mock_nfl, loader):
+        """clear_cache() removes both parquet files and memory cache."""
+        mock_df = pl.DataFrame({"x": [1]})
+        mock_nfl.load_pbp.return_value = mock_df
+        loader.load_pbp(seasons=[2024])
+        assert len(loader._memory_cache) == 1
+        loader.clear_cache()
+        assert len(loader._memory_cache) == 0
+
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_memory_cache_works_for_rosters(self, mock_nfl, loader):
+        """Memory cache works across different load methods."""
+        mock_df = pl.DataFrame({"player_id": ["p1"], "position": ["QB"]})
+        mock_nfl.load_rosters_weekly.return_value = mock_df
+        first = loader.load_rosters(seasons=[2024])
+        second = loader.load_rosters(seasons=[2024])
+        assert first is second
+        mock_nfl.load_rosters_weekly.assert_called_once()

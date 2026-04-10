@@ -12,18 +12,24 @@ class DataLoader:
     def __init__(self, cache_dir: Path = DEFAULT_CACHE_DIR):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._memory_cache: dict[Path, pl.DataFrame] = {}
 
     def _cache_key(self, name: str, seasons: list[int]) -> Path:
         season_str = "_".join(str(s) for s in sorted(seasons))
         return self.cache_dir / f"{name}_{season_str}.parquet"
 
     def _load_cached(self, cache_path: Path) -> pl.DataFrame | None:
+        if cache_path in self._memory_cache:
+            return self._memory_cache[cache_path]
         if cache_path.exists():
-            return pl.read_parquet(cache_path)
+            df = pl.read_parquet(cache_path)
+            self._memory_cache[cache_path] = df
+            return df
         return None
 
     def _save_cache(self, df: pl.DataFrame, cache_path: Path) -> None:
         df.write_parquet(cache_path)
+        self._memory_cache[cache_path] = df
 
     def load_pbp(self, seasons: list[int]) -> pl.DataFrame:
         cache_path = self._cache_key("pbp", seasons)
@@ -138,3 +144,4 @@ class DataLoader:
     def clear_cache(self) -> None:
         for f in self.cache_dir.glob("*.parquet"):
             f.unlink()
+        self._memory_cache.clear()

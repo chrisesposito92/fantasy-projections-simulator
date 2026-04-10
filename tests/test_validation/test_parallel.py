@@ -250,6 +250,9 @@ class TestKickingModelIsolation:
         from unittest.mock import MagicMock, patch
 
         builder = object.__new__(GameContextBuilder)
+        import threading
+        builder._pipeline_lock = threading.Lock()
+        builder._cpoe_warmed = False
         builder._pff_config = MagicMock(enabled=False)
         builder._matchup_engine = None
         builder._talent_stabilizer = None
@@ -282,9 +285,9 @@ class TestKickingModelIsolation:
         builder._cached_training_seasons = (2022, 2023, 2024)
         builder._pbp_stats_cache = {}
         builder._pbp_stats_cache_key = ((2022, 2023, 2024), ())
-        builder._player_models_cache = {}
-        # Cache key now includes usage_fingerprint (5-tuple since usage engine wiring)
-        builder._player_cache_key = ((2022, 2023, 2024), None, None, False, (False,))
+        # Multi-key cache: pre-populate with the expected cache key
+        cache_key = ((2022, 2023, 2024), None, None, False, (False,))
+        builder._player_models_cache = {cache_key: {}}
         builder.cache_dir = "/tmp"
         builder.loader = MagicMock()
 

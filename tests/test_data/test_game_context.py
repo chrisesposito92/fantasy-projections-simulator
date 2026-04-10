@@ -134,9 +134,7 @@ class TestGameContextBuilder:
         assert "SD14" in hou_ids_w3, "SD14 should be on HOU at week 3"
         assert "SD14" not in kc_ids_w3, "SD14 should not be on KC at week 3"
 
-        # Clear player model cache between calls (same builder, different week)
-        builder._player_models_cache = None
-        builder._player_cache_key = None
+        # Multi-key cache handles different weeks natively; no reset needed
 
         # Week 6: SD14 on KC
         _, _, kc_roster_w6, hou_roster_w6 = builder.build_game(
