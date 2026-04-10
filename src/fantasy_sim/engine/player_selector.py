@@ -7,7 +7,7 @@ game-state awareness (e.g., red zone detection, week-based availability).
 import numpy as np
 from fantasy_sim.engine.game_script import RuntimeGameScript
 from fantasy_sim.engine.types import GameState
-from fantasy_sim.models.player import MIN_QB_CARRY_SHARE, PlayerModel, TeamRoster
+from fantasy_sim.models.player import PlayerModel, TeamRoster
 
 
 def _filter_available(roster: TeamRoster, state: GameState) -> TeamRoster:
@@ -155,27 +155,7 @@ def select_rusher(
 
     filtered = _filter_available(roster, state)
     is_red_zone = state.yard_line <= 20
-    eligible = [
-        player for player in filtered.players
-        if player.usage.carry_share > 0
-        and (player.position != "QB" or player.usage.carry_share >= MIN_QB_CARRY_SHARE)
-    ]
-    if not eligible:
-        eligible = [player for player in filtered.players if player.position == "RB"]
-    if not eligible:
-        raise ValueError(f"No eligible rushers on roster for {filtered.team}")
-
-    base_weights = np.array(
-        [
-            (
-                player.usage.red_zone_carry_share
-                if is_red_zone and player.usage.red_zone_carry_share > 0
-                else player.usage.carry_share
-            )
-            for player in eligible
-        ],
-        dtype=float,
-    )
+    eligible, base_weights = filtered._rusher_candidates_and_weights(is_red_zone=is_red_zone)
     weights = _apply_rb_rank_factors(eligible, base_weights, script)
     if weights.sum() == 0:
         weights = np.ones(len(eligible), dtype=float)

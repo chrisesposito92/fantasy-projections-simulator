@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from fantasy_sim.data.game_script import RbRankFactors, TargetRankFactors
 from fantasy_sim.engine.game_script import RuntimeGameScript
@@ -189,6 +190,20 @@ class TestSelectReceiverGameScript:
 
 
 class TestSelectRusherGameScript:
+    def test_neutral_script_preserves_existing_behavior_with_same_seed(self):
+        roster = make_rush_roster()
+        state = make_state(yard_line=65, home_score=24, away_score=10, possession="home")
+        baseline_rng = np.random.default_rng(42)
+        neutral_rng = np.random.default_rng(42)
+
+        baseline = [select_rusher(roster, state, baseline_rng).player_id for _ in range(250)]
+        scripted = [
+            select_rusher(roster, state, neutral_rng, script=RuntimeGameScript()).player_id
+            for _ in range(250)
+        ]
+
+        assert scripted == baseline
+
     def test_leading_late_rb_increases_rb2_frequency_relative_to_neutral(self):
         roster = make_rush_roster()
         state = make_state(yard_line=65, home_score=24, away_score=10, possession="home")
@@ -204,6 +219,48 @@ class TestSelectRusherGameScript:
 
         assert leading_counts["RB2"] > neutral_counts["RB2"]
 
+    def test_leading_late_rb_preserves_qb_selection_frequency(self):
+        roster = make_rush_roster()
+        state = make_state(yard_line=65, home_score=24, away_score=10, possession="home")
+        neutral_counts = count_rushers(roster, state, script=None)
+        leading_counts = count_rushers(
+            roster,
+            state,
+            script=RuntimeGameScript(
+                regime="leading_late_rb",
+                rb_factors=RbRankFactors(rb1=0.8, rb2=1.25, rb3_plus=1.1),
+            ),
+        )
+
+        assert leading_counts["QB1"] == neutral_counts["QB1"]
+
+    def test_scramble_ignores_script(self):
+        roster = make_rush_roster()
+        state = make_state(yard_line=65, home_score=24, away_score=10, possession="home")
+        baseline_rng = np.random.default_rng(42)
+        scripted_rng = np.random.default_rng(42)
+
+        baseline = [
+            select_rusher(roster, state, baseline_rng, is_scramble=True).player_id
+            for _ in range(50)
+        ]
+        scripted = [
+            select_rusher(
+                roster,
+                state,
+                scripted_rng,
+                is_scramble=True,
+                script=RuntimeGameScript(
+                    regime="leading_late_rb",
+                    rb_factors=RbRankFactors(rb1=0.8, rb2=1.25, rb3_plus=1.1),
+                ),
+            ).player_id
+            for _ in range(50)
+        ]
+
+        assert scripted == baseline
+        assert all(player_id == "QB1" for player_id in scripted)
+
     def test_apply_rb_rank_factors_preserves_non_rb_carry_mass(self):
         roster = make_rush_roster()
         weights = np.array([0.12, 0.58, 0.22, 0.08], dtype=float)
@@ -214,5 +271,5 @@ class TestSelectRusherGameScript:
 
         adjusted = _apply_rb_rank_factors(roster.players, weights, script)
 
-        assert adjusted[0] == weights[0]
-        assert adjusted[1:].sum() == weights[1:].sum()
+        assert adjusted[0] == pytest.approx(weights[0])
+        assert adjusted[1:].sum() == pytest.approx(weights[1:].sum())
