@@ -30,7 +30,6 @@ def resolve_game_script(
 
     if (
         state.quarter == 4
-        and config.trailing_late.enabled
         and state.score_differential <= -config.trailing_late.deficit_threshold
     ):
         return RuntimeGameScript(
@@ -42,7 +41,6 @@ def resolve_game_script(
 
     if (
         state.quarter == 4
-        and config.trailing_late.enabled
         and state.clock <= config.trailing_late.final_five_minutes
         and state.score_differential <= -config.trailing_late.final_five_deficit_threshold
     ):
@@ -55,7 +53,6 @@ def resolve_game_script(
 
     if (
         state.quarter == 4
-        and config.leading_late_rb.enabled
         and state.clock <= config.leading_late_rb.late_minutes
         and state.score_differential >= config.leading_late_rb.lead_threshold
     ):
