@@ -98,6 +98,7 @@ class TestSimulateGame:
         ):
             seen["play_type"] = play_type
             seen["pace_factor"] = pace_factor
+            seen["resolve_script"] = script
             state.game_over = True
             return PlayResult(play_type=play_type, yards=0, clock_runoff=0)
 
@@ -120,6 +121,7 @@ class TestSimulateGame:
         assert seen["config"] is not None
         assert seen["profile"] is not None
         assert seen["script"] is script
+        assert seen["resolve_script"] is script
         assert seen["play_type"] == "run"
         assert seen["pace_factor"] == pytest.approx(1.05 * script.pace_factor)
 
