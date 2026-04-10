@@ -16,6 +16,7 @@ from fantasy_sim.data.game_script.models import (
 
 _RANK_BUCKETS = ("rank1", "rank2", "rank3_plus")
 _RB_BUCKETS = ("rb1", "rb2", "rb3_plus")
+_MAX_LOCAL_PACE_GAP_SECONDS = 45.0
 
 
 class GameScriptEngine:
@@ -23,7 +24,7 @@ class GameScriptEngine:
 
     def __init__(self, config: GameScriptConfig):
         self.config = config
-        self._profile_cache: dict[tuple[str, tuple[int, ...], int | None, int | None], GameScriptProfile] = {}
+        self._profile_cache: dict[tuple, GameScriptProfile] = {}
 
     def compute(
         self,
@@ -34,7 +35,7 @@ class GameScriptEngine:
         week: int | None = None,
         rosters: pl.DataFrame | None = None,
     ) -> GameScriptProfile:
-        cache_key = (team, tuple(training_seasons), target_season, week)
+        cache_key = self._cache_key(team, training_seasons, target_season, week, pbp, rosters)
         if cache_key in self._profile_cache:
             return self._profile_cache[cache_key]
 
@@ -502,6 +503,12 @@ class GameScriptEngine:
             group_cols = [col for col in ("season", "week", "posteam", "game_id") if col in df.columns]
         else:
             return []
+        drive_col = next(
+            (col for col in ("drive", "fixed_drive", "drive_id") if col in df.columns),
+            None,
+        )
+        if drive_col is not None:
+            group_cols.append(drive_col)
 
         sort_cols = group_cols + [time_col]
         descending = [False] * len(group_cols) + [True]
@@ -519,7 +526,44 @@ class GameScriptEngine:
             previous = previous_clock_by_group.get(group_key)
             if previous is not None:
                 delta = abs(previous - clock_value)
-                if delta > 0:
+                if delta > 0 and (
+                    drive_col is not None or delta <= _MAX_LOCAL_PACE_GAP_SECONDS
+                ):
                     deltas.append(delta)
             previous_clock_by_group[group_key] = clock_value
         return deltas
+
+    def _cache_key(
+        self,
+        team: str,
+        training_seasons: list[int],
+        target_season: int | None,
+        week: int | None,
+        pbp: pl.DataFrame,
+        rosters: pl.DataFrame | None,
+    ) -> tuple:
+        return (
+            team,
+            tuple(sorted(training_seasons)),
+            target_season,
+            week,
+            self._frame_fingerprint(pbp),
+            self._frame_fingerprint(rosters),
+        )
+
+    @staticmethod
+    def _frame_fingerprint(df: pl.DataFrame | None) -> tuple | None:
+        if df is None:
+            return None
+
+        schema = tuple((name, str(dtype)) for name, dtype in df.schema.items())
+        if df.is_empty():
+            return (0, 0, 0, 0, schema)
+
+        total = 0
+        xor = 0
+        for row_hash in df.hash_rows(seed=0, seed_1=1, seed_2=2, seed_3=3).to_list():
+            value = int(row_hash)
+            total = (total + value) & ((1 << 64) - 1)
+            xor ^= value
+        return (df.height, df.width, total, xor, schema)
