@@ -461,6 +461,46 @@ class TestBuildGamesParallelDualArm:
         assert mock_builder_cls.call_args_list[1].kwargs["game_script_config"] is config
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_build_games_parallel_accepts_goal_line_concentration_config(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        mock_builder_cls.return_value = self._mock_builder()
+        config = object()
+
+        results = build_games_parallel(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
+            cache_dir=Path("/tmp"),
+            goal_line_concentration_config=config,
+            max_workers=1,
+        )
+
+        assert len(results) == 1
+        assert mock_builder_cls.call_args.kwargs["goal_line_concentration_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_only_threads_goal_line_concentration_to_on_builder(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import _create_builders
+
+        config = object()
+
+        _create_builders(
+            cache_dir=Path("/tmp"),
+            pff_config=None,
+            weather_config=None,
+            vegas_config=None,
+            props_config=None,
+            usage_config=None,
+            game_script_config=None,
+            td_tendency_config=None,
+            goal_line_concentration_config=config,
+            dual_arm=True,
+        )
+
+        assert mock_builder_cls.call_count == 2
+        assert "goal_line_concentration_config" not in mock_builder_cls.call_args_list[0].kwargs
+        assert mock_builder_cls.call_args_list[1].kwargs["goal_line_concentration_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_captures_matchup_aux(self, mock_builder_cls):
         from fantasy_sim.data.pff.models import MatchupContext
         mock_on = self._mock_builder()

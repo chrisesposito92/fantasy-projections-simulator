@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
     from fantasy_sim.data.game_script import GameScriptConfig
     from fantasy_sim.data.pff.models import PffConfig
     from fantasy_sim.data.td_tendency import TdTendencyConfig
@@ -178,6 +179,7 @@ def _init_build_worker_single(
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
+    goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
@@ -192,6 +194,7 @@ def _init_build_worker_single(
         props_config=props_config,
         usage_config=usage_config,
         game_script_config=game_script_config,
+        goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
     )
     _worker_builders = {"single": builder}
@@ -246,6 +249,7 @@ def _init_build_worker_dual(
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
+    goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create off+on builders per worker."""
@@ -264,6 +268,7 @@ def _init_build_worker_dual(
             props_config=props_config,
             usage_config=usage_config,
             game_script_config=game_script_config,
+            goal_line_concentration_config=goal_line_concentration_config,
             td_tendency_config=td_tendency_config,
         ),
     }
@@ -358,6 +363,7 @@ def _build_games_sequential(
     props_config: "PropsConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
+    goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
@@ -376,6 +382,7 @@ def _build_games_sequential(
                 props_config=props_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
+                goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
             ),
         }
@@ -389,6 +396,7 @@ def _build_games_sequential(
                 props_config=props_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
+                goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
             ),
         }
@@ -416,6 +424,7 @@ def _create_builders(
     game_script_config,
     td_tendency_config,
     dual_arm: bool,
+    goal_line_concentration_config=None,
 ) -> dict:
     """Create GameContextBuilder instances for the build phase.
 
@@ -435,6 +444,7 @@ def _create_builders(
                 props_config=props_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
+                goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
             ),
         }
@@ -447,6 +457,7 @@ def _create_builders(
             props_config=props_config,
             usage_config=usage_config,
             game_script_config=game_script_config,
+            goal_line_concentration_config=goal_line_concentration_config,
             td_tendency_config=td_tendency_config,
         ),
     }
@@ -549,6 +560,7 @@ def build_games_parallel(
     props_config=None,
     usage_config=None,
     game_script_config=None,
+    goal_line_concentration_config=None,
     td_tendency_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
@@ -595,6 +607,7 @@ def build_games_parallel(
                 props_config=props_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
+                goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
             )
         else:
@@ -620,6 +633,7 @@ def build_games_parallel(
                     props_config,
                     usage_config,
                     game_script_config,
+                    goal_line_concentration_config,
                     td_tendency_config,
                 ),
             ) as pool:
@@ -660,7 +674,8 @@ def build_games_parallel(
         # Default thread pool path: shared pre-warmed builders, no worker cap
         builders = _create_builders(
             cache_dir, pff_config, weather_config, vegas_config,
-            props_config, usage_config, game_script_config, td_tendency_config, dual_arm,
+            props_config, usage_config, game_script_config,
+            td_tendency_config, dual_arm, goal_line_concentration_config,
         )
         warm_results = _warm_builders(builders, game_args, dual_arm)
 

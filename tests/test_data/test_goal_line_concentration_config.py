@@ -1,5 +1,6 @@
 """Tests for goal-line concentration config loading."""
 
+from fantasy_sim.config.loader import load_defaults
 from fantasy_sim.data.goal_line_concentration import (
     GoalLineConcentrationConfig,
     load_goal_line_concentration_config,
@@ -23,4 +24,8 @@ class TestGoalLineConcentrationConfig:
 
     def test_empty_section_uses_disabled_default(self):
         config = load_goal_line_concentration_config({"goal_line_concentration": {}})
+        assert config.enabled is False
+
+    def test_defaults_yaml_keeps_feature_disabled(self):
+        config = load_goal_line_concentration_config(load_defaults())
         assert config.enabled is False

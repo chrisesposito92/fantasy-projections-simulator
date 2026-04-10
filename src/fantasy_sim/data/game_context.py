@@ -17,6 +17,7 @@ from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
+from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
@@ -60,6 +61,7 @@ class GameContextBuilder:
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
         game_script_config: GameScriptConfig | None = None,
+        goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
@@ -180,6 +182,12 @@ class GameContextBuilder:
         if self._game_script_config.enabled:
             self._game_script_engine = GameScriptEngine(self._game_script_config)
             logger.info("Game script engine enabled")
+
+        # Goal-line concentration config is threaded now for validation plumbing.
+        # Runtime behavior is intentionally a no-op until later tasks land.
+        self._goal_line_concentration_config = (
+            goal_line_concentration_config or GoalLineConcentrationConfig(enabled=False)
+        )
 
         # TD tendency engine: per-player RZ TD conversion factors
         self._td_tendency_engine = None
