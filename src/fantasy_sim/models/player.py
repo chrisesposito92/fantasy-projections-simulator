@@ -107,7 +107,7 @@ class TeamRoster:
         all RBs are eligible with uniform probability.
         Raises ValueError if no eligible rushers exist.
         """
-        eligible, weights = self._rusher_candidates_and_weights(is_red_zone=is_red_zone)
+        eligible, weights = self.rusher_candidates_and_weights(is_red_zone=is_red_zone)
 
         # Use uniform weights if all weights are zero (fallback path)
         if weights.sum() == 0:
@@ -116,7 +116,7 @@ class TeamRoster:
         idx = rng.choice(len(eligible), p=weights)
         return eligible[idx]
 
-    def _rusher_candidates_and_weights(
+    def rusher_candidates_and_weights(
         self, is_red_zone: bool = False
     ) -> tuple[list[PlayerModel], np.ndarray]:
         """Return the baseline designed-run rusher pool and raw carry weights."""
@@ -142,3 +142,9 @@ class TeamRoster:
             dtype=float,
         )
         return eligible, weights
+
+    def _rusher_candidates_and_weights(
+        self, is_red_zone: bool = False
+    ) -> tuple[list[PlayerModel], np.ndarray]:
+        """Backward-compatible alias for the public rusher candidate helper."""
+        return self.rusher_candidates_and_weights(is_red_zone=is_red_zone)

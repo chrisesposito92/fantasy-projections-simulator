@@ -27,12 +27,12 @@ _DIAGNOSTIC_COUNT_FIELDS = {
 
 def collect_game_script_profiles(specs: list[GameSpec]) -> dict[str, GameScriptProfile]:
     """Collect season-level learned game-script profiles keyed by team."""
-    grouped_profiles: dict[str, list[GameScriptProfile]] = {}
+    grouped_profiles: dict[str, list[tuple[int, GameScriptProfile]]] = {}
     for spec in specs:
         for distributions in (spec.home_dists, spec.away_dists):
             profile = distributions.game_script_profile
             if profile is not None:
-                grouped_profiles.setdefault(profile.team, []).append(profile)
+                grouped_profiles.setdefault(profile.team, []).append((spec.week, profile))
 
     return {
         team: _aggregate_team_profiles(team_profiles)
@@ -44,19 +44,25 @@ def _average(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
-def _sum_diagnostic_fields(team_profiles: list[GameScriptProfile], field_name: str) -> int:
-    return sum(getattr(profile.diagnostics, field_name) for profile in team_profiles)
+def _latest_diagnostic_value(
+    team_profiles: list[tuple[int, GameScriptProfile]], field_name: str
+) -> int:
+    latest_week, latest_profile = max(team_profiles, key=lambda item: item[0])
+    del latest_week
+    return getattr(latest_profile.diagnostics, field_name)
 
 
-def _average_diagnostic_fields(team_profiles: list[GameScriptProfile], field_name: str) -> float:
-    return _average([getattr(profile.diagnostics, field_name) for profile in team_profiles])
+def _average_diagnostic_fields(
+    team_profiles: list[tuple[int, GameScriptProfile]], field_name: str
+) -> float:
+    return _average([getattr(profile.diagnostics, field_name) for _, profile in team_profiles])
 
 
-def _aggregate_team_profiles(team_profiles: list[GameScriptProfile]) -> GameScriptProfile:
-    first_profile = team_profiles[0]
+def _aggregate_team_profiles(team_profiles: list[tuple[int, GameScriptProfile]]) -> GameScriptProfile:
+    first_profile = team_profiles[0][1]
     diagnostics = GameScriptDiagnostics(**{
         field.name: (
-            _sum_diagnostic_fields(team_profiles, field.name)
+            _latest_diagnostic_value(team_profiles, field.name)
             if field.name in _DIAGNOSTIC_COUNT_FIELDS
             else _average_diagnostic_fields(team_profiles, field.name)
         )
@@ -66,23 +72,23 @@ def _aggregate_team_profiles(team_profiles: list[GameScriptProfile]) -> GameScri
     return GameScriptProfile(
         team=first_profile.team,
         trailing_late_pass_rate_factor=_average(
-            [profile.trailing_late_pass_rate_factor for profile in team_profiles]
+            [profile.trailing_late_pass_rate_factor for _, profile in team_profiles]
         ),
         trailing_late_pace_factor=_average(
-            [profile.trailing_late_pace_factor for profile in team_profiles]
+            [profile.trailing_late_pace_factor for _, profile in team_profiles]
         ),
         trailing_late_target_factors=TargetRankFactors(
-            rank1=_average([profile.trailing_late_target_factors.rank1 for profile in team_profiles]),
-            rank2=_average([profile.trailing_late_target_factors.rank2 for profile in team_profiles]),
+            rank1=_average([profile.trailing_late_target_factors.rank1 for _, profile in team_profiles]),
+            rank2=_average([profile.trailing_late_target_factors.rank2 for _, profile in team_profiles]),
             rank3_plus=_average(
-                [profile.trailing_late_target_factors.rank3_plus for profile in team_profiles]
+                [profile.trailing_late_target_factors.rank3_plus for _, profile in team_profiles]
             ),
         ),
         leading_late_rb_factors=RbRankFactors(
-            rb1=_average([profile.leading_late_rb_factors.rb1 for profile in team_profiles]),
-            rb2=_average([profile.leading_late_rb_factors.rb2 for profile in team_profiles]),
+            rb1=_average([profile.leading_late_rb_factors.rb1 for _, profile in team_profiles]),
+            rb2=_average([profile.leading_late_rb_factors.rb2 for _, profile in team_profiles]),
             rb3_plus=_average(
-                [profile.leading_late_rb_factors.rb3_plus for profile in team_profiles]
+                [profile.leading_late_rb_factors.rb3_plus for _, profile in team_profiles]
             ),
         ),
         diagnostics=diagnostics,
@@ -101,9 +107,9 @@ def format_game_script_summary(profiles: dict[str, GameScriptProfile]) -> str:
     """Render learned game-script profiles as a Rich table."""
     console = Console(
         width=180,
+        height=40,
         force_terminal=False,
         no_color=True,
-        _environ={"COLUMNS": "180", "LINES": "40"},
     )
 
     with console.capture() as capture:

@@ -52,6 +52,7 @@ def make_game_script_pbp(include_clock: bool = True) -> pl.DataFrame:
             "play_type": play_type,
             "pass_attempt": 1 if play_type == "pass" else 0,
             "rush_attempt": 1 if play_type == "run" else 0,
+            "passer_player_id": "KC_QB1" if play_type == "pass" else None,
             "receiver_player_id": receiver_player_id,
             "rusher_player_id": rusher_player_id,
             "score_differential": score_differential,
@@ -164,6 +165,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "pass",
             "pass_attempt": 1,
             "rush_attempt": 0,
+            "passer_player_id": "KC_QB1",
             "receiver_player_id": "KC_WR1",
             "rusher_player_id": None,
             "score_differential": 0,
@@ -179,6 +181,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "run",
             "pass_attempt": 0,
             "rush_attempt": 1,
+            "passer_player_id": None,
             "receiver_player_id": None,
             "rusher_player_id": "KC_RB1",
             "score_differential": 0,
@@ -194,6 +197,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "pass",
             "pass_attempt": 1,
             "rush_attempt": 0,
+            "passer_player_id": "KC_QB1",
             "receiver_player_id": "KC_WR2",
             "rusher_player_id": None,
             "score_differential": 0,
@@ -209,6 +213,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "run",
             "pass_attempt": 0,
             "rush_attempt": 1,
+            "passer_player_id": None,
             "receiver_player_id": None,
             "rusher_player_id": "KC_RB1",
             "score_differential": 0,
@@ -224,6 +229,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "pass",
             "pass_attempt": 1,
             "rush_attempt": 0,
+            "passer_player_id": "KC_QB1",
             "receiver_player_id": "KC_WR1",
             "rusher_player_id": None,
             "score_differential": -10,
@@ -239,6 +245,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "run",
             "pass_attempt": 0,
             "rush_attempt": 1,
+            "passer_player_id": None,
             "receiver_player_id": None,
             "rusher_player_id": "KC_RB1",
             "score_differential": -10,
@@ -254,6 +261,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "pass",
             "pass_attempt": 1,
             "rush_attempt": 0,
+            "passer_player_id": "KC_QB1",
             "receiver_player_id": "KC_WR2",
             "rusher_player_id": None,
             "score_differential": -10,
@@ -269,6 +277,7 @@ def make_drive_local_pace_pbp() -> pl.DataFrame:
             "play_type": "run",
             "pass_attempt": 0,
             "rush_attempt": 1,
+            "passer_player_id": None,
             "receiver_player_id": None,
             "rusher_player_id": "KC_RB1",
             "score_differential": -10,
@@ -290,6 +299,7 @@ def make_cache_regression_pbp(trailing_passes: int) -> pl.DataFrame:
                 "play_type": "pass" if idx < 2 else "run",
                 "pass_attempt": 1 if idx < 2 else 0,
                 "rush_attempt": 0 if idx < 2 else 1,
+                "passer_player_id": "KC_QB1" if idx < 2 else None,
                 "receiver_player_id": "KC_WR1" if idx < 2 else None,
                 "rusher_player_id": None if idx < 2 else "KC_RB1",
                 "score_differential": 0,
@@ -307,6 +317,7 @@ def make_cache_regression_pbp(trailing_passes: int) -> pl.DataFrame:
                 "play_type": "pass" if is_pass else "run",
                 "pass_attempt": 1 if is_pass else 0,
                 "rush_attempt": 0 if is_pass else 1,
+                "passer_player_id": "KC_QB1" if is_pass else None,
                 "receiver_player_id": "KC_WR1" if is_pass else None,
                 "rusher_player_id": None if is_pass else "KC_RB1",
                 "score_differential": -10,
@@ -338,6 +349,40 @@ def test_compute_leading_late_rb_profile_shifts_to_rb2():
     profile = engine.compute(
         team="KC",
         pbp=make_game_script_pbp(),
+        training_seasons=[2024],
+        rosters=make_rosters(),
+    )
+
+    assert profile.leading_late_rb_factors.rb1 < 1.0
+    assert profile.leading_late_rb_factors.rb2 > 1.0
+
+
+def test_qb_rushes_are_excluded_from_leading_late_rb_learning():
+    engine = GameScriptEngine(make_config())
+    pbp = make_game_script_pbp()
+    qb_kneels = pl.DataFrame(
+        [
+            {
+                "season": 2024,
+                "week": 8,
+                "posteam": "KC",
+                "play_type": "run",
+                "pass_attempt": 0,
+                "rush_attempt": 1,
+                "passer_player_id": None,
+                "receiver_player_id": None,
+                "rusher_player_id": "KC_QB1",
+                "score_differential": 17,
+                "qtr": 4,
+                "game_seconds_remaining": 40,
+            }
+            for _ in range(10)
+        ]
+    )
+
+    profile = engine.compute(
+        team="KC",
+        pbp=pl.concat([pbp, qb_kneels], how="vertical_relaxed"),
         training_seasons=[2024],
         rosters=make_rosters(),
     )

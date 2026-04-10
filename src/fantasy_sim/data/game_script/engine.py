@@ -15,7 +15,6 @@ from fantasy_sim.data.game_script.models import (
 )
 
 _RANK_BUCKETS = ("rank1", "rank2", "rank3_plus")
-_RB_BUCKETS = ("rb1", "rb2", "rb3_plus")
 _MAX_LOCAL_PACE_GAP_SECONDS = 45.0
 
 
@@ -76,7 +75,7 @@ class GameScriptEngine:
             trailing_team, neutral_team, trailing_all, neutral_all
         )
         rb_factors, rb_ratios, rb_sample = self._rb_rank_factors(
-            leading_team, neutral_team, leading_all, neutral_all, rosters=rosters
+            leading_team, neutral_team, leading_all, neutral_all
         )
 
         diagnostics = GameScriptDiagnostics(
@@ -289,19 +288,21 @@ class GameScriptEngine:
         neutral_team: pl.DataFrame,
         leading_all: pl.DataFrame,
         neutral_all: pl.DataFrame,
-        rosters: pl.DataFrame | None = None,
     ) -> tuple[RbRankFactors, dict[str, float], int]:
+        qb_ids_by_team = self._qb_ids_by_team(pl.concat([neutral_all, leading_all], how="vertical_relaxed"))
         ratios, late_total = self._rank_bucket_ratios(
             leading_team,
             neutral_team,
             event_type="run",
             id_col="rusher_player_id",
+            excluded_ids_by_team=qb_ids_by_team,
         )
         prior_ratios, _ = self._rank_bucket_ratios(
             leading_all,
             neutral_all,
             event_type="run",
             id_col="rusher_player_id",
+            excluded_ids_by_team=qb_ids_by_team,
         )
 
         return (
@@ -344,6 +345,7 @@ class GameScriptEngine:
         event_type: str,
         id_col: str,
         allowed_ids_by_team: dict[str, set[str]] | None = None,
+        excluded_ids_by_team: dict[str, set[str]] | None = None,
     ) -> tuple[dict[str, float], int]:
         late_shares, neutral_shares, late_total = self._event_bucket_shares(
             late_df,
@@ -351,6 +353,7 @@ class GameScriptEngine:
             event_type=event_type,
             id_col=id_col,
             allowed_ids_by_team=allowed_ids_by_team,
+            excluded_ids_by_team=excluded_ids_by_team,
         )
         if late_total == 0:
             return {bucket: 1.0 for bucket in _RANK_BUCKETS}, 0
@@ -370,18 +373,21 @@ class GameScriptEngine:
         event_type: str,
         id_col: str,
         allowed_ids_by_team: dict[str, set[str]] | None = None,
+        excluded_ids_by_team: dict[str, set[str]] | None = None,
     ) -> tuple[dict[str, float], dict[str, float], int]:
         late_events = self._event_rows(
             late_df,
             event_type=event_type,
             id_col=id_col,
             allowed_ids_by_team=allowed_ids_by_team,
+            excluded_ids_by_team=excluded_ids_by_team,
         )
         neutral_events = self._event_rows(
             neutral_df,
             event_type=event_type,
             id_col=id_col,
             allowed_ids_by_team=allowed_ids_by_team,
+            excluded_ids_by_team=excluded_ids_by_team,
         )
 
         neutral_counts_by_team: dict[str, Counter[str]] = defaultdict(Counter)
@@ -437,6 +443,7 @@ class GameScriptEngine:
         event_type: str,
         id_col: str,
         allowed_ids_by_team: dict[str, set[str]] | None = None,
+        excluded_ids_by_team: dict[str, set[str]] | None = None,
     ) -> list[tuple[str, str]]:
         if df.is_empty():
             return []
@@ -456,6 +463,8 @@ class GameScriptEngine:
                 allowed_ids = allowed_ids_by_team.get(team)
                 if allowed_ids is None or player_id not in allowed_ids:
                     continue
+            if excluded_ids_by_team is not None and player_id in excluded_ids_by_team.get(team, set()):
+                continue
             rows.append((team, player_id))
         return rows
 
@@ -534,23 +543,29 @@ class GameScriptEngine:
             tuple(sorted(training_seasons)),
             target_season,
             week,
-            self._frame_fingerprint(pbp),
-            self._frame_fingerprint(rosters),
+            self._frame_cache_token(pbp),
+            self._frame_cache_token(rosters),
         )
 
     @staticmethod
-    def _frame_fingerprint(df: pl.DataFrame | None) -> tuple | None:
+    def _frame_cache_token(df: pl.DataFrame | None) -> tuple | None:
         if df is None:
             return None
 
         schema = tuple((name, str(dtype)) for name, dtype in df.schema.items())
-        if df.is_empty():
-            return (0, 0, 0, 0, schema)
+        return (id(df), df.height, df.width, schema)
 
-        total = 0
-        xor = 0
-        for row_hash in df.hash_rows(seed=0, seed_1=1, seed_2=2, seed_3=3).to_list():
-            value = int(row_hash)
-            total = (total + value) & ((1 << 64) - 1)
-            xor ^= value
-        return (df.height, df.width, total, xor, schema)
+    @staticmethod
+    def _qb_ids_by_team(df: pl.DataFrame) -> dict[str, set[str]]:
+        if df.is_empty() or "posteam" not in df.columns or "passer_player_id" not in df.columns:
+            return {}
+
+        qbs = (
+            df.filter((pl.col("pass_attempt") == 1) & pl.col("passer_player_id").is_not_null())
+            .select(["posteam", "passer_player_id"])
+            .unique()
+        )
+        qb_ids_by_team: dict[str, set[str]] = defaultdict(set)
+        for row in qbs.iter_rows(named=True):
+            qb_ids_by_team[row["posteam"]].add(row["passer_player_id"])
+        return qb_ids_by_team

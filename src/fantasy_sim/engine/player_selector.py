@@ -155,7 +155,7 @@ def select_rusher(
 
     filtered = _filter_available(roster, state)
     is_red_zone = state.yard_line <= 20
-    eligible, base_weights = filtered._rusher_candidates_and_weights(is_red_zone=is_red_zone)
+    eligible, base_weights = filtered.rusher_candidates_and_weights(is_red_zone=is_red_zone)
     weights = _apply_rb_rank_factors(eligible, base_weights, script)
     if weights.sum() == 0:
         weights = np.ones(len(eligible), dtype=float)

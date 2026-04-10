@@ -75,6 +75,7 @@ def _make_profile(
 def _make_spec(
     game_id: str,
     *,
+    week: int = 1,
     home_profile: GameScriptProfile | None,
     away_profile: GameScriptProfile | None,
 ) -> GameSpec:
@@ -85,7 +86,7 @@ def _make_spec(
         home_roster=None,
         away_roster=None,
         seed=1,
-        week=1,
+        week=week,
     )
 
 
@@ -93,6 +94,7 @@ def test_collect_game_script_profiles_aggregates_per_team_across_specs():
     specs = [
         _make_spec(
             "game-1",
+            week=1,
             home_profile=_make_profile(
                 "KC",
                 trail_pass=1.10,
@@ -128,6 +130,7 @@ def test_collect_game_script_profiles_aggregates_per_team_across_specs():
         ),
         _make_spec(
             "game-2",
+            week=2,
             home_profile=_make_profile(
                 "KC",
                 trail_pass=1.14,
@@ -168,10 +171,10 @@ def test_collect_game_script_profiles_aggregates_per_team_across_specs():
     assert kc.leading_late_rb_factors.rb1 == pytest.approx(1.18)
     assert kc.leading_late_rb_factors.rb2 == pytest.approx(0.95)
     assert kc.leading_late_rb_factors.rb3_plus == pytest.approx(0.83)
-    assert kc.diagnostics.trailing_late_target_sample == 150
-    assert kc.diagnostics.trailing_late_play_count == 190
-    assert kc.diagnostics.leading_late_rb_sample == 70
-    assert kc.diagnostics.leading_late_rb_play_count == 100
+    assert kc.diagnostics.trailing_late_target_sample == 70
+    assert kc.diagnostics.trailing_late_play_count == 90
+    assert kc.diagnostics.leading_late_rb_sample == 30
+    assert kc.diagnostics.leading_late_rb_play_count == 45
     assert kc.diagnostics.trailing_late_pass_rate_ratio == pytest.approx(1.18)
     assert kc.diagnostics.trailing_late_pace_ratio == pytest.approx(1.09)
     assert kc.diagnostics.trailing_late_rank1_ratio == pytest.approx(1.01)
