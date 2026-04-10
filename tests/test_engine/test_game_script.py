@@ -6,7 +6,11 @@ from fantasy_sim.data.game_script import (
     LeadingLateRbConfig,
     TrailingLateConfig,
 )
-from fantasy_sim.engine.game_script import effective_pace_factor, resolve_game_script
+from fantasy_sim.engine.game_script import (
+    apply_pass_rate_factor,
+    effective_pace_factor,
+    resolve_game_script,
+)
 from fantasy_sim.engine.types import GameState
 
 
@@ -112,3 +116,9 @@ def test_effective_pace_factor_multiplies_base_and_script():
     )
 
     assert effective_pace_factor(1.05, script) == pytest.approx(1.05 * 1.1)
+
+
+def test_apply_pass_rate_factor_preserves_deterministic_pass_bucket():
+    probs = apply_pass_rate_factor({"pass": 1.0, "run": 0.0}, 1.3)
+
+    assert probs == {"pass": 1.0, "run": 0.0}

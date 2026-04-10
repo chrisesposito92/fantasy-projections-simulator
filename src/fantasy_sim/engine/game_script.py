@@ -65,7 +65,7 @@ def resolve_game_script(
 
 
 def apply_pass_rate_factor(probs: dict[str, float], factor: float) -> dict[str, float]:
-    pass_prob = min(0.99, max(0.01, probs["pass"] * factor))
+    pass_prob = min(1.0, max(0.0, probs["pass"] * factor))
     return {"pass": pass_prob, "run": 1.0 - pass_prob}
 
 
