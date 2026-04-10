@@ -32,6 +32,35 @@ Every future phase should follow these rules:
 3. Promote only after weekly QB/WR metrics improve or hold while season metrics do not regress materially.
 4. Keep 2025 as the eventual frozen promotion holdout after the evaluation path is fixed.
 5. Re-open previously parked levers only after the phase-0 measurement fixes land.
+6. At the end of every phase, update both:
+   - [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md)
+   - [`docs/accuracy-stack-audit.md`](./accuracy-stack-audit.md)
+7. Those doc updates are part of the phase definition, not optional cleanup.
+
+## Documentation Maintenance
+
+Every implementation phase should close with a documentation pass that keeps the
+two source-of-truth docs current.
+
+### `accuracy-roadmap.md` must be updated with:
+
+- phase status
+- any change in priority ordering
+- newly unlocked or de-scoped follow-up work
+- any revised promotion gates or sequencing notes
+
+### `accuracy-stack-audit.md` must be updated with:
+
+- current defaults and parked flags
+- runtime ordering changes
+- newly available local data or backfilled history
+- resolved or newly discovered validation caveats
+- any changes to which evidence is considered trustworthy
+
+### Rule For Future Sessions
+
+Fresh phase-planning sessions should assume these two docs are the canonical
+handoff. That only works if each completed phase leaves both docs current.
 
 ## Ranked Phases
 
