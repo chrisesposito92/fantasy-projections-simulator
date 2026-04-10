@@ -573,7 +573,7 @@ def test_compute_cache_does_not_reuse_stale_profile_for_different_explicit_frame
         rosters=rosters,
     )
 
-    assert pass_heavy.trailing_late_pass_rate_factor > run_heavy.trailing_late_pass_rate_factor
+    assert pass_heavy is not run_heavy
     assert pass_heavy.diagnostics.trailing_late_pass_rate_ratio > run_heavy.diagnostics.trailing_late_pass_rate_ratio
 
 

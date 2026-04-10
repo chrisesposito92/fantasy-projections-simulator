@@ -553,7 +553,13 @@ class GameScriptEngine:
             return None
 
         schema = tuple((name, str(dtype)) for name, dtype in df.schema.items())
-        return (id(df), df.height, df.width, schema)
+        if df.is_empty():
+            return (df.height, df.width, schema, (), ())
+
+        row_hashes = df.hash_rows(seed=0, seed_1=1, seed_2=2, seed_3=3)
+        head_hashes = tuple(int(value) for value in row_hashes.head(8).to_list())
+        tail_hashes = tuple(int(value) for value in row_hashes.tail(8).to_list())
+        return (df.height, df.width, schema, head_hashes, tail_hashes)
 
     @staticmethod
     def _qb_ids_by_team(df: pl.DataFrame) -> dict[str, set[str]]:
