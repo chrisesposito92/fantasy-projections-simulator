@@ -287,7 +287,7 @@ def _resolve_run(
     rusher_id: str | None = None
 
     if roster is not None:
-        rusher = select_rusher(roster, state, rng)
+        rusher = select_rusher(roster, state, rng, script=script)
         rusher_id = rusher.player_id
 
         # Use player's rushing yards dist if available
