@@ -43,6 +43,31 @@ class TestDataLoaderCaching:
         loader.load_pbp(seasons=[2023, 2024])
         mock_nfl.load_pbp.assert_called_once_with([2023, 2024])
 
+    @patch("fantasy_sim.data.loader.nflreadpy")
+    def test_load_injuries_uses_parquet_cache_across_loader_instances(
+        self,
+        mock_nfl,
+        cache_dir,
+    ):
+        mock_df = pl.DataFrame(
+            {
+                "gsis_id": ["00-001"],
+                "full_name": ["Player One"],
+                "report_status": ["Out"],
+            }
+        )
+        mock_nfl.load_injuries.return_value = mock_df
+
+        first_loader = DataLoader(cache_dir=cache_dir)
+        second_loader = DataLoader(cache_dir=cache_dir)
+
+        first_result = first_loader.load_injuries(seasons=[2024])
+        second_result = second_loader.load_injuries(seasons=[2024])
+
+        assert (cache_dir / "injuries_2024.parquet").exists()
+        assert second_result.to_dict(as_series=False) == first_result.to_dict(as_series=False)
+        mock_nfl.load_injuries.assert_called_once_with([2024])
+
 
 class TestDataLoaderMethods:
     @patch("fantasy_sim.data.loader.nflreadpy")
