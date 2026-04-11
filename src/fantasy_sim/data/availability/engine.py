@@ -128,12 +128,6 @@ class AvailabilityEngine:
             starter_slot = self._config.depth_charts.starter_slots.get("QB", "QB1")
             if depth_position == starter_slot:
                 return AvailabilityDecision(reason="depth:starter")
-            if isinstance(depth_position, str) and depth_position.startswith("QB"):
-                return AvailabilityDecision(
-                    hard_inactive=True,
-                    factor=0.0,
-                    reason=f"depth:{depth_position}",
-                )
 
         return None
 

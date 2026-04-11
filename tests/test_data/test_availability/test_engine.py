@@ -6,6 +6,8 @@ import pytest
 
 from fantasy_sim.data.availability.engine import AvailabilityEngine
 from fantasy_sim.data.availability.models import AvailabilityConfig
+from fantasy_sim.engine.player_selector import select_passer
+from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.player import PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster
 
 
@@ -137,7 +139,7 @@ def test_usage_only_low_usage_respects_min_factor_floor():
     assert decisions["QB1"].factor == 0.95
 
 
-def test_explicit_qb1_depth_chart_demotes_backup():
+def test_explicit_qb1_depth_chart_identifies_starter_without_zeroing_backup():
     frame = pl.DataFrame(
         {
             "season": [2024, 2024],
@@ -162,7 +164,7 @@ def test_explicit_qb1_depth_chart_demotes_backup():
     qb1 = next(player for player in roster.players if player.player_id == "QB1")
     qb2 = next(player for player in roster.players if player.player_id == "QB2")
     assert qb1.usage.snap_share == 1.0
-    assert qb2.usage.snap_share == 0.0
+    assert qb2.usage.snap_share == 0.2
 
 
 def test_usage_only_stays_neutral_when_participation_data_is_missing():
@@ -193,43 +195,46 @@ def test_usage_only_stays_neutral_when_participation_data_is_missing():
     assert decisions["QB1"].reason is None
 
 
-def test_hard_inactive_qb_becomes_unavailable_to_roster_selection():
+def test_hard_inactive_qb_allows_backup_selection_when_present():
     frame = pl.DataFrame(
         {
-            "season": [2024],
-            "week": [5],
-            "team": ["KC"],
-            "player_id": ["QB1"],
-            "position": ["QB"],
-            "attempts": [0],
-            "carries": [0],
-            "targets": [0],
-            "offense_pct": [0.75],
-            "report_status": ["Out"],
-            "practice_status": ["Did Not Participate"],
-            "depth_position": ["QB1"],
+            "season": [2024, 2024],
+            "week": [5, 5],
+            "team": ["KC", "KC"],
+            "player_id": ["QB1", "QB2"],
+            "position": ["QB", "QB"],
+            "attempts": [0, 0],
+            "carries": [0, 0],
+            "targets": [0, 0],
+            "offense_pct": [0.75, 0.0],
+            "report_status": ["Out", None],
+            "practice_status": ["Did Not Participate", None],
+            "depth_position": ["QB1", "QB2"],
         }
     )
-    roster = TeamRoster(
-        team="KC",
-        players=[
-            PlayerModel(
-                "QB1",
-                "Starter QB",
-                "QB",
-                "KC",
-                PlayerUsage(snap_share=1.0),
-                PlayerOutcomes(),
-            )
-        ],
-    )
+    roster = _roster()
     engine = AvailabilityEngine(_config(), role_inputs_loader=_StubRoleInputs(frame))
 
     decisions = engine.apply(roster, season=2024, week=5)
 
-    qb = roster.players[0]
-    assert qb.usage.snap_share == 0.0
-    assert 5 in qb.weeks_missed
+    starter = next(player for player in roster.players if player.player_id == "QB1")
+    backup = next(player for player in roster.players if player.player_id == "QB2")
+    assert starter.usage.snap_share == 0.0
+    assert backup.usage.snap_share == 0.2
+    assert 5 in starter.weeks_missed
     assert decisions["QB1"].hard_inactive is True
-    with pytest.raises(ValueError, match="No available QB found on roster for KC"):
-        roster.get_starting_qb()
+    state = GameState(
+        quarter=1,
+        clock=900,
+        possession="home",
+        down=1,
+        distance=10,
+        yard_line=75,
+        home_score=0,
+        away_score=0,
+        home_team="KC",
+        away_team="BUF",
+        receiving_2nd_half="away",
+        week=5,
+    )
+    assert select_passer(roster, state).player_id == "QB2"
