@@ -152,8 +152,8 @@ The current measurement path can overstate or misclassify gains because:
 
 ### Why High Priority
 
-This is the fastest path to likely weekly QB/WR lift without first rewriting the
-simulator internals.
+This is now implemented in v1 form and remains the fastest candidate for weekly
+QB/WR lift without rewriting the simulator internals.
 
 Locally verified nflreadpy loaders:
 
@@ -166,40 +166,43 @@ These can provide high-signal priors for:
 - opportunity quality
 - consensus weekly rankings and projections
 
-### Candidate Design
+### Status
 
-Build a new top-level config family:
+Implemented, awaiting manual promotion validation.
 
-- `ensemble`
+The `ensemble` config family exists and defaults remain off until the manual
+promotion decision is made.
 
-Core idea:
+### Phase 1 v1 Scope
 
-- treat external fantasy projections/opportunity metrics as priors or features
-- blend them into weekly player projections after simulation, or use them to
-  bias player-level usage/value estimates upstream
+- `ff_opportunity` only
+- post-sim weekly projection blend only
+- no upstream usage/share mutation
+- `ff_rankings` deferred from the first promotion decision
 
-### Likely v1 Inputs
+Current behavior:
 
-- expected fantasy points
-- expected opportunity share
-- consensus ranking
-- consensus projection level
+- blend external fantasy opportunity priors into weekly player projections
+- keep uncovered rows neutral rather than forcing a synthetic adjustment
+- preserve the existing post-sim promotion gate for marginal validation
 
-### Likely v1 Outputs
+### Implemented Behavior
 
-- blended weekly fantasy-point projection
-- optional blended rank prior by position
-
-### Planning Questions For The Future Session
-
-- blend at the final projection layer or inside player-model construction?
-- use one ensemble weight globally or position-specific weights?
-- keep the ensemble as a pure post-sim rank/projection layer first, then move upstream later?
+- `ff_opportunity` provides the required Phase 1 v1 source
+- `total_fantasy_points_exp` is the current prior feature
+- joins use nflverse `player_id`
+- the blend is applied after simulation, not during game context construction
+- `ff_rankings` remains optional future work until historical coverage, schema, and backtest-year checks justify it
 
 ### Promotion Gate
 
 - clear weekly QB and/or WR improvement against `baseline=defaults`
 - no material regression in season MAE or season rank ordering
+
+This gate is still pending manual marginal validation on this branch. The next
+required step is the user-run `baseline=defaults` validation for Phase 1, after
+which Phase 2 remains the next implementation phase once the promotion decision
+is known.
 
 ## Phase 2: Same-Season Role And Availability Engine
 

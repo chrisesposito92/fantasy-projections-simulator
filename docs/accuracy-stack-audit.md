@@ -43,6 +43,9 @@ Active in `config/defaults.yaml` as of this audit:
 
 Built but currently parked or disabled:
 
+- `ensemble.enabled: false`
+- `ensemble.ff_opportunity.enabled: false`
+- `ensemble.ff_rankings.enabled: false`
 - `pff.team_context.enabled: false`
 - `pff.talent.enabled: false`
 - `usage.ngs.enabled: false`
@@ -72,6 +75,9 @@ Important distinction:
 
 - `game_script` is not baked into base roster shares
 - it is resolved live from `GameState` and applied transiently during play calling
+- `ensemble` is not part of `GameContextBuilder`; when enabled, it is
+  applied post-sim in validation/backtester/CLI flows after projections are
+  generated
 
 That is a useful architectural pattern for future "situation-only" levers.
 
@@ -179,6 +185,18 @@ Verified locally from the installed `nflreadpy` package:
 - `load_nextgen_stats(seasons, stat_type)` with `passing`, `receiving`, or `rushing`
 
 These loaders are real and do not need speculative wrapper design.
+
+## Phase 1 Ensemble Implementation Notes
+
+- `ff_opportunity` is the implemented required Phase 1 v1 source
+- `total_fantasy_points_exp` is the current prior feature
+- joins use nflverse `player_id`
+- uncovered rows remain neutral
+- runtime player-week blend coverage is not yet summarized in the coverage helper output
+- `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks
+
+The ensemble family is implemented in code, but the defaults remain off and no
+promotion has been claimed yet.
 
 ## What The Current Ledgers Actually Tell Us
 
