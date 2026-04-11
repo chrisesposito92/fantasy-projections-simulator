@@ -2,59 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Protocol, TypedDict, TypeVar, cast
+from typing import Protocol, TypeVar
 
 from fantasy_sim.scoring.ensemble import BlendStats
-from fantasy_sim.scoring.role_trend import TrendStats
+from fantasy_sim.scoring.role_trend import ProjectionRow, TrendStats
 
 
-class ProjectionLayerRow(TypedDict):
-    """Core fields shared by post-simulation projection rows."""
-
-    player_id: str
-    position: str
-    team: str
-    fpts: float
-    rank: int
+ProjectionLayerRowT = TypeVar("ProjectionLayerRowT", bound=ProjectionRow)
 
 
-ProjectionLayerRowT = TypeVar("ProjectionLayerRowT", bound=ProjectionLayerRow)
-
-
-class RoleTrendAdjusterProtocol(Protocol):
+class RoleTrendAdjusterProtocol[ProjectionLayerRowT](Protocol):
     def adjust_week(
         self,
-        projections: list[ProjectionLayerRow],
+        projections: list[ProjectionLayerRowT],
         *,
         season: int,
         week: int,
-    ) -> tuple[list[ProjectionLayerRow], TrendStats]: ...
+    ) -> tuple[list[ProjectionLayerRowT], TrendStats]: ...
 
 
-class ProjectionEnsemblerProtocol(Protocol):
+class ProjectionEnsemblerProtocol[ProjectionLayerRowT](Protocol):
     def blend_week(
         self,
-        projections: list[ProjectionLayerRow],
+        projections: list[ProjectionLayerRowT],
         *,
         season: int,
         week: int,
-    ) -> tuple[list[ProjectionLayerRow], BlendStats]: ...
+    ) -> tuple[list[ProjectionLayerRowT], BlendStats]: ...
 
 
-def apply_projection_layers[ProjectionLayerRowT: ProjectionLayerRow](
+def apply_projection_layers[ProjectionLayerRowT: ProjectionRow](
     projections: list[ProjectionLayerRowT],
     *,
     season: int,
     week: int,
-    role_trend_adjuster: RoleTrendAdjusterProtocol | None = None,
-    ensembler: ProjectionEnsemblerProtocol | None = None,
+    role_trend_adjuster: RoleTrendAdjusterProtocol[ProjectionLayerRowT] | None = None,
+    ensembler: ProjectionEnsemblerProtocol[ProjectionLayerRowT] | None = None,
 ) -> list[ProjectionLayerRowT]:
-    rows: list[ProjectionLayerRow] = [
-        cast(ProjectionLayerRow, cast(object, dict(projection)))
-        for projection in projections
-    ]
+    rows = projections.copy()
     if role_trend_adjuster is not None:
         rows, _trend_stats = role_trend_adjuster.adjust_week(rows, season=season, week=week)
     if ensembler is not None:
         rows, _blend_stats = ensembler.blend_week(rows, season=season, week=week)
-    return cast(list[ProjectionLayerRowT], rows)
+    return rows

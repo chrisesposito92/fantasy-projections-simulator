@@ -711,6 +711,26 @@ class TestSeasonByWeek:
         mock_apply_projection_layers.assert_called_once()
         assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
 
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_detail_skips_projection_layers(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE[:1])
+
+        result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5", "--detail"])
+
+        assert result.exit_code == 0
+        mock_make_role_trend_adjuster.assert_not_called()
+        mock_apply_projection_layers.assert_not_called()
+
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
     def test_season_by_week_shows_week_headers(self, MockLoader, MockBuilder, runner):
