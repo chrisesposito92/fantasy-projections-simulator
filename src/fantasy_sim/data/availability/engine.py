@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import polars as pl
 
 from fantasy_sim.data.availability.loader import WeeklyRoleInputLoader
@@ -18,6 +20,12 @@ class AvailabilityEngine:
         self._config = config
         self._loader = role_inputs_loader or WeeklyRoleInputLoader()
         self._cache: dict[int, pl.DataFrame] = {}
+        self._cache_lock = threading.Lock()
+
+    def warm(self, seasons: list[int]) -> None:
+        """Preload season inputs so apply()/decide() are read-only under threads."""
+        for season in seasons:
+            self._season_inputs(season)
 
     def apply(
         self,
@@ -61,13 +69,14 @@ class AvailabilityEngine:
         return decisions
 
     def _season_inputs(self, season: int) -> pl.DataFrame:
-        cached = self._cache.get(season)
-        if cached is not None:
-            return cached
+        with self._cache_lock:
+            cached = self._cache.get(season)
+            if cached is not None:
+                return cached
 
-        frame = self._loader.load_weekly([season])
-        self._cache[season] = frame
-        return frame
+            frame = self._loader.load_weekly([season])
+            self._cache[season] = frame
+            return frame
 
     def _decision_for_player(
         self,

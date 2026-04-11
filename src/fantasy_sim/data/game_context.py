@@ -665,6 +665,8 @@ class GameContextBuilder:
 
         self._ensure_kicker_engine(training_seasons, target_season)
         self._ensure_dst_baseline_engine(training_seasons, target_season)
+        if self._availability_engine is not None:
+            self._availability_engine.warm([target_season])
 
         logger.info(
             "GameContextBuilder warmed: %d weeks, %d player model cache entries",

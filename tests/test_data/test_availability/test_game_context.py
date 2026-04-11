@@ -59,13 +59,12 @@ def test_builder_creates_availability_engine_when_enabled(tmp_path):
     assert builder._availability_engine is not None
 
 
-def test_build_game_applies_availability_before_usage(tmp_path):
+def test_build_game_applies_vegas_then_availability_then_usage(tmp_path):
     builder = GameContextBuilder(
         cache_dir=tmp_path / "cache",
         availability_config=AvailabilityConfig(enabled=True),
         usage_config=UsageConfig(enabled=True),
     )
-    builder._vegas_engine = None
 
     home_roster = _make_roster("KC")
     away_roster = _make_roster("BUF")
@@ -74,6 +73,13 @@ def test_build_game_applies_availability_before_usage(tmp_path):
 
     events: list[str] = []
 
+    def vegas_compute(home_team, away_team, target_season, week):
+        events.append("vegas:compute")
+        return MagicMock(), MagicMock()
+
+    def apply_vegas(dists, ctx):
+        events.append(f"vegas:apply:{dists.play_calling.team}")
+
     def availability_apply(roster, season, week):
         events.append(f"availability:{roster.team}")
 
@@ -81,6 +87,9 @@ def test_build_game_applies_availability_before_usage(tmp_path):
         events.append(f"usage:{roster.team}")
         return {}
 
+    builder._vegas_engine = MagicMock()
+    builder._vegas_engine.compute.side_effect = vegas_compute
+    builder._apply_vegas = MagicMock(side_effect=apply_vegas)
     builder._availability_engine = MagicMock()
     builder._availability_engine.apply.side_effect = availability_apply
     builder._usage_engine = MagicMock()
@@ -101,6 +110,9 @@ def test_build_game_applies_availability_before_usage(tmp_path):
         )
 
     assert events == [
+        "vegas:compute",
+        "vegas:apply:KC",
+        "vegas:apply:BUF",
         "availability:KC",
         "availability:BUF",
         "normalize:KC",
