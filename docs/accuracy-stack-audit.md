@@ -189,15 +189,21 @@ These loaders are real and do not need speculative wrapper design.
 
 ## Phase 1 Ensemble Implementation Notes
 
-- `ff_opportunity` is the implemented required Phase 1 v1 source
+- `ff_opportunity` is the implemented required Phase 1 v1 source across QB/RB/WR/TE
 - `total_fantasy_points_exp` is the current prior feature
+- default weights are QB `0.35`, WR `0.25`, RB `0.15`, and TE `0.15`
 - joins use nflverse `player_id`
 - uncovered rows remain neutral
 - runtime player-week blend coverage is not yet summarized in the coverage helper output
-- `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks
+- weekly QB/WR accuracy remains the primary success metric and tie-breaker
+- `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks; it is still deferred from the first promotion decision
 
 The ensemble family is implemented in code, but the defaults remain off and no
 promotion has been claimed yet.
+
+The user already ran the earlier QB/WR-only A/B. That should not be treated as
+promotion evidence for the broadened QB/RB/WR/TE version, which still awaits
+manual marginal validation.
 
 ## What The Current Ledgers Actually Tell Us
 

@@ -153,7 +153,8 @@ The current measurement path can overstate or misclassify gains because:
 ### Why High Priority
 
 This is now implemented in v1 form and remains the fastest candidate for weekly
-QB/WR lift without rewriting the simulator internals.
+QB/WR lift without rewriting the simulator internals, while still covering the
+four core fantasy positions by default.
 
 Locally verified `nflreadpy` loaders:
 
@@ -171,28 +172,35 @@ Future-capable availability also exists for:
 
 ### Status
 
-Implemented, awaiting manual promotion validation.
+Implemented, awaiting manual promotion validation for the broadened
+QB/RB/WR/TE scope.
 
 The `ensemble` config family exists and defaults remain off until the manual
 promotion decision is made.
 
+The user already ran the earlier QB/WR-only A/B, but that result should not be
+treated as promotion evidence for the broadened QB/RB/WR/TE version.
+
 ### Phase 1 v1 Scope
 
 - `ff_opportunity` only
+- default position scope is QB/RB/WR/TE
 - post-sim weekly projection blend only
 - no upstream usage/share mutation
 - `ff_rankings` deferred from the first promotion decision
 
 Current behavior:
 
-- blend external fantasy opportunity priors into weekly player projections
+- blend external fantasy opportunity priors into weekly QB/RB/WR/TE player projections
 - keep uncovered rows neutral rather than forcing a synthetic adjustment
+- keep weekly QB/WR accuracy as the primary success metric and tie-breaker
 - preserve the existing post-sim promotion gate for marginal validation
 
 ### Implemented Behavior
 
-- `ff_opportunity` provides the required Phase 1 v1 source
+- `ff_opportunity` provides the required Phase 1 v1 source across QB/RB/WR/TE
 - `total_fantasy_points_exp` is the current prior feature
+- default weights are QB `0.35`, WR `0.25`, RB `0.15`, and TE `0.15`
 - joins use nflverse `player_id`
 - the blend is applied after simulation, not during game context construction
 - `ff_rankings` remains optional future work until historical coverage, schema, and backtest-year checks justify it
@@ -200,12 +208,12 @@ Current behavior:
 ### Promotion Gate
 
 - clear weekly QB and/or WR improvement against `baseline=defaults`
-- no material regression in season MAE or season rank ordering
+- no material regression in season MAE or season rank ordering across the rest of the position groups
 
-This gate is still pending manual marginal validation on this branch. The next
-required step is the user-run `baseline=defaults` validation for Phase 1, after
-which Phase 2 remains the next implementation phase once the promotion decision
-is known.
+This gate is still pending manual marginal validation on this branch for the
+broadened QB/RB/WR/TE scope. The next required step is the user-run
+`baseline=defaults` validation for Phase 1, after which Phase 2 remains the
+next implementation phase once the promotion decision is known.
 
 ## Phase 2: Same-Season Role And Availability Engine
 

@@ -15,24 +15,20 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
     if not raw:
         return EnsembleConfig()
 
+    default_ff_opportunity = FfOpportunityConfig()
     ff_opportunity_raw = raw.get("ff_opportunity", {})
     ff_rankings_raw = raw.get("ff_rankings", {})
 
     ff_opportunity = FfOpportunityConfig(
         enabled=ff_opportunity_raw.get("enabled", False),
         cache_dir=ff_opportunity_raw.get("cache_dir"),
-        positions=tuple(ff_opportunity_raw.get("positions", ("QB", "WR"))),
-        feature=ff_opportunity_raw.get("feature", "total_fantasy_points_exp"),
-        weights=dict(
-            ff_opportunity_raw.get(
-                "weights",
-                {
-                    "QB": 0.35,
-                    "WR": 0.25,
-                },
-            )
+        positions=tuple(ff_opportunity_raw.get("positions", default_ff_opportunity.positions)),
+        feature=ff_opportunity_raw.get("feature", default_ff_opportunity.feature),
+        weights=dict(ff_opportunity_raw.get("weights", default_ff_opportunity.weights)),
+        min_coverage_weeks=ff_opportunity_raw.get(
+            "min_coverage_weeks",
+            default_ff_opportunity.min_coverage_weeks,
         ),
-        min_coverage_weeks=ff_opportunity_raw.get("min_coverage_weeks", 1),
     )
     ff_rankings = FfRankingsConfig(
         enabled=ff_rankings_raw.get("enabled", False),

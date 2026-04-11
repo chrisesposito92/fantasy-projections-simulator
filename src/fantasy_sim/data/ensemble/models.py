@@ -11,12 +11,14 @@ class FfOpportunityConfig:
 
     enabled: bool = False
     cache_dir: str | None = None
-    positions: tuple[str, ...] = ("QB", "WR")
+    positions: tuple[str, ...] = ("QB", "RB", "WR", "TE")
     feature: str = "total_fantasy_points_exp"
     weights: dict[str, float] = field(
         default_factory=lambda: {
             "QB": 0.35,
+            "RB": 0.15,
             "WR": 0.25,
+            "TE": 0.15,
         }
     )
     min_coverage_weeks: int = 1

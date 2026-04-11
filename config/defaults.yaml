@@ -243,11 +243,13 @@ ensemble:
   ff_opportunity:
     enabled: false
     cache_dir: null
-    positions: [QB, WR]
+    positions: [QB, RB, WR, TE]
     feature: total_fantasy_points_exp
     weights:
       QB: 0.35
+      RB: 0.15
       WR: 0.25
+      TE: 0.15
     min_coverage_weeks: 1
   ff_rankings:
     enabled: false

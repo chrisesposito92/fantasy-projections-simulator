@@ -18,7 +18,7 @@ def _config(*, enabled: bool = True, ff_enabled: bool = True) -> EnsembleConfig:
         enabled=enabled,
         ff_opportunity=FfOpportunityConfig(
             enabled=ff_enabled,
-            positions=("QB", "WR"),
+            positions=("QB", "RB", "WR", "TE"),
             weights={"QB": 0.5, "WR": 0.25, "RB": 0.15, "TE": 0.15},
         ),
     )
