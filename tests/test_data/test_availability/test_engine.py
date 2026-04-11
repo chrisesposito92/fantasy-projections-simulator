@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+import pytest
 
 from fantasy_sim.data.availability.engine import AvailabilityEngine
 from fantasy_sim.data.availability.models import AvailabilityConfig
@@ -106,6 +107,36 @@ def test_usage_only_low_usage_soft_dampens_but_does_not_bench_qb():
     assert 0.0 < qb.usage.snap_share < 1.0
 
 
+def test_usage_only_low_usage_respects_min_factor_floor():
+    frame = pl.DataFrame(
+        {
+            "season": [2024, 2024, 2024],
+            "week": [2, 3, 4],
+            "team": ["KC", "KC", "KC"],
+            "player_id": ["QB1", "QB1", "QB1"],
+            "position": ["QB", "QB", "QB"],
+            "attempts": [10, 11, 9],
+            "carries": [1, 0, 1],
+            "targets": [0, 0, 0],
+            "offense_pct": [0.61, 0.59, 0.58],
+            "report_status": [None, None, None],
+            "practice_status": [None, None, None],
+            "depth_position": [None, None, None],
+        }
+    )
+    config = AvailabilityConfig(enabled=True)
+    config.usage_fallback.min_factor = 0.95
+    config.usage_fallback.qb_low_usage_factor = 0.92
+    roster = _roster()
+    engine = AvailabilityEngine(config, role_inputs_loader=_StubRoleInputs(frame))
+
+    decisions = engine.apply(roster, season=2024, week=5)
+
+    qb = next(player for player in roster.players if player.player_id == "QB1")
+    assert qb.usage.snap_share == 0.95
+    assert decisions["QB1"].factor == 0.95
+
+
 def test_explicit_qb1_depth_chart_demotes_backup():
     frame = pl.DataFrame(
         {
@@ -160,3 +191,45 @@ def test_usage_only_stays_neutral_when_participation_data_is_missing():
     assert qb.usage.snap_share == 1.0
     assert decisions["QB1"].factor == 1.0
     assert decisions["QB1"].reason is None
+
+
+def test_hard_inactive_qb_becomes_unavailable_to_roster_selection():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [5],
+            "team": ["KC"],
+            "player_id": ["QB1"],
+            "position": ["QB"],
+            "attempts": [0],
+            "carries": [0],
+            "targets": [0],
+            "offense_pct": [0.75],
+            "report_status": ["Out"],
+            "practice_status": ["Did Not Participate"],
+            "depth_position": ["QB1"],
+        }
+    )
+    roster = TeamRoster(
+        team="KC",
+        players=[
+            PlayerModel(
+                "QB1",
+                "Starter QB",
+                "QB",
+                "KC",
+                PlayerUsage(snap_share=1.0),
+                PlayerOutcomes(),
+            )
+        ],
+    )
+    engine = AvailabilityEngine(_config(), role_inputs_loader=_StubRoleInputs(frame))
+
+    decisions = engine.apply(roster, season=2024, week=5)
+
+    qb = roster.players[0]
+    assert qb.usage.snap_share == 0.0
+    assert 5 in qb.weeks_missed
+    assert decisions["QB1"].hard_inactive is True
+    with pytest.raises(ValueError, match="No available QB found on roster for KC"):
+        roster.get_starting_qb()

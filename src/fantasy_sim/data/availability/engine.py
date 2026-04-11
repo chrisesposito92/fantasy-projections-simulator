@@ -42,7 +42,7 @@ class AvailabilityEngine:
             decision = decisions.get(player.player_id)
             if decision is None:
                 continue
-            self._apply_decision(player, decision)
+            self._apply_decision(player, decision, week=week)
         return decisions
 
     def decide(
@@ -156,25 +156,25 @@ class AvailabilityEngine:
 
         if position == "QB" and offense_pct < 0.75:
             return AvailabilityDecision(
-                factor=cfg.qb_low_usage_factor,
+                factor=max(cfg.min_factor, cfg.qb_low_usage_factor),
                 reason="usage:soft",
             )
 
         if position == "RB" and offense_pct < 0.40 and carries + targets <= 8:
             return AvailabilityDecision(
-                factor=cfg.rb_low_usage_factor,
+                factor=max(cfg.min_factor, cfg.rb_low_usage_factor),
                 reason="usage:soft",
             )
 
         if position == "WR" and offense_pct < 0.55 and targets <= 6:
             return AvailabilityDecision(
-                factor=cfg.wr_low_usage_factor,
+                factor=max(cfg.min_factor, cfg.wr_low_usage_factor),
                 reason="usage:soft",
             )
 
         if position == "TE" and offense_pct < 0.60 and targets <= 6:
             return AvailabilityDecision(
-                factor=cfg.te_low_usage_factor,
+                factor=max(cfg.min_factor, cfg.te_low_usage_factor),
                 reason="usage:soft",
             )
 
@@ -200,8 +200,15 @@ class AvailabilityEngine:
         return float(value)
 
     @staticmethod
-    def _apply_decision(player: PlayerModel, decision: AvailabilityDecision) -> None:
+    def _apply_decision(
+        player: PlayerModel,
+        decision: AvailabilityDecision,
+        *,
+        week: int,
+    ) -> None:
         if decision.hard_inactive:
+            if week not in player.weeks_missed:
+                player.weeks_missed.append(week)
             AvailabilityEngine._zero_usage(player)
             return
 

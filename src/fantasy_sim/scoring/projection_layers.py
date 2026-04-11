@@ -11,7 +11,7 @@ from fantasy_sim.scoring.role_trend import ProjectionRow, TrendStats
 ProjectionLayerRowT = TypeVar("ProjectionLayerRowT", bound=ProjectionRow)
 
 
-class RoleTrendAdjusterProtocol[ProjectionLayerRowT](Protocol):
+class RoleTrendAdjusterProtocol(Protocol[ProjectionLayerRowT]):
     def adjust_week(
         self,
         projections: list[ProjectionLayerRowT],
@@ -21,7 +21,7 @@ class RoleTrendAdjusterProtocol[ProjectionLayerRowT](Protocol):
     ) -> tuple[list[ProjectionLayerRowT], TrendStats]: ...
 
 
-class ProjectionEnsemblerProtocol[ProjectionLayerRowT](Protocol):
+class ProjectionEnsemblerProtocol(Protocol[ProjectionLayerRowT]):
     def blend_week(
         self,
         projections: list[ProjectionLayerRowT],
@@ -31,7 +31,7 @@ class ProjectionEnsemblerProtocol[ProjectionLayerRowT](Protocol):
     ) -> tuple[list[ProjectionLayerRowT], BlendStats]: ...
 
 
-def apply_projection_layers[ProjectionLayerRowT: ProjectionRow](
+def apply_projection_layers(
     projections: list[ProjectionLayerRowT],
     *,
     season: int,

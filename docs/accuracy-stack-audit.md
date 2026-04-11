@@ -59,7 +59,7 @@ Built but currently parked or disabled:
 
 ## Runtime Order
 
-`GameContextBuilder` order in [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py):
+`GameContextBuilder` order in [`../src/fantasy_sim/data/game_context.py`](../src/fantasy_sim/data/game_context.py):
 
 1. Base team distributions and player models from nflverse PBP + rosters
 2. Vegas game environment
@@ -111,14 +111,14 @@ The repo currently has:
 
 Most relevant files for accuracy work:
 
-- [`config/defaults.yaml`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml)
-- [`scripts/validate.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/scripts/validate.py)
-- [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py)
-- [`src/fantasy_sim/validation/ledger.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/validation/ledger.py)
+- [`../config/defaults.yaml`](../config/defaults.yaml)
+- [`../scripts/validate.py`](../scripts/validate.py)
+- [`../src/fantasy_sim/data/game_context.py`](../src/fantasy_sim/data/game_context.py)
+- [`../src/fantasy_sim/validation/ledger.py`](../src/fantasy_sim/validation/ledger.py)
 
 ### Relevant Local Stores
 
-Relevant local stores under `/Users/chrisesposito/.fantasy-sim`:
+Relevant local stores under `~/.fantasy-sim`:
 
 - `cache/`
 - `pff/`

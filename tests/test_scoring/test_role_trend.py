@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import polars as pl
+import pytest
 
 from fantasy_sim.scoring.ensemble import BlendStats
 from fantasy_sim.data.role_trend.models import RoleTrendConfig
@@ -244,6 +245,42 @@ def test_adjust_week_position_gated_out_is_neutral():
     assert adjusted[0]["role_trend_applied"] is False
     assert stats.adjusted_rows == 0
     assert stats.neutral_rows == 1
+
+
+def test_adjust_week_rejects_boolean_fpts():
+    adjuster = RoleTrendProjectionAdjuster(
+        _config(),
+        role_inputs_loader=_StubRoleInputs(
+            pl.DataFrame(
+                {
+                    "season": [2024, 2024],
+                    "week": [1, 2],
+                    "team": ["KC", "KC"],
+                    "player_id": ["WR1", "WR1"],
+                    "position": ["WR", "WR"],
+                    "attempts": [0, 0],
+                    "carries": [0, 0],
+                    "targets": [8, 10],
+                    "offense_pct": [0.6, 0.8],
+                }
+            )
+        ),
+    )
+
+    with pytest.raises(TypeError, match="invalid boolean fpts"):
+        adjuster.adjust_week(
+            [
+                {
+                    "player_id": "WR1",
+                    "team": "KC",
+                    "position": "WR",
+                    "fpts": True,
+                    "rank": 1,
+                }
+            ],
+            season=2024,
+            week=3,
+        )
 
 
 def test_apply_projection_layers_runs_role_trend_before_ensemble():

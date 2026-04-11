@@ -72,7 +72,7 @@ class RoleTrendProjectionAdjuster:
     def _fpts_value(row: ProjectionRow) -> float:
         value = row.get("fpts")
         if isinstance(value, bool):
-            return float(value)
+            raise TypeError("projection row has invalid boolean fpts")
         if isinstance(value, (int, float)):
             return float(value)
         raise TypeError("projection row is missing numeric fpts")
@@ -132,6 +132,18 @@ class RoleTrendProjectionAdjuster:
             )
 
         season_inputs = self._season_inputs(season)
+        history_inputs = season_inputs.filter(pl.col("week") < week)
+        empty_history = history_inputs.head(0)
+        history_by_key: dict[tuple[str, str], pl.DataFrame] = {}
+        if not history_inputs.is_empty():
+            for history_frame in history_inputs.partition_by(
+                ["player_id", "team"],
+                maintain_order=False,
+            ):
+                first_row = history_frame.row(0, named=True)
+                history_by_key[(str(first_row["player_id"]), str(first_row["team"]))] = (
+                    history_frame
+                )
         adjusted_rows = 0
         output: list[ProjectionRow] = []
 
@@ -150,11 +162,7 @@ class RoleTrendProjectionAdjuster:
                 output.append(self._mark_neutral(row))
                 continue
 
-            player_history = season_inputs.filter(
-                (pl.col("player_id") == player_id)
-                & (pl.col("team") == team)
-                & (pl.col("week") < week)
-            )
+            player_history = history_by_key.get((player_id, team), empty_history)
             recent = player_history.tail(self.config.window_weeks)
             baseline = player_history.head(
                 max(0, player_history.height - self.config.window_weeks)
