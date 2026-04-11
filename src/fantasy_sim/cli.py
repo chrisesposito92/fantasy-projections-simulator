@@ -11,6 +11,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
+from fantasy_sim.data.availability.config import load_availability_config
 from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
@@ -107,10 +108,11 @@ def _make_builder(
     weather_flag: bool | None = None,
     vegas_flag: bool | None = None,
     props_flag: bool | None = None,
+    availability_flag: bool | None = None,
     usage_flag: bool | None = None,
     defaults: dict | None = None,
 ) -> GameContextBuilder:
-    """Create GameContextBuilder, optionally with PFF, weather, Vegas, props, and usage enabled."""
+    """Create GameContextBuilder, optionally with feature engines enabled."""
     defaults = defaults or load_defaults()
     pff_config = load_pff_config(defaults)
     if pff_flag is True:
@@ -128,6 +130,9 @@ def _make_builder(
     props_config = load_props_config(defaults)
     if props_flag is not None:
         props_config.enabled = props_flag
+    availability_config = load_availability_config(defaults)
+    if availability_flag is not None:
+        availability_config.enabled = availability_flag
     usage_config = load_usage_config(defaults)
     if usage_flag is not None:
         usage_config.enabled = usage_flag
@@ -141,6 +146,7 @@ def _make_builder(
         weather_config=weather_config,
         vegas_config=vegas_config,
         props_config=props_config,
+        availability_config=availability_config,
         usage_config=usage_config,
         game_script_config=game_script_config,
         goal_line_concentration_config=goal_line_concentration_config,
