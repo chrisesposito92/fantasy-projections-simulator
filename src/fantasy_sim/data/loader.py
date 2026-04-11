@@ -66,6 +66,23 @@ class DataLoader:
         self._save_cache(df, cache_path)
         return df
 
+    def load_injuries(self, seasons: list[int]) -> pl.DataFrame:
+        cache_path = self._cache_key("injuries", seasons)
+        cached = self._load_cached(cache_path)
+        if cached is not None:
+            return cached
+
+        df = nflreadpy.load_injuries(seasons)
+        rename_map = {}
+        if "gsis_id" in df.columns and "player_id" not in df.columns:
+            rename_map["gsis_id"] = "player_id"
+        if "full_name" in df.columns and "player_name" not in df.columns:
+            rename_map["full_name"] = "player_name"
+        if rename_map:
+            df = df.rename(rename_map)
+        self._save_cache(df, cache_path)
+        return df
+
     def load_schedules(self, seasons: list[int]) -> pl.DataFrame:
         cache_path = self._cache_key("schedules", seasons)
         cached = self._load_cached(cache_path)

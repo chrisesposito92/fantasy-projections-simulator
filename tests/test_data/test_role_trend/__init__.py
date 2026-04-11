@@ -1,0 +1,1 @@
+"""Role trend config tests."""

@@ -254,6 +254,44 @@ ensemble:
   ff_rankings:
     enabled: false
 
+availability:
+  enabled: false
+  positions: [QB, RB, WR, TE]
+  injuries:
+    enabled: true
+    hard_out_statuses: [Out, Doubtful, Suspended, Injured Reserve]
+    limited_statuses: [Questionable]
+    limited_factor: 0.75
+  depth_charts:
+    enabled: true
+    starter_slots:
+      QB: QB1
+      RB: RB1
+      WR: WR1
+      TE: TE1
+  usage_fallback:
+    enabled: true
+    lookback_weeks: 3
+    min_factor: 0.85
+    qb_low_usage_factor: 0.92
+    rb_low_usage_factor: 0.90
+    wr_low_usage_factor: 0.92
+    te_low_usage_factor: 0.92
+
+role_trend:
+  enabled: false
+  positions: [QB, RB, WR, TE]
+  window_weeks: 3
+  factor_clamp: [0.90, 1.10]
+  qb:
+    sensitivity: 0.12
+  rb:
+    sensitivity: 0.10
+  wr:
+    sensitivity: 0.10
+  te:
+    sensitivity: 0.08
+
 game_script:
   enabled: true
   trailing_late:
