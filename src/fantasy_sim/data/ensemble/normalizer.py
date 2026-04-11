@@ -41,11 +41,14 @@ def normalize_ff_opportunity(
             & pl.col("prior_fpts").is_not_null()
         )
         .select(list(NORMALIZED_SCHEMA))
-        .unique(
-            subset=["season", "week", "player_id"],
-            keep="first",
-            maintain_order=True,
+        .group_by(["season", "week", "player_id"])
+        .agg(
+            pl.col("name").sort().first().alias("name"),
+            pl.col("position").sort().first().alias("position"),
+            pl.col("team").sort().first().alias("team"),
+            pl.col("prior_fpts").mean().alias("prior_fpts"),
         )
+        .select(list(NORMALIZED_SCHEMA))
         .sort(["season", "week", "player_id"])
     )
 

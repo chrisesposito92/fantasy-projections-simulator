@@ -64,3 +64,45 @@ def test_normalize_ff_opportunity_drops_missing_player_id_and_prior_feature():
     assert normalized.shape == (1, 7)
     assert normalized["player_id"].to_list() == ["00-0000001"]
     assert normalized["prior_fpts"].to_list() == [24.5]
+
+
+def test_normalize_ff_opportunity_collapses_duplicates_deterministically():
+    rows = [
+        {
+            "season": "2024",
+            "week": "1",
+            "player_id": "00-0000001",
+            "full_name": "Zed Receiver",
+            "position": "WR",
+            "posteam": "KC",
+            "total_fantasy_points_exp": 12.0,
+        },
+        {
+            "season": "2024",
+            "week": "1",
+            "player_id": "00-0000001",
+            "full_name": "Aaron Receiver",
+            "position": "QB",
+            "posteam": "BUF",
+            "total_fantasy_points_exp": 18.0,
+        },
+    ]
+    config = FfOpportunityConfig(
+        positions=("QB", "WR"),
+        feature="total_fantasy_points_exp",
+    )
+
+    first_order = normalize_ff_opportunity(pl.DataFrame(rows), config)
+    reversed_order = normalize_ff_opportunity(pl.DataFrame(list(reversed(rows))), config)
+
+    expected = {
+        "season": [2024],
+        "week": [1],
+        "player_id": ["00-0000001"],
+        "name": ["Aaron Receiver"],
+        "position": ["QB"],
+        "team": ["BUF"],
+        "prior_fpts": [15.0],
+    }
+    assert first_order.to_dict(as_series=False) == expected
+    assert reversed_order.to_dict(as_series=False) == expected

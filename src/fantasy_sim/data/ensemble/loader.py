@@ -10,6 +10,16 @@ import polars as pl
 from fantasy_sim.data.ensemble.models import FfOpportunityConfig
 from fantasy_sim.data.loader import DEFAULT_CACHE_DIR
 
+RAW_WEEKLY_SCHEMA: dict[str, pl.DataType] = {
+    "season": pl.Int64,
+    "week": pl.Int64,
+    "player_id": pl.Utf8,
+    "full_name": pl.Utf8,
+    "position": pl.Utf8,
+    "posteam": pl.Utf8,
+    "total_fantasy_points_exp": pl.Float64,
+}
+
 
 class FfOpportunityLoader:
     """Load FF Opportunity weekly data with per-season parquet caching."""
@@ -48,6 +58,6 @@ class FfOpportunityLoader:
             frames.append(frame)
 
         if not frames:
-            return pl.DataFrame()
+            return pl.DataFrame(schema=RAW_WEEKLY_SCHEMA)
 
         return pl.concat(frames, how="diagonal_relaxed")
