@@ -257,6 +257,17 @@ def collect_signal_coverage(
         ("usage", "route_rate"),
         nested_path=("route_rate",),
     )
+    ensemble_enabled = _signal_enabled(
+        config,
+        ("ensemble_config", "ensemble"),
+        ("ensemble",),
+    )
+    ff_opp_enabled = _signal_enabled(
+        config,
+        ("ensemble_config", "ensemble"),
+        ("ensemble", "ff_opportunity"),
+        nested_path=("ff_opportunity",),
+    )
 
     props_paths: dict[int, list[Path]] = {
         season: list(props_path.glob(f"props_{season}_week*.parquet"))
@@ -397,6 +408,16 @@ def collect_signal_coverage(
             note=(
                 "Requires the PFF summary trio from the processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk"
+            ),
+        ),
+        "ensemble.ff_opportunity": _build_signal(
+            ensemble_enabled and ff_opp_enabled,
+            seasons,
+            seasons,
+            note=(
+                "nflreadpy historical ff_opportunity coverage is treated as available "
+                "for requested test seasons; runtime player-week blend coverage is not "
+                "yet summarized here"
             ),
         ),
     }

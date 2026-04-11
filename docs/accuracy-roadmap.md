@@ -152,13 +152,13 @@ The current measurement path can overstate or misclassify gains because:
 
 ### Why High Priority
 
-This is the fastest path to likely weekly QB/WR lift without first rewriting the
-simulator internals.
+This is now implemented in v1 form and remains the fastest candidate for weekly
+QB/WR lift without rewriting the simulator internals, while still covering the
+four core fantasy positions by default.
 
-Locally verified nflreadpy loaders:
+Locally verified `nflreadpy` loaders:
 
 - `load_ff_opportunity()`
-- `load_ff_rankings()`
 
 These can provide high-signal priors for:
 
@@ -166,40 +166,75 @@ These can provide high-signal priors for:
 - opportunity quality
 - consensus weekly rankings and projections
 
-### Candidate Design
+Future-capable availability also exists for:
 
-Build a new top-level config family:
+- `load_ff_rankings()`
 
-- `ensemble`
+### Status
 
-Core idea:
+Implemented and promoted for the broadened QB/RB/WR/TE scope.
 
-- treat external fantasy projections/opportunity metrics as priors or features
-- blend them into weekly player projections after simulation, or use them to
-  bias player-level usage/value estimates upstream
+The promotion artifact for Phase 1 is:
 
-### Likely v1 Inputs
+- `phase-1-ff-opportunity-v1-broadened`
 
-- expected fantasy points
-- expected opportunity share
-- consensus ranking
-- consensus projection level
+The earlier QB/WR-only run was still useful as a narrow pilot, but the
+broadened run is the decision artifact for Phase 1.
 
-### Likely v1 Outputs
+### Phase 1 v1 Scope
 
-- blended weekly fantasy-point projection
-- optional blended rank prior by position
+- `ff_opportunity` only
+- default position scope is QB/RB/WR/TE
+- post-sim weekly projection blend only
+- no upstream usage/share mutation
+- `ff_rankings` deferred from the first promotion decision
 
-### Planning Questions For The Future Session
+Current behavior:
 
-- blend at the final projection layer or inside player-model construction?
-- use one ensemble weight globally or position-specific weights?
-- keep the ensemble as a pure post-sim rank/projection layer first, then move upstream later?
+- blend external fantasy opportunity priors into weekly QB/RB/WR/TE player projections
+- keep uncovered rows neutral rather than forcing a synthetic adjustment
+- keep weekly QB/WR accuracy as the primary success metric and tie-breaker
+- preserve the existing post-sim promotion gate for marginal validation
+
+### Implemented Behavior
+
+- `ff_opportunity` provides the required Phase 1 v1 source across QB/RB/WR/TE
+- `total_fantasy_points_exp` is the current prior feature
+- default weights are QB `0.35`, WR `0.25`, RB `0.15`, and TE `0.15`
+- joins use nflverse `player_id`
+- the blend is applied after simulation, not during game context construction
+- `ff_rankings` remains optional future work until historical coverage, schema, and backtest-year checks justify it
 
 ### Promotion Gate
 
 - clear weekly QB and/or WR improvement against `baseline=defaults`
-- no material regression in season MAE or season rank ordering
+- no material regression in season MAE or season rank ordering across the rest of the position groups
+
+This gate is satisfied by the broadened marginal validation run:
+
+- label: `phase-1-ff-opportunity-v1-broadened`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `ensemble.ff_opportunity=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0271`
+  - `weekly_mae delta: -0.548`
+  - `season_mae delta: -3.737`
+
+Primary tie-breaker positions also improved strongly in weekly validation:
+
+- QB weekly rank corr `+0.2448`, weekly MAE `-0.919`
+- WR weekly rank corr `+0.1658`, weekly MAE `-0.648`
+
+RB and TE also improved in the broadened run, but QB/WR remain the primary
+success metrics and tie-breaker.
+
+### Next Priority
+
+Phase 2 remains the next implementation phase.
+
+`ff_rankings` is still available as future ensemble work, but it is not needed
+to justify the promoted Phase 1 defaults.
 
 ## Phase 2: Same-Season Role And Availability Engine
 

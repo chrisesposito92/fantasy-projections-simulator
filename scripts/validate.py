@@ -25,8 +25,10 @@ import numpy as np
 import polars as pl
 
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
+from fantasy_sim.data.ensemble import EnsembleConfig, load_ensemble_config
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
 from fantasy_sim.validation.config import (
@@ -170,8 +172,10 @@ def run_season(
     num_training_seasons: int,
     arm_a_configs: dict,
     arm_b_configs: dict,
-    positions: list[str],
-    max_workers: int,
+    arm_a_ensemble_config: EnsembleConfig | None = None,
+    arm_b_ensemble_config: EnsembleConfig | None = None,
+    positions: list[str] | None = None,
+    max_workers: int = 1,
     cached_arm_a: dict | None = None,
 ) -> dict:
     """Run A/B comparison for one season.
@@ -186,6 +190,25 @@ def run_season(
         and 'arm_a_projections'/'arm_a_meta' (for cache saving).
     """
     training_seasons = list(range(test_season - num_training_seasons, test_season))
+    positions = positions or list(POSITIONS)
+    arm_a_ensembler = (
+        FfOpportunityProjectionEnsembler(arm_a_ensemble_config)
+        if (
+            arm_a_ensemble_config is not None
+            and arm_a_ensemble_config.enabled
+            and arm_a_ensemble_config.ff_opportunity.enabled
+        )
+        else None
+    )
+    arm_b_ensembler = (
+        FfOpportunityProjectionEnsembler(arm_b_ensemble_config)
+        if (
+            arm_b_ensemble_config is not None
+            and arm_b_ensemble_config.enabled
+            and arm_b_ensemble_config.ff_opportunity.enabled
+        )
+        else None
+    )
 
     loader = DataLoader()
     schedules = loader.load_schedules([test_season])
@@ -259,7 +282,14 @@ def run_season(
         spec_by_id_b = {s.game_id: s for s in specs_b}
         for result in sim_b:
             spec = spec_by_id_b[result.game_id]
-            for proj in result.projections:
+            projections = result.projections
+            if arm_b_ensembler is not None:
+                projections, _ = arm_b_ensembler.blend_week(
+                    projections,
+                    season=test_season,
+                    week=spec.week,
+                )
+            for proj in projections:
                 pid = proj["player_id"]
                 arm_b_proj[pid][spec.week] = proj["fpts"]
                 if pid not in arm_b_meta:
@@ -375,9 +405,17 @@ def run_season(
         for result in sim_all:
             is_arm_a = result.metadata.get("arm") == "a"
             spec = spec_by_id_a[result.game_id] if is_arm_a else spec_by_id_b[result.game_id]
+            ensembler = arm_a_ensembler if is_arm_a else arm_b_ensembler
+            projections = result.projections
+            if ensembler is not None:
+                projections, _ = ensembler.blend_week(
+                    projections,
+                    season=test_season,
+                    week=spec.week,
+                )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
             meta_dict = arm_a_meta if is_arm_a else arm_b_meta
-            for proj in result.projections:
+            for proj in projections:
                 pid = proj["player_id"]
                 proj_dict[pid][spec.week] = proj["fpts"]
                 if pid not in meta_dict:
@@ -637,14 +675,27 @@ def main() -> int:
 
     if args.baseline == "bare":
         arm_a_configs = build_bare_engine_configs()
+        arm_a_ensemble_config = None
     else:
         arm_a_configs = build_engine_configs(defaults)
+        arm_a_ensemble_config = load_ensemble_config(defaults)
+        if not (
+            arm_a_ensemble_config.enabled
+            and arm_a_ensemble_config.ff_opportunity.enabled
+        ):
+            arm_a_ensemble_config = None
 
     if args.overrides:
         arm_b_dict = apply_overrides(defaults, args.overrides)
     else:
         arm_b_dict = defaults
     arm_b_configs = build_engine_configs(arm_b_dict)
+    arm_b_ensemble_config = load_ensemble_config(arm_b_dict)
+    if not (
+        arm_b_ensemble_config.enabled
+        and arm_b_ensemble_config.ff_opportunity.enabled
+    ):
+        arm_b_ensemble_config = None
     coverage_summary = collect_signal_coverage(arm_b_dict, args.seasons)
 
     # Check cache
@@ -698,6 +749,8 @@ def main() -> int:
                     num_training_seasons=args.training_years,
                     arm_a_configs=arm_a_configs,
                     arm_b_configs=arm_b_configs,
+                    arm_a_ensemble_config=arm_a_ensemble_config,
+                    arm_b_ensemble_config=arm_b_ensemble_config,
                     positions=args.positions,
                     max_workers=per_season_workers,
                     cached_arm_a=cached_results[season],
@@ -724,6 +777,8 @@ def main() -> int:
                 num_training_seasons=args.training_years,
                 arm_a_configs=arm_a_configs,
                 arm_b_configs=arm_b_configs,
+                arm_a_ensemble_config=arm_a_ensemble_config,
+                arm_b_ensemble_config=arm_b_ensemble_config,
                 positions=args.positions,
                 max_workers=per_season_workers,
                 cached_arm_a=cached_results[season],

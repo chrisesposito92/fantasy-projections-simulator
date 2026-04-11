@@ -5,12 +5,14 @@ import math
 import zlib
 import numpy as np
 import polars as pl
+from fantasy_sim.data.ensemble.models import EnsembleConfig
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.actuals import load_actual_scores
+from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
     boom_bust_calibration,
@@ -66,6 +68,7 @@ class Backtester:
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
+        ensemble_config: EnsembleConfig | None = None,
         max_workers: int = 1,
     ):
         if test_season >= _HOLDOUT_SEASON:
@@ -85,6 +88,7 @@ class Backtester:
         self._vegas_config = vegas_config
         self._props_config = props_config
         self._usage_config = usage_config
+        self._ensemble_config = ensemble_config
         self.max_workers = max_workers
 
     def run(self, scoring_config: dict) -> BacktestResult:
@@ -172,13 +176,27 @@ class Backtester:
         # --- Phase 3: Aggregate results ---
         projected_by_player_week = defaultdict(dict)
         all_weekly_errors = []
+        ensembler = None
+        if (
+            self._ensemble_config is not None
+            and self._ensemble_config.enabled
+            and self._ensemble_config.ff_opportunity.enabled
+        ):
+            ensembler = FfOpportunityProjectionEnsembler(self._ensemble_config)
 
         spec_by_id = {s.game_id: s for s in specs}
 
         for result in sim_results:
             spec = spec_by_id[result.game_id]
             wk = spec.week
-            for proj in result.projections:
+            projections = result.projections
+            if ensembler is not None:
+                projections, _ = ensembler.blend_week(
+                    projections,
+                    season=self.test_season,
+                    week=wk,
+                )
+            for proj in projections:
                 pid = proj["player_id"]
                 projected_by_player_week[pid][wk] = proj["fpts"]
                 if pid in actual_by_player_week and wk in actual_by_player_week[pid]:

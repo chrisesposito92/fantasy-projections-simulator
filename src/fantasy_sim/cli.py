@@ -5,6 +5,7 @@ import polars as pl
 from pathlib import Path
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
+from fantasy_sim.data.ensemble import load_ensemble_config
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.config import load_pff_config
@@ -20,6 +21,7 @@ from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_kicker_projections
 from fantasy_sim.output.tables import (
     format_qb_table, format_rb_table, format_wr_table,
@@ -106,9 +108,10 @@ def _make_builder(
     vegas_flag: bool | None = None,
     props_flag: bool | None = None,
     usage_flag: bool | None = None,
+    defaults: dict | None = None,
 ) -> GameContextBuilder:
     """Create GameContextBuilder, optionally with PFF, weather, Vegas, props, and usage enabled."""
-    defaults = load_defaults()
+    defaults = defaults or load_defaults()
     pff_config = load_pff_config(defaults)
     if pff_flag is True:
         pff_config.enabled = True
@@ -145,10 +148,38 @@ def _make_builder(
     )
 
 
+def _make_ensembler(defaults: dict) -> FfOpportunityProjectionEnsembler | None:
+    """Create the FF Opportunity ensembler when the signal is enabled."""
+    ensemble_config = load_ensemble_config(defaults)
+    if not ensemble_config.enabled or not ensemble_config.ff_opportunity.enabled:
+        return None
+    return FfOpportunityProjectionEnsembler(ensemble_config)
+
+
+def _maybe_blend_player_projs(
+    player_projs: list[dict],
+    *,
+    ensembler: FfOpportunityProjectionEnsembler | None,
+    season: int,
+    week: int,
+) -> list[dict]:
+    """Blend projection rows with ensemble priors when the ensembler is active."""
+    if ensembler is None:
+        return player_projs
+
+    blended_rows, _ = ensembler.blend_week(
+        player_projs,
+        season=season,
+        week=week,
+    )
+    return blended_rows
+
+
 def _resolve_config_chain(
     scoring_format: str,
     scoring_config_path: str | None,
     season_yaml_path: str | None = None,
+    defaults: dict | None = None,
 ) -> dict:
     """Resolve scoring config through the config chain.
 
@@ -159,7 +190,7 @@ def _resolve_config_chain(
     """
     from fantasy_sim.config.loader import load_custom_scoring
 
-    defaults = load_defaults()
+    defaults = defaults or load_defaults()
     scoring_presets = defaults["scoring"]
 
     effective_format = scoring_format
@@ -197,7 +228,11 @@ def _effective_scoring_name(
     return effective
 
 
-def _get_training_seasons(season: int, training_years: int | None = None) -> list[int]:
+def _get_training_seasons(
+    season: int,
+    training_years: int | None = None,
+    defaults: dict | None = None,
+) -> list[int]:
     """Get training seasons for a target season.
 
     Args:
@@ -207,7 +242,7 @@ def _get_training_seasons(season: int, training_years: int | None = None) -> lis
             (falls back to len(historical_seasons) for backwards compat).
     """
     if training_years is None:
-        defaults = load_defaults()
+        defaults = defaults or load_defaults()
         sim_config = defaults.get("simulation", {})
         training_years = sim_config.get(
             "training_years",
@@ -305,7 +340,13 @@ def main():
 def demo(ctx, sims, scoring, output_format, output_path, overrides, config_path, scoring_config_path, detail):
     """Run a demo simulation with synthetic team data."""
     season_yaml_path = config_path or _auto_detect_season_yaml()
-    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml_path=season_yaml_path)
+    defaults = load_defaults()
+    scoring_config = _resolve_config_chain(
+        scoring,
+        scoring_config_path,
+        season_yaml_path=season_yaml_path,
+        defaults=defaults,
+    )
 
     click.echo(f"Running {sims} simulations ({scoring} scoring)...")
 
@@ -563,14 +604,30 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         if "season" in meta:
             season = meta["season"]
     effective_scoring = _effective_scoring_name(scoring, season_yaml)
-    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
-    training_seasons = _get_training_seasons(season, training_years)
+    defaults = load_defaults()
+    scoring_config = _resolve_config_chain(
+        scoring,
+        scoring_config_path,
+        season_yaml,
+        defaults=defaults,
+    )
+    training_seasons = _get_training_seasons(
+        season,
+        training_years,
+        defaults=defaults,
+    )
+    ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
-        defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
-    builder = _make_builder(pff, weather, vegas, usage_flag=usage)
+    builder = _make_builder(
+        pff,
+        weather,
+        vegas,
+        usage_flag=usage,
+        defaults=defaults,
+    )
     loader = DataLoader()
 
     click.echo(f"Loading schedule for {season} Week {week_num}...")
@@ -635,9 +692,16 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
             # Build projections per-game so each player's stats use correct denominator
             if detail:
                 from fantasy_sim.scoring.projections import build_detailed_projections
-                all_player_projs.extend(build_detailed_projections(results.games, scoring_config))
+                player_batch = build_detailed_projections(results.games, scoring_config)
             else:
-                all_player_projs.extend(build_player_projections(results.games, scoring_config))
+                player_batch = build_player_projections(results.games, scoring_config)
+                player_batch = _maybe_blend_player_projs(
+                    player_batch,
+                    ensembler=ensembler,
+                    season=season,
+                    week=week_num,
+                )
+            all_player_projs.extend(player_batch)
 
             all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
             all_kicker_projs.extend(build_kicker_projections(
@@ -693,12 +757,22 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
     if ctx.get_parameter_source("weeks") == click.core.ParameterSource.DEFAULT:
         if "weeks" in meta:
             weeks = meta["weeks"]
+    defaults = load_defaults()
     effective_scoring = _effective_scoring_name(scoring, season_yaml)
-    scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
-    training_seasons = _get_training_seasons(season_year, training_years)
+    scoring_config = _resolve_config_chain(
+        scoring,
+        scoring_config_path,
+        season_yaml,
+        defaults=defaults,
+    )
+    training_seasons = _get_training_seasons(
+        season_year,
+        training_years,
+        defaults=defaults,
+    )
+    ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
-        defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
     try:
@@ -707,7 +781,13 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         click.echo(f"Error: {e.format_message()}", err=True)
         raise SystemExit(1)
 
-    builder = _make_builder(pff, weather, vegas, usage_flag=usage)
+    builder = _make_builder(
+        pff,
+        weather,
+        vegas,
+        usage_flag=usage,
+        defaults=defaults,
+    )
     loader = DataLoader()
 
     schedules = loader.load_schedules([season_year])
@@ -777,6 +857,12 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     player_batch = build_detailed_projections(results.games, scoring_config)
                 else:
                     player_batch = build_player_projections(results.games, scoring_config)
+                    player_batch = _maybe_blend_player_projs(
+                        player_batch,
+                        ensembler=ensembler,
+                        season=season_year,
+                        week=wk,
+                    )
                 dst_batch = build_dst_projections(results.games, scoring_config, team_map=team_map)
                 kicker_batch = build_kicker_projections(
                     results.games, scoring_config, team_map=team_map,
@@ -878,14 +964,16 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         meta = _read_season_yaml_metadata(effective_config_path)
         if "season" in meta:
             season = meta["season"]
+    defaults = load_defaults()
     scoring_config = _resolve_config_chain(
         scoring_format=scoring,
         scoring_config_path=scoring_config_path,
         season_yaml_path=effective_config_path,
+        defaults=defaults,
     )
+    ensembler = None if detail or demo else _make_ensembler(defaults)
 
     if sims is None:
-        defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
     home_team = home_team.upper()
@@ -897,8 +985,18 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         home_roster = _make_demo_roster(home_team)
         away_roster = _make_demo_roster(away_team)
     else:
-        training_seasons = _get_training_seasons(season, training_years)
-        builder = _make_builder(pff, weather, vegas, usage_flag=usage)
+        training_seasons = _get_training_seasons(
+            season,
+            training_years,
+            defaults=defaults,
+        )
+        builder = _make_builder(
+            pff,
+            weather,
+            vegas,
+            usage_flag=usage,
+            defaults=defaults,
+        )
         home_dists, away_dists, home_roster, away_roster = builder.build_game(
             home_team=home_team, away_team=away_team, training_seasons=training_seasons,
             target_season=season, week=week_num,
@@ -939,6 +1037,12 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         player_projs = build_detailed_projections(results.games, scoring_config)
     else:
         player_projs = build_player_projections(results.games, scoring_config)
+        player_projs = _maybe_blend_player_projs(
+            player_projs,
+            ensembler=ensembler,
+            season=season,
+            week=week_num,
+        )
 
     dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
     kicker_projs = build_kicker_projections(
@@ -1016,14 +1120,15 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         meta = _read_season_yaml_metadata(effective_config_path)
         if "season" in meta:
             season = meta["season"]
+    defaults = load_defaults()
     scoring_config = _resolve_config_chain(
         scoring_format=scoring,
         scoring_config_path=scoring_config_path,
         season_yaml_path=effective_config_path,
+        defaults=defaults,
     )
 
     if sims is None:
-        defaults = load_defaults()
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
 
     if demo:
@@ -1034,8 +1139,18 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         all_rosters = [home_roster, away_roster]
         game_configs = [(home_dists, away_dists, home_roster, away_roster, "HOME", "AWAY")]
     else:
-        training_seasons = _get_training_seasons(season, training_years)
-        builder = _make_builder(pff, weather, vegas, usage_flag=usage)
+        training_seasons = _get_training_seasons(
+            season,
+            training_years,
+            defaults=defaults,
+        )
+        builder = _make_builder(
+            pff,
+            weather,
+            vegas,
+            usage_flag=usage,
+            defaults=defaults,
+        )
         loader = DataLoader()
 
         click.echo(f"Loading schedule for {season} Week {week_num}...")
@@ -1188,6 +1303,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     """
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], scoring)
+    ensemble_config = load_ensemble_config(defaults)
     pff_config = load_pff_config(defaults)
     if pff is True:
         pff_config.enabled = True
@@ -1217,6 +1333,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         weather_config=weather_config,
         vegas_config=vegas_config,
         usage_config=usage_config,
+        ensemble_config=ensemble_config,
     )
     result = bt.run(scoring_config)
 

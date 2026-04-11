@@ -25,6 +25,9 @@ Tie-breaker preference for future work:
 
 Active in `config/defaults.yaml` as of this audit:
 
+- `ensemble.enabled: true`
+- `ensemble.ff_opportunity.enabled: true`
+- `ensemble.ff_rankings.enabled: false`
 - `pff.enabled: true`
 - `pff.tier_engine.enabled: true`
 - `pff.matchup.enabled: true`
@@ -72,6 +75,10 @@ Important distinction:
 
 - `game_script` is not baked into base roster shares
 - it is resolved live from `GameState` and applied transiently during play calling
+- `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
+  post-sim in validation, `Backtester`, and the non-detail `week` / `season`
+  / `game` CLI flows after projections are generated
+- `player` and `--detail` CLI output currently bypass the ensemble blend
 
 That is a useful architectural pattern for future "situation-only" levers.
 
@@ -179,6 +186,31 @@ Verified locally from the installed `nflreadpy` package:
 - `load_nextgen_stats(seasons, stat_type)` with `passing`, `receiving`, or `rushing`
 
 These loaders are real and do not need speculative wrapper design.
+
+## Phase 1 Ensemble Implementation Notes
+
+- `ff_opportunity` is the implemented required Phase 1 v1 source across QB/RB/WR/TE
+- `total_fantasy_points_exp` is the current prior feature
+- default weights are QB `0.35`, WR `0.25`, RB `0.15`, and TE `0.15`
+- joins use nflverse `player_id`
+- uncovered rows remain neutral
+- runtime player-week blend coverage is not yet summarized in the coverage helper output
+- weekly QB/WR accuracy remains the primary success metric and tie-breaker
+- `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks; it is still deferred from the first promotion decision
+
+Phase 1 is promoted on the broadened marginal validation artifact:
+
+- label: `phase-1-ff-opportunity-v1-broadened`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `ensemble.ff_opportunity=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0271`
+  - `weekly_mae delta: -0.548`
+  - `season_mae delta: -3.737`
+
+The earlier QB/WR-only A/B remains informative as a narrow pilot, but it is not
+the Phase 1 promotion artifact.
 
 ## What The Current Ledgers Actually Tell Us
 

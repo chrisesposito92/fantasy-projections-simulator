@@ -11,6 +11,7 @@ from fantasy_sim.validation.coverage import (
     SignalCoverage,
     collect_signal_coverage,
 )
+from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
 from fantasy_sim.data.usage.models import RouteRateConfig, NgsConfig, UsageConfig
 
 
@@ -256,6 +257,54 @@ def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(
     )
 
     assert coverage["usage.route_rate"].status == "disabled"
+
+
+def test_ensemble_ff_opportunity_reports_full_runtime_coverage_when_enabled():
+    coverage = collect_signal_coverage(
+        {
+            "ensemble": {
+                "enabled": True,
+                "ff_opportunity": {"enabled": True},
+            }
+        },
+        [2022, 2023, 2024],
+    )
+
+    assert coverage["ensemble.ff_opportunity"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2022, 2023, 2024],
+        missing_seasons=[],
+        note=(
+            "nflreadpy historical ff_opportunity coverage is treated as available "
+            "for requested test seasons; runtime player-week blend coverage is not "
+            "yet summarized here"
+        ),
+    )
+
+
+def test_ensemble_ff_opportunity_supports_typed_ensemble_config():
+    coverage = collect_signal_coverage(
+        {
+            "ensemble_config": EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+            )
+        },
+        [2022, 2023, 2024],
+    )
+
+    assert coverage["ensemble.ff_opportunity"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2022, 2023, 2024],
+        missing_seasons=[],
+        note=(
+            "nflreadpy historical ff_opportunity coverage is treated as available "
+            "for requested test seasons; runtime player-week blend coverage is not "
+            "yet summarized here"
+        ),
+    )
 
 
 def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
