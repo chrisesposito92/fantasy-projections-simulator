@@ -31,6 +31,17 @@ class DataLoader:
         df.write_parquet(cache_path)
         self._memory_cache[cache_path] = df
 
+    def _normalize_player_identity_columns(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Map nflverse player identity columns to the loader's standard names."""
+        rename_map = {}
+        if "gsis_id" in df.columns and "player_id" not in df.columns:
+            rename_map["gsis_id"] = "player_id"
+        if "full_name" in df.columns and "player_name" not in df.columns:
+            rename_map["full_name"] = "player_name"
+        if rename_map:
+            return df.rename(rename_map)
+        return df
+
     def load_pbp(self, seasons: list[int]) -> pl.DataFrame:
         cache_path = self._cache_key("pbp", seasons)
         cached = self._load_cached(cache_path)
@@ -55,14 +66,7 @@ class DataLoader:
         if cached is not None:
             return cached
         df = nflreadpy.load_rosters_weekly(seasons)
-        # Normalize nflverse column names to our standard names
-        rename_map = {}
-        if "gsis_id" in df.columns and "player_id" not in df.columns:
-            rename_map["gsis_id"] = "player_id"
-        if "full_name" in df.columns and "player_name" not in df.columns:
-            rename_map["full_name"] = "player_name"
-        if rename_map:
-            df = df.rename(rename_map)
+        df = self._normalize_player_identity_columns(df)
         self._save_cache(df, cache_path)
         return df
 
@@ -73,13 +77,7 @@ class DataLoader:
             return cached
 
         df = nflreadpy.load_injuries(seasons)
-        rename_map = {}
-        if "gsis_id" in df.columns and "player_id" not in df.columns:
-            rename_map["gsis_id"] = "player_id"
-        if "full_name" in df.columns and "player_name" not in df.columns:
-            rename_map["full_name"] = "player_name"
-        if rename_map:
-            df = df.rename(rename_map)
+        df = self._normalize_player_identity_columns(df)
         self._save_cache(df, cache_path)
         return df
 
