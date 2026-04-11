@@ -94,6 +94,7 @@ The current measurement path can overstate or misclassify gains because:
 ### Deliverables
 
 - Thread `td_tendency_config` through the bare dual-arm path in `validate.py`
+- Treat `baseline=defaults` as a first-class marginal validation path, alongside bare-vs-defaults comparisons
 - Add explicit per-run coverage reporting for:
   - props
   - PFF inputs
@@ -101,13 +102,19 @@ The current measurement path can overstate or misclassify gains because:
   - usage signals
   - any new external data source
 - Record config-schema version in the unified ledger
-- Record run metadata that makes runs comparable:
-  - total-lift baseline
-  - marginal-lift baseline
-  - seed mode
-  - sim count
-  - coverage summary
-- Add support for repeated seeds or multi-run confidence summaries
+- Record comparison metadata in the unified ledger so each row can be interpreted as:
+  - total-lift evidence
+  - marginal-lift evidence
+  - coverage-aware evidence
+  - schema-era evidence
+- Update both source-of-truth docs as part of the phase:
+  - [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md)
+  - [`docs/accuracy-stack-audit.md`](./accuracy-stack-audit.md)
+
+### Deferred From This Phase
+
+- repeated seeds
+- multi-run confidence summaries
 
 ### Planning Notes
 

@@ -10,12 +10,14 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from fantasy_sim.validation.coverage import SignalCoverage
 from fantasy_sim.validation.weekly import (
     DirectionalAccuracyResult,
     WeeklyPositionSummary,
 )
 
 DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[3] / "results" / "ab_ledger.json"
+CURRENT_LEDGER_SCHEMA_VERSION = 2
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -68,6 +70,10 @@ class LedgerEntry:
     overrides: list[str]
     config_snapshot: dict
     season_results: list[SeasonMetrics]
+    schema_version: int | None = None
+    comparison_mode: str | None = None
+    seed_mode: str | None = None
+    coverage_summary: dict[str, SignalCoverage] | None = None
     weekly_summaries: list[WeeklyPositionSummary] | None = None
     directional_accuracy: DirectionalAccuracyResult | None = None
 
@@ -111,10 +117,23 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
         )
         da_raw = item.get("directional_accuracy")
         da = DirectionalAccuracyResult(**da_raw) if da_raw else None
+        coverage_raw = item.get("coverage_summary")
+        coverage_summary = (
+            {
+                name: SignalCoverage(**coverage)
+                for name, coverage in coverage_raw.items()
+            }
+            if coverage_raw
+            else None
+        )
         item = dict(item)
+        item.setdefault("schema_version", None)
+        item.setdefault("comparison_mode", None)
+        item.setdefault("seed_mode", None)
         item["season_results"] = season_results
         item["weekly_summaries"] = weekly_summaries
         item["directional_accuracy"] = da
+        item["coverage_summary"] = coverage_summary
         entries.append(LedgerEntry(**item))
     return entries
 
@@ -133,8 +152,8 @@ def format_ledger_table(entries: list[LedgerEntry]) -> str:
         return "No entries in ledger."
 
     header = (
-        f"{'#':>3}  {'Label':<22}  {'baseline':<9}  {'overrides':<30}  "
-        f"{'rank_corr':>9}  {'wk_mae':>7}  {'szn_mae':>7}"
+        f"{'#':>3}  {'Label':<22}  {'baseline':<9}  {'mode':<11}  "
+        f"{'overrides':<30}  {'rank_corr':>9}  {'wk_mae':>7}  {'szn_mae':>7}"
     )
     sep = "=" * len(header)
     lines = [sep, header, "-" * len(header)]
@@ -143,8 +162,9 @@ def format_ledger_table(entries: list[LedgerEntry]) -> str:
         overrides_str = ", ".join(e.overrides) if e.overrides else "(none)"
         if len(overrides_str) > 30:
             overrides_str = overrides_str[:27] + "..."
+        mode = e.comparison_mode or "legacy"
         row = (
-            f"{i:>3}  {e.label:<22}  {e.baseline:<9}  {overrides_str:<30}  "
+            f"{i:>3}  {e.label:<22}  {e.baseline:<9}  {mode:<11}  {overrides_str:<30}  "
             f"{e.avg_rank_corr_delta:>+.4f}    "
             f"{e.avg_weekly_mae_delta:>+.3f}  "
             f"{e.avg_season_mae_delta:>+.3f}"

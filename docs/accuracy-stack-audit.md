@@ -115,7 +115,7 @@ Observed local caches:
 
 ### PFF processed data
 
-Observed under `/Users/chrisesposito/.fantasy-sim/pff/processed`:
+Observed under `~/.fantasy-sim/pff/processed/`:
 
 - 295 parquet files across NFL and NCAA
 - NFL coverage from 2018-2025
@@ -153,7 +153,7 @@ Examples of useful columns verified locally:
 
 ### Props history
 
-Observed under `/Users/chrisesposito/.fantasy-sim/pff/props`:
+Observed under `~/.fantasy-sim/pff/props/`:
 
 - `props_2025_week01.parquet` through `props_2025_week18.parquet`
 
@@ -184,31 +184,35 @@ These loaders are real and do not need speculative wrapper design.
 
 ### Unified ledger
 
-Observed in `results/ab_ledger.json`:
+The current validation path is now wired to record new runs with:
 
-- zero entries with `baseline=defaults`
-- all current entries are `baseline=bare`
+- `baseline=defaults` marginal runs
+- schema version
+- comparison metadata
+- coverage summaries
 
-That means recent results mostly measure:
+This branch did not regenerate or backfill the historical ledger files, so the
+older rows remain historical evidence rather than newly produced outputs.
+
+That means new rows can now distinguish:
 
 - total lift versus the stripped baseline
+- marginal lift versus the current default stack
+- schema-era evidence versus legacy snapshots
 
-They do not measure:
-
-- clean marginal lift against the current default stack
-
-This is acceptable for direction-finding, but not for "should ship by default"
-decisions.
+This is a meaningful improvement for "should ship by default" decisions, but
+older rows still need caveat-aware interpretation.
 
 ### Legacy ledgers still matter
 
-Earlier PFF sweeps in:
+Earlier local artifacts from prior runs include:
 
 - `results/pff_ab_ledger.json`
 - `results/pff_ab_ledger_pre-2022-2024.json`
 - `results/weekly_ab_ledger_pre-2022-2024.json`
 
-still contain useful evidence for:
+These are preserved historical references, not files populated by this branch
+checkout. They still contain useful evidence for:
 
 - coverage tuning
 - blend-pool tuning
@@ -230,28 +234,24 @@ Implication:
 - ledger comparisons across dates are not always apples-to-apples
 - future evaluation should record a config-schema version
 
-## Evaluation Caveats To Fix First
+## Phase 0 Resolution Notes
 
-### 1. `td_tendency` is not threaded in bare dual-arm validation
+Resolved in the new validation path:
 
-In the `arm_a_is_bare` branch of [`scripts/validate.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/scripts/validate.py), the call to `build_games_parallel()` passes:
+- `td_tendency_config` is now threaded through bare dual-arm validation
+- `baseline=defaults` is now a first-class marginal validation path
+- validation rows now carry config-schema version and comparison metadata
+- per-run coverage reporting now covers props, PFF, weather, and usage
 
-- `pff_config`
-- `weather_config`
-- `vegas_config`
-- `props_config`
-- `usage_config`
-- `game_script_config`
-- `goal_line_concentration_config`
+Still caveats:
 
-but not:
+- historical props are still missing for 2022-2024
+- weekly ledger history is still partly legacy
+- older pre-schema ledger entries are still directional evidence, not apples-to-apples comparisons
 
-- `td_tendency_config`
+## Remaining Evaluation Caveats
 
-That means bare-baseline dual-arm runs are not the right source of truth for
-TD-tendency marginal claims until this is fixed.
-
-### 2. Historical props are absent for the main backtest seasons
+### 1. Historical props are absent for the main backtest seasons
 
 Defaults enable props, but props files exist only for 2025.
 
@@ -261,14 +261,7 @@ Implication:
 - "props enabled" in current defaults is operationally true for forward use, but
   largely inert in historical A/B
 
-### 3. No marginal baseline entries in the unified ledger
-
-Because there are currently no `baseline=defaults` entries in
-`results/ab_ledger.json`, there is no clean canonical record of:
-
-- current defaults vs current defaults plus one new lever
-
-### 4. Some recent comparisons are not isolated
+### 2. Some recent comparisons are not isolated
 
 Examples:
 
@@ -280,7 +273,7 @@ Examples:
 
 Use these runs as directional evidence, not clean causal proof.
 
-### 5. Weekly validation record is partially legacy
+### 3. Weekly validation record is partially legacy
 
 `results/weekly_ab_ledger.json` is effectively empty, while the useful weekly
 evidence still lives in `results/weekly_ab_ledger_pre-2022-2024.json`.
@@ -289,7 +282,7 @@ That makes weekly signal review possible, but less discoverable than it should b
 
 ## Current Lift Snapshot
 
-Useful reference points from the unified ledger:
+Useful reference points from the preserved local unified ledger snapshot:
 
 | Label | avg rank_corr delta | avg weekly MAE delta | avg season MAE delta |
 |---|---:|---:|---:|

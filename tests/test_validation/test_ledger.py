@@ -1,5 +1,9 @@
 """Tests for unified A/B validation ledger."""
+import json
+
+from fantasy_sim.validation.coverage import SignalCoverage
 from fantasy_sim.validation.ledger import (
+    CURRENT_LEDGER_SCHEMA_VERSION,
     LedgerEntry,
     SeasonMetrics,
     format_ledger_table,
@@ -11,6 +15,7 @@ from fantasy_sim.validation.ledger import (
 def _make_entry(label: str = "test-run") -> LedgerEntry:
     """Create a minimal LedgerEntry for testing."""
     return LedgerEntry(
+        schema_version=CURRENT_LEDGER_SCHEMA_VERSION,
         label=label,
         timestamp="2026-04-08T12:00:00",
         sims=50,
@@ -18,7 +23,18 @@ def _make_entry(label: str = "test-run") -> LedgerEntry:
         training_years=4,
         scoring="ppr",
         baseline="bare",
+        comparison_mode="total_lift",
         overrides=[],
+        seed_mode="deterministic_game_id_crc32_shared_between_arms",
+        coverage_summary={
+            "props": SignalCoverage(
+                enabled=True,
+                status="full",
+                covered_seasons=[2022, 2023, 2024],
+                missing_seasons=[],
+                note=None,
+            )
+        },
         config_snapshot={"pff": {"enabled": True}},
         season_results=[
             SeasonMetrics(
@@ -53,6 +69,60 @@ def test_load_ledger_missing_file(tmp_path):
     assert load_ledger(path) == []
 
 
+def test_load_legacy_ledger_entry_uses_safe_defaults(tmp_path):
+    path = tmp_path / "legacy_ledger.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "label": "legacy-run",
+                    "timestamp": "2026-04-08T12:00:00",
+                    "sims": 10,
+                    "test_seasons": [2024],
+                    "training_years": 4,
+                    "scoring": "ppr",
+                    "baseline": "bare",
+                    "overrides": [],
+                    "config_snapshot": {},
+                    "season_results": [],
+                }
+            ]
+        )
+    )
+
+    entry = load_ledger(path)[0]
+    assert entry.schema_version is None
+    assert entry.comparison_mode is None
+    assert entry.seed_mode is None
+    assert entry.coverage_summary is None
+
+
+def test_format_ledger_table_renders_legacy_for_old_entries(tmp_path):
+    path = tmp_path / "legacy_ledger.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "label": "legacy-run",
+                    "timestamp": "2026-04-08T12:00:00",
+                    "sims": 10,
+                    "test_seasons": [2024],
+                    "training_years": 4,
+                    "scoring": "ppr",
+                    "baseline": "bare",
+                    "overrides": [],
+                    "config_snapshot": {},
+                    "season_results": [],
+                }
+            ]
+        )
+    )
+
+    table = format_ledger_table(load_ledger(path))
+    assert "legacy-run" in table
+    assert "legacy" in table
+
+
 def test_season_metrics_rank_corr_delta():
     sm = SeasonMetrics(
         test_season=2024,
@@ -80,4 +150,5 @@ def test_format_ledger_table_with_entries():
     table = format_ledger_table([entry])
     assert "baseline-v1" in table
     assert "bare" in table
+    assert "total_lift" in table
     assert "usage.ngs.enabled=true" in table
