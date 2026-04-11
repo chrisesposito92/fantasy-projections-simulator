@@ -26,6 +26,7 @@ import polars as pl
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.validation.coverage import collect_signal_coverage
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
 from fantasy_sim.validation.config import (
     apply_overrides,
@@ -33,6 +34,7 @@ from fantasy_sim.validation.config import (
     build_engine_configs,
 )
 from fantasy_sim.validation.ledger import (
+    CURRENT_LEDGER_SCHEMA_VERSION,
     DEFAULT_LEDGER_PATH,
     LedgerEntry,
     SeasonMetrics,
@@ -52,6 +54,7 @@ from fantasy_sim.validation.game_script import (
     format_game_script_summary,
 )
 from fantasy_sim.validation.weekly import (
+    DirectionalAccuracyResult,
     WeeklyPlayerRecord,
     WeeklyPositionSummary,
     compute_directional_accuracy,
@@ -62,6 +65,7 @@ from fantasy_sim.validation.weekly import (
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 _HOLDOUT_SEASON = 2025
+SEED_MODE = "deterministic_game_id_crc32_shared_between_arms"
 
 # Position -> applicable MatchupContext fields (same as old weekly script)
 POSITION_MATCHUP_FACTORS: dict[str, tuple[str, ...]] = {
@@ -76,6 +80,45 @@ def _filter_matchup_factors(position: str, ctx: object) -> dict[str, float]:
     """Filter MatchupContext to position-relevant factors."""
     fields = POSITION_MATCHUP_FACTORS.get(position, ())
     return {f: getattr(ctx, f, 1.0) for f in fields}
+
+
+def _comparison_mode(baseline: str) -> str:
+    return "marginal_lift" if baseline == "defaults" else "total_lift"
+
+
+def _format_coverage_line(coverage_summary: dict) -> str:
+    if not coverage_summary:
+        return ""
+
+    parts: list[str] = []
+    for name in sorted(coverage_summary):
+        signal = coverage_summary[name]
+        if not signal.enabled:
+            status = "disabled"
+        else:
+            status = signal.status
+        if signal.covered_seasons:
+            seasons = ",".join(str(season) for season in signal.covered_seasons)
+            parts.append(f"{name}={status}({seasons})")
+        else:
+            parts.append(f"{name}={status}")
+    return "  coverage   : " + " | ".join(parts)
+
+
+def _format_coverage_notes_line(coverage_summary: dict) -> str:
+    if not coverage_summary:
+        return ""
+
+    parts: list[str] = []
+    for name in sorted(coverage_summary):
+        signal = coverage_summary[name]
+        if signal.status not in {"none", "partial"}:
+            continue
+        if not signal.note:
+            continue
+        note = signal.note.replace("Requires ", "").replace("requires ", "")
+        parts.append(f"{name}:{signal.status} {note}")
+    return "  coverage notes: " + " | ".join(parts) if parts else ""
 
 
 def build_cli() -> argparse.ArgumentParser:
@@ -240,6 +283,7 @@ def run_season(
                 goal_line_concentration_config=arm_b_configs.get(
                     "goal_line_concentration_config"
                 ),
+                td_tendency_config=arm_b_configs.get("td_tendency_config"),
             )
 
             specs_a: list[GameSpec] = []
@@ -432,7 +476,14 @@ def run_season(
     }
 
 
-def print_header(args, cache_status: dict[int, bool]) -> None:
+def print_header(
+    args,
+    cache_status: dict[int, bool],
+    *,
+    comparison_mode: str | None = None,
+    seed_mode: str | None = None,
+    coverage_summary: dict | None = None,
+) -> None:
     overrides_str = " + [" + ", ".join(args.overrides) + "]" if args.overrides else ""
     cache_hits = [s for s, hit in cache_status.items() if hit]
     cache_misses = [s for s, hit in cache_status.items() if not hit]
@@ -453,6 +504,16 @@ def print_header(args, cache_status: dict[int, bool]) -> None:
     print(f"  sims        : {args.sims}")
     print(f"  seasons     : {args.seasons}")
     print(f"  scoring     : {args.scoring}")
+    if comparison_mode is not None:
+        print(f"  comparison  : {comparison_mode}")
+    if seed_mode is not None:
+        print(f"  seed mode   : {seed_mode}")
+    coverage_line = _format_coverage_line(coverage_summary or {})
+    if coverage_line:
+        print(coverage_line)
+    coverage_notes_line = _format_coverage_notes_line(coverage_summary or {})
+    if coverage_notes_line:
+        print(coverage_notes_line)
     if cache_str:
         print(f"  bare cache  : {cache_str}")
     print("=" * 68)
@@ -482,7 +543,7 @@ def print_season_results(season_results: list[SeasonMetrics]) -> None:
         avg_rc = sum(r.rank_corr_delta for r in season_results) / len(season_results)
         avg_wm = sum(r.weekly_mae_delta for r in season_results) / len(season_results)
         avg_sm = sum(r.season_mae_delta for r in season_results) / len(season_results)
-        print(f"\n  AVERAGES:")
+        print("\n  AVERAGES:")
         print(f"    rank_corr delta:  {avg_rc:+.4f}")
         print(f"    weekly_mae delta: {avg_wm:+.3f}")
         print(f"    season_mae delta: {avg_sm:+.3f}")
@@ -493,7 +554,7 @@ def print_weekly_results(
     positions: list[str],
     seasons: list[int],
     scoring_config: dict,
-) -> tuple[list[WeeklyPositionSummary], object | None]:
+) -> tuple[list[WeeklyPositionSummary], DirectionalAccuracyResult | None]:
     """Print weekly metrics and return summaries + directional accuracy."""
     print("\n" + "=" * 68)
     print("  WEEKLY RESULTS")
@@ -530,7 +591,7 @@ def print_weekly_results(
                   f"neutral={tercile.get('neutral', 0):.3f}  "
                   f"weak={tercile.get('weak', 0):.3f}")
 
-    dir_accuracy = None
+    dir_accuracy: DirectionalAccuracyResult | None = None
     if "WR" in positions:
         loader = DataLoader()
         actuals_by_player: dict[str, list] = defaultdict(list)
@@ -567,6 +628,7 @@ def main() -> int:
     # Resolve configs
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
+    comparison_mode = _comparison_mode(args.baseline)
 
     if args.baseline == "bare":
         arm_a_configs = build_bare_engine_configs()
@@ -578,6 +640,7 @@ def main() -> int:
     else:
         arm_b_dict = defaults
     arm_b_configs = build_engine_configs(arm_b_dict)
+    coverage_summary = collect_signal_coverage(arm_b_dict, args.seasons)
 
     # Check cache
     cache_status: dict[int, bool] = {}
@@ -592,7 +655,13 @@ def main() -> int:
             cache_status[season] = False
             cached_results[season] = None
 
-    print_header(args, cache_status)
+    print_header(
+        args,
+        cache_status,
+        comparison_mode=comparison_mode,
+        seed_mode=SEED_MODE,
+        coverage_summary=coverage_summary,
+    )
 
     # Compute workers
     num_seasons = len(args.seasons)
@@ -671,8 +740,8 @@ def main() -> int:
     # Print results
     print_season_results(all_season_metrics)
 
-    weekly_summaries = None
-    dir_accuracy = None
+    weekly_summaries: list[WeeklyPositionSummary] | None = None
+    dir_accuracy: DirectionalAccuracyResult | None = None
     if all_weekly_records:
         weekly_summaries, dir_accuracy = print_weekly_results(
             all_weekly_records, args.positions, args.seasons, scoring_config,
@@ -690,6 +759,7 @@ def main() -> int:
     # Save to ledger
     if args.label:
         entry = LedgerEntry(
+            schema_version=CURRENT_LEDGER_SCHEMA_VERSION,
             label=args.label,
             timestamp=datetime.now().isoformat(timespec="seconds"),
             sims=args.sims,
@@ -697,7 +767,10 @@ def main() -> int:
             training_years=args.training_years,
             scoring=args.scoring,
             baseline=args.baseline,
+            comparison_mode=comparison_mode,
             overrides=args.overrides,
+            seed_mode=SEED_MODE,
+            coverage_summary=coverage_summary,
             config_snapshot=arm_b_dict if args.overrides else defaults,
             season_results=all_season_metrics,
             weekly_summaries=weekly_summaries,
