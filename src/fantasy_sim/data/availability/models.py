@@ -42,3 +42,10 @@ class AvailabilityConfig:
     injuries: InjurySignalConfig = field(default_factory=InjurySignalConfig)
     depth_charts: DepthChartSignalConfig = field(default_factory=DepthChartSignalConfig)
     usage_fallback: UsageFallbackConfig = field(default_factory=UsageFallbackConfig)
+
+
+@dataclass
+class AvailabilityDecision:
+    hard_inactive: bool = False
+    factor: float = 1.0
+    reason: str | None = None
