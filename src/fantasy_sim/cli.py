@@ -595,7 +595,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season, training_years)
     defaults = load_defaults()
-    ensembler = _make_ensembler(defaults)
+    ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
@@ -668,12 +668,12 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                 player_batch = build_detailed_projections(results.games, scoring_config)
             else:
                 player_batch = build_player_projections(results.games, scoring_config)
-            player_batch = _maybe_blend_player_projs(
-                player_batch,
-                ensembler=ensembler,
-                season=season,
-                week=week_num,
-            )
+                player_batch = _maybe_blend_player_projs(
+                    player_batch,
+                    ensembler=ensembler,
+                    season=season,
+                    week=week_num,
+                )
             all_player_projs.extend(player_batch)
 
             all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
@@ -734,7 +734,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
     scoring_config = _resolve_config_chain(scoring, scoring_config_path, season_yaml)
     training_seasons = _get_training_seasons(season_year, training_years)
     defaults = load_defaults()
-    ensembler = _make_ensembler(defaults)
+    ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
@@ -815,12 +815,12 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     player_batch = build_detailed_projections(results.games, scoring_config)
                 else:
                     player_batch = build_player_projections(results.games, scoring_config)
-                player_batch = _maybe_blend_player_projs(
-                    player_batch,
-                    ensembler=ensembler,
-                    season=season_year,
-                    week=wk,
-                )
+                    player_batch = _maybe_blend_player_projs(
+                        player_batch,
+                        ensembler=ensembler,
+                        season=season_year,
+                        week=wk,
+                    )
                 dst_batch = build_dst_projections(results.games, scoring_config, team_map=team_map)
                 kicker_batch = build_kicker_projections(
                     results.games, scoring_config, team_map=team_map,
@@ -928,7 +928,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         season_yaml_path=effective_config_path,
     )
     defaults = load_defaults()
-    ensembler = _make_ensembler(defaults)
+    ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
@@ -984,12 +984,12 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         player_projs = build_detailed_projections(results.games, scoring_config)
     else:
         player_projs = build_player_projections(results.games, scoring_config)
-    player_projs = _maybe_blend_player_projs(
-        player_projs,
-        ensembler=ensembler,
-        season=season,
-        week=week_num,
-    )
+        player_projs = _maybe_blend_player_projs(
+            player_projs,
+            ensembler=ensembler,
+            season=season,
+            week=week_num,
+        )
 
     dst_projs = build_dst_projections(results.games, scoring_config, team_map=team_map)
     kicker_projs = build_kicker_projections(
@@ -1073,7 +1073,6 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
         season_yaml_path=effective_config_path,
     )
     defaults = load_defaults()
-    ensembler = _make_ensembler(defaults)
 
     if sims is None:
         sims = defaults.get("simulation", {}).get("num_sims", 1000)
@@ -1161,12 +1160,6 @@ def player(ctx, player_query, week_num, season, sims, scoring, scoring_config_pa
     # Build detailed projections for this player
     from fantasy_sim.scoring.projections import build_detailed_projections
     all_projs = build_detailed_projections(results.games, scoring_config)
-    all_projs = _maybe_blend_player_projs(
-        all_projs,
-        ensembler=ensembler,
-        season=season,
-        week=week_num,
-    )
     player_proj = next((p for p in all_projs if p["player_id"] == player_id), None)
 
     if player_proj is None:
