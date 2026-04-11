@@ -78,7 +78,7 @@ class _StubDataLoader:
 
 
 def test_load_weekly_merges_explicit_and_fallback_inputs():
-    loader = WeeklyRoleInputLoader(loader=_StubDataLoader())
+    loader = WeeklyRoleInputLoader(loader_input=_StubDataLoader())
     frame = loader.load_weekly([2024])
 
     row = frame.filter(pl.col("player_id") == "00-001").row(0, named=True)
@@ -95,9 +95,31 @@ def test_load_weekly_handles_missing_injuries_with_null_columns():
     stub = _StubDataLoader()
     stub.load_injuries = lambda seasons: pl.DataFrame()
 
-    loader = WeeklyRoleInputLoader(loader=stub)
+    loader = WeeklyRoleInputLoader(loader_input=stub)
     frame = loader.load_weekly([2024])
 
     row = frame.filter(pl.col("player_id") == "00-001").row(0, named=True)
     assert row["report_status"] is None
     assert row["practice_status"] is None
+
+
+def test_load_weekly_keeps_one_row_when_depth_chart_has_special_teams_entries():
+    stub = _StubDataLoader()
+    stub.load_depth_charts = lambda seasons: pl.DataFrame(
+        {
+            "season": [2024, 2024],
+            "week": [5, 5],
+            "club_code": ["KC", "KC"],
+            "gsis_id": ["00-001", "00-001"],
+            "position": ["WR", "KR"],
+            "depth_position": ["WR1", "KR1"],
+            "full_name": ["Wide One", "Wide One"],
+        }
+    )
+
+    loader = WeeklyRoleInputLoader(loader_input=stub)
+    frame = loader.load_weekly([2024])
+
+    player_rows = frame.filter(pl.col("player_id") == "00-001")
+    assert player_rows.height == 1
+    assert player_rows.row(0, named=True)["depth_position"] == "WR1"

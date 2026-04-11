@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 
 import polars as pl
 
@@ -34,12 +34,12 @@ ROLE_DEPTH_SCHEMA: dict[str, pl.DataType] = {
 
 @dataclass
 class WeeklyRoleInputLoader:
-    loader: DataLoader | None = None
+    loader_input: InitVar[DataLoader | None] = None
+    loader: DataLoader = field(init=False)
     _cache: dict[tuple[int, ...], pl.DataFrame] = field(default_factory=dict, init=False)
 
-    def __post_init__(self) -> None:
-        if self.loader is None:
-            self.loader = DataLoader()
+    def __post_init__(self, loader_input: DataLoader | None) -> None:
+        self.loader = loader_input or DataLoader()
 
     def load_weekly(self, seasons: list[int]) -> pl.DataFrame:
         key = tuple(sorted(seasons))
@@ -91,7 +91,7 @@ class WeeklyRoleInputLoader:
             .drop(["player_name_stats", "position_stats"])
             .join(self._load_snap_inputs(seasons, rosters), on=["season", "week", "team", "player_id"], how="left")
             .join(self._load_injury_inputs(seasons), on=["season", "week", "team", "player_id"], how="left")
-            .join(self._load_depth_inputs(seasons), on=["season", "week", "team", "player_id"], how="left")
+            .join(self._load_depth_inputs(seasons, rosters), on=["season", "week", "team", "player_id"], how="left")
         )
 
         self._cache[key] = frame
@@ -134,11 +134,24 @@ class WeeklyRoleInputLoader:
             ]
         )
 
-    def _load_depth_inputs(self, seasons: list[int]) -> pl.DataFrame:
+    def _load_depth_inputs(self, seasons: list[int], rosters: pl.DataFrame) -> pl.DataFrame:
         depth = self.loader.load_depth_charts(seasons)
         if depth.is_empty():
             return pl.DataFrame(schema=ROLE_DEPTH_SCHEMA)
 
-        return depth.rename({"club_code": "team", "gsis_id": "player_id"}).select(
-            ["season", "week", "team", "player_id", "depth_position"]
+        roster_keys = rosters.select(
+            ["season", "week", "team", "player_id", "position"]
+        ).unique(subset=["season", "week", "team", "player_id"], keep="first")
+
+        return (
+            depth.rename({"club_code": "team", "gsis_id": "player_id"})
+            .join(
+                roster_keys,
+                on=["season", "week", "team", "player_id"],
+                how="inner",
+                suffix="_roster",
+            )
+            .filter(pl.col("position") == pl.col("position_roster"))
+            .select(["season", "week", "team", "player_id", "depth_position"])
+            .unique(subset=["season", "week", "team", "player_id"], keep="first")
         )
