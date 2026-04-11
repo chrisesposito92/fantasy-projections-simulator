@@ -25,6 +25,9 @@ Tie-breaker preference for future work:
 
 Active in `config/defaults.yaml` as of this audit:
 
+- `ensemble.enabled: true`
+- `ensemble.ff_opportunity.enabled: true`
+- `ensemble.ff_rankings.enabled: false`
 - `pff.enabled: true`
 - `pff.tier_engine.enabled: true`
 - `pff.matchup.enabled: true`
@@ -43,9 +46,6 @@ Active in `config/defaults.yaml` as of this audit:
 
 Built but currently parked or disabled:
 
-- `ensemble.enabled: false`
-- `ensemble.ff_opportunity.enabled: false`
-- `ensemble.ff_rankings.enabled: false`
 - `pff.team_context.enabled: false`
 - `pff.talent.enabled: false`
 - `usage.ngs.enabled: false`
@@ -198,12 +198,19 @@ These loaders are real and do not need speculative wrapper design.
 - weekly QB/WR accuracy remains the primary success metric and tie-breaker
 - `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks; it is still deferred from the first promotion decision
 
-The ensemble family is implemented in code, but the defaults remain off and no
-promotion has been claimed yet.
+Phase 1 is promoted on the broadened marginal validation artifact:
 
-The user already ran the earlier QB/WR-only A/B. That should not be treated as
-promotion evidence for the broadened QB/RB/WR/TE version, which still awaits
-manual marginal validation.
+- label: `phase-1-ff-opportunity-v1-broadened`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `ensemble.ff_opportunity=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0271`
+  - `weekly_mae delta: -0.548`
+  - `season_mae delta: -3.737`
+
+The earlier QB/WR-only A/B remains informative as a narrow pilot, but it is not
+the Phase 1 promotion artifact.
 
 ## What The Current Ledgers Actually Tell Us
 

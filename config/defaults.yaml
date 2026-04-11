@@ -239,9 +239,9 @@ usage:
     min_routes: 10
 
 ensemble:
-  enabled: false
+  enabled: true
   ff_opportunity:
-    enabled: false
+    enabled: true
     cache_dir: null
     positions: [QB, RB, WR, TE]
     feature: total_fantasy_points_exp

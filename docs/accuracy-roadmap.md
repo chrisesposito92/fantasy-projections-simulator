@@ -172,14 +172,14 @@ Future-capable availability also exists for:
 
 ### Status
 
-Implemented, awaiting manual promotion validation for the broadened
-QB/RB/WR/TE scope.
+Implemented and promoted for the broadened QB/RB/WR/TE scope.
 
-The `ensemble` config family exists and defaults remain off until the manual
-promotion decision is made.
+The promotion artifact for Phase 1 is:
 
-The user already ran the earlier QB/WR-only A/B, but that result should not be
-treated as promotion evidence for the broadened QB/RB/WR/TE version.
+- `phase-1-ff-opportunity-v1-broadened`
+
+The earlier QB/WR-only run was still useful as a narrow pilot, but the
+broadened run is the decision artifact for Phase 1.
 
 ### Phase 1 v1 Scope
 
@@ -210,10 +210,31 @@ Current behavior:
 - clear weekly QB and/or WR improvement against `baseline=defaults`
 - no material regression in season MAE or season rank ordering across the rest of the position groups
 
-This gate is still pending manual marginal validation on this branch for the
-broadened QB/RB/WR/TE scope. The next required step is the user-run
-`baseline=defaults` validation for Phase 1, after which Phase 2 remains the
-next implementation phase once the promotion decision is known.
+This gate is satisfied by the broadened marginal validation run:
+
+- label: `phase-1-ff-opportunity-v1-broadened`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `ensemble.ff_opportunity=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0271`
+  - `weekly_mae delta: -0.548`
+  - `season_mae delta: -3.737`
+
+Primary tie-breaker positions also improved strongly in weekly validation:
+
+- QB weekly rank corr `+0.2448`, weekly MAE `-0.919`
+- WR weekly rank corr `+0.1658`, weekly MAE `-0.648`
+
+RB and TE also improved in the broadened run, but QB/WR remain the primary
+success metrics and tie-breaker.
+
+### Next Priority
+
+Phase 2 remains the next implementation phase.
+
+`ff_rankings` is still available as future ensemble work, but it is not needed
+to justify the promoted Phase 1 defaults.
 
 ## Phase 2: Same-Season Role And Availability Engine
 
