@@ -22,7 +22,7 @@ def normalize_ff_opportunity(
     config: FfOpportunityConfig,
 ) -> pl.DataFrame:
     """Normalize raw FF Opportunity data into the ensemble input schema."""
-    if raw.is_empty():
+    if raw.is_empty() or config.feature not in raw.columns:
         return pl.DataFrame(schema=NORMALIZED_SCHEMA)
 
     normalized = (

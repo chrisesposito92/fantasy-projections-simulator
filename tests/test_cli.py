@@ -259,6 +259,27 @@ class TestGameCommand:
         assert "HOME" in result.output
         assert "AWAY" in result.output
 
+    @patch("fantasy_sim.cli.FfOpportunityProjectionEnsembler")
+    @patch("fantasy_sim.cli.load_ensemble_config")
+    def test_game_demo_mode_skips_ensemble_blend(
+        self,
+        mock_load_ensemble_config,
+        MockEnsembler,
+        runner,
+    ):
+        """game --demo should stay self-contained even when ensemble defaults are enabled."""
+        from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+
+        mock_load_ensemble_config.return_value = EnsembleConfig(
+            enabled=True,
+            ff_opportunity=FfOpportunityConfig(enabled=True),
+        )
+
+        result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10"])
+
+        assert result.exit_code == 0
+        MockEnsembler.assert_not_called()
+
 
 class TestPlayerCommand:
     """Gap 18: player command — single player projection."""

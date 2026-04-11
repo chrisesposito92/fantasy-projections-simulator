@@ -66,6 +66,36 @@ def test_normalize_ff_opportunity_drops_missing_player_id_and_prior_feature():
     assert normalized["prior_fpts"].to_list() == [24.5]
 
 
+def test_normalize_ff_opportunity_returns_empty_when_feature_column_missing():
+    raw = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["00-0000001"],
+            "full_name": ["Patrick Mahomes"],
+            "position": ["QB"],
+            "posteam": ["KC"],
+        }
+    )
+    config = FfOpportunityConfig(
+        positions=("QB", "WR"),
+        feature="not_a_real_feature",
+    )
+
+    normalized = normalize_ff_opportunity(raw, config)
+
+    assert normalized.is_empty()
+    assert normalized.schema == {
+        "season": pl.Int64,
+        "week": pl.Int64,
+        "player_id": pl.Utf8,
+        "name": pl.Utf8,
+        "position": pl.Utf8,
+        "team": pl.Utf8,
+        "prior_fpts": pl.Float64,
+    }
+
+
 def test_normalize_ff_opportunity_collapses_duplicates_deterministically():
     rows = [
         {

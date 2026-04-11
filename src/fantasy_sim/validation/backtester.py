@@ -177,7 +177,11 @@ class Backtester:
         projected_by_player_week = defaultdict(dict)
         all_weekly_errors = []
         ensembler = None
-        if self._ensemble_config is not None and self._ensemble_config.enabled:
+        if (
+            self._ensemble_config is not None
+            and self._ensemble_config.enabled
+            and self._ensemble_config.ff_opportunity.enabled
+        ):
             ensembler = FfOpportunityProjectionEnsembler(self._ensemble_config)
 
         spec_by_id = {s.game_id: s for s in specs}

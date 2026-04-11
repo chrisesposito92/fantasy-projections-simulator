@@ -327,6 +327,7 @@ def test_print_header_renders_comparison_metadata_and_coverage_summary():
 
 def test_run_season_blends_arm_b_with_ensemble_when_enabled():
     validate = _load_validate_module()
+    from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
 
     build_a = [{
         "status": "ok",
@@ -442,7 +443,10 @@ def test_run_season_blends_arm_b_with_ensemble_when_enabled():
                 "td_tendency_config": None,
             },
             arm_a_ensemble_config=None,
-            arm_b_ensemble_config=object(),
+            arm_b_ensemble_config=EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+            ),
             positions=["QB"],
             max_workers=1,
         )
@@ -460,6 +464,7 @@ def test_run_season_blends_arm_b_with_ensemble_when_enabled():
 
 def test_run_season_blends_arm_b_with_ensemble_in_cached_arm_a_path():
     validate = _load_validate_module()
+    from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
 
     build_b = [{
         "status": "ok",
@@ -561,7 +566,10 @@ def test_run_season_blends_arm_b_with_ensemble_in_cached_arm_a_path():
                 "td_tendency_config": None,
             },
             arm_a_ensemble_config=None,
-            arm_b_ensemble_config=object(),
+            arm_b_ensemble_config=EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+            ),
             positions=["QB"],
             max_workers=1,
             cached_arm_a=cached_arm_a,
@@ -576,6 +584,68 @@ def test_run_season_blends_arm_b_with_ensemble_in_cached_arm_a_path():
     assert result["season_metrics"].arm_b_weekly_mae == 0.0
     assert result["weekly_records"][0].projected_fpts_off == 10.0
     assert result["weekly_records"][0].projected_fpts_on == 13.5
+
+
+def test_run_season_skips_ensembler_when_ff_opportunity_subsignal_is_disabled():
+    validate = _load_validate_module()
+
+    with patch.object(validate, "simulate_games_parallel", return_value=[]), \
+         patch.object(validate, "build_games_parallel", return_value=[]), \
+         patch.object(validate, "load_actual_scores", return_value=[]), \
+         patch.object(validate, "FfOpportunityProjectionEnsembler") as mock_ensembler_cls, \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+
+        validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs={
+                "pff_config": object(),
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            arm_b_configs={
+                "pff_config": object(),
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            arm_a_ensemble_config=None,
+            arm_b_ensemble_config=EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=False),
+            ),
+            positions=["QB"],
+            max_workers=1,
+        )
+
+    mock_ensembler_cls.assert_not_called()
 
 
 def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline():

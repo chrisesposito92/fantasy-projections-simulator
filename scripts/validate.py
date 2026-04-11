@@ -193,12 +193,20 @@ def run_season(
     positions = positions or list(POSITIONS)
     arm_a_ensembler = (
         FfOpportunityProjectionEnsembler(arm_a_ensemble_config)
-        if arm_a_ensemble_config is not None
+        if (
+            arm_a_ensemble_config is not None
+            and arm_a_ensemble_config.enabled
+            and arm_a_ensemble_config.ff_opportunity.enabled
+        )
         else None
     )
     arm_b_ensembler = (
         FfOpportunityProjectionEnsembler(arm_b_ensemble_config)
-        if arm_b_ensemble_config is not None
+        if (
+            arm_b_ensemble_config is not None
+            and arm_b_ensemble_config.enabled
+            and arm_b_ensemble_config.ff_opportunity.enabled
+        )
         else None
     )
 
@@ -671,7 +679,10 @@ def main() -> int:
     else:
         arm_a_configs = build_engine_configs(defaults)
         arm_a_ensemble_config = load_ensemble_config(defaults)
-        if not arm_a_ensemble_config.enabled:
+        if not (
+            arm_a_ensemble_config.enabled
+            and arm_a_ensemble_config.ff_opportunity.enabled
+        ):
             arm_a_ensemble_config = None
 
     if args.overrides:
@@ -680,7 +691,10 @@ def main() -> int:
         arm_b_dict = defaults
     arm_b_configs = build_engine_configs(arm_b_dict)
     arm_b_ensemble_config = load_ensemble_config(arm_b_dict)
-    if not arm_b_ensemble_config.enabled:
+    if not (
+        arm_b_ensemble_config.enabled
+        and arm_b_ensemble_config.ff_opportunity.enabled
+    ):
         arm_b_ensemble_config = None
     coverage_summary = collect_signal_coverage(arm_b_dict, args.seasons)
 
