@@ -59,7 +59,7 @@ Built but currently parked or disabled:
 
 ## Runtime Order
 
-Actual order in [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py):
+`GameContextBuilder` order in [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py):
 
 1. Base team distributions and player models from nflverse PBP + rosters
 2. Vegas game environment
@@ -76,6 +76,11 @@ Actual order in [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Do
 13. Runtime game script overlays during simulation
 14. User overrides
 
+End-to-end projection flow after simulation:
+
+15. Post-sim `role_trend` adjustment
+16. Post-sim `ensemble.ff_opportunity` blend
+
 Important distinction:
 
 - `game_script` is not baked into base roster shares
@@ -86,7 +91,10 @@ Important distinction:
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
 - `role_trend` is also post-sim and runs before `ensemble`
-- `player` and `--detail` CLI output currently bypass the ensemble blend
+- `player` and `--detail` CLI output currently bypass both post-sim layers
+  (`role_trend` and `ensemble`)
+- the `player` command always uses detailed projections rather than the
+  aggregated non-detail projection flow
 
 That is a useful architectural pattern for future "situation-only" levers.
 
@@ -108,9 +116,9 @@ Most relevant files for accuracy work:
 - [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py)
 - [`src/fantasy_sim/validation/ledger.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/validation/ledger.py)
 
-### `~/.fantasy-sim`
+### Relevant Local Stores
 
-Local store present at `/Users/chrisesposito/.fantasy-sim`:
+Relevant local stores under `/Users/chrisesposito/.fantasy-sim`:
 
 - `cache/`
 - `pff/`
