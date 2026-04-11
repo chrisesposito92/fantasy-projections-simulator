@@ -82,6 +82,22 @@ Scoring:
 
 ## Phase 0: Validation Integrity And Data Completeness
 
+### Status
+
+Implemented.
+
+The Phase 0 validation path now:
+
+- threads `td_tendency_config` through bare dual-arm validation
+- treats `baseline=defaults` as a first-class marginal validation path
+- records schema/comparison metadata and coverage summaries on new labeled runs
+- prints coverage-aware run headers so no-data and partial-data cases are explicit
+
+What Phase 0 did **not** do:
+
+- regenerate or backfill historical ledger rows
+- add repeated-seed or confidence-summary execution
+
 ### Why First
 
 The current measurement path can overstate or misclassify gains because:
@@ -125,6 +141,7 @@ The current measurement path can overstate or misclassify gains because:
 ### Promotion Gate
 
 - After this phase, the ledger must contain clean `baseline=defaults` entries for all new experiments
+- This gate is satisfied only by new post-Phase-0 runs; historical ledger rows were not regenerated.
 - A future planner should be able to tell whether a result is:
   - total lift
   - marginal lift

@@ -110,12 +110,14 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Comprehensive edge case suite: empty rosters, invalid overrides, scoring config edge cases, CLI validation, redistribution invariants
 - GitHub Actions CI: pytest on push/PR across Python 3.12/3.13/3.14 with uv caching; statistical tests gated by PR label
 
-**Weekly Validation Harness** — Complete (39 tests, 1039 total)
+**Unified Validation Harness** — Complete
 
-- Per-week, per-player A/B validation for all PFF layers across all positions (QB, RB, WR, TE)
-- Four metrics: per-position weekly rank correlation, weekly MAE, MAE by matchup difficulty tercile, WR directional accuracy for coverage signal
-- Separate ledger (`results/weekly_ab_ledger.json`) for tracking weekly-granularity A/B runs
-- Script: `scripts/validate_weekly_signal.py` with `--mode`, `--positions`, `--label`, `--show-ledger` flags
+- `scripts/validate.py` is the current validation entrypoint for both total-lift and marginal-lift A/B runs
+- Supports `--baseline bare` and `--baseline defaults`
+- Prints comparison metadata, seed mode, and signal coverage in the run header
+- Writes new labeled runs to `results/ab_ledger.json`
+- Includes weekly outputs such as per-position weekly rank correlation, weekly MAE, MAE by difficulty tercile, and WR directional accuracy
+- Older weekly-only artifacts are preserved as historical references, but they are no longer the canonical validation path
 
 **PFF Kicker/DST Baseline** — Complete (29 tests, 1068 total)
 

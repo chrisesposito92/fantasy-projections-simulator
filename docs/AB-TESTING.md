@@ -5,13 +5,13 @@ Unified validation script for testing engine changes against a baseline.
 ## Quick Start
 
 ```bash
-# Run your current defaults vs bare baseline
+# Run your current defaults vs bare baseline (total lift)
 uv run python scripts/validate.py --sims 50 --label "my-defaults"
 
-# Test a change: add NGS signal
+# Test a change against bare baseline
 uv run python scripts/validate.py --sims 50 --set usage.ngs.enabled=true --label "add-ngs"
 
-# Measure marginal impact of a change
+# Measure marginal impact of a change against current defaults
 uv run python scripts/validate.py --sims 50 --baseline defaults \
     --set usage.ngs.enabled=true --label "ngs-marginal"
 
@@ -32,6 +32,17 @@ The script runs two arms in parallel and compares their projection accuracy agai
 |----------|------------|-------------|
 | `bare` (default) | All engines off | Measuring total lift of your config |
 | `defaults` | Your current defaults.yaml | Isolating marginal impact of a single change |
+
+The validation header now makes that explicit:
+
+- `comparison: total_lift` for `--baseline bare`
+- `comparison: marginal_lift` for `--baseline defaults`
+
+It also prints:
+
+- `seed mode` so runs are comparable
+- `coverage` by signal and season
+- `coverage notes` when a signal is enabled but not historically exercised
 
 ## CLI Reference
 
@@ -85,6 +96,8 @@ Cache is valid regardless of defaults.yaml changes (bare = all engines off).
 
 Use `--no-cache` to force a fresh bare baseline.
 
+When `--baseline defaults`, both arms are full feature-rich builds, so those runs are materially slower. Use them for decision-grade marginal tests, not broad sweeps.
+
 ## Metrics
 
 ### Season-Level
@@ -101,8 +114,39 @@ Use `--no-cache` to force a fresh bare baseline.
 - **MAE by difficulty**: MAE split by PFF adjustment magnitude (strong/neutral/weak matchups)
 - **WR Directional Accuracy**: How often coverage predictions match actual catch rate direction
 
+## Coverage-Aware Interpretation
+
+Phase 0 added explicit signal coverage reporting so validation output can distinguish:
+
+- a real historical test
+- a partial-data test
+- a no-data / not-exercised test
+
+Example:
+
+- `props=none` for `2022 2023 2024` is an expected result today because historical props parquet only exists for 2025
+
+That means:
+
+- `baseline=defaults` runs are the right evidence for “should this remain on by default?”
+- but only when the relevant signal shows historical coverage for the tested seasons
+- small deltas from `--sims 50` are smoke-test signals, not decision-grade evidence
+
+Recommended workflow:
+
+1. Run a low-sim smoke test to confirm plumbing and coverage.
+2. If the signal is historically covered and the result looks interesting, rerun at higher sims.
+3. Do not over-interpret results for signals that show `none` or `partial` coverage.
+
 ## Ledger
 
 Results are saved to `results/ab_ledger.json` when `--label` is provided. View with `--show-ledger`.
 
-Previous results in `results/pff_ab_ledger.json` and `results/weekly_ab_ledger.json` are preserved but no longer written to.
+New rows can now carry:
+
+- `schema_version`
+- `comparison_mode`
+- `seed_mode`
+- `coverage_summary`
+
+Older ledgers such as `results/pff_ab_ledger.json` and `results/weekly_ab_ledger.json` are preserved as historical references only. They are not the primary source of truth for the current validation path.
