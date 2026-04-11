@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 
 import polars as pl
 
@@ -34,12 +34,12 @@ ROLE_DEPTH_SCHEMA: dict[str, pl.DataType] = {
 
 @dataclass
 class WeeklyRoleInputLoader:
-    loader_input: InitVar[DataLoader | None] = None
     loader: DataLoader = field(init=False)
     _cache: dict[tuple[int, ...], pl.DataFrame] = field(default_factory=dict, init=False)
 
-    def __post_init__(self, loader_input: DataLoader | None) -> None:
-        self.loader = loader_input or DataLoader()
+    def __init__(self, loader: DataLoader | None = None) -> None:
+        self.loader = loader or DataLoader()
+        self._cache = {}
 
     def load_weekly(self, seasons: list[int]) -> pl.DataFrame:
         key = tuple(sorted(seasons))

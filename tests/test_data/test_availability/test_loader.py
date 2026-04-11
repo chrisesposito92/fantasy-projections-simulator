@@ -78,7 +78,7 @@ class _StubDataLoader:
 
 
 def test_load_weekly_merges_explicit_and_fallback_inputs():
-    loader = WeeklyRoleInputLoader(loader_input=_StubDataLoader())
+    loader = WeeklyRoleInputLoader(loader=_StubDataLoader())
     frame = loader.load_weekly([2024])
 
     row = frame.filter(pl.col("player_id") == "00-001").row(0, named=True)
@@ -95,7 +95,7 @@ def test_load_weekly_handles_missing_injuries_with_null_columns():
     stub = _StubDataLoader()
     stub.load_injuries = lambda seasons: pl.DataFrame()
 
-    loader = WeeklyRoleInputLoader(loader_input=stub)
+    loader = WeeklyRoleInputLoader(loader=stub)
     frame = loader.load_weekly([2024])
 
     row = frame.filter(pl.col("player_id") == "00-001").row(0, named=True)
@@ -117,7 +117,7 @@ def test_load_weekly_keeps_one_row_when_depth_chart_has_special_teams_entries():
         }
     )
 
-    loader = WeeklyRoleInputLoader(loader_input=stub)
+    loader = WeeklyRoleInputLoader(loader=stub)
     frame = loader.load_weekly([2024])
 
     player_rows = frame.filter(pl.col("player_id") == "00-001")
