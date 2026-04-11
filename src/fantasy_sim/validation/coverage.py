@@ -380,7 +380,7 @@ def collect_signal_coverage(
             note="Requires nflreadpy NGS receiving parquet coverage for each test season",
         ),
         "usage.route_rate": _build_signal(
-            usage_route_rate_enabled and usage_enabled,
+            usage_route_rate_enabled and usage_enabled and pff_enabled,
             seasons,
             _covered_seasons_from_required_paths(
                 seasons,

@@ -18,6 +18,7 @@ import argparse
 import sys
 import time
 import zlib
+from collections.abc import Mapping
 from collections import defaultdict
 from datetime import datetime
 import numpy as np
@@ -26,7 +27,7 @@ import polars as pl
 from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
-from fantasy_sim.validation.coverage import collect_signal_coverage
+from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
 from fantasy_sim.validation.config import (
     apply_overrides,
@@ -86,7 +87,9 @@ def _comparison_mode(baseline: str) -> str:
     return "marginal_lift" if baseline == "defaults" else "total_lift"
 
 
-def _format_coverage_line(coverage_summary: dict) -> str:
+def _format_coverage_line(
+    coverage_summary: Mapping[str, SignalCoverage] | None,
+) -> str:
     if not coverage_summary:
         return ""
 
@@ -105,7 +108,9 @@ def _format_coverage_line(coverage_summary: dict) -> str:
     return "  coverage   : " + " | ".join(parts)
 
 
-def _format_coverage_notes_line(coverage_summary: dict) -> str:
+def _format_coverage_notes_line(
+    coverage_summary: Mapping[str, SignalCoverage] | None,
+) -> str:
     if not coverage_summary:
         return ""
 
@@ -482,7 +487,7 @@ def print_header(
     *,
     comparison_mode: str | None = None,
     seed_mode: str | None = None,
-    coverage_summary: dict | None = None,
+    coverage_summary: Mapping[str, SignalCoverage] | None = None,
 ) -> None:
     overrides_str = " + [" + ", ".join(args.overrides) + "]" if args.overrides else ""
     cache_hits = [s for s, hit in cache_status.items() if hit]

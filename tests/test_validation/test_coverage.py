@@ -239,6 +239,25 @@ def test_usage_nested_flags_honor_typed_config_objects(tmp_path):
     assert coverage["usage.route_rate"].status == "disabled"
 
 
+def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff" / "nfl"
+    cache_dir = tmp_path / "cache"
+    route_rate_root = pff_dir.parent
+
+    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
+        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+    _write_roster_cache(cache_dir, (2024,))
+
+    coverage = collect_signal_coverage(
+        _base_config(pff_enabled=False, usage_enabled=True, usage_route_rate_enabled=True),
+        [2024],
+        cache_dir=cache_dir,
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["usage.route_rate"].status == "disabled"
+
+
 def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
     route_rate_root = tmp_path / "pff_processed"

@@ -115,7 +115,7 @@ Observed local caches:
 
 ### PFF processed data
 
-Observed under `/Users/chrisesposito/.fantasy-sim/pff/processed/`:
+Observed under `~/.fantasy-sim/pff/processed/`:
 
 - 295 parquet files across NFL and NCAA
 - NFL coverage from 2018-2025
@@ -153,7 +153,7 @@ Examples of useful columns verified locally:
 
 ### Props history
 
-Observed under `/Users/chrisesposito/.fantasy-sim/pff/props/`:
+Observed under `~/.fantasy-sim/pff/props/`:
 
 - `props_2025_week01.parquet` through `props_2025_week18.parquet`
 
