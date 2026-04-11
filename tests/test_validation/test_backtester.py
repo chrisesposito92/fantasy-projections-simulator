@@ -156,10 +156,12 @@ class TestBacktesterParallelBuild:
     @patch("fantasy_sim.validation.backtester.FfOpportunityProjectionEnsembler")
     @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
     @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.load_actual_scores")
     @patch("fantasy_sim.validation.backtester.DataLoader")
-    def test_run_instantiates_ensemble_when_enabled(
+    def test_run_uses_blended_projection_metrics_when_ensemble_enabled(
         self,
         mock_loader_cls,
+        mock_load_actual_scores,
         mock_build_parallel,
         mock_simulate_parallel,
         mock_ensembler_cls,
@@ -184,8 +186,42 @@ class TestBacktesterParallelBuild:
         mock_loader.load_player_stats.return_value = pl.DataFrame(
             {"season": pl.Series([], dtype=pl.Int32)}
         )
-        mock_build_parallel.return_value = []
-        mock_simulate_parallel.return_value = []
+        mock_build_parallel.return_value = [_make_ok_result("2024_01_KC_BUF")]
+        mock_simulate_parallel.return_value = [
+            MagicMock(
+                game_id="2024_01_KC_BUF",
+                projections=[
+                    {
+                        "player_id": "player-1",
+                        "fpts": 12.0,
+                        "position": "QB",
+                        "team": "KC",
+                        "name": "Patrick Example",
+                    }
+                ],
+            )
+        ]
+        mock_load_actual_scores.return_value = [
+            MagicMock(
+                player_id="player-1",
+                week=1,
+                fpts=13.5,
+                position="QB",
+                team="KC",
+                name="Patrick Example",
+            )
+        ]
+        mock_ensembler = mock_ensembler_cls.return_value
+        mock_ensembler.blend_week.return_value = (
+            [{
+                "player_id": "player-1",
+                "fpts": 13.5,
+                "position": "QB",
+                "team": "KC",
+                "name": "Patrick Example",
+            }],
+            MagicMock(total_rows=1, covered_rows=1, uncovered_rows=0),
+        )
 
         scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
         bt = Backtester(
@@ -198,9 +234,22 @@ class TestBacktesterParallelBuild:
         )
         bt.loader = mock_loader
 
-        bt.run(scoring_config)
+        result = bt.run(scoring_config)
 
         mock_ensembler_cls.assert_called_once()
+        mock_ensembler.blend_week.assert_called_once_with(
+            [{
+                "player_id": "player-1",
+                "fpts": 12.0,
+                "position": "QB",
+                "team": "KC",
+                "name": "Patrick Example",
+            }],
+            season=2024,
+            week=1,
+        )
+        assert result.weekly_mae == 0.0
+        assert result.season_mae == 0.0
 
 
 def _make_ok_result(game_id: str, week: int = 1) -> dict:

@@ -259,13 +259,13 @@ def collect_signal_coverage(
     )
     ensemble_enabled = _signal_enabled(
         config,
-        ("ensemble",),
+        ("ensemble_config", "ensemble"),
         ("ensemble",),
     )
     ff_opp_enabled = _signal_enabled(
         config,
-        ("ensemble",),
-        ("ensemble",),
+        ("ensemble_config", "ensemble"),
+        ("ensemble", "ff_opportunity"),
         nested_path=("ff_opportunity",),
     )
 
@@ -416,7 +416,8 @@ def collect_signal_coverage(
             seasons,
             note=(
                 "nflreadpy historical ff_opportunity coverage is treated as available "
-                "for requested test seasons; player mapping coverage is measured at runtime"
+                "for requested test seasons; runtime player-week blend coverage is not "
+                "yet summarized here"
             ),
         ),
     }

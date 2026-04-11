@@ -11,6 +11,7 @@ from fantasy_sim.validation.coverage import (
     SignalCoverage,
     collect_signal_coverage,
 )
+from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
 from fantasy_sim.data.usage.models import RouteRateConfig, NgsConfig, UsageConfig
 
 
@@ -276,7 +277,32 @@ def test_ensemble_ff_opportunity_reports_full_runtime_coverage_when_enabled():
         missing_seasons=[],
         note=(
             "nflreadpy historical ff_opportunity coverage is treated as available "
-            "for requested test seasons; player mapping coverage is measured at runtime"
+            "for requested test seasons; runtime player-week blend coverage is not "
+            "yet summarized here"
+        ),
+    )
+
+
+def test_ensemble_ff_opportunity_supports_typed_ensemble_config():
+    coverage = collect_signal_coverage(
+        {
+            "ensemble_config": EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+            )
+        },
+        [2022, 2023, 2024],
+    )
+
+    assert coverage["ensemble.ff_opportunity"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2022, 2023, 2024],
+        missing_seasons=[],
+        note=(
+            "nflreadpy historical ff_opportunity coverage is treated as available "
+            "for requested test seasons; runtime player-week blend coverage is not "
+            "yet summarized here"
         ),
     )
 
