@@ -307,6 +307,31 @@ def test_ensemble_ff_opportunity_supports_typed_ensemble_config():
     )
 
 
+def test_availability_and_role_trend_report_partial_when_explicit_inputs_are_sparse(tmp_path):
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(cache_dir / "player_stats_week_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "snap_counts_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "depth_charts_2023.parquet")
+
+    config = {
+        "availability": {
+            "enabled": True,
+            "positions": ["QB", "RB", "WR", "TE"],
+            "injuries": {"enabled": True},
+            "depth_charts": {"enabled": True},
+            "usage_fallback": {"enabled": True},
+        },
+        "role_trend": {"enabled": True, "positions": ["QB", "RB", "WR", "TE"]},
+    }
+
+    coverage = collect_signal_coverage(config, [2023, 2024], cache_dir=cache_dir)
+
+    assert coverage["availability"].status == "partial"
+    assert coverage["availability.depth_charts"].covered_seasons == [2023]
+    assert coverage["role_trend"].covered_seasons == [2023]
+
+
 def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
     route_rate_root = tmp_path / "pff_processed"

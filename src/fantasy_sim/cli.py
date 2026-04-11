@@ -9,6 +9,7 @@ from fantasy_sim.data.ensemble import load_ensemble_config
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.pff.config import load_pff_config
+from fantasy_sim.data.role_trend.config import load_role_trend_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.data.availability.config import load_availability_config
@@ -23,7 +24,9 @@ from fantasy_sim.models.distributions import (
 )
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_kicker_projections
+from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.output.tables import (
     format_qb_table, format_rb_table, format_wr_table,
     format_te_table, format_kicker_table, format_dst_table,
@@ -162,23 +165,30 @@ def _make_ensembler(defaults: dict) -> FfOpportunityProjectionEnsembler | None:
     return FfOpportunityProjectionEnsembler(ensemble_config)
 
 
+def _make_role_trend_adjuster(defaults: dict) -> RoleTrendProjectionAdjuster | None:
+    """Create the role-trend adjuster when the signal is enabled."""
+    role_trend_config = load_role_trend_config(defaults)
+    if not role_trend_config.enabled:
+        return None
+    return RoleTrendProjectionAdjuster(role_trend_config)
+
+
 def _maybe_blend_player_projs(
     player_projs: list[dict],
     *,
+    role_trend_adjuster: RoleTrendProjectionAdjuster | None = None,
     ensembler: FfOpportunityProjectionEnsembler | None,
     season: int,
     week: int,
 ) -> list[dict]:
-    """Blend projection rows with ensemble priors when the ensembler is active."""
-    if ensembler is None:
-        return player_projs
-
-    blended_rows, _ = ensembler.blend_week(
+    """Apply post-sim projection layers in the approved order."""
+    return apply_projection_layers(
         player_projs,
         season=season,
         week=week,
+        role_trend_adjuster=role_trend_adjuster,
+        ensembler=ensembler,
     )
-    return blended_rows
 
 
 def _resolve_config_chain(
@@ -622,6 +632,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         training_years,
         defaults=defaults,
     )
+    role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -703,6 +714,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                 player_batch = build_player_projections(results.games, scoring_config)
                 player_batch = _maybe_blend_player_projs(
                     player_batch,
+                    role_trend_adjuster=role_trend_adjuster,
                     ensembler=ensembler,
                     season=season,
                     week=week_num,
@@ -776,6 +788,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         training_years,
         defaults=defaults,
     )
+    role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -865,6 +878,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     player_batch = build_player_projections(results.games, scoring_config)
                     player_batch = _maybe_blend_player_projs(
                         player_batch,
+                        role_trend_adjuster=role_trend_adjuster,
                         ensembler=ensembler,
                         season=season_year,
                         week=wk,
@@ -977,6 +991,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         season_yaml_path=effective_config_path,
         defaults=defaults,
     )
+    role_trend_adjuster = None if detail or demo else _make_role_trend_adjuster(defaults)
     ensembler = None if detail or demo else _make_ensembler(defaults)
 
     if sims is None:
@@ -1045,6 +1060,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         player_projs = build_player_projections(results.games, scoring_config)
         player_projs = _maybe_blend_player_projs(
             player_projs,
+            role_trend_adjuster=role_trend_adjuster,
             ensembler=ensembler,
             season=season,
             week=week_num,
@@ -1310,6 +1326,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     defaults = load_defaults()
     scoring_config = resolve_scoring(defaults["scoring"], scoring)
     ensemble_config = load_ensemble_config(defaults)
+    role_trend_config = load_role_trend_config(defaults)
     pff_config = load_pff_config(defaults)
     if pff is True:
         pff_config.enabled = True
@@ -1339,6 +1356,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         weather_config=weather_config,
         vegas_config=vegas_config,
         usage_config=usage_config,
+        role_trend_config=role_trend_config,
         ensemble_config=ensemble_config,
     )
     result = bt.run(scoring_config)

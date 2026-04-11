@@ -257,6 +257,34 @@ def collect_signal_coverage(
         ("usage", "route_rate"),
         nested_path=("route_rate",),
     )
+    availability_enabled = _signal_enabled(
+        config,
+        ("availability_config", "availability"),
+        ("availability",),
+    )
+    availability_injuries_enabled = _signal_enabled(
+        config,
+        ("availability_config", "availability"),
+        ("availability", "injuries"),
+        nested_path=("injuries",),
+    )
+    availability_depth_enabled = _signal_enabled(
+        config,
+        ("availability_config", "availability"),
+        ("availability", "depth_charts"),
+        nested_path=("depth_charts",),
+    )
+    availability_usage_enabled = _signal_enabled(
+        config,
+        ("availability_config", "availability"),
+        ("availability", "usage_fallback"),
+        nested_path=("usage_fallback",),
+    )
+    role_trend_enabled = _signal_enabled(
+        config,
+        ("role_trend_config", "role_trend"),
+        ("role_trend",),
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -409,6 +437,76 @@ def collect_signal_coverage(
                 "Requires the PFF summary trio from the processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk"
             ),
+        ),
+        "availability": _build_signal(
+            availability_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                {
+                    season: [
+                        cache_path / f"rosters_weekly_{season}.parquet",
+                        cache_path / f"depth_charts_{season}.parquet",
+                    ]
+                    for season in seasons
+                },
+            ),
+            note=(
+                "Explicit coverage requires rosters_weekly plus depth_charts cache; "
+                "injuries can further refine hard decisions when present"
+            ),
+        ),
+        "availability.injuries": _build_signal(
+            availability_enabled and availability_injuries_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                {
+                    season: [cache_path / f"injuries_{season}.parquet"]
+                    for season in seasons
+                },
+            ),
+            note="Hard injury availability decisions require cached injuries parquet for the tested season",
+        ),
+        "availability.depth_charts": _build_signal(
+            availability_enabled and availability_depth_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                {
+                    season: [cache_path / f"depth_charts_{season}.parquet"]
+                    for season in seasons
+                },
+            ),
+            note="Hard starter and promotion decisions require cached depth_charts parquet for the tested season",
+        ),
+        "availability.usage_fallback": _build_signal(
+            availability_enabled and availability_usage_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                {
+                    season: [
+                        cache_path / f"player_stats_week_{season}.parquet",
+                        cache_path / f"snap_counts_{season}.parquet",
+                        cache_path / f"rosters_weekly_{season}.parquet",
+                    ]
+                    for season in seasons
+                },
+            ),
+            note="Soft-only fallback requires player_stats_week, snap_counts, and rosters_weekly parquet coverage",
+        ),
+        "role_trend": _build_signal(
+            role_trend_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                {
+                    season: [cache_path / f"player_stats_week_{season}.parquet"]
+                    for season in seasons
+                },
+            ),
+            note="Role trend uses weekly player_stats coverage; snap_counts can augment but do not create hard decisions",
         ),
         "ensemble.ff_opportunity": _build_signal(
             ensemble_enabled and ff_opp_enabled,
