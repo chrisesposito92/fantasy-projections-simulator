@@ -238,6 +238,22 @@ usage:
     sensitivity: 0.5
     min_routes: 10
 
+ensemble:
+  enabled: false
+  ff_opportunity:
+    enabled: false
+    cache_dir: null
+    positions: [QB, WR]
+    feature: total_fantasy_points_exp
+    weights:
+      QB: 0.35
+      WR: 0.25
+      RB: 0.15
+      TE: 0.15
+    min_coverage_weeks: 1
+  ff_rankings:
+    enabled: false
+
 game_script:
   enabled: true
   trailing_late:
