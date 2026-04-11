@@ -29,10 +29,13 @@ That means Phase 1 v1 must avoid:
 
 - add a new top-level `ensemble` modeling family
 - make `ff_opportunity` the required Phase 1 v1 prior source
+- make Phase 1 v1 cover QB/RB/WR/TE by default
 - blend `ff_opportunity` into weekly player projections only after simulation
 - keep uncovered player-weeks strictly neutral
 - make the ensemble layer source-agnostic enough that `ff_rankings` can be
   plugged in later without restructuring callers
+- keep weekly QB/WR results as the primary success metrics and tie-breaker for
+  the first promotion decision
 - validate the phase as a marginal comparison:
   - `baseline=defaults`
   - versus `defaults + ensemble`
@@ -267,9 +270,11 @@ Recommended defaults:
 - `ensemble.enabled: false` until the phase is implemented and validated
 - `ensemble.ff_opportunity.enabled: false` by default until promoted
 - position-specific weights rather than one global weight
-- initial weight focus on `QB` and `WR`
-- `RB` and `TE` allowed by config but not required for the first promotion
-  decision
+- default position scope is `QB`, `RB`, `WR`, and `TE`
+- initial weights stay conservative: `QB 0.35`, `WR 0.25`, `RB 0.15`,
+  `TE 0.15`
+- weekly `QB` and `WR` remain the primary success metrics and tie-breaker for
+  the first promotion decision
 - `ensemble.ff_rankings.enabled: false`
 
 ### Weight policy
@@ -383,7 +388,8 @@ Phase 1 should be evaluated only as:
 The promotion gate is:
 
 - clear weekly `QB` and/or `WR` improvement
-- no material season-level regression
+- no material season-level regression across the broader QB/RB/WR/TE default
+  scope
 - documented historical coverage for the exercised backtest seasons
 
 The v1 gate is explicitly **not**:

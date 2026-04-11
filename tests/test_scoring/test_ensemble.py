@@ -83,6 +83,50 @@ def test_blend_week_updates_fpts_and_recomputes_rank():
     assert stats.uncovered_rows == 0
 
 
+def test_blend_week_blends_covered_rb_under_broadened_default_scope():
+    from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+
+    loader = _StubLoader(
+        pl.DataFrame(
+            {
+                "season": [2024],
+                "week": [1],
+                "player_id": ["RB1"],
+                "full_name": ["RB One"],
+                "position": ["RB"],
+                "posteam": ["SF"],
+                "total_fantasy_points_exp": [20.0],
+            }
+        )
+    )
+    ensembler = FfOpportunityProjectionEnsembler(_config(), loader=loader)
+
+    blended, stats = ensembler.blend_week(
+        [
+            {
+                "player_id": "RB1",
+                "name": "RB One",
+                "position": "RB",
+                "team": "SF",
+                "fpts": 10.0,
+                "rank": 1,
+            }
+        ],
+        season=2024,
+        week=1,
+    )
+
+    rb = blended[0]
+
+    assert rb["fpts"] == 11.5
+    assert rb["ensemble_source"] == "ff_opportunity"
+    assert rb["ensemble_weight"] == 0.15
+    assert rb["ensemble_covered"] is True
+    assert rb["ensemble_prior_fpts"] == 20.0
+    assert stats.covered_rows == 1
+    assert stats.uncovered_rows == 0
+
+
 def test_blend_week_leaves_uncovered_rows_unchanged():
     from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 
