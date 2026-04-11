@@ -14,10 +14,6 @@ Improve:
 - weekly MAE
 - season MAE
 
-Primary tie-breaker:
-
-- weekly QB/WR accuracy first
-
 Guardrails:
 
 - no material season-level regression in any position
