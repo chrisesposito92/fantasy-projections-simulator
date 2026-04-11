@@ -179,6 +179,55 @@ class TestWeekCommand:
         assert result.exit_code == 0
         MockEnsembler.return_value.blend_week.assert_not_called()
 
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_week_command_runs_projection_layers_in_non_detail_flow(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        _wire_mocks(MockLoader, MockBuilder, [
+            {"season": 2024, "week": 1, "game_id": "g1",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        role_trend_adjuster = object()
+        mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
+
+        result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
+
+        assert result.exit_code == 0
+        mock_apply_projection_layers.assert_called()
+        assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
+
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_week_command_detail_skips_projection_layers(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        _wire_mocks(MockLoader, MockBuilder, [
+            {"season": 2024, "week": 1, "game_id": "g1",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+
+        result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10", "--detail"])
+
+        assert result.exit_code == 0
+        mock_make_role_trend_adjuster.assert_not_called()
+        mock_apply_projection_layers.assert_not_called()
+
 
 class TestOverrideCLI:
     def test_override_flag_accepted(self, runner):
@@ -259,6 +308,32 @@ class TestGameCommand:
         assert "HOME" in result.output
         assert "AWAY" in result.output
 
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_game_command_runs_projection_layers_in_non_detail_flow(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        _wire_mocks(MockLoader, MockBuilder, [
+            {"season": 2024, "week": 5, "game_id": "2024_05_KC_BUF",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        role_trend_adjuster = object()
+        mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
+
+        result = runner.invoke(main, ["game", "KC", "BUF", "--week", "5", "--sims", "10"])
+
+        assert result.exit_code == 0
+        mock_apply_projection_layers.assert_called_once()
+        assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
+
     @patch("fantasy_sim.cli.FfOpportunityProjectionEnsembler")
     @patch("fantasy_sim.cli.load_ensemble_config")
     def test_game_demo_mode_skips_ensemble_blend(
@@ -279,6 +354,37 @@ class TestGameCommand:
 
         assert result.exit_code == 0
         MockEnsembler.assert_not_called()
+
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    def test_game_demo_mode_skips_projection_layers(
+        self,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
+
+        result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10"])
+
+        assert result.exit_code == 0
+        mock_make_role_trend_adjuster.assert_not_called()
+        mock_apply_projection_layers.assert_called_once()
+        assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is None
+
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    def test_game_detail_mode_skips_projection_layers(
+        self,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        result = runner.invoke(main, ["game", "HOME", "AWAY", "--demo", "--sims", "10", "--detail"])
+
+        assert result.exit_code == 0
+        mock_make_role_trend_adjuster.assert_not_called()
+        mock_apply_projection_layers.assert_not_called()
 
 
 class TestPlayerCommand:
@@ -581,6 +687,29 @@ class TestSeasonByWeek:
         result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
         assert result.exit_code == 0
         assert "Season Projections" in result.output
+
+    @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_role_trend_adjuster")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_season_command_runs_projection_layers_in_non_detail_flow(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_make_role_trend_adjuster,
+        mock_apply_projection_layers,
+        runner,
+    ):
+        _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE[:1])
+        role_trend_adjuster = object()
+        mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
+
+        result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
+
+        assert result.exit_code == 0
+        mock_apply_projection_layers.assert_called_once()
+        assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
 
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
