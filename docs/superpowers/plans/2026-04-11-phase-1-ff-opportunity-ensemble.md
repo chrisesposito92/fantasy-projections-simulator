@@ -453,19 +453,20 @@ def _config() -> EnsembleConfig:
 def test_blend_week_updates_fpts_and_recomputes_rank():
     raw = pl.DataFrame(
         {
-            "season": [2024, 2024],
-            "week": [1, 1],
-            "player_id": ["QB1", "WR1"],
-            "name": ["QB One", "WR One"],
-            "position": ["QB", "WR"],
-            "team": ["KC", "KC"],
-            "prior_fpts": [20.0, 12.0],
+            "season": [2024, 2024, 2024],
+            "week": [1, 1, 1],
+            "player_id": ["QB1", "WR1", "RB1"],
+            "name": ["QB One", "WR One", "RB One"],
+            "position": ["QB", "WR", "RB"],
+            "team": ["KC", "KC", "KC"],
+            "prior_fpts": [20.0, 12.0, 20.0],
         }
     )
     ensembler = FfOpportunityProjectionEnsembler(_config(), loader=_StubLoader(raw))
     projections = [
-        {"player_id": "QB1", "name": "QB One", "position": "QB", "team": "KC", "fpts": 10.0, "rank": 2},
-        {"player_id": "WR1", "name": "WR One", "position": "WR", "team": "KC", "fpts": 11.0, "rank": 1},
+        {"player_id": "QB1", "name": "QB One", "position": "QB", "team": "KC", "fpts": 10.0, "rank": 3},
+        {"player_id": "WR1", "name": "WR One", "position": "WR", "team": "KC", "fpts": 11.0, "rank": 2},
+        {"player_id": "RB1", "name": "RB One", "position": "RB", "team": "KC", "fpts": 16.0, "rank": 1},
     ]
 
     blended, stats = ensembler.blend_week(projections, season=2024, week=1)
@@ -473,9 +474,12 @@ def test_blend_week_updates_fpts_and_recomputes_rank():
     assert blended[0]["player_id"] == "QB1"
     assert blended[0]["fpts"] == 15.0
     assert blended[0]["rank"] == 1
-    assert blended[1]["player_id"] == "WR1"
-    assert blended[1]["fpts"] == 11.2
-    assert stats.covered_rows == 2
+    wr = next(row for row in blended if row["player_id"] == "WR1")
+    assert wr["fpts"] == 11.2
+    rb = next(row for row in blended if row["player_id"] == "RB1")
+    assert rb["fpts"] == 16.6
+    assert rb["ensemble_covered"] is True
+    assert stats.covered_rows == 3
     assert stats.uncovered_rows == 0
 
 
