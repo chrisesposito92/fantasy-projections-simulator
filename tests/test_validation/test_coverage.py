@@ -258,6 +258,29 @@ def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(
     assert coverage["usage.route_rate"].status == "disabled"
 
 
+def test_ensemble_ff_opportunity_reports_full_runtime_coverage_when_enabled():
+    coverage = collect_signal_coverage(
+        {
+            "ensemble": {
+                "enabled": True,
+                "ff_opportunity": {"enabled": True},
+            }
+        },
+        [2022, 2023, 2024],
+    )
+
+    assert coverage["ensemble.ff_opportunity"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2022, 2023, 2024],
+        missing_seasons=[],
+        note=(
+            "nflreadpy historical ff_opportunity coverage is treated as available "
+            "for requested test seasons; player mapping coverage is measured at runtime"
+        ),
+    )
+
+
 def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
     route_rate_root = tmp_path / "pff_processed"

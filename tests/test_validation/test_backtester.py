@@ -153,6 +153,55 @@ class TestBacktesterParallelBuild:
         assert call_kwargs["pff_config"] is pff_cfg
         assert call_kwargs["weather_config"] is weather_cfg
 
+    @patch("fantasy_sim.validation.backtester.FfOpportunityProjectionEnsembler")
+    @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_run_instantiates_ensemble_when_enabled(
+        self,
+        mock_loader_cls,
+        mock_build_parallel,
+        mock_simulate_parallel,
+        mock_ensembler_cls,
+    ):
+        from pathlib import Path
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = Path("/tmp/test")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+        mock_build_parallel.return_value = []
+        mock_simulate_parallel.return_value = []
+
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+        bt = Backtester(
+            test_season=2024,
+            n_sims=10,
+            ensemble_config=EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+            ),
+        )
+        bt.loader = mock_loader
+
+        bt.run(scoring_config)
+
+        mock_ensembler_cls.assert_called_once()
+
 
 def _make_ok_result(game_id: str, week: int = 1) -> dict:
     """Helper: build an 'ok' build result dict with minimal stub data."""
