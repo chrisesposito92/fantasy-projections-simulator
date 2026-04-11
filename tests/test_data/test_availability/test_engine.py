@@ -72,10 +72,12 @@ def test_explicit_out_zeroes_receiver_share():
     roster = _roster()
     engine = AvailabilityEngine(_config(), role_inputs_loader=_StubRoleInputs(frame))
 
-    engine.apply(roster, season=2024, week=5)
+    decisions = engine.apply(roster, season=2024, week=5)
 
     wr = next(player for player in roster.players if player.player_id == "WR1")
     assert wr.usage.target_share == 0.0
+    assert decisions["WR1"].hard_inactive is True
+    assert decisions["WR1"].reason == "injury:Out"
 
 
 def test_usage_only_low_usage_soft_dampens_but_does_not_bench_qb():
@@ -130,3 +132,31 @@ def test_explicit_qb1_depth_chart_demotes_backup():
     qb2 = next(player for player in roster.players if player.player_id == "QB2")
     assert qb1.usage.snap_share == 1.0
     assert qb2.usage.snap_share == 0.0
+
+
+def test_usage_only_stays_neutral_when_participation_data_is_missing():
+    frame = pl.DataFrame(
+        {
+            "season": [2024, 2024, 2024],
+            "week": [2, 3, 4],
+            "team": ["KC", "KC", "KC"],
+            "player_id": ["QB1", "QB1", "QB1"],
+            "position": ["QB", "QB", "QB"],
+            "attempts": [10, 11, 9],
+            "carries": [1, 0, 1],
+            "targets": [0, 0, 0],
+            "offense_pct": [None, None, None],
+            "report_status": [None, None, None],
+            "practice_status": [None, None, None],
+            "depth_position": [None, None, None],
+        }
+    )
+    roster = _roster()
+    engine = AvailabilityEngine(_config(), role_inputs_loader=_StubRoleInputs(frame))
+
+    decisions = engine.apply(roster, season=2024, week=5)
+
+    qb = next(player for player in roster.players if player.player_id == "QB1")
+    assert qb.usage.snap_share == 1.0
+    assert decisions["QB1"].factor == 1.0
+    assert decisions["QB1"].reason is None

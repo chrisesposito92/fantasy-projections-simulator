@@ -19,22 +19,46 @@ class AvailabilityEngine:
         self._loader = role_inputs_loader or WeeklyRoleInputLoader()
         self._cache: dict[int, pl.DataFrame] = {}
 
-    def apply(self, roster: TeamRoster, season: int, week: int) -> None:
+    def apply(
+        self,
+        roster: TeamRoster,
+        season: int,
+        week: int,
+    ) -> dict[str, AvailabilityDecision]:
         if not self._config.enabled:
-            return
+            return {}
 
+        decisions = self.decide(roster, season, week)
+
+        for player in roster.players:
+            decision = decisions.get(player.player_id)
+            if decision is None:
+                continue
+            self._apply_decision(player, decision)
+        return decisions
+
+    def decide(
+        self,
+        roster: TeamRoster,
+        season: int,
+        week: int,
+    ) -> dict[str, AvailabilityDecision]:
+        if not self._config.enabled:
+            return {}
+
+        decisions: dict[str, AvailabilityDecision] = {}
         for player in roster.players:
             if player.position not in self._config.positions:
                 continue
 
-            decision = self._decision_for_player(
+            decisions[player.player_id] = self._decision_for_player(
                 player_id=player.player_id,
                 position=player.position,
                 team=roster.team,
                 season=season,
                 week=week,
             )
-            self._apply_decision(player, decision)
+        return decisions
 
     def _season_inputs(self, season: int) -> pl.DataFrame:
         cached = self._cache.get(season)
@@ -114,8 +138,10 @@ class AvailabilityEngine:
             return AvailabilityDecision()
 
         recent = history.tail(cfg.lookback_weeks)
-        offense_pct = self._mean_or_zero(recent, "offense_pct")
-        attempts = self._sum_or_zero(recent, "attempts")
+        offense_pct = self._mean_if_present(recent, "offense_pct")
+        if offense_pct is None:
+            return AvailabilityDecision()
+
         carries = self._sum_or_zero(recent, "carries")
         targets = self._sum_or_zero(recent, "targets")
 
@@ -143,14 +169,6 @@ class AvailabilityEngine:
                 reason="usage:soft",
             )
 
-        # Preserve a conservative fallback for low-volume QB history even when
-        # offense_pct is missing from legacy inputs.
-        if position == "QB" and offense_pct == 0.0 and attempts <= 24:
-            return AvailabilityDecision(
-                factor=cfg.qb_low_usage_factor,
-                reason="usage:soft",
-            )
-
         return AvailabilityDecision()
 
     @staticmethod
@@ -161,11 +179,16 @@ class AvailabilityEngine:
         return float(value or 0.0)
 
     @staticmethod
-    def _mean_or_zero(frame: pl.DataFrame, column: str) -> float:
+    def _mean_if_present(frame: pl.DataFrame, column: str) -> float | None:
         if column not in frame.columns:
-            return 0.0
-        value = frame.select(pl.col(column).fill_null(0).mean()).item()
-        return float(value or 0.0)
+            return None
+        non_null = frame.filter(pl.col(column).is_not_null())
+        if non_null.is_empty():
+            return None
+        value = non_null.select(pl.col(column).mean()).item()
+        if value is None:
+            return None
+        return float(value)
 
     @staticmethod
     def _apply_decision(player: PlayerModel, decision: AvailabilityDecision) -> None:
