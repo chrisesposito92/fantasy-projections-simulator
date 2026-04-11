@@ -401,6 +401,7 @@ def _build_games_sequential(
                 weather_config=weather_config,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                availability_config=availability_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,

@@ -495,6 +495,26 @@ class TestBuildGamesParallelDualArm:
         assert mock_builder_cls.call_args.kwargs["availability_config"] is config
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_build_games_sequential_single_arm_threads_availability_config(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import _build_games_sequential
+
+        mock_builder_cls.return_value = self._mock_builder()
+        config = object()
+
+        results = _build_games_sequential(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
+            cache_dir=Path("/tmp"),
+            pff_config=None,
+            weather_config=None,
+            dual_arm=False,
+            on_complete=None,
+            availability_config=config,
+        )
+
+        assert len(results) == 1
+        assert mock_builder_cls.call_args.kwargs["availability_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_only_threads_goal_line_concentration_to_on_builder(self, mock_builder_cls):
         from fantasy_sim.validation.parallel import build_games_parallel
 
