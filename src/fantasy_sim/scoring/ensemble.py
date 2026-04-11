@@ -27,7 +27,7 @@ class FfOpportunityProjectionEnsembler:
         loader: FfOpportunityLoader | None = None,
     ) -> None:
         self.config = config
-        self.loader = loader or FfOpportunityLoader(config=config.ff_opportunity)
+        self.loader = loader
         self._prior_cache: dict[int, pl.DataFrame] = {}
 
     def _season_priors(self, season: int) -> pl.DataFrame:
@@ -36,10 +36,22 @@ class FfOpportunityProjectionEnsembler:
         if cached is not None:
             return cached
 
+        if self.loader is None:
+            self.loader = FfOpportunityLoader(config=self.config.ff_opportunity)
+
         raw = self.loader.load_weekly([season])
         normalized = normalize_ff_opportunity(raw, self.config.ff_opportunity)
         self._prior_cache[season] = normalized
         return normalized
+
+    @staticmethod
+    def _mark_uncovered(row: dict) -> dict:
+        """Stamp a projection row as not covered by ensemble priors."""
+        row["ensemble_source"] = None
+        row["ensemble_weight"] = 0.0
+        row["ensemble_covered"] = False
+        row.pop("ensemble_prior_fpts", None)
+        return row
 
     def blend_week(
         self,
@@ -55,7 +67,7 @@ class FfOpportunityProjectionEnsembler:
             or not self.config.enabled
             or not self.config.ff_opportunity.enabled
         ):
-            return projections, BlendStats(
+            return [self._mark_uncovered(dict(projection)) for projection in projections], BlendStats(
                 total_rows=total_rows,
                 covered_rows=0,
                 uncovered_rows=total_rows,
@@ -77,9 +89,7 @@ class FfOpportunityProjectionEnsembler:
             weight = float(self.config.ff_opportunity.weights.get(row.get("position", ""), 0.0))
 
             if prior is None or weight <= 0:
-                row["ensemble_source"] = None
-                row["ensemble_weight"] = 0.0
-                row["ensemble_covered"] = False
+                self._mark_uncovered(row)
                 uncovered_rows += 1
                 blended.append(row)
                 continue
