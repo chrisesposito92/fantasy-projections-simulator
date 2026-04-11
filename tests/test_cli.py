@@ -3,6 +3,7 @@ import click
 from click.testing import CliRunner
 from unittest.mock import patch
 from pathlib import Path
+from types import SimpleNamespace
 import polars as pl
 import numpy as np
 from fantasy_sim.cli import main
@@ -102,6 +103,52 @@ class TestWeekCommand:
         ])
         result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
         assert result.exit_code == 0
+
+    @patch("fantasy_sim.cli.FfOpportunityProjectionEnsembler")
+    @patch("fantasy_sim.cli.load_ensemble_config")
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    def test_week_command_blends_with_ensemble(
+        self,
+        MockLoader,
+        MockBuilder,
+        mock_load_ensemble_config,
+        MockEnsembler,
+        runner,
+    ):
+        """Week command should blend player projections when ensemble is enabled."""
+        from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+
+        _wire_mocks(MockLoader, MockBuilder, [
+            {"season": 2024, "week": 1, "game_id": "g1",
+             "home_team": "KC", "away_team": "BUF"},
+        ])
+        mock_load_ensemble_config.return_value = EnsembleConfig(
+            enabled=True,
+            ff_opportunity=FfOpportunityConfig(enabled=True),
+        )
+
+        mock_ensembler = MockEnsembler.return_value
+
+        def _blend_rows(projections, *, season, week):
+            blended_rows = [dict(row) for row in projections]
+            if blended_rows:
+                blended_rows[0]["fpts"] = round(float(blended_rows[0]["fpts"]) + 1.5, 1)
+            blended_rows.sort(key=lambda row: row["fpts"], reverse=True)
+            for rank, row in enumerate(blended_rows, start=1):
+                row["rank"] = rank
+            return blended_rows, SimpleNamespace(
+                total_rows=len(blended_rows),
+                covered_rows=min(len(blended_rows), 1),
+                uncovered_rows=max(len(blended_rows) - 1, 0),
+            )
+
+        mock_ensembler.blend_week.side_effect = _blend_rows
+
+        result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
+
+        assert result.exit_code == 0
+        mock_ensembler.blend_week.assert_called()
 
 
 class TestOverrideCLI:
