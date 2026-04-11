@@ -17,8 +17,6 @@ class FfOpportunityConfig:
         default_factory=lambda: {
             "QB": 0.35,
             "WR": 0.25,
-            "RB": 0.15,
-            "TE": 0.15,
         }
     )
     min_coverage_weeks: int = 1

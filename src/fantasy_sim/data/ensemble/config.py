@@ -29,8 +29,6 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
                 {
                     "QB": 0.35,
                     "WR": 0.25,
-                    "RB": 0.15,
-                    "TE": 0.15,
                 },
             )
         ),

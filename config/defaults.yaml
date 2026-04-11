@@ -248,8 +248,6 @@ ensemble:
     weights:
       QB: 0.35
       WR: 0.25
-      RB: 0.15
-      TE: 0.15
     min_coverage_weeks: 1
   ff_rankings:
     enabled: false
