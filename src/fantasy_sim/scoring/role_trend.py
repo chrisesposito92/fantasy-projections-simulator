@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TypeAlias, cast, Protocol
 
 import polars as pl
 
@@ -18,7 +18,12 @@ class TrendStats:
     neutral_rows: int
 
 
-ProjectionRow = dict[str, Any]
+ProjectionValue: TypeAlias = str | float | int | bool | None
+ProjectionRow: TypeAlias = dict[str, ProjectionValue]
+
+
+class RoleTrendInputsLoader(Protocol):
+    def load_weekly(self, seasons: list[int]) -> pl.DataFrame: ...
 
 
 class RoleTrendProjectionAdjuster:
@@ -27,10 +32,10 @@ class RoleTrendProjectionAdjuster:
     def __init__(
         self,
         config: RoleTrendConfig,
-        role_inputs_loader: WeeklyRoleInputLoader | None = None,
+        role_inputs_loader: RoleTrendInputsLoader | None = None,
     ) -> None:
-        self.config = config
-        self.loader = role_inputs_loader or WeeklyRoleInputLoader()
+        self.config: RoleTrendConfig = config
+        self.loader: RoleTrendInputsLoader = role_inputs_loader or WeeklyRoleInputLoader()
         self._cache: dict[int, pl.DataFrame] = {}
 
     def _season_inputs(self, season: int) -> pl.DataFrame:
@@ -55,8 +60,22 @@ class RoleTrendProjectionAdjuster:
     def _mean_expr(frame: pl.DataFrame, expr: pl.Expr) -> float:
         if frame.is_empty():
             return 0.0
-        value = frame.select(expr.mean()).item()
+        value = cast(float | int | None, frame.select(expr.mean()).item())
         return float(value or 0.0)
+
+    @staticmethod
+    def _string_value(row: ProjectionRow, key: str) -> str | None:
+        value = row.get(key)
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def _fpts_value(row: ProjectionRow) -> float:
+        value = row.get("fpts")
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        raise TypeError("projection row is missing numeric fpts")
 
     def _opportunity(self, frame: pl.DataFrame, position: str) -> float:
         if frame.is_empty():
@@ -118,12 +137,13 @@ class RoleTrendProjectionAdjuster:
 
         for projection in projections:
             row = dict(projection)
-            position = row.get("position", "")
-            player_id = row.get("player_id")
-            team = row.get("team")
+            position = self._string_value(row, "position")
+            player_id = self._string_value(row, "player_id")
+            team = self._string_value(row, "team")
 
             if (
-                position not in self.config.positions
+                position is None
+                or position not in self.config.positions
                 or player_id is None
                 or team is None
             ):
@@ -160,14 +180,14 @@ class RoleTrendProjectionAdjuster:
                 max(self.config.factor_clamp[0], raw_factor),
             )
 
-            row["fpts"] = round(float(row["fpts"]) * factor, 1)
+            row["fpts"] = round(self._fpts_value(row) * factor, 1)
             row["role_trend_factor"] = round(factor, 4)
             row["role_trend_applied"] = factor != 1.0
             if row["role_trend_applied"]:
                 adjusted_rows += 1
             output.append(row)
 
-        output.sort(key=lambda projection: projection["fpts"], reverse=True)
+        output.sort(key=self._fpts_value, reverse=True)
         for rank, row in enumerate(output, start=1):
             row["rank"] = rank
 

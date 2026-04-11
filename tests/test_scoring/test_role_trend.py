@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import polars as pl
 
+from fantasy_sim.scoring.ensemble import BlendStats
 from fantasy_sim.data.role_trend.models import RoleTrendConfig
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
-from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
+from fantasy_sim.scoring.role_trend import ProjectionRow, RoleTrendProjectionAdjuster, TrendStats
 
 
 class _StubRoleInputs:
     def __init__(self, frame: pl.DataFrame) -> None:
-        self.frame = frame
+        self.frame: pl.DataFrame = frame
 
     def load_weekly(self, seasons: list[int]) -> pl.DataFrame:
+        _ = seasons
         return self.frame
 
 
@@ -248,16 +250,30 @@ def test_apply_projection_layers_runs_role_trend_before_ensemble():
     order: list[str] = []
 
     class _Trend:
-        def adjust_week(self, projections, season, week):
+        def adjust_week(
+            self,
+            projections: list[ProjectionRow],
+            *,
+            season: int,
+            week: int,
+        ) -> tuple[list[ProjectionRow], TrendStats]:
             order.append("trend")
-            return projections, object()
+            _ = season, week
+            return projections, TrendStats(total_rows=len(projections), adjusted_rows=0, neutral_rows=len(projections))
 
     class _Ensemble:
-        def blend_week(self, projections, season, week):
+        def blend_week(
+            self,
+            projections: list[ProjectionRow],
+            *,
+            season: int,
+            week: int,
+        ) -> tuple[list[ProjectionRow], BlendStats]:
             order.append("ensemble")
-            return projections, object()
+            _ = season, week
+            return projections, BlendStats(total_rows=len(projections), covered_rows=0, uncovered_rows=len(projections))
 
-    apply_projection_layers(
+    _rows = apply_projection_layers(
         [{"player_id": "WR1", "position": "WR", "team": "KC", "fpts": 10.0, "rank": 1}],
         season=2024,
         week=5,
@@ -265,4 +281,5 @@ def test_apply_projection_layers_runs_role_trend_before_ensemble():
         ensembler=_Ensemble(),
     )
 
+    assert _rows[0]["player_id"] == "WR1"
     assert order == ["trend", "ensemble"]

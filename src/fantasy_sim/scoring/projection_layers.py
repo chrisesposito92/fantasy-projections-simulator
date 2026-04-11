@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Protocol
 
-from fantasy_sim.scoring.role_trend import ProjectionRow
+from fantasy_sim.scoring.ensemble import BlendStats
+from fantasy_sim.scoring.role_trend import ProjectionRow, TrendStats
 
 
 class RoleTrendAdjusterProtocol(Protocol):
@@ -14,7 +15,7 @@ class RoleTrendAdjusterProtocol(Protocol):
         *,
         season: int,
         week: int,
-    ) -> tuple[list[ProjectionRow], Any]: ...
+    ) -> tuple[list[ProjectionRow], TrendStats]: ...
 
 
 class ProjectionEnsemblerProtocol(Protocol):
@@ -24,7 +25,7 @@ class ProjectionEnsemblerProtocol(Protocol):
         *,
         season: int,
         week: int,
-    ) -> tuple[list[ProjectionRow], Any]: ...
+    ) -> tuple[list[ProjectionRow], BlendStats]: ...
 
 
 def apply_projection_layers(
@@ -37,7 +38,7 @@ def apply_projection_layers(
 ) -> list[ProjectionRow]:
     rows = [dict(projection) for projection in projections]
     if role_trend_adjuster is not None:
-        rows, _ = role_trend_adjuster.adjust_week(rows, season=season, week=week)
+        rows, _trend_stats = role_trend_adjuster.adjust_week(rows, season=season, week=week)
     if ensembler is not None:
-        rows, _ = ensembler.blend_week(rows, season=season, week=week)
+        rows, _blend_stats = ensembler.blend_week(rows, season=season, week=week)
     return rows
