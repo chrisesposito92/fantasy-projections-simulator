@@ -75,9 +75,10 @@ Important distinction:
 
 - `game_script` is not baked into base roster shares
 - it is resolved live from `GameState` and applied transiently during play calling
-- `ensemble` is not part of `GameContextBuilder`; when enabled, it is
-  applied post-sim in validation/backtester/CLI flows after projections are
-  generated
+- `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
+  post-sim in validation, `Backtester`, and the non-detail `week` / `season`
+  / `game` CLI flows after projections are generated
+- `player` and `--detail` CLI output currently bypass the ensemble blend
 
 That is a useful architectural pattern for future "situation-only" levers.
 

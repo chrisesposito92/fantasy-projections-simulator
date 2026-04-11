@@ -155,16 +155,19 @@ The current measurement path can overstate or misclassify gains because:
 This is now implemented in v1 form and remains the fastest candidate for weekly
 QB/WR lift without rewriting the simulator internals.
 
-Locally verified nflreadpy loaders:
+Locally verified `nflreadpy` loaders:
 
 - `load_ff_opportunity()`
-- `load_ff_rankings()`
 
 These can provide high-signal priors for:
 
 - expected fantasy points
 - opportunity quality
 - consensus weekly rankings and projections
+
+Future-capable availability also exists for:
+
+- `load_ff_rankings()`
 
 ### Status
 
