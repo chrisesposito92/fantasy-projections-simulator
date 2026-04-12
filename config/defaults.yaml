@@ -254,6 +254,25 @@ ensemble:
   ff_rankings:
     enabled: false
 
+market_history:
+  enabled: false
+  data_dir: null
+  positions: [QB, RB, WR, TE]
+  weights:
+    QB: 0.20
+    RB: 0.15
+    WR: 0.20
+    TE: 0.15
+  min_coverage_weeks: 1
+  min_books: 2
+  dispersion_scale: 3.0
+  features:
+    close_fpts: true
+    open_fpts: true
+    movement: true
+    dispersion: true
+    anytime_td: true
+
 availability:
   enabled: true
   positions: [QB, RB, WR, TE]
