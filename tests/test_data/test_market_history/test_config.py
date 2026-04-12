@@ -104,6 +104,18 @@ def test_load_market_history_config_reads_nested_values():
     assert cfg.features.anytime_td is True
 
 
+def test_load_market_history_config_uses_default_data_dir_when_missing():
+    cfg = load_market_history_config(
+        {
+            "market_history": {
+                "enabled": True,
+            }
+        }
+    )
+
+    assert cfg.data_dir is None
+
+
 def test_load_market_history_config_partial_feature_override_keeps_other_defaults():
     cfg = load_market_history_config(
         {

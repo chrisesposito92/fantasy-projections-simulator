@@ -37,7 +37,7 @@ def load_market_history_config(defaults: dict) -> MarketHistoryConfig:
 
     return MarketHistoryConfig(
         enabled=raw.get("enabled", DEFAULT_MARKET_HISTORY_CONFIG.enabled),
-        data_dir=raw.get("data_dir"),
+        data_dir=raw.get("data_dir", DEFAULT_MARKET_HISTORY_CONFIG.data_dir),
         positions=tuple(raw.get("positions", DEFAULT_MARKET_HISTORY_CONFIG.positions)),
         weights=dict(
             raw.get(
