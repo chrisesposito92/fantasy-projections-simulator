@@ -38,6 +38,19 @@ def test_load_market_history_config_defaults_when_missing():
     assert cfg.features.anytime_td is True
 
 
+def test_load_market_history_config_defaults_are_isolated_between_calls():
+    first = load_market_history_config({})
+    second = load_market_history_config({})
+
+    first.weights["QB"] = 0.99
+    first.features.open_fpts = False
+
+    assert second.weights["QB"] == 0.20
+    assert second.features.open_fpts is True
+    assert first.weights is not second.weights
+    assert first.features is not second.features
+
+
 def test_load_market_history_config_matches_checked_in_defaults():
     cfg = load_market_history_config(_load_defaults_yaml())
 

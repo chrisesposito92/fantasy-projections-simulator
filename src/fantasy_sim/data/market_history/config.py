@@ -9,10 +9,29 @@ DEFAULT_MARKET_HISTORY_CONFIG = MarketHistoryConfig()
 DEFAULT_MARKET_HISTORY_FEATURE_FLAGS = MarketHistoryFeatureFlags()
 
 
+def _build_default_market_history_config() -> MarketHistoryConfig:
+    return MarketHistoryConfig(
+        enabled=DEFAULT_MARKET_HISTORY_CONFIG.enabled,
+        data_dir=DEFAULT_MARKET_HISTORY_CONFIG.data_dir,
+        positions=tuple(DEFAULT_MARKET_HISTORY_CONFIG.positions),
+        weights=dict(DEFAULT_MARKET_HISTORY_CONFIG.weights),
+        min_coverage_weeks=DEFAULT_MARKET_HISTORY_CONFIG.min_coverage_weeks,
+        min_books=DEFAULT_MARKET_HISTORY_CONFIG.min_books,
+        dispersion_scale=DEFAULT_MARKET_HISTORY_CONFIG.dispersion_scale,
+        features=MarketHistoryFeatureFlags(
+            close_fpts=DEFAULT_MARKET_HISTORY_FEATURE_FLAGS.close_fpts,
+            open_fpts=DEFAULT_MARKET_HISTORY_FEATURE_FLAGS.open_fpts,
+            movement=DEFAULT_MARKET_HISTORY_FEATURE_FLAGS.movement,
+            dispersion=DEFAULT_MARKET_HISTORY_FEATURE_FLAGS.dispersion,
+            anytime_td=DEFAULT_MARKET_HISTORY_FEATURE_FLAGS.anytime_td,
+        ),
+    )
+
+
 def load_market_history_config(defaults: dict) -> MarketHistoryConfig:
     raw = defaults.get("market_history")
     if not raw:
-        return DEFAULT_MARKET_HISTORY_CONFIG
+        return _build_default_market_history_config()
 
     feature_raw = raw.get("features", {})
 
