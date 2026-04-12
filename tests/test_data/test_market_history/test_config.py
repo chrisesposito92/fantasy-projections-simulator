@@ -1,6 +1,19 @@
 """Tests for market-history config loading."""
 
+from pathlib import Path
+
+import yaml
+
 from fantasy_sim.data.market_history.config import load_market_history_config
+from fantasy_sim.data.market_history.models import (
+    MarketHistoryConfig,
+    MarketHistoryFeatureFlags,
+)
+
+
+def _load_defaults_yaml() -> dict:
+    defaults_path = Path(__file__).resolve().parents[3] / "config" / "defaults.yaml"
+    return yaml.safe_load(defaults_path.read_text())
 
 
 def test_load_market_history_config_defaults_when_missing():
@@ -23,6 +36,13 @@ def test_load_market_history_config_defaults_when_missing():
     assert cfg.features.movement is True
     assert cfg.features.dispersion is True
     assert cfg.features.anytime_td is True
+
+
+def test_load_market_history_config_matches_checked_in_defaults():
+    cfg = load_market_history_config(_load_defaults_yaml())
+
+    assert cfg == MarketHistoryConfig()
+    assert cfg.features == MarketHistoryFeatureFlags()
 
 
 def test_load_market_history_config_reads_nested_values():
@@ -68,6 +88,24 @@ def test_load_market_history_config_reads_nested_values():
     assert cfg.features.open_fpts is False
     assert cfg.features.movement is True
     assert cfg.features.dispersion is False
+    assert cfg.features.anytime_td is True
+
+
+def test_load_market_history_config_partial_feature_override_keeps_other_defaults():
+    cfg = load_market_history_config(
+        {
+            "market_history": {
+                "features": {
+                    "open_fpts": False,
+                }
+            }
+        }
+    )
+
+    assert cfg.features.close_fpts is True
+    assert cfg.features.open_fpts is False
+    assert cfg.features.movement is True
+    assert cfg.features.dispersion is True
     assert cfg.features.anytime_td is True
 
 
