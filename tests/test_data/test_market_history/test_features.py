@@ -131,3 +131,52 @@ def test_normalize_market_history_filters_positions_not_in_scope():
     normalized = normalize_market_history(frame, MarketHistoryConfig(enabled=True))
 
     assert normalized.is_empty()
+
+
+def test_normalize_market_history_handles_missing_anytime_td_column():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [16.0],
+            "close_fpts": [18.0],
+            "books": [4],
+            "line_stddev": [1.0],
+        }
+    )
+
+    normalized = normalize_market_history(frame, MarketHistoryConfig(enabled=True))
+    row = normalized.row(0, named=True)
+
+    assert row["anytime_td_prob"] is None
+    assert row["prior_fpts"] == 18.0
+    assert round(row["confidence_factor"], 4) == 0.6667
+
+
+def test_normalize_market_history_does_not_create_movement_for_one_sided_prices():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [16.0],
+            "close_fpts": [None],
+            "books": [4],
+            "line_stddev": [1.0],
+            "anytime_td_prob": [0.50],
+        }
+    )
+
+    normalized = normalize_market_history(frame, MarketHistoryConfig(enabled=True))
+    row = normalized.row(0, named=True)
+
+    assert row["prior_fpts"] == 16.0
+    assert row["line_move"] == 0.0
+    assert row["adjusted_prior_fpts"] == row["prior_fpts"]

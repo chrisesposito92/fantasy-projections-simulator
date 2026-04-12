@@ -96,6 +96,26 @@ def test_build_market_history_cache_writes_schema_stable_empty_file(tmp_path):
     assert frame.schema == PROCESSED_WEEKLY_SCHEMA
 
 
+def test_build_market_history_cache_backfills_missing_optional_columns(tmp_path):
+    raw_root = tmp_path / "raw" / "2023"
+    raw_root.mkdir(parents=True)
+    _raw_week_frame(2023, 1).drop(
+        ["line_stddev", "anytime_td_prob"]
+    ).write_parquet(raw_root / "week01.parquet")
+
+    output_path = build_market_history_cache(
+        2023,
+        raw_dir=tmp_path / "raw",
+        processed_dir=tmp_path / "processed",
+    )
+
+    frame = pl.read_parquet(output_path)
+
+    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
+    assert frame["line_stddev"].to_list() == [None]
+    assert frame["anytime_td_prob"].to_list() == [None]
+
+
 def test_loader_returns_empty_processed_schema_when_file_is_missing(tmp_path):
     loader = MarketHistoryLoader(
         MarketHistoryConfig(enabled=True, data_dir=str(tmp_path))
@@ -105,6 +125,23 @@ def test_loader_returns_empty_processed_schema_when_file_is_missing(tmp_path):
 
     assert frame.schema == PROCESSED_WEEKLY_SCHEMA
     assert frame.is_empty()
+
+
+def test_loader_backfills_missing_optional_columns_from_partial_processed_file(tmp_path):
+    processed = tmp_path / "processed"
+    processed.mkdir()
+    _raw_week_frame(2023, 1).drop(
+        ["line_stddev", "anytime_td_prob"]
+    ).write_parquet(processed / "market_history_weekly_2023.parquet")
+
+    loader = MarketHistoryLoader(
+        MarketHistoryConfig(enabled=True, data_dir=str(processed))
+    )
+    frame = loader.load_weekly([2023])
+
+    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
+    assert frame["line_stddev"].to_list() == [None]
+    assert frame["anytime_td_prob"].to_list() == [None]
 
 
 def test_loader_reads_multiple_seasons_from_processed_store(tmp_path):

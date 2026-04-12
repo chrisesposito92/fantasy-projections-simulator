@@ -25,6 +25,18 @@ PROCESSED_WEEKLY_SCHEMA: SchemaDict = {
     "anytime_td_prob": pl.Float64,
 }
 
+REQUIRED_PROCESSED_WEEKLY_COLUMNS: tuple[str, ...] = (
+    "season",
+    "week",
+    "player_id",
+    "full_name",
+    "position",
+    "team",
+    "open_fpts",
+    "close_fpts",
+    "books",
+)
+
 
 class MarketHistoryLoader:
     """Load processed historical market snapshots from per-season parquet."""
@@ -48,7 +60,36 @@ class MarketHistoryLoader:
         for season in seasons:
             path = self.data_dir / f"market_history_weekly_{season}.parquet"
             if path.exists():
-                frames.append(pl.read_parquet(path))
+                frames.append(ensure_processed_weekly_schema(pl.read_parquet(path)))
         if not frames:
             return pl.DataFrame(schema=PROCESSED_WEEKLY_SCHEMA)
         return pl.concat(frames, how="diagonal_relaxed")
+
+
+def ensure_processed_weekly_schema(frame: pl.DataFrame) -> pl.DataFrame:
+    """Backfill optional columns and cast processed weekly frames to the canonical schema."""
+    missing_required = [
+        column
+        for column in REQUIRED_PROCESSED_WEEKLY_COLUMNS
+        if column not in frame.columns
+    ]
+    if missing_required:
+        missing = ", ".join(sorted(missing_required))
+        raise ValueError(
+            f"Processed market history is missing required columns: {missing}"
+        )
+
+    missing_optional = [
+        pl.lit(None, dtype=dtype).alias(column)
+        for column, dtype in PROCESSED_WEEKLY_SCHEMA.items()
+        if column not in frame.columns
+    ]
+    if missing_optional:
+        frame = frame.with_columns(missing_optional)
+
+    return frame.select(
+        [
+            pl.col(column).cast(dtype).alias(column)
+            for column, dtype in PROCESSED_WEEKLY_SCHEMA.items()
+        ]
+    )

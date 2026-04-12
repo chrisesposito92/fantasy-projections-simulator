@@ -3,7 +3,10 @@ from __future__ import annotations
 import polars as pl
 from polars._typing import SchemaDict
 
-from fantasy_sim.data.market_history.loader import PROCESSED_WEEKLY_SCHEMA
+from fantasy_sim.data.market_history.loader import (
+    PROCESSED_WEEKLY_SCHEMA,
+    ensure_processed_weekly_schema,
+)
 from fantasy_sim.data.market_history.models import MarketHistoryConfig
 
 _MOVEMENT_WEIGHT = 0.25
@@ -26,6 +29,7 @@ def normalize_market_history(
     """Build normalized per-player market priors and confidence signals."""
     if frame.is_empty():
         return pl.DataFrame(schema=NORMALIZED_MARKET_HISTORY_SCHEMA)
+    frame = ensure_processed_weekly_schema(frame)
 
     close_enabled = config.features.close_fpts
     open_enabled = config.features.open_fpts
@@ -34,9 +38,9 @@ def normalize_market_history(
 
     if close_enabled and open_enabled:
         prior_fpts_expr = pl.coalesce([pl.col("close_fpts"), pl.col("open_fpts")])
-        line_move_expr = (
-            pl.col("close_fpts").fill_null(0.0) - pl.col("open_fpts").fill_null(0.0)
-        )
+        line_move_expr = pl.when(
+            pl.col("close_fpts").is_not_null() & pl.col("open_fpts").is_not_null()
+        ).then(pl.col("close_fpts") - pl.col("open_fpts")).otherwise(0.0)
     elif close_enabled:
         prior_fpts_expr = pl.col("close_fpts")
         line_move_expr = pl.lit(0.0)
