@@ -259,6 +259,45 @@ def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(
     assert coverage["usage.route_rate"].status == "disabled"
 
 
+def test_market_history_reports_partial_for_covered_2023_only(tmp_path):
+    import polars as pl
+
+    market_dir = tmp_path / "market-history"
+    market_dir.mkdir()
+    pl.DataFrame(
+        {
+            "season": [2023],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [18.0],
+            "close_fpts": [19.0],
+            "books": [3],
+            "line_stddev": [1.0],
+            "anytime_td_prob": [0.10],
+        }
+    ).write_parquet(market_dir / "market_history_weekly_2023.parquet")
+
+    coverage = collect_signal_coverage(
+        {"market_history": {"enabled": True, "data_dir": str(market_dir)}},
+        [2022, 2023, 2024],
+    )
+
+    assert coverage["market_history"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2022, 2024],
+        note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+    )
+    assert coverage["market_history.open_fpts"].covered_seasons == [2023]
+    assert coverage["market_history.close_fpts"].covered_seasons == [2023]
+    assert coverage["market_history.dispersion"].covered_seasons == [2023]
+    assert coverage["market_history.anytime_td"].covered_seasons == [2023]
+
+
 def test_ensemble_ff_opportunity_reports_full_runtime_coverage_when_enabled():
     coverage = collect_signal_coverage(
         {

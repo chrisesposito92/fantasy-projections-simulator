@@ -633,6 +633,45 @@ def print_season_results(season_results: list[SeasonMetrics]) -> None:
         print(f"    season_mae delta: {avg_sm:+.3f}")
 
 
+def print_market_history_results(
+    season_results: list[SeasonMetrics],
+    coverage_summary: Mapping[str, SignalCoverage] | None,
+) -> None:
+    signal = (coverage_summary or {}).get("market_history")
+    if signal is None or not signal.enabled:
+        return
+
+    covered = signal.covered_seasons
+    uncovered = signal.missing_seasons
+
+    print("\n" + "=" * 68)
+    print("  MARKET HISTORY COVERED-SEASON READOUT")
+    print("=" * 68)
+    print(
+        f"  covered seasons   : {', '.join(str(season) for season in covered) or '(none)'}"
+    )
+    print(
+        f"  uncovered seasons : {', '.join(str(season) for season in uncovered) or '(none)'}"
+    )
+    print("  promotion scope   : covered_only")
+
+    covered_results = [
+        season_result
+        for season_result in season_results
+        if season_result.test_season in covered
+    ]
+    if not covered_results:
+        print("  no covered seasons; market-specific averages skipped")
+        return
+
+    avg_rc = sum(r.rank_corr_delta for r in covered_results) / len(covered_results)
+    avg_wm = sum(r.weekly_mae_delta for r in covered_results) / len(covered_results)
+    avg_sm = sum(r.season_mae_delta for r in covered_results) / len(covered_results)
+    print(f"  rank_corr delta:  {avg_rc:+.4f}")
+    print(f"  weekly_mae delta: {avg_wm:+.3f}")
+    print(f"  season_mae delta: {avg_sm:+.3f}")
+
+
 def print_weekly_results(
     all_records: list[WeeklyPlayerRecord],
     positions: list[str],
@@ -840,6 +879,7 @@ def main() -> int:
 
     # Print results
     print_season_results(all_season_metrics)
+    print_market_history_results(all_season_metrics, coverage_summary)
 
     weekly_summaries: list[WeeklyPositionSummary] | None = None
     dir_accuracy: DirectionalAccuracyResult | None = None
@@ -859,6 +899,7 @@ def main() -> int:
 
     # Save to ledger
     if args.label:
+        market_history_signal = (coverage_summary or {}).get("market_history")
         entry = LedgerEntry(
             schema_version=CURRENT_LEDGER_SCHEMA_VERSION,
             label=args.label,
@@ -871,6 +912,11 @@ def main() -> int:
             comparison_mode=comparison_mode,
             overrides=args.overrides,
             seed_mode=SEED_MODE,
+            promotion_evidence_scope=(
+                "covered_only"
+                if market_history_signal is not None and market_history_signal.enabled
+                else None
+            ),
             coverage_summary=coverage_summary,
             config_snapshot=arm_b_dict if args.overrides else defaults,
             season_results=all_season_metrics,

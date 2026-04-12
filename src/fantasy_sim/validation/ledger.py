@@ -17,7 +17,7 @@ from fantasy_sim.validation.weekly import (
 )
 
 DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[3] / "results" / "ab_ledger.json"
-CURRENT_LEDGER_SCHEMA_VERSION = 2
+CURRENT_LEDGER_SCHEMA_VERSION = 3
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -73,6 +73,7 @@ class LedgerEntry:
     schema_version: int | None = None
     comparison_mode: str | None = None
     seed_mode: str | None = None
+    promotion_evidence_scope: str | None = None
     coverage_summary: dict[str, SignalCoverage] | None = None
     weekly_summaries: list[WeeklyPositionSummary] | None = None
     directional_accuracy: DirectionalAccuracyResult | None = None
@@ -130,6 +131,7 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
         item.setdefault("schema_version", None)
         item.setdefault("comparison_mode", None)
         item.setdefault("seed_mode", None)
+        item.setdefault("promotion_evidence_scope", None)
         item["season_results"] = season_results
         item["weekly_summaries"] = weekly_summaries
         item["directional_accuracy"] = da

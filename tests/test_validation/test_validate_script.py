@@ -201,6 +201,69 @@ def test_run_season_threads_td_tendency_config_into_dual_arm_build():
     assert call_kwargs["td_tendency_config"] is arm_b_td_tendency_config
 
 
+def test_run_season_does_not_thread_market_history_config_into_build_kwargs():
+    validate = _load_validate_module()
+
+    with patch.object(validate, "simulate_games_parallel", return_value=[]), \
+         patch.object(validate, "build_games_parallel", return_value=[]) as mock_build_games_parallel, \
+         patch.object(validate, "load_actual_scores", return_value=[]), \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame(
+            [
+                {
+                    "season": 2024,
+                    "week": 1,
+                    "game_id": "2024_01_KC_BUF",
+                    "home_team": "KC",
+                    "away_team": "BUF",
+                }
+            ]
+        )
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs={
+                "pff_config": None,
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "availability_config": None,
+                "role_trend_config": None,
+                "market_history_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            arm_b_configs={
+                "pff_config": None,
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "availability_config": None,
+                "role_trend_config": None,
+                "market_history_config": object(),
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            positions=["QB"],
+            max_workers=1,
+        )
+
+    call_kwargs = mock_build_games_parallel.call_args.kwargs
+    assert "market_history_config" not in call_kwargs
+
+
 def test_run_season_prints_game_script_summary_when_profiles_are_collected():
     validate = _load_validate_module()
 
@@ -323,6 +386,66 @@ def test_print_header_renders_comparison_metadata_and_coverage_summary():
     assert "props" in printed
     assert "historical PFF coverage for 2023" in printed
     assert "Forward-only unless season parquet files exist" in printed
+
+
+def test_print_market_history_results_uses_only_covered_seasons():
+    validate = _load_validate_module()
+
+    season_results = [
+        validate.SeasonMetrics(
+            test_season=2022,
+            arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_b_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_a_weekly_mae=7.0,
+            arm_b_weekly_mae=7.0,
+            arm_a_season_mae=30.0,
+            arm_b_season_mae=30.0,
+            arm_a_calibration=0.1,
+            arm_b_calibration=0.1,
+        ),
+        validate.SeasonMetrics(
+            test_season=2023,
+            arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_b_rank_corr={"QB": 0.50, "RB": 0.50, "WR": 0.50, "TE": 0.50},
+            arm_a_weekly_mae=7.0,
+            arm_b_weekly_mae=6.5,
+            arm_a_season_mae=30.0,
+            arm_b_season_mae=29.0,
+            arm_a_calibration=0.1,
+            arm_b_calibration=0.1,
+        ),
+        validate.SeasonMetrics(
+            test_season=2024,
+            arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_b_rank_corr={"QB": 0.60, "RB": 0.60, "WR": 0.60, "TE": 0.60},
+            arm_a_weekly_mae=7.0,
+            arm_b_weekly_mae=6.0,
+            arm_a_season_mae=30.0,
+            arm_b_season_mae=28.0,
+            arm_a_calibration=0.1,
+            arm_b_calibration=0.1,
+        ),
+    ]
+    coverage_summary = {
+        "market_history": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[2022],
+            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+        )
+    }
+
+    with patch.object(validate, "print") as mock_print:
+        validate.print_market_history_results(season_results, coverage_summary)
+
+    printed = "\n".join(call.args[0] for call in mock_print.call_args_list)
+    assert "covered seasons   : 2023, 2024" in printed
+    assert "uncovered seasons : 2022" in printed
+    assert "promotion scope   : covered_only" in printed
+    assert "rank_corr delta:  +0.1500" in printed
+    assert "weekly_mae delta: -0.750" in printed
+    assert "season_mae delta: -1.500" in printed
 
 
 def test_print_header_renders_phase_two_coverage_families():

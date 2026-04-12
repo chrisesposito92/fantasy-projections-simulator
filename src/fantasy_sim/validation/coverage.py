@@ -7,10 +7,15 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import polars as pl
+
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
 DEFAULT_PFF_ROUTE_RATE_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed"
 DEFAULT_PROPS_DIR = Path.home() / ".fantasy-sim" / "pff" / "props"
 DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
+DEFAULT_MARKET_HISTORY_DIR = (
+    Path.home() / ".fantasy-sim" / "market-history" / "processed"
+)
 
 
 @dataclass
@@ -135,6 +140,54 @@ def _resolve_props_path(config: object, props_dir: str | Path | None) -> Path:
     return DEFAULT_PROPS_DIR
 
 
+def _resolve_market_history_path(
+    config: object,
+    market_history_dir: str | Path | None,
+) -> Path:
+    if market_history_dir is not None:
+        return _path_or_default(market_history_dir, DEFAULT_MARKET_HISTORY_DIR)
+
+    market_history_config = _config_section(config, "market_history_config")
+    if market_history_config is None:
+        market_history_config = _config_section(config, "market_history")
+    data_dir = (
+        _config_get(market_history_config, "data_dir", default=None)
+        if market_history_config is not None
+        else None
+    )
+    if data_dir is not None:
+        return _path_or_default(data_dir, DEFAULT_MARKET_HISTORY_DIR)
+    return DEFAULT_MARKET_HISTORY_DIR
+
+
+def _config_flag(
+    config: object,
+    config_keys: tuple[str, ...],
+    raw_path: tuple[str, ...],
+    *,
+    nested_path: tuple[str, ...],
+    default: bool,
+) -> bool:
+    for key in config_keys:
+        section = _config_section(config, key)
+        if section is None:
+            continue
+        value = _config_get(section, *nested_path, default=None)
+        if value is not None:
+            return bool(value)
+
+    value = _config_get(config, *raw_path, default=None)
+    if value is not None:
+        return bool(value)
+    return default
+
+
+def _parquet_columns(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    return set(pl.read_parquet_schema(path).keys())
+
+
 def _covered_seasons_from_any_paths(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Iterable[Path] | Path],
@@ -208,6 +261,7 @@ def collect_signal_coverage(
     cache_dir: str | Path | None = None,
     pff_dir: str | Path | None = None,
     props_dir: str | Path | None = None,
+    market_history_dir: str | Path | None = None,
 ) -> dict[str, SignalCoverage]:
     """Collect coverage status for validation signals.
 
@@ -224,6 +278,7 @@ def collect_signal_coverage(
     pff_path = _resolve_pff_path(config, pff_dir)
     route_rate_pff_path = _resolve_route_rate_pff_path(config, pff_dir)
     props_path = _resolve_props_path(config, props_dir)
+    market_history_path = _resolve_market_history_path(config, market_history_dir)
 
     props_enabled = _signal_enabled(
         config,
@@ -296,10 +351,51 @@ def collect_signal_coverage(
         ("ensemble", "ff_opportunity"),
         nested_path=("ff_opportunity",),
     )
+    market_history_enabled = _signal_enabled(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history",),
+    )
+    market_history_open_enabled = _config_flag(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history", "features", "open_fpts"),
+        nested_path=("features", "open_fpts"),
+        default=True,
+    )
+    market_history_close_enabled = _config_flag(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history", "features", "close_fpts"),
+        nested_path=("features", "close_fpts"),
+        default=True,
+    )
+    market_history_dispersion_enabled = _config_flag(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history", "features", "dispersion"),
+        nested_path=("features", "dispersion"),
+        default=True,
+    )
+    market_history_anytime_td_enabled = _config_flag(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history", "features", "anytime_td"),
+        nested_path=("features", "anytime_td"),
+        default=True,
+    )
 
     props_paths: dict[int, list[Path]] = {
         season: list(props_path.glob(f"props_{season}_week*.parquet"))
         for season in seasons
+    }
+    market_history_paths: dict[int, Path] = {
+        season: market_history_path / f"market_history_weekly_{season}.parquet"
+        for season in seasons
+    }
+    market_history_columns_by_season: dict[int, set[str]] = {
+        season: _parquet_columns(path)
+        for season, path in market_history_paths.items()
     }
     pff_required_paths_by_season: dict[int, list[Path]] = {}
     for season in seasons:
@@ -385,6 +481,48 @@ def collect_signal_coverage(
     }
 
     return {
+        "market_history": _build_signal(
+            market_history_enabled,
+            seasons,
+            _covered_seasons_from_any_paths(seasons, market_history_paths),
+            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+        ),
+        "market_history.open_fpts": _build_signal(
+            market_history_enabled and market_history_open_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if "open_fpts" in market_history_columns_by_season.get(season, set())
+            ],
+        ),
+        "market_history.close_fpts": _build_signal(
+            market_history_enabled and market_history_close_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if "close_fpts" in market_history_columns_by_season.get(season, set())
+            ],
+        ),
+        "market_history.dispersion": _build_signal(
+            market_history_enabled and market_history_dispersion_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if "line_stddev" in market_history_columns_by_season.get(season, set())
+            ],
+        ),
+        "market_history.anytime_td": _build_signal(
+            market_history_enabled and market_history_anytime_td_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if "anytime_td_prob" in market_history_columns_by_season.get(season, set())
+            ],
+        ),
         "props": _build_signal(
             props_enabled,
             seasons,
