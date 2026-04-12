@@ -70,12 +70,12 @@ def test_adjust_week_blends_covered_rows_and_recomputes_rank():
     qb = next(row for row in adjusted if row["player_id"] == "QB1")
     wr = next(row for row in adjusted if row["player_id"] == "WR1")
 
-    assert qb["fpts"] == 15.0
+    assert qb["fpts"] == 15.1
     assert qb["rank"] == 1
     assert qb["market_history_source"] == "market_history"
     assert qb["market_history_weight"] == 0.5
     assert qb["market_history_covered"] is True
-    assert qb["market_history_prior_fpts"] == 20.0
+    assert qb["market_history_prior_fpts"] == 20.25
     assert wr["fpts"] == 11.2
     assert wr["market_history_weight"] == 0.25
     assert stats.covered_rows == 2

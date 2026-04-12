@@ -97,7 +97,7 @@ class MarketHistoryProjectionAdjuster:
                 adjusted.append(row)
                 continue
 
-            prior_fpts = float(prior["prior_fpts"])
+            prior_fpts = float(prior["adjusted_prior_fpts"])
             row["market_history_source"] = "market_history"
             row["market_history_weight"] = effective_weight
             row["market_history_covered"] = True
