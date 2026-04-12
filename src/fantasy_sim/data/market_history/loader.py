@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+from polars._typing import SchemaDict
 
 from fantasy_sim.data.market_history.models import MarketHistoryConfig
 
@@ -10,7 +11,7 @@ DEFAULT_MARKET_HISTORY_PROCESSED_DIR = (
     Path.home() / ".fantasy-sim" / "market-history" / "processed"
 )
 
-PROCESSED_WEEKLY_SCHEMA: dict[str, pl.DataType] = {
+PROCESSED_WEEKLY_SCHEMA: SchemaDict = {
     "season": pl.Int64,
     "week": pl.Int64,
     "player_id": pl.Utf8,

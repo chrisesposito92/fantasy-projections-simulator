@@ -30,6 +30,85 @@ def test_normalize_market_history_builds_adjusted_prior_and_confidence():
     assert round(row["confidence_factor"], 4) == 0.7667
 
 
+def test_normalize_market_history_uses_open_fpts_when_close_is_disabled():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [16.0],
+            "close_fpts": [18.0],
+            "books": [4],
+            "line_stddev": [1.0],
+            "anytime_td_prob": [0.50],
+        }
+    )
+    config = MarketHistoryConfig(enabled=True)
+    config.features.close_fpts = False
+
+    normalized = normalize_market_history(frame, config)
+    row = normalized.row(0, named=True)
+
+    assert row["prior_fpts"] == 16.0
+    assert row["line_move"] == -16.0
+
+
+def test_normalize_market_history_uses_close_fpts_when_open_is_disabled():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [16.0],
+            "close_fpts": [18.0],
+            "books": [4],
+            "line_stddev": [1.0],
+            "anytime_td_prob": [0.50],
+        }
+    )
+    config = MarketHistoryConfig(enabled=True)
+    config.features.open_fpts = False
+
+    normalized = normalize_market_history(frame, config)
+    row = normalized.row(0, named=True)
+
+    assert row["prior_fpts"] == 18.0
+    assert row["line_move"] == 18.0
+
+
+def test_normalize_market_history_uses_zero_prior_when_both_price_flags_are_disabled():
+    frame = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "player_id": ["QB1"],
+            "full_name": ["QB One"],
+            "position": ["QB"],
+            "team": ["KC"],
+            "open_fpts": [16.0],
+            "close_fpts": [18.0],
+            "books": [4],
+            "line_stddev": [1.0],
+            "anytime_td_prob": [0.50],
+        }
+    )
+    config = MarketHistoryConfig(enabled=True)
+    config.features.open_fpts = False
+    config.features.close_fpts = False
+
+    normalized = normalize_market_history(frame, config)
+    row = normalized.row(0, named=True)
+
+    assert row["prior_fpts"] == 0.0
+    assert row["line_move"] == 0.0
+
+
 def test_normalize_market_history_filters_positions_not_in_scope():
     frame = pl.DataFrame(
         {

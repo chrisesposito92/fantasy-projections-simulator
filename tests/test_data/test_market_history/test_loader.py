@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import polars as pl
 
 from fantasy_sim.data.market_history.importer import build_market_history_cache
@@ -28,6 +26,24 @@ def _raw_week_frame(season: int, week: int, *, player_id: str = "QB1") -> pl.Dat
     )
 
 
+def _raw_week_frame_with_duplicate_rows(season: int, week: int) -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [season, season],
+            "week": [week, week],
+            "player_id": ["QB1", "QB1"],
+            "full_name": ["QB One", "QB One"],
+            "position": ["QB", "QB"],
+            "team": ["KC", "KC"],
+            "open_fpts": [18.0, 18.0],
+            "close_fpts": [19.0, 20.0],
+            "books": [3, 4],
+            "line_stddev": [1.0, 1.1],
+            "anytime_td_prob": [0.10, 0.20],
+        }
+    )
+
+
 def test_build_market_history_cache_combines_weeks_into_one_season_file(tmp_path):
     raw_root = tmp_path / "raw" / "2023"
     raw_root.mkdir(parents=True)
@@ -45,6 +61,39 @@ def test_build_market_history_cache_combines_weeks_into_one_season_file(tmp_path
     assert output_path.name == "market_history_weekly_2023.parquet"
     assert frame["week"].to_list() == [1, 2]
     assert frame["player_id"].to_list() == ["QB1", "QB1"]
+
+
+def test_build_market_history_cache_collapses_duplicate_rows(tmp_path):
+    raw_root = tmp_path / "raw" / "2023"
+    raw_root.mkdir(parents=True)
+    _raw_week_frame_with_duplicate_rows(2023, 1).write_parquet(
+        raw_root / "week01.parquet"
+    )
+
+    output_path = build_market_history_cache(
+        2023,
+        raw_dir=tmp_path / "raw",
+        processed_dir=tmp_path / "processed",
+    )
+
+    frame = pl.read_parquet(output_path)
+
+    assert frame.height == 1
+    assert frame["close_fpts"].to_list() == [20.0]
+    assert frame["books"].to_list() == [4]
+
+
+def test_build_market_history_cache_writes_schema_stable_empty_file(tmp_path):
+    output_path = build_market_history_cache(
+        2023,
+        raw_dir=tmp_path / "raw",
+        processed_dir=tmp_path / "processed",
+    )
+
+    frame = pl.read_parquet(output_path)
+
+    assert frame.is_empty()
+    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
 
 
 def test_loader_returns_empty_processed_schema_when_file_is_missing(tmp_path):

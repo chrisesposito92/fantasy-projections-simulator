@@ -40,13 +40,15 @@ def build_market_history_cache(
                 pl.col("line_stddev").cast(pl.Float64),
                 pl.col("anytime_td_prob").cast(pl.Float64),
             ]
-        ).unique(subset=["season", "week", "player_id"], keep="last")
+        )
         frames.append(frame)
 
     processed_root.mkdir(parents=True, exist_ok=True)
     if frames:
-        combined = pl.concat(frames, how="diagonal_relaxed").sort(
-            ["season", "week", "player_id"]
+        combined = (
+            pl.concat(frames, how="diagonal_relaxed")
+            .unique(subset=["season", "week", "player_id"], keep="last")
+            .sort(["season", "week", "player_id"])
         )
     else:
         combined = pl.DataFrame(schema=PROCESSED_WEEKLY_SCHEMA)
