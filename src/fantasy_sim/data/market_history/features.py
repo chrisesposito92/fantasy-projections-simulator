@@ -39,10 +39,10 @@ def normalize_market_history(
         )
     elif close_enabled:
         prior_fpts_expr = pl.col("close_fpts")
-        line_move_expr = pl.col("close_fpts").fill_null(0.0)
+        line_move_expr = pl.lit(0.0)
     elif open_enabled:
         prior_fpts_expr = pl.col("open_fpts")
-        line_move_expr = pl.col("open_fpts").fill_null(0.0) * -1.0
+        line_move_expr = pl.lit(0.0)
     else:
         prior_fpts_expr = pl.lit(0.0)
         line_move_expr = pl.lit(0.0)
