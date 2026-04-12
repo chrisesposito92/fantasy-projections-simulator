@@ -66,9 +66,15 @@ Pipeline: Data → Models → Engine → Scoring → Output
 8. **Overrides** (`overrides/`) — Player/team override engine with share redistribution, fuzzy name matching
 9. **CLI** (`cli.py`) — Click-based with `demo`, `week`, `season`, `game`, `player`, `backtest` commands
 
-### Adjustment Pipeline Order (in `GameContextBuilder.build_game()`)
+### Adjustment Pipeline Order
 
-base PBP model → vegas (pace + pass rate) → matchup → team context + tier blend → normalize → coverage → DST baseline → kicker → weather → props (player-level) → user overrides → normalize
+`GameContextBuilder.build_game()`:
+
+base PBP model → vegas (pace + pass rate) → availability → normalize → usage → normalize → props → normalize → matchup → team context + tier blend → normalize → coverage → DST baseline → kicker → TD tendency → weather
+
+Post-sim projection order:
+
+role_trend → ensemble.ff_opportunity
 
 ### Three-Layer Cache
 
@@ -135,12 +141,12 @@ Six active layers in `data/pff/`, configured in `defaults.yaml` under `pff:`. CL
 
 - Data: nflverse `load_schedules()` for spread/total (VEG-01/02), The Odds API for player props (VEG-03, requires API key)
 - League stats: `ITT_LEAGUE_AVG=21.97`, `ITT_LEAGUE_STD=3.67`, `SPREAD_STD=5.72` (854 games 2022-2024)
-- Props cache: parquet at `~/.fantasy-sim/props/` keyed by (season, week)
+- Props cache: parquet at `~/.fantasy-sim/pff/props/` keyed by (season, week)
 - A/B modes: `--mode vegas`, `--mode vegas+spread`, `--mode vegas+props`
 
 ## Current State
 
-All development phases complete through Vegas Engine. Key completed features:
+All development phases complete through the Phase 2 accuracy initiative. Key completed features:
 - Core simulation engine with play-by-play resolution and Monte Carlo runner
 - Player models from PBP data with roster separation (stats vs team assignment)
 - Red zone accuracy (TD gates, per-player RZ catch rates, QB fumble check)
@@ -153,6 +159,9 @@ All development phases complete through Vegas Engine. Key completed features:
 - Weather engine (wind/temp/precipitation from Open-Meteo)
 - Vegas engine: ITT pace scaling (VEG-01), spread-based pass/run conditioning (VEG-02)
 - Player props engine: Bayesian blending from The Odds API with name crosswalk (VEG-03)
+- Phase 1 promoted: post-sim `ff_opportunity` ensemble for QB/RB/WR/TE
+- Phase 2 promoted: `availability.enabled=true` with `availability.injuries.enabled=false`
+- Phase 2 kept off: `role_trend.enabled=false`
 - Weekly + season A/B validation harnesses with persistent ledgers
 
 ## Style

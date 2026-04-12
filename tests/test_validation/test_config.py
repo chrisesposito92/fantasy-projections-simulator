@@ -129,11 +129,13 @@ class TestBuildEngineConfigs:
         assert configs["game_script_config"] is not None
         assert configs["game_script_config"].enabled is True
 
-    def test_defaults_keep_availability_and_role_trend_disabled(self):
+    def test_defaults_enable_promoted_availability_but_keep_role_trend_disabled(self):
         defaults = load_defaults()
         configs = build_engine_configs(defaults)
 
-        assert configs["availability_config"] is None
+        assert configs["availability_config"] is not None
+        assert configs["availability_config"].enabled is True
+        assert configs["availability_config"].injuries.enabled is False
         assert configs["role_trend_config"] is None
 
     def test_disabled_engine_returns_none(self):

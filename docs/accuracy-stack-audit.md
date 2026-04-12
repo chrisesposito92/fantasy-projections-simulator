@@ -39,8 +39,9 @@ Active in `config/defaults.yaml` as of this audit:
 - `vegas.props.enabled: true`
 - `usage.enabled: true`
 - `usage.cpoe.enabled: true`
-- `availability.enabled: false`
+- `availability.enabled: true`
 - `availability.positions: [QB, RB, WR, TE]`
+- `availability.injuries.enabled: false`
 - `role_trend.enabled: false`
 - `role_trend.positions: [QB, RB, WR, TE]`
 - `game_script.enabled: true`
@@ -253,15 +254,34 @@ the Phase 1 promotion artifact.
 
 ## Phase 2 Implementation Notes
 
-- `availability` is implemented but default-off
+- `availability` is implemented and promoted for v1
 - `role_trend` is implemented but default-off
 - both families gate by `positions` lists, with QB/RB/WR/TE as the default set
 - `availability` runs before `usage` in `GameContextBuilder`
 - `role_trend` runs post-sim before `ensemble.ff_opportunity`
 - the v1 availability rule is explicit-signal-first:
-  - injuries can create hard inactive or limited decisions
+  - injuries are implemented but currently default-off after marginal validation
   - QB depth charts can create hard starter / non-starter decisions
   - usage fallback is soft-only
+
+Promoted v1 default shape:
+
+- `availability.enabled: true`
+- `availability.injuries.enabled: false`
+- `availability.depth_charts.enabled: true`
+- `availability.usage_fallback.enabled: true`
+- `availability.positions: [QB, RB, WR, TE]`
+- `role_trend.enabled: false`
+
+Promotion artifact:
+
+- label: `phase-2-availability-no-injuries-confirm`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- averages:
+  - `rank_corr delta: +0.0032`
+  - `weekly_mae delta: -0.016`
+  - `season_mae delta: -0.269`
 
 v1 rule for evidence interpretation:
 
@@ -282,8 +302,8 @@ The current validation path is now wired to record new runs with:
 
 Phase 2 manual validation status:
 
-- no Phase 2 A/B commands were run as part of this docs task
-- the user owns the manual A/B validation pass for this branch
+- the user owned and completed the Phase 2 manual A/B validation pass
+- the current promotion record is `phase-2-availability-no-injuries-confirm`
 
 This branch did not regenerate or backfill the historical ledger files, so the
 older rows remain historical evidence rather than newly produced outputs.

@@ -255,10 +255,10 @@ ensemble:
     enabled: false
 
 availability:
-  enabled: false
+  enabled: true
   positions: [QB, RB, WR, TE]
   injuries:
-    enabled: true
+    enabled: false
     hard_out_statuses: [Out, Doubtful, Suspended, Injured Reserve]
     limited_statuses: [Questionable]
     limited_factor: 0.75

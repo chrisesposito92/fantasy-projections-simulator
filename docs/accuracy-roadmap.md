@@ -227,8 +227,7 @@ success metrics and tie-breaker.
 
 ### Next Priority
 
-Phase 2 is now implemented in code and handed off for user-owned manual A/B
-validation.
+Phase 2 is now implemented and promoted in v1.
 
 `ff_rankings` is still available as future ensemble work, but it is not needed
 to justify the promoted Phase 1 defaults.
@@ -241,8 +240,8 @@ phase instead of being folded into the Phase 2 v1 scope.
 
 ### Status
 
-Implemented in v1 form on this branch. Manual A/B validation is explicitly
-owned by the user and is the remaining promotion step.
+Implemented and promoted in v1. Manual A/B validation was user-owned and the
+promotion decision is now based on the confirmed marginal validation artifact.
 
 This phase now ships as a hybrid design:
 
@@ -253,6 +252,32 @@ This phase now ships as a hybrid design:
 
 This keeps explicit starter / inactive decisions separate from softer
 same-season trend nudges.
+
+### Promoted Phase 2 Defaults
+
+The promoted v1 default shape is:
+
+- `availability.enabled: true`
+- `availability.injuries.enabled: false`
+- `availability.depth_charts.enabled: true`
+- `availability.usage_fallback.enabled: true`
+- `availability.positions: [QB, RB, WR, TE]`
+- `role_trend.enabled: false`
+
+Promotion artifact:
+
+- label: `phase-2-availability-no-injuries-confirm`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `availability=full(2022,2023,2024)`
+  - `availability.injuries=disabled`
+  - `availability.depth_charts=full(2022,2023,2024)`
+  - `availability.usage_fallback=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0032`
+  - `weekly_mae delta: -0.016`
+  - `season_mae delta: -0.269`
 
 ### Why High Priority
 
@@ -316,9 +341,8 @@ folded into `usage.*`.
 
 ### Manual Validation Handoff
 
-The user owns the Phase 2 A/B runs. This phase should not be considered
-promoted until the user completes the manual validation pass and records the
-decision artifact.
+The user owned the Phase 2 A/B runs and produced the promotion artifact above.
+Future planners should treat that artifact as the Phase 2 decision record.
 
 ## Phase 3: Historical Market Intelligence
 
