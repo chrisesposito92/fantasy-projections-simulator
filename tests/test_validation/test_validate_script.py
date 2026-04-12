@@ -856,6 +856,13 @@ def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline
     )
     defaults = {"scoring": {}}
     coverage_summary = {
+        "market_history": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2024],
+            missing_seasons=[],
+            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+        ),
         "pff": SignalCoverage(
             enabled=True,
             status="full",
@@ -864,7 +871,17 @@ def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline
             note=None,
         )
     }
-    season_result = SimpleNamespace(test_season=2024)
+    season_result = validate.SeasonMetrics(
+        test_season=2024,
+        arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+        arm_b_rank_corr={"QB": 0.50, "RB": 0.50, "WR": 0.50, "TE": 0.50},
+        arm_a_weekly_mae=7.0,
+        arm_b_weekly_mae=6.5,
+        arm_a_season_mae=30.0,
+        arm_b_season_mae=29.0,
+        arm_a_calibration=0.1,
+        arm_b_calibration=0.1,
+    )
 
     with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
          patch.object(validate, "load_defaults", return_value=defaults), \
@@ -899,4 +916,5 @@ def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline
     assert entry.schema_version == validate.CURRENT_LEDGER_SCHEMA_VERSION
     assert entry.comparison_mode == "marginal_lift"
     assert entry.seed_mode == "deterministic_game_id_crc32_shared_between_arms"
+    assert entry.promotion_evidence_scope == "covered_only"
     assert entry.coverage_summary is coverage_summary
