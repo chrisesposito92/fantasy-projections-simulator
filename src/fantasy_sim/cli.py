@@ -8,6 +8,7 @@ from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.ensemble import load_ensemble_config
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.data.market_history import load_market_history_config
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.role_trend.config import load_role_trend_config
 from fantasy_sim.data.weather.config import load_weather_config
@@ -24,6 +25,7 @@ from fantasy_sim.models.distributions import (
 )
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_kicker_projections
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
@@ -173,10 +175,19 @@ def _make_role_trend_adjuster(defaults: dict) -> RoleTrendProjectionAdjuster | N
     return RoleTrendProjectionAdjuster(role_trend_config)
 
 
+def _make_market_history_adjuster(defaults: dict) -> MarketHistoryProjectionAdjuster | None:
+    """Create the market-history adjuster when the signal is enabled."""
+    market_history_config = load_market_history_config(defaults)
+    if not market_history_config.enabled:
+        return None
+    return MarketHistoryProjectionAdjuster(market_history_config)
+
+
 def _maybe_blend_player_projs(
     player_projs: list[dict],
     *,
     role_trend_adjuster: RoleTrendProjectionAdjuster | None = None,
+    market_history_adjuster: MarketHistoryProjectionAdjuster | None = None,
     ensembler: FfOpportunityProjectionEnsembler | None,
     season: int,
     week: int,
@@ -187,6 +198,7 @@ def _maybe_blend_player_projs(
         season=season,
         week=week,
         role_trend_adjuster=role_trend_adjuster,
+        market_history_adjuster=market_history_adjuster,
         ensembler=ensembler,
     )
 
@@ -633,6 +645,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
+    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -715,6 +728,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                 player_batch = _maybe_blend_player_projs(
                     player_batch,
                     role_trend_adjuster=role_trend_adjuster,
+                    market_history_adjuster=market_history_adjuster,
                     ensembler=ensembler,
                     season=season,
                     week=week_num,
@@ -789,6 +803,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
+    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -879,6 +894,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                     player_batch = _maybe_blend_player_projs(
                         player_batch,
                         role_trend_adjuster=role_trend_adjuster,
+                        market_history_adjuster=market_history_adjuster,
                         ensembler=ensembler,
                         season=season_year,
                         week=wk,
@@ -992,6 +1008,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         defaults=defaults,
     )
     role_trend_adjuster = None if detail or demo else _make_role_trend_adjuster(defaults)
+    market_history_adjuster = None if detail or demo else _make_market_history_adjuster(defaults)
     ensembler = None if detail or demo else _make_ensembler(defaults)
 
     if sims is None:
@@ -1061,6 +1078,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         player_projs = _maybe_blend_player_projs(
             player_projs,
             role_trend_adjuster=role_trend_adjuster,
+            market_history_adjuster=market_history_adjuster,
             ensembler=ensembler,
             season=season,
             week=week_num,
@@ -1327,6 +1345,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     scoring_config = resolve_scoring(defaults["scoring"], scoring)
     ensemble_config = load_ensemble_config(defaults)
     role_trend_config = load_role_trend_config(defaults)
+    market_history_config = load_market_history_config(defaults)
     pff_config = load_pff_config(defaults)
     if pff is True:
         pff_config.enabled = True
@@ -1357,6 +1376,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         vegas_config=vegas_config,
         usage_config=usage_config,
         role_trend_config=role_trend_config,
+        market_history_config=market_history_config,
         ensemble_config=ensemble_config,
     )
     result = bt.run(scoring_config)

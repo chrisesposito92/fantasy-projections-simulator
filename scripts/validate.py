@@ -29,6 +29,7 @@ from fantasy_sim.data.ensemble import EnsembleConfig, load_ensemble_config
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
@@ -221,16 +222,26 @@ def run_season(
         if arm_b_configs.get("role_trend_config") is not None
         else None
     )
+    arm_a_market_history = (
+        MarketHistoryProjectionAdjuster(arm_a_configs["market_history_config"])
+        if arm_a_configs.get("market_history_config") is not None
+        else None
+    )
+    arm_b_market_history = (
+        MarketHistoryProjectionAdjuster(arm_b_configs["market_history_config"])
+        if arm_b_configs.get("market_history_config") is not None
+        else None
+    )
 
     arm_a_build_configs = {
         key: value
         for key, value in arm_a_configs.items()
-        if key != "role_trend_config"
+        if key not in {"role_trend_config", "market_history_config"}
     }
     arm_b_build_configs = {
         key: value
         for key, value in arm_b_configs.items()
-        if key != "role_trend_config"
+        if key not in {"role_trend_config", "market_history_config"}
     }
 
     loader = DataLoader()
@@ -310,6 +321,7 @@ def run_season(
                 season=test_season,
                 week=spec.week,
                 role_trend_adjuster=arm_b_role_trend,
+                market_history_adjuster=arm_b_market_history,
                 ensembler=arm_b_ensembler,
             )
             for proj in projections:
@@ -431,11 +443,15 @@ def run_season(
             spec = spec_by_id_a[result.game_id] if is_arm_a else spec_by_id_b[result.game_id]
             ensembler = arm_a_ensembler if is_arm_a else arm_b_ensembler
             role_trend_adjuster = arm_a_role_trend if is_arm_a else arm_b_role_trend
+            market_history_adjuster = (
+                arm_a_market_history if is_arm_a else arm_b_market_history
+            )
             projections = apply_projection_layers(
                 result.projections,
                 season=test_season,
                 week=spec.week,
                 role_trend_adjuster=role_trend_adjuster,
+                market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
             )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj

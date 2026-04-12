@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 
+from fantasy_sim.data.market_history.config import load_market_history_config
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_vegas_config, load_props_config
@@ -75,7 +76,8 @@ def build_engine_configs(config: dict) -> dict:
 
     Returns a dict with keys: pff_config, weather_config, vegas_config,
     props_config, usage_config, availability_config, role_trend_config,
-    game_script_config, goal_line_concentration_config, td_tendency_config.
+    market_history_config, game_script_config,
+    goal_line_concentration_config, td_tendency_config.
     Each value is the config dataclass if enabled, or None if disabled.
     """
     pff = load_pff_config(config)
@@ -83,11 +85,12 @@ def build_engine_configs(config: dict) -> dict:
     vegas = load_vegas_config(config)
     props = load_props_config(config)
     usage = load_usage_config(config)
+    availability = load_availability_config(config)
+    role_trend = load_role_trend_config(config)
+    market_history = load_market_history_config(config)
     game_script = load_game_script_config(config)
     goal_line_concentration = load_goal_line_concentration_config(config)
     td_tendency = load_td_tendency_config(config)
-    availability = load_availability_config(config)
-    role_trend = load_role_trend_config(config)
     return {
         "pff_config": pff if pff.enabled else None,
         "weather_config": weather if weather.enabled else None,
@@ -96,6 +99,7 @@ def build_engine_configs(config: dict) -> dict:
         "usage_config": usage if usage.enabled else None,
         "availability_config": availability if availability.enabled else None,
         "role_trend_config": role_trend if role_trend.enabled else None,
+        "market_history_config": market_history if market_history.enabled else None,
         "game_script_config": game_script if game_script.enabled else None,
         "goal_line_concentration_config": (
             goal_line_concentration if goal_line_concentration.enabled else None
@@ -114,6 +118,7 @@ def build_bare_engine_configs() -> dict:
         "usage_config": None,
         "availability_config": None,
         "role_trend_config": None,
+        "market_history_config": None,
         "game_script_config": None,
         "goal_line_concentration_config": None,
         "td_tendency_config": None,
