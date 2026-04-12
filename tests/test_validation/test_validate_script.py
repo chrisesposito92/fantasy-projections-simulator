@@ -448,6 +448,154 @@ def test_print_market_history_results_uses_only_covered_seasons():
     assert "season_mae delta: -1.500" in printed
 
 
+def test_main_uses_top_level_market_history_coverage_for_promotion_scope():
+    validate = _load_validate_module()
+
+    class _FakeFuture:
+        def __init__(self, result):
+            self._result = result
+
+        def result(self):
+            return self._result
+
+    class _FakeProcessPoolExecutor:
+        def __init__(self, max_workers):
+            self.max_workers = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, **kwargs):
+            return _FakeFuture(fn(**kwargs))
+
+    args = SimpleNamespace(
+        baseline="defaults",
+        overrides=[],
+        sims=50,
+        seasons=[2023, 2024],
+        scoring="ppr",
+        training_years=4,
+        positions=["QB"],
+        label="market-history-partial-evidence",
+        show_ledger=False,
+        workers=1,
+        no_cache=False,
+    )
+    defaults = {"scoring": {}}
+    coverage_summary = {
+        "market_history": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2024],
+            missing_seasons=[2023],
+            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+        ),
+        "market_history.open_fpts": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.close_fpts": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.movement": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.dispersion": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.anytime_td": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2024],
+            missing_seasons=[2023],
+            note=None,
+        ),
+    }
+    season_results = [
+        validate.SeasonMetrics(
+            test_season=2023,
+            arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_b_rank_corr={"QB": 0.50, "RB": 0.50, "WR": 0.50, "TE": 0.50},
+            arm_a_weekly_mae=7.0,
+            arm_b_weekly_mae=6.5,
+            arm_a_season_mae=30.0,
+            arm_b_season_mae=29.0,
+            arm_a_calibration=0.1,
+            arm_b_calibration=0.1,
+        ),
+        validate.SeasonMetrics(
+            test_season=2024,
+            arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+            arm_b_rank_corr={"QB": 0.60, "RB": 0.60, "WR": 0.60, "TE": 0.60},
+            arm_a_weekly_mae=7.0,
+            arm_b_weekly_mae=6.0,
+            arm_a_season_mae=30.0,
+            arm_b_season_mae=28.0,
+            arm_a_calibration=0.1,
+            arm_b_calibration=0.1,
+        ),
+    ]
+
+    with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
+         patch.object(validate, "load_defaults", return_value=defaults), \
+         patch.object(validate, "resolve_scoring", return_value={}), \
+         patch.object(validate, "build_engine_configs", return_value={"td_tendency_config": object()}), \
+         patch.object(validate, "collect_signal_coverage", return_value=coverage_summary, create=True), \
+         patch.object(validate, "print_header"), \
+         patch.object(validate, "run_season", side_effect=[
+             {
+                 "season_metrics": season_results[0],
+                 "weekly_records": [],
+                 "arm_a_projections": None,
+                 "arm_a_meta": None,
+             },
+             {
+                 "season_metrics": season_results[1],
+                 "weekly_records": [],
+                 "arm_a_projections": None,
+                 "arm_a_meta": None,
+             },
+         ]), \
+         patch("concurrent.futures.ProcessPoolExecutor", _FakeProcessPoolExecutor), \
+         patch("concurrent.futures.as_completed", side_effect=lambda futures: futures), \
+         patch.object(validate, "print_season_results"), \
+         patch.object(validate, "print_weekly_results", return_value=(None, None)), \
+         patch.object(validate, "load_ledger", return_value=[]), \
+         patch.object(validate, "save_ledger") as mock_save_ledger, \
+         patch.object(validate, "format_ledger_table", return_value="table"), \
+         patch.object(validate, "print") as mock_print:
+        assert validate.main() == 0
+
+    saved_entries = mock_save_ledger.call_args.args[1]
+    entry = saved_entries[0]
+    assert entry.promotion_evidence_scope == "covered_only"
+
+    printed = "\n".join(call.args[0] for call in mock_print.call_args_list)
+    assert "covered seasons   : 2024" in printed
+    assert "uncovered seasons : 2023" in printed
+    assert "rank_corr delta:  +0.2000" in printed
+    assert "weekly_mae delta: -1.000" in printed
+    assert "season_mae delta: -2.000" in printed
+
+
 def test_print_header_renders_phase_two_coverage_families():
     validate = _load_validate_module()
     args = SimpleNamespace(

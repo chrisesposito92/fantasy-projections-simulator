@@ -188,6 +188,21 @@ def _parquet_columns(path: Path) -> set[str]:
     return set(pl.read_parquet_schema(path).keys())
 
 
+def _intersect_enabled_coverage(
+    seasons: Iterable[int],
+    signals: Iterable[SignalCoverage],
+) -> list[int]:
+    season_list = list(seasons)
+    enabled_signals = [signal for signal in signals if signal.enabled]
+    if not enabled_signals:
+        return []
+
+    covered = set(season_list)
+    for signal in enabled_signals:
+        covered &= set(signal.covered_seasons)
+    return [season for season in season_list if season in covered]
+
+
 def _covered_seasons_from_any_paths(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Iterable[Path] | Path],
@@ -377,6 +392,13 @@ def collect_signal_coverage(
         nested_path=("features", "dispersion"),
         default=True,
     )
+    market_history_movement_enabled = _config_flag(
+        config,
+        ("market_history_config", "market_history"),
+        ("market_history", "features", "movement"),
+        nested_path=("features", "movement"),
+        default=True,
+    )
     market_history_anytime_td_enabled = _config_flag(
         config,
         ("market_history_config", "market_history"),
@@ -480,13 +502,7 @@ def collect_signal_coverage(
         for season in seasons
     }
 
-    return {
-        "market_history": _build_signal(
-            market_history_enabled,
-            seasons,
-            _covered_seasons_from_any_paths(seasons, market_history_paths),
-            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
-        ),
+    market_history_signals = {
         "market_history.open_fpts": _build_signal(
             market_history_enabled and market_history_open_enabled,
             seasons,
@@ -503,6 +519,18 @@ def collect_signal_coverage(
                 season
                 for season in seasons
                 if "close_fpts" in market_history_columns_by_season.get(season, set())
+            ],
+        ),
+        "market_history.movement": _build_signal(
+            market_history_enabled and market_history_movement_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if {
+                    "open_fpts",
+                    "close_fpts",
+                }.issubset(market_history_columns_by_season.get(season, set()))
             ],
         ),
         "market_history.dispersion": _build_signal(
@@ -523,6 +551,16 @@ def collect_signal_coverage(
                 if "anytime_td_prob" in market_history_columns_by_season.get(season, set())
             ],
         ),
+    }
+    market_history_signals["market_history"] = _build_signal(
+        market_history_enabled,
+        seasons,
+        _intersect_enabled_coverage(seasons, market_history_signals.values()),
+        note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+    )
+
+    return {
+        **market_history_signals,
         "props": _build_signal(
             props_enabled,
             seasons,
