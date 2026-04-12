@@ -227,12 +227,57 @@ success metrics and tie-breaker.
 
 ### Next Priority
 
-Phase 2 remains the next implementation phase.
+Phase 2 is now implemented and promoted in v1.
 
 `ff_rankings` is still available as future ensemble work, but it is not needed
 to justify the promoted Phase 1 defaults.
 
+The next implementation priority after Phase 2 is now Phase 3, with tracking
+and participation expansion still intentionally deferred to the later tracking
+phase instead of being folded into the Phase 2 v1 scope.
+
 ## Phase 2: Same-Season Role And Availability Engine
+
+### Status
+
+Implemented and promoted in v1. Manual A/B validation was user-owned and the
+promotion decision is now based on the confirmed marginal validation artifact.
+
+This phase now ships as a hybrid design:
+
+- `availability` is a pre-usage roster mutation layer in `GameContextBuilder`
+- `role_trend` is a post-sim weekly projection adjustment layer
+- `role_trend` runs before the post-sim `ensemble` blend
+- both config families gate activation by explicit `positions` lists
+
+This keeps explicit starter / inactive decisions separate from softer
+same-season trend nudges.
+
+### Promoted Phase 2 Defaults
+
+The promoted v1 default shape is:
+
+- `availability.enabled: true`
+- `availability.injuries.enabled: false`
+- `availability.depth_charts.enabled: true`
+- `availability.usage_fallback.enabled: true`
+- `availability.positions: [QB, RB, WR, TE]`
+- `role_trend.enabled: false`
+
+Promotion artifact:
+
+- label: `phase-2-availability-no-injuries-confirm`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `availability=full(2022,2023,2024)`
+  - `availability.injuries=disabled`
+  - `availability.depth_charts=full(2022,2023,2024)`
+  - `availability.usage_fallback=full(2022,2023,2024)`
+- averages:
+  - `rank_corr delta: +0.0032`
+  - `weekly_mae delta: -0.016`
+  - `season_mae delta: -0.269`
 
 ### Why High Priority
 
@@ -258,6 +303,9 @@ Locally available or verified inputs:
 - `role_trend`
 - `availability`
 
+These are now implemented as distinct top-level families rather than being
+folded into `usage.*`.
+
 ### Core Responsibilities
 
 - detect rising/falling role before the season totals fully catch up
@@ -265,28 +313,36 @@ Locally available or verified inputs:
 - reduce stale carry/target assumptions for players losing role
 - improve same-week starter selection and availability assumptions
 
-### Suggested v1 Scope
+### Implemented v1 Scope
 
-Focus on QB/WR first:
+- role-trend adjustments for QB/RB/WR/TE
+- conservative availability decisions for QB/RB/WR/TE
+- per-position enablement via `availability.positions` and `role_trend.positions`
+- explicit-signal-first availability:
+  - injuries can create hard inactive or limited decisions
+  - QB depth charts can create starter / non-starter decisions
+  - usage fallback is soft-only
+- post-sim `role_trend` adjustment before `ensemble.ff_opportunity`
 
-- QB starter certainty
-- WR route/target trend acceleration
-- WR injury return ramp
-- WR depth-chart promotion / demotion
+### Implemented Design
 
-Then extend to:
+- `availability` handles same-week player availability before downstream usage
+  refinement, then re-normalizes roster shares
+- `role_trend` adjusts weekly projections after simulation and before ensemble
+- the split is intentional: availability owns inactive / limited / starter
+  logic, while role trend owns directional projection drift
 
-- RB committee drift
-- TE route participation drift
+### Deferred From Phase 2 v1
 
-### Planning Notes
+- participation/tracking-driven hard decisions
+- non-QB hard starter / promotion logic from depth charts alone
+- broader route-participation and charting features that belong in Phase 4
+- any attempt to let usage-only evidence create inactive or starter-out calls
 
-- This should remain separate from the existing `usage` block
-- It is broader than snap-share blending and should not be forced into `usage.*`
-- A future planning session should decide whether adjustments are:
-  - roster-share mutations
-  - final-week projection overlays
-  - or a hybrid
+### Manual Validation Handoff
+
+The user owned the Phase 2 A/B runs and produced the promotion artifact above.
+Future planners should treat that artifact as the Phase 2 decision record.
 
 ## Phase 3: Historical Market Intelligence
 
@@ -372,6 +428,8 @@ Verified loaders:
 
 - keep this separate from `usage`
 - design as a tracking/charting layer with its own feature registry and coverage reporting
+- this is now the home for the deferred participation/tracking expansion that
+  Phase 2 deliberately did not absorb
 
 ## Phase 5: PFF Granularity V2
 
@@ -482,7 +540,8 @@ Reason:
 ### Then
 
 - Phase 3 if historical market data can be acquired cleanly
-- Phase 4 and Phase 5 as deeper model expansion tracks
+- Phase 4 as the deferred participation / tracking expansion track
+- Phase 5 as the deeper PFF granularity track
 
 ### Last
 
@@ -504,9 +563,9 @@ The roadmap is successful if future phases produce:
 
 If only one or two follow-up planning sessions are opened next, the best order is:
 
-1. Phase 0: validation integrity and coverage accounting
-2. Phase 1: external fantasy priors and opportunity ensemble
-3. Phase 2: same-season role and availability engine
+1. User-owned manual A/B validation for Phase 2
+2. Phase 3: historical market intelligence
+3. Phase 4: tracking and charting expansion
 
 ## Research Anchors
 

@@ -29,6 +29,8 @@ from fantasy_sim.data.ensemble import EnsembleConfig, load_ensemble_config
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.projection_layers import apply_projection_layers
+from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
 from fantasy_sim.validation.config import (
@@ -209,6 +211,27 @@ def run_season(
         )
         else None
     )
+    arm_a_role_trend = (
+        RoleTrendProjectionAdjuster(arm_a_configs["role_trend_config"])
+        if arm_a_configs.get("role_trend_config") is not None
+        else None
+    )
+    arm_b_role_trend = (
+        RoleTrendProjectionAdjuster(arm_b_configs["role_trend_config"])
+        if arm_b_configs.get("role_trend_config") is not None
+        else None
+    )
+
+    arm_a_build_configs = {
+        key: value
+        for key, value in arm_a_configs.items()
+        if key != "role_trend_config"
+    }
+    arm_b_build_configs = {
+        key: value
+        for key, value in arm_b_configs.items()
+        if key != "role_trend_config"
+    }
 
     loader = DataLoader()
     schedules = loader.load_schedules([test_season])
@@ -259,7 +282,7 @@ def run_season(
         build_results = build_games_parallel(
             game_args, cache_dir=loader.cache_dir,
             max_workers=max_workers, dual_arm=False,
-            **arm_b_configs,
+            **arm_b_build_configs,
         )
         for r in build_results:
             if r["status"] != "ok":
@@ -282,13 +305,13 @@ def run_season(
         spec_by_id_b = {s.game_id: s for s in specs_b}
         for result in sim_b:
             spec = spec_by_id_b[result.game_id]
-            projections = result.projections
-            if arm_b_ensembler is not None:
-                projections, _ = arm_b_ensembler.blend_week(
-                    projections,
-                    season=test_season,
-                    week=spec.week,
-                )
+            projections = apply_projection_layers(
+                result.projections,
+                season=test_season,
+                week=spec.week,
+                role_trend_adjuster=arm_b_role_trend,
+                ensembler=arm_b_ensembler,
+            )
             for proj in projections:
                 pid = proj["player_id"]
                 arm_b_proj[pid][spec.week] = proj["fpts"]
@@ -313,6 +336,7 @@ def run_season(
                 weather_config=arm_b_configs.get("weather_config"),
                 vegas_config=arm_b_configs.get("vegas_config"),
                 props_config=arm_b_configs.get("props_config"),
+                availability_config=arm_b_configs.get("availability_config"),
                 usage_config=arm_b_configs.get("usage_config"),
                 game_script_config=arm_b_configs.get("game_script_config"),
                 goal_line_concentration_config=arm_b_configs.get(
@@ -357,12 +381,12 @@ def run_season(
             print(f"  [{test_season}] Building {len(game_args)} Arm A game contexts...", flush=True)
             build_a = build_games_parallel(
                 game_args, cache_dir=loader.cache_dir,
-                max_workers=max_workers, dual_arm=False, **arm_a_configs,
+                max_workers=max_workers, dual_arm=False, **arm_a_build_configs,
             )
             print(f"  [{test_season}] Building {len(game_args)} Arm B game contexts...", flush=True)
             build_b = build_games_parallel(
                 game_args, cache_dir=loader.cache_dir,
-                max_workers=max_workers, dual_arm=False, **arm_b_configs,
+                max_workers=max_workers, dual_arm=False, **arm_b_build_configs,
             )
 
             specs_a = []
@@ -406,13 +430,14 @@ def run_season(
             is_arm_a = result.metadata.get("arm") == "a"
             spec = spec_by_id_a[result.game_id] if is_arm_a else spec_by_id_b[result.game_id]
             ensembler = arm_a_ensembler if is_arm_a else arm_b_ensembler
-            projections = result.projections
-            if ensembler is not None:
-                projections, _ = ensembler.blend_week(
-                    projections,
-                    season=test_season,
-                    week=spec.week,
-                )
+            role_trend_adjuster = arm_a_role_trend if is_arm_a else arm_b_role_trend
+            projections = apply_projection_layers(
+                result.projections,
+                season=test_season,
+                week=spec.week,
+                role_trend_adjuster=role_trend_adjuster,
+                ensembler=ensembler,
+            )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
             meta_dict = arm_a_meta if is_arm_a else arm_b_meta
             for proj in projections:

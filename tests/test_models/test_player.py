@@ -154,6 +154,18 @@ class TestTeamRoster:
         with pytest.raises(ValueError, match="No QB found on roster for T"):
             roster.get_starting_qb()
 
+    def test_get_starting_qb_falls_back_to_zero_share_qb_when_needed(self):
+        qb = PlayerModel(
+            "QB1",
+            "Quarterback",
+            "QB",
+            "T",
+            PlayerUsage(snap_share=0.0),
+            PlayerOutcomes(),
+        )
+        roster = TeamRoster(team="T", players=[qb])
+        assert roster.get_starting_qb() is qb
+
     def test_select_receiver_raises_on_empty_roster(self):
         """select_receiver raises ValueError on an empty roster."""
         roster = TeamRoster(team="T", players=[])

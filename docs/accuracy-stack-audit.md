@@ -39,6 +39,11 @@ Active in `config/defaults.yaml` as of this audit:
 - `vegas.props.enabled: true`
 - `usage.enabled: true`
 - `usage.cpoe.enabled: true`
+- `availability.enabled: true`
+- `availability.positions: [QB, RB, WR, TE]`
+- `availability.injuries.enabled: false`
+- `role_trend.enabled: false`
+- `role_trend.positions: [QB, RB, WR, TE]`
 - `game_script.enabled: true`
 - `game_script.trailing_late.enabled: true`
 - `td_tendency.enabled: true`
@@ -55,30 +60,42 @@ Built but currently parked or disabled:
 
 ## Runtime Order
 
-Actual order in [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py):
+`GameContextBuilder` order in [`../src/fantasy_sim/data/game_context.py`](../src/fantasy_sim/data/game_context.py):
 
 1. Base team distributions and player models from nflverse PBP + rosters
 2. Vegas game environment
-3. Usage engine
-4. Player props
-5. Matchup engine
-6. Tier engine and optional team-context integration
-7. Coverage engine
-8. DST baseline engine
-9. Kicker engine
-10. TD tendency engine
-11. Weather engine
-12. Runtime game script overlays during simulation
-13. User overrides
+3. Availability engine
+4. Usage engine
+5. Player props
+6. Matchup engine
+7. Tier engine and optional team-context integration
+8. Coverage engine
+9. DST baseline engine
+10. Kicker engine
+11. TD tendency engine
+12. Weather engine
+13. Runtime game script overlays during simulation
+14. User overrides
+
+End-to-end projection flow after simulation:
+
+15. Post-sim `role_trend` adjustment
+16. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
 - `game_script` is not baked into base roster shares
 - it is resolved live from `GameState` and applied transiently during play calling
+- `availability` runs before `usage`, so explicit inactive / limited decisions
+  are applied before softer usage refinement touches shares
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
-- `player` and `--detail` CLI output currently bypass the ensemble blend
+- `role_trend` is also post-sim and runs before `ensemble`
+- `player` and `--detail` CLI output currently bypass both post-sim layers
+  (`role_trend` and `ensemble`)
+- the `player` command always uses detailed projections rather than the
+  aggregated non-detail projection flow
 
 That is a useful architectural pattern for future "situation-only" levers.
 
@@ -95,19 +112,23 @@ The repo currently has:
 
 Most relevant files for accuracy work:
 
-- [`config/defaults.yaml`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml)
-- [`scripts/validate.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/scripts/validate.py)
-- [`src/fantasy_sim/data/game_context.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py)
-- [`src/fantasy_sim/validation/ledger.py`](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/validation/ledger.py)
+- [`../config/defaults.yaml`](../config/defaults.yaml)
+- [`../scripts/validate.py`](../scripts/validate.py)
+- [`../src/fantasy_sim/data/game_context.py`](../src/fantasy_sim/data/game_context.py)
+- [`../src/fantasy_sim/validation/ledger.py`](../src/fantasy_sim/validation/ledger.py)
 
-### `~/.fantasy-sim`
+### Relevant Local Stores
 
-Local store present at `/Users/chrisesposito/.fantasy-sim`:
+Relevant local stores under `~/.fantasy-sim`:
 
 - `cache/`
 - `pff/`
-- `props/`
 - `weather/`
+
+Relevant subpaths for currently enabled features:
+
+- ff-opportunity weekly cache: `~/.fantasy-sim/cache/ff_opportunity_weekly_<season>.parquet`
+- player props cache: `~/.fantasy-sim/pff/props/`
 
 ### nflverse / local cache coverage
 
@@ -119,6 +140,9 @@ Observed local caches:
 - snap counts for 2022-2024
 - weekly player stats for 2022-2025
 - NGS receiving caches for 2022-2024
+- `ff_opportunity_weekly_2022.parquet`
+- `ff_opportunity_weekly_2023.parquet`
+- `ff_opportunity_weekly_2024.parquet`
 
 ### PFF processed data
 
@@ -173,7 +197,7 @@ Missing for backtest seasons:
 This matters because defaults currently enable props, but historical backtests
 for 2022-2024 are not actually using historical props inputs.
 
-## Verified nflreadpy Surface For Future Phases
+## Verified Loaders Vs Local Cache State
 
 Verified locally from the installed `nflreadpy` package:
 
@@ -187,6 +211,19 @@ Verified locally from the installed `nflreadpy` package:
 
 These loaders are real and do not need speculative wrapper design.
 
+Important distinction for planning and validation:
+
+- injuries: verified loader exists and local parquet cache is created on demand by
+  `DataLoader.load_injuries()`
+- depth charts: verified loader exists and local parquet cache is created on
+  demand by `DataLoader.load_depth_charts()`
+- participation: verified loader exists in `nflreadpy`, but this project does
+  not yet wrap or cache it in `DataLoader`
+
+That means injuries and depth charts are implemented inputs for the current
+availability path, while participation is still only a verified future-phase
+data surface.
+
 ## Phase 1 Ensemble Implementation Notes
 
 - `ff_opportunity` is the implemented required Phase 1 v1 source across QB/RB/WR/TE
@@ -194,6 +231,9 @@ These loaders are real and do not need speculative wrapper design.
 - default weights are QB `0.35`, WR `0.25`, RB `0.15`, and TE `0.15`
 - joins use nflverse `player_id`
 - uncovered rows remain neutral
+- local cache correction: ff-opportunity weekly parquet is present for 2022-2024
+  under `~/.fantasy-sim/cache/`, and validation coverage treats the historical
+  loader as available for those seasons
 - runtime player-week blend coverage is not yet summarized in the coverage helper output
 - weekly QB/WR accuracy remains the primary success metric and tie-breaker
 - `ff_rankings` remains future/optional pending historical coverage, schema, and backtest-year checks; it is still deferred from the first promotion decision
@@ -212,6 +252,43 @@ Phase 1 is promoted on the broadened marginal validation artifact:
 The earlier QB/WR-only A/B remains informative as a narrow pilot, but it is not
 the Phase 1 promotion artifact.
 
+## Phase 2 Implementation Notes
+
+- `availability` is implemented and promoted for v1
+- `role_trend` is implemented but default-off
+- both families gate by `positions` lists, with QB/RB/WR/TE as the default set
+- `availability` runs before `usage` in `GameContextBuilder`
+- `role_trend` runs post-sim before `ensemble.ff_opportunity`
+- the v1 availability rule is explicit-signal-first:
+  - injuries are implemented but currently default-off after marginal validation
+  - QB depth charts can create hard starter / non-starter decisions
+  - usage fallback is soft-only
+
+Promoted v1 default shape:
+
+- `availability.enabled: true`
+- `availability.injuries.enabled: false`
+- `availability.depth_charts.enabled: true`
+- `availability.usage_fallback.enabled: true`
+- `availability.positions: [QB, RB, WR, TE]`
+- `role_trend.enabled: false`
+
+Promotion artifact:
+
+- label: `phase-2-availability-no-injuries-confirm`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- averages:
+  - `rank_corr delta: +0.0032`
+  - `weekly_mae delta: -0.016`
+  - `season_mae delta: -0.269`
+
+v1 rule for evidence interpretation:
+
+- usage-only evidence is soft-only and cannot create inactive decisions
+- usage-only evidence cannot create starter-out decisions
+- broader participation / tracking evidence remains deferred to the tracking phase
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
@@ -222,6 +299,11 @@ The current validation path is now wired to record new runs with:
 - schema version
 - comparison metadata
 - coverage summaries
+
+Phase 2 manual validation status:
+
+- the user owned and completed the Phase 2 manual A/B validation pass
+- the current promotion record is `phase-2-availability-no-injuries-confirm`
 
 This branch did not regenerate or backfill the historical ledger files, so the
 older rows remain historical evidence rather than newly produced outputs.

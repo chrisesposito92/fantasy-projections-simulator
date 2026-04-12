@@ -68,7 +68,9 @@ class TeamRoster:
         qbs = [p for p in self.players if p.position == "QB"]
         if not qbs:
             raise ValueError(f"No QB found on roster for {self.team}")
-        return max(qbs, key=lambda p: p.usage.snap_share)
+        available_qbs = [p for p in qbs if p.usage.snap_share > 0]
+        pool = available_qbs or qbs
+        return max(pool, key=lambda p: p.usage.snap_share)
 
     def select_receiver(
         self, rng: np.random.Generator, is_red_zone: bool = False

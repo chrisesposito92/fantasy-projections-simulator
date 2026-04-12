@@ -325,6 +325,74 @@ def test_print_header_renders_comparison_metadata_and_coverage_summary():
     assert "Forward-only unless season parquet files exist" in printed
 
 
+def test_print_header_renders_phase_two_coverage_families():
+    validate = _load_validate_module()
+    args = SimpleNamespace(
+        baseline="defaults",
+        overrides=[],
+        sims=50,
+        seasons=[2023, 2024],
+        scoring="ppr",
+        no_cache=False,
+    )
+    coverage_summary = {
+        "availability": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2023],
+            missing_seasons=[2024],
+            note="Explicit coverage requires rosters_weekly plus depth_charts cache",
+        ),
+        "availability.injuries": SignalCoverage(
+            enabled=True,
+            status="none",
+            covered_seasons=[],
+            missing_seasons=[2023, 2024],
+            note="Hard injury availability decisions require cached injuries parquet",
+        ),
+        "availability.depth_charts": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2023],
+            missing_seasons=[2024],
+            note="Hard starter and promotion decisions require cached depth_charts parquet",
+        ),
+        "availability.usage_fallback": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2023],
+            missing_seasons=[2024],
+            note="Soft-only fallback requires player_stats_week, snap_counts, and rosters_weekly parquet coverage",
+        ),
+        "role_trend": SignalCoverage(
+            enabled=True,
+            status="partial",
+            covered_seasons=[2023],
+            missing_seasons=[2024],
+            note="Role trend uses weekly player_stats coverage",
+        ),
+    }
+
+    with patch.object(validate, "print") as mock_print:
+        validate.print_header(
+            args,
+            {2023: False, 2024: True},
+            comparison_mode="marginal_lift",
+            seed_mode="deterministic_game_id_crc32_shared_between_arms",
+            coverage_summary=coverage_summary,
+        )
+
+    printed = "\n".join(call.args[0] for call in mock_print.call_args_list)
+    assert "availability" in printed
+    assert "availability.injuries" in printed
+    assert "availability.depth_charts" in printed
+    assert "availability.usage_fallback" in printed
+    assert "role_trend" in printed
+    assert "partial" in printed
+    assert "none" in printed
+    assert "coverage notes" in printed
+
+
 def test_run_season_blends_arm_b_with_ensemble_when_enabled():
     validate = _load_validate_module()
     from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig

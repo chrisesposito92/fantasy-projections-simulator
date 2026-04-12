@@ -307,6 +307,66 @@ def test_ensemble_ff_opportunity_supports_typed_ensemble_config():
     )
 
 
+def test_availability_and_role_trend_report_partial_when_explicit_inputs_are_sparse(tmp_path):
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(cache_dir / "player_stats_week_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "snap_counts_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "depth_charts_2023.parquet")
+
+    config = {
+        "availability": {
+            "enabled": True,
+            "positions": ["QB", "RB", "WR", "TE"],
+            "injuries": {"enabled": True},
+            "depth_charts": {"enabled": True},
+            "usage_fallback": {"enabled": True},
+        },
+        "role_trend": {"enabled": True, "positions": ["QB", "RB", "WR", "TE"]},
+    }
+
+    coverage = collect_signal_coverage(config, [2023, 2024], cache_dir=cache_dir)
+
+    assert coverage["availability"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Explicit coverage requires rosters_weekly plus depth_charts cache; "
+            "injuries can further refine hard decisions when present"
+        ),
+    )
+    assert coverage["availability.injuries"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2023, 2024],
+        note="Hard injury availability decisions require cached injuries parquet for the tested season",
+    )
+    assert coverage["availability.depth_charts"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note="Hard starter and promotion decisions require cached depth_charts parquet for the tested season",
+    )
+    assert coverage["availability.usage_fallback"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note="Soft-only fallback requires player_stats_week, snap_counts, and rosters_weekly parquet coverage",
+    )
+    assert coverage["role_trend"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note="Role trend uses weekly player_stats coverage; snap_counts can augment but do not create hard decisions",
+    )
+
+
 def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
     route_rate_root = tmp_path / "pff_processed"

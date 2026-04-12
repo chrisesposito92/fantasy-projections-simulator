@@ -15,6 +15,7 @@ from fantasy_sim.data.player_builder import (
 from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
+from fantasy_sim.data.availability.models import AvailabilityConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
@@ -59,6 +60,7 @@ class GameContextBuilder:
         weather_config: WeatherConfig | None = None,
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
+        availability_config: AvailabilityConfig | None = None,
         usage_config: UsageConfig | None = None,
         game_script_config: GameScriptConfig | None = None,
         goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
@@ -168,6 +170,14 @@ class GameContextBuilder:
             props_loader = PropsLoader(props_config)
             self._props_engine = PlayerPropsEngine(props_config, props_loader)
             logger.info("Player props engine enabled")
+
+        # Availability engine setup: conservative explicit-signal availability adjustments
+        self._availability_engine = None
+        self._availability_config = availability_config or AvailabilityConfig(enabled=False)
+        if self._availability_config.enabled:
+            from fantasy_sim.data.availability.engine import AvailabilityEngine
+            self._availability_engine = AvailabilityEngine(self._availability_config)
+            logger.info("Availability engine enabled")
 
         # Usage engine setup (USG-01/02/03/04): snap counts, CPOE, NGS, route rate
         self._usage_engine = None
@@ -655,6 +665,8 @@ class GameContextBuilder:
 
         self._ensure_kicker_engine(training_seasons, target_season)
         self._ensure_dst_baseline_engine(training_seasons, target_season)
+        if self._availability_engine is not None:
+            self._availability_engine.warm([target_season])
 
         logger.info(
             "GameContextBuilder warmed: %d weeks, %d player model cache entries",
@@ -703,6 +715,15 @@ class GameContextBuilder:
             )
             self._apply_vegas(home_dists, home_vegas_ctx)
             self._apply_vegas(away_dists, away_vegas_ctx)
+
+        # Availability adjustments: remove or soften players before downstream usage refinement.
+        if getattr(self, "_availability_engine", None) is not None and target_season and week:
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+
+            self._availability_engine.apply(home_roster, target_season, week)
+            self._availability_engine.apply(away_roster, target_season, week)
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
 
         # Usage engine (snap counts, CPOE, NGS, route rate) -- before props (D-03)
         home_cpoe_map: dict[str, float] = {}

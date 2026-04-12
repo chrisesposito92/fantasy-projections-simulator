@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from fantasy_sim.data.availability.models import AvailabilityConfig
     from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
     from fantasy_sim.data.game_script import GameScriptConfig
     from fantasy_sim.data.pff.models import PffConfig
@@ -177,6 +178,7 @@ def _init_build_worker_single(
     weather_config: "WeatherConfig | None",
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
+    availability_config: "AvailabilityConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
@@ -192,6 +194,7 @@ def _init_build_worker_single(
         weather_config=weather_config,
         vegas_config=vegas_config,
         props_config=props_config,
+        availability_config=availability_config,
         usage_config=usage_config,
         game_script_config=game_script_config,
         goal_line_concentration_config=goal_line_concentration_config,
@@ -247,6 +250,7 @@ def _init_build_worker_dual(
     weather_config: WeatherConfig | None,
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
+    availability_config: "AvailabilityConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
@@ -266,6 +270,7 @@ def _init_build_worker_dual(
             weather_config=weather_config,
             vegas_config=vegas_config,
             props_config=props_config,
+            availability_config=availability_config,
             usage_config=usage_config,
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,
@@ -361,6 +366,7 @@ def _build_games_sequential(
     on_complete: "Callable[[int, int], None] | None",
     vegas_config: "VegasConfig | None" = None,
     props_config: "PropsConfig | None" = None,
+    availability_config: "AvailabilityConfig | None" = None,
     usage_config: "UsageConfig | None" = None,
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
@@ -380,6 +386,7 @@ def _build_games_sequential(
                 weather_config=weather_config,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                availability_config=availability_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
@@ -394,6 +401,7 @@ def _build_games_sequential(
                 weather_config=weather_config,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                availability_config=availability_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
@@ -422,6 +430,7 @@ def _create_builders(
     props_config,
     usage_config,
     game_script_config,
+    availability_config=None,
     td_tendency_config=None,
     goal_line_concentration_config=None,
     dual_arm: bool = False,
@@ -442,6 +451,7 @@ def _create_builders(
                 weather_config=weather_config,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                availability_config=availability_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
@@ -455,6 +465,7 @@ def _create_builders(
             weather_config=weather_config,
             vegas_config=vegas_config,
             props_config=props_config,
+            availability_config=availability_config,
             usage_config=usage_config,
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,
@@ -558,6 +569,7 @@ def build_games_parallel(
     weather_config=None,
     vegas_config=None,
     props_config=None,
+    availability_config=None,
     usage_config=None,
     game_script_config=None,
     goal_line_concentration_config=None,
@@ -596,7 +608,7 @@ def build_games_parallel(
 
     if use_processes:
         # Legacy process pool path: cap workers due to redundant data loading
-        _MAX_BUILD_WORKERS = 4
+        _MAX_BUILD_WORKERS = 6
         if max_workers > _MAX_BUILD_WORKERS:
             max_workers = _MAX_BUILD_WORKERS
 
@@ -605,6 +617,7 @@ def build_games_parallel(
                 game_args, cache_dir, pff_config, weather_config, dual_arm, on_complete,
                 vegas_config=vegas_config,
                 props_config=props_config,
+                availability_config=availability_config,
                 usage_config=usage_config,
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
@@ -631,6 +644,7 @@ def build_games_parallel(
                     weather_config,
                     vegas_config,
                     props_config,
+                    availability_config,
                     usage_config,
                     game_script_config,
                     goal_line_concentration_config,
@@ -678,6 +692,7 @@ def build_games_parallel(
             weather_config=weather_config,
             vegas_config=vegas_config,
             props_config=props_config,
+            availability_config=availability_config,
             usage_config=usage_config,
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,

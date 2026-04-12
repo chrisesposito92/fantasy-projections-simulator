@@ -478,6 +478,43 @@ class TestBuildGamesParallelDualArm:
         assert mock_builder_cls.call_args.kwargs["goal_line_concentration_config"] is config
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_build_games_parallel_accepts_availability_config(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        mock_builder_cls.return_value = self._mock_builder()
+        config = object()
+
+        results = build_games_parallel(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
+            cache_dir=Path("/tmp"),
+            availability_config=config,
+            max_workers=1,
+        )
+
+        assert len(results) == 1
+        assert mock_builder_cls.call_args.kwargs["availability_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_build_games_sequential_single_arm_threads_availability_config(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import _build_games_sequential
+
+        mock_builder_cls.return_value = self._mock_builder()
+        config = object()
+
+        results = _build_games_sequential(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
+            cache_dir=Path("/tmp"),
+            pff_config=None,
+            weather_config=None,
+            dual_arm=False,
+            on_complete=None,
+            availability_config=config,
+        )
+
+        assert len(results) == 1
+        assert mock_builder_cls.call_args.kwargs["availability_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_only_threads_goal_line_concentration_to_on_builder(self, mock_builder_cls):
         from fantasy_sim.validation.parallel import build_games_parallel
 
@@ -494,6 +531,24 @@ class TestBuildGamesParallelDualArm:
         assert mock_builder_cls.call_count == 2
         assert "goal_line_concentration_config" not in mock_builder_cls.call_args_list[0].kwargs
         assert mock_builder_cls.call_args_list[1].kwargs["goal_line_concentration_config"] is config
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_dual_arm_only_threads_availability_to_on_builder(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import build_games_parallel
+
+        config = object()
+
+        build_games_parallel(
+            [("KC", "BUF", [2022, 2023], 2024, 1, "game_1", 42)],
+            cache_dir=Path("/tmp"),
+            availability_config=config,
+            max_workers=1,
+            dual_arm=True,
+        )
+
+        assert mock_builder_cls.call_count == 2
+        assert "availability_config" not in mock_builder_cls.call_args_list[0].kwargs
+        assert mock_builder_cls.call_args_list[1].kwargs["availability_config"] is config
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_captures_matchup_aux(self, mock_builder_cls):
