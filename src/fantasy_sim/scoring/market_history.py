@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import polars as pl
 
@@ -16,16 +17,20 @@ class MarketHistoryStats:
     uncovered_rows: int
 
 
+class MarketHistoryLoaderProtocol(Protocol):
+    def load_weekly(self, seasons: list[int]) -> pl.DataFrame: ...
+
+
 class MarketHistoryProjectionAdjuster:
     """Blend simulation outputs with historical market priors."""
 
     def __init__(
         self,
         config: MarketHistoryConfig,
-        loader: MarketHistoryLoader | None = None,
+        loader: MarketHistoryLoaderProtocol | None = None,
     ) -> None:
         self.config = config
-        self.loader = loader
+        self.loader: MarketHistoryLoaderProtocol | None = loader
         self._prior_cache: dict[int, pl.DataFrame] = {}
 
     def _season_priors(self, season: int) -> pl.DataFrame:
