@@ -608,7 +608,7 @@ def build_games_parallel(
 
     if use_processes:
         # Legacy process pool path: cap workers due to redundant data loading
-        _MAX_BUILD_WORKERS = 4
+        _MAX_BUILD_WORKERS = 6
         if max_workers > _MAX_BUILD_WORKERS:
             max_workers = _MAX_BUILD_WORKERS
 
