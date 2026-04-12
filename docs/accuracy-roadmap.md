@@ -346,47 +346,56 @@ Future planners should treat that artifact as the Phase 2 decision record.
 
 ## Phase 3: Historical Market Intelligence
 
-### Why High Priority
+### Status
 
-The current props engine is structurally useful, but the historical data
-coverage is not there for the main backtest seasons.
+Implemented in v1, but not promoted to the default stack.
 
-Observed locally:
+The current decision artifact shows partial historical coverage and a
+covered-season result that is effectively flat, with a slight season-level MAE
+regression. That is not enough to justify turning `market_history` on by
+default.
 
-- props parquet exists for 2025 only
-- no props parquet for 2022-2024
+### Phase 3 v1 Scope
 
-### Candidate Config Family
+- `market_history` implemented as a post-sim layer
+- processed market-history cache built for 2023 and 2024
+- promotion evidence evaluated with explicit covered-season reporting
+- 2022 treated as no-data / uncovered rather than neutral evidence
 
-- `market_history`
+### Promotion Artifact
 
-### Core Work
+Phase 3 decision artifact:
 
-- backfill 2023-2024 historical props and line snapshots
-- extend current props work from a single-point prior into a richer market signal
+- label: `phase-3-market-history-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- validation coverage: `market_history=partial(2023,2024)`
+- covered seasons: `2023, 2024`
+- uncovered seasons: `2022`
+- promotion evidence scope: `covered_only`
 
-### Candidate Features
+```text
+rank_corr delta:  -0.0003
+weekly_mae delta: -0.011
+season_mae delta: +0.036
+```
 
-- closing line
-- opening line
-- open-to-close movement
-- book dispersion / disagreement
-- anytime-TD implied probability
-- alternate-line shape if available
-- team total and spread interaction with player markets
+Artifact interpretation:
 
-### Planning Questions For The Future Session
+- the stack-wide average summary still includes 2022, but that season had no
+  market-history coverage
+- market-specific promotion evidence therefore must use the explicit
+  `covered_only` readout instead of folding 2022 into the averages as neutral
+  evidence
+- the covered-only result does not justify promoting `market_history` to
+  default-on
 
-- whether the historical source should be The Odds API, another provider, or an internal stored feed
-- whether line movement is modeled as:
-  - a direct player prior
-  - a confidence multiplier
-  - or a disagreement/noise filter
+### Follow-On Work
 
-### Promotion Gate
-
-- must first prove historical data coverage for the backtest seasons
-- then must beat the current stack on marginal weekly validation
+- backfill `2022` market-history data so promotion evidence can cover all three
+  backtest seasons
+- re-run a single marginal validation artifact after the `2022` backfill lands
+- keep this as follow-on work, not a blocker for moving on to Phase 4
 
 ## Phase 4: Tracking And Charting Expansion
 
@@ -563,9 +572,9 @@ The roadmap is successful if future phases produce:
 
 If only one or two follow-up planning sessions are opened next, the best order is:
 
-1. User-owned manual A/B validation for Phase 2
-2. Phase 3: historical market intelligence
-3. Phase 4: tracking and charting expansion
+1. Phase 4: tracking and charting expansion
+2. Phase 3 follow-on: `2022` market-history backfill and re-validation
+3. Phase 5: PFF granularity V2
 
 ## Research Anchors
 
