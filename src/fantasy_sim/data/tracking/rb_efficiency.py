@@ -11,16 +11,15 @@ RB_POSITIONS = {"RB"}
 
 def _bounded_factor(
     value: float,
-    baseline: float,
+    center: float,
     sensitivity: float,
     clamp: tuple[float, float],
 ) -> float:
     """Return a bounded multiplicative factor centered on 1.0."""
     lower, upper = clamp
-    if baseline <= 0 or not np.isfinite(value) or not np.isfinite(baseline):
+    if not np.isfinite(value) or not np.isfinite(center):
         return 1.0
-    delta = (value - baseline) / baseline
-    factor = 1.0 + delta * sensitivity
+    factor = 1.0 + (value - center) * sensitivity
     return float(np.clip(factor, lower, upper))
 
 
@@ -34,10 +33,6 @@ class RbEfficiencyEngine:
 
         required_columns = {"player_id", "attempts", "rush_yoe_per_att"}
         if not required_columns.issubset(features.columns):
-            return
-
-        baseline = self._feature_baseline(features)
-        if baseline is None:
             return
 
         team_features = features
@@ -71,28 +66,18 @@ class RbEfficiencyEngine:
 
             carry_factor = _bounded_factor(
                 float(rush_yoe_per_att),
-                baseline,
+                0.0,
                 self.config.carry_share_sensitivity,
                 self.config.factor_clamp,
             )
             rush_yards_factor = _bounded_factor(
                 float(rush_yoe_per_att),
-                baseline,
+                0.0,
                 self.config.rush_yards_sensitivity,
                 self.config.factor_clamp,
             )
 
             player.usage.carry_share *= carry_factor
             if player.outcomes.rushing_yards_dist is not None:
-                player.outcomes.rushing_yards_dist = (
-                    np.asarray(player.outcomes.rushing_yards_dist, dtype=float) * rush_yards_factor
-                )
-
-    def _feature_baseline(self, features: pl.DataFrame) -> float | None:
-        if features.is_empty() or "rush_yoe_per_att" not in features.columns:
-            return None
-
-        value = features.select(pl.col("rush_yoe_per_att").cast(pl.Float64).mean()).item()
-        if value is None:
-            return None
-        return float(value)
+                adjusted = np.asarray(player.outcomes.rushing_yards_dist, dtype=float) * rush_yards_factor
+                player.outcomes.rushing_yards_dist = np.rint(adjusted).astype(np.int64)
