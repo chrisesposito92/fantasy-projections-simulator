@@ -118,6 +118,17 @@ class GameContextBuilder:
             )
             logger.info("PFF team context engine enabled")
 
+        self._depth_role_engine = None
+
+        if self._pff_config.enabled and self._pff_config.depth_role.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.depth_role import DepthRoleEngine
+
+            self._depth_role_engine = DepthRoleEngine(
+                self._pff_loader,
+                self._pff_config.depth_role,
+            )
+            logger.info("PFF depth-role engine enabled")
+
         self._coverage_engine = None
 
         if self._pff_config.enabled and self._pff_config.coverage.enabled and self._pff_loader:
@@ -890,6 +901,25 @@ class GameContextBuilder:
             self._talent_stabilizer.stabilize_roster(
                 away_roster, self._pff_crosswalk, training_seasons,
                 nfl_roster=nfl_roster_df, target_season=roster_season,
+            )
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
+
+        if self._depth_role_engine is not None and target_season and week:
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            self._depth_role_engine.apply(
+                home_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                target_season=target_season,
+                max_week=week,
+            )
+            self._depth_role_engine.apply(
+                away_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                target_season=target_season,
+                max_week=week,
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
