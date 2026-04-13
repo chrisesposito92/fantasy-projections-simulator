@@ -438,9 +438,12 @@ Observed run caveat from the receiver/QB slices:
   - `weekly_mae delta: +0.002`
   - `season_mae delta: +0.013`
 
-### Explicit Phase 5 Deferrals
+### Immediate Next Phase 5 Slice
 
 - `WR/TE efficiency v2`
+
+### Deferred Phase 5 Follow-Ons
+
 - `QB split engine`
 - `RB scheme-fit engine`
 
