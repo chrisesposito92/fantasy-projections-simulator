@@ -130,10 +130,6 @@ class QbContextEngine:
             1.0,
         ))
         team_dists.play_calling.default["pass"] = adjusted_pass_rate
-        if "run" in team_dists.play_calling.default:
-            team_dists.play_calling.default["run"] = float(
-                np.clip(1.0 - adjusted_pass_rate, 0.0, 1.0)
-            )
         team_dists.turnover_rates.sack_rate *= sack_factor
         starter.usage.scramble_rate *= scramble_factor
 
