@@ -505,51 +505,42 @@ What follows from the current artifact set:
 
 ## Phase 5: PFF Granularity V2
 
-### Why It Still Ranks High
+### Status
 
-PFF is already the deepest proprietary source in the stack, but the project is
-using only a fraction of what has been scraped and processed locally.
+Implemented for `WR/TE Depth-Role V1`.
 
-Most promising underused local assets:
+The focused verification suite passed, and the isolated marginal validation arm
+completed cleanly with explicit `pff.depth_role` coverage reporting. The
+current marginal evidence is flat-to-slightly negative, so this remains
+implemented but not promoted.
 
-- `passing_detail`
-- `receiving_depth`
-- `rushing_direction`
-- gap/zone run-blocking splits
+- current Phase 5 priority: `WR/TE Depth-Role V1`
+- next Phase 5 priority: `WR/TE efficiency v2`
+- explicitly deferred:
+  - `QB split engine`
+  - `RB scheme-fit engine`
 
-### Candidate Uses
+### Phase 5A Scope
 
-- QB split-dependent efficiency profiles from `passing_detail`
-- WR/TE depth-role modeling from `receiving_depth`
-- RB run-direction and scheme fit from `rushing_direction`
-- gap vs zone line fit using `offense_run_blocking`
-- richer goal-line and red-zone role priors from fantasy and depth tables
+- `receiving_depth` only
+- `WR` and `TE` only
+- pre-sim role/volume only
+- `target_share` and `air_yards_share` only
+- no catch-rate or receiving-efficiency mutation
 
-### Suggested Internal Breakdown
+### Validation Artifact
 
-#### 5A. QB PFF Split Engine
-
-- clean pocket vs pressure
-- blitz vs no blitz
-- short/intermediate/deep efficiency
-
-#### 5B. WR/TE Depth Role Engine
-
-- behind/short/medium/deep route profile
-- direction and alignment role stability
-- target-quality-conditioned weekly role archetypes
-
-#### 5C. RB Scheme Fit Engine
-
-- gap vs zone blocker environment
-- run-direction tendencies
-- player fit to line profile
-
-### Planning Notes
-
-- This phase has strong upside, but the feature design needs discipline
-- Do not dump all granular columns into one monolithic "better PFF" layer
-- Split by QB / WR-TE / RB sub-engines so failed ideas can be isolated cleanly
+- label: `phase-5-depth-role-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.depth_role=full(2022,2023,2024)`
+  - `pff.depth_role.wr=full(2022,2023,2024)`
+  - `pff.depth_role.te=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0005`
+  - `weekly_mae delta: +0.002`
+  - `season_mae delta: +0.013`
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 

@@ -32,6 +32,7 @@ Active in `config/defaults.yaml` as of this audit:
 - `pff.tier_engine.enabled: true`
 - `pff.matchup.enabled: true`
 - `pff.coverage.enabled: true`
+- `pff.depth_role.enabled: false`
 - `pff.kicker.enabled: true`
 - `pff.dst_baseline.enabled: true`
 - `weather.enabled: true`
@@ -80,19 +81,20 @@ Built but currently parked or disabled:
 6. Player props
 7. Matchup engine
 8. Tier engine and optional team-context integration
-9. Coverage engine
-10. DST baseline engine
-11. Kicker engine
-12. TD tendency engine
-13. Weather engine
-14. Runtime game script overlays during simulation
-15. User overrides
+9. Depth-role engine
+10. Coverage engine
+11. DST baseline engine
+12. Kicker engine
+13. TD tendency engine
+14. Weather engine
+15. Runtime game script overlays during simulation
+16. User overrides
 
 End-to-end projection flow after simulation:
 
-16. Post-sim `role_trend` adjustment
-17. Post-sim `market_history` adjustment
-18. Post-sim `ensemble.ff_opportunity` blend
+17. Post-sim `role_trend` adjustment
+18. Post-sim `market_history` adjustment
+19. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
@@ -101,6 +103,8 @@ Important distinction:
 - `availability` runs before `usage`, so explicit inactive / limited decisions
   are applied before softer usage refinement touches shares
 - `tracking` now runs after `usage` and before props, with roster shares re-normalized after tracking mutations
+- `pff.depth_role` now runs after the tier/team-context step, re-normalizes
+  roster shares, and stays before per-WR coverage matchup adjustments
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
@@ -418,6 +422,27 @@ Observed run caveat from the receiver/QB slices:
 
 - `Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
 - `Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
+
+## Phase 5 Depth-Role Notes
+
+- `pff.depth_role` is now implemented in code
+- current local `receiving_depth` NFL coverage is `2018-2025`
+- `pff.depth_role` uses `receiving_depth` plus `rosters_weekly` crosswalk inputs
+- local `injuries_2022-2024.parquet` exists
+- legacy `market_history_weekly_2023.parquet` and `market_history_weekly_2024.parquet` exist locally
+- `rushing_direction` is present locally but stored as nested `directions` rows, so RB scheme-fit remains deferred
+- the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
+- current default state remains `pff.depth_role.enabled: false`
+- current Phase 5A evidence is not promotable:
+  - `rank_corr delta:  -0.0005`
+  - `weekly_mae delta: +0.002`
+  - `season_mae delta: +0.013`
+
+### Explicit Phase 5 Deferrals
+
+- `WR/TE efficiency v2`
+- `QB split engine`
+- `RB scheme-fit engine`
 
 ## What The Current Ledgers Actually Tell Us
 
