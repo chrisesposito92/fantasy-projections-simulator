@@ -422,46 +422,86 @@ Promoted Phase 3 defaults:
 
 ## Phase 4: Tracking And Charting Expansion
 
-### Why High Priority
+### Status
 
-The locally installed data surface is materially larger than what the project
-uses today.
+Implemented in code, backfilled for `2022-2024`, and validated slice-by-slice.
+Not promoted.
 
-Verified loaders:
+Required Phase 4 tracking inputs were backfilled with:
 
-- `load_nextgen_stats(..., stat_type='passing')`
-- `load_nextgen_stats(..., stat_type='rushing')`
-- `load_ftn_charting()`
-- `load_participation()`
+- `participation_2022.parquet`, `participation_2023.parquet`, `participation_2024.parquet`
+- `ftn_charting_2022.parquet`, `ftn_charting_2023.parquet`, `ftn_charting_2024.parquet`
+- `ngs_passing_2022.parquet`, `ngs_passing_2023.parquet`, `ngs_passing_2024.parquet`
+- `ngs_rushing_2022.parquet`, `ngs_rushing_2023.parquet`, `ngs_rushing_2024.parquet`
 
-### Candidate Config Family
+Phase 4 promotion rule:
 
-- `tracking`
+- promote only if at least one of QB/RB/WR/TE improves materially
+- require the other core positions to hold without material regression
+- do not promote on flat "everything merely held" evidence
 
-### Candidate Signals
+### Artifacts Run
 
-- QB under-pressure vs clean-pocket splits
-- QB blitz splits
-- RB rushing over expected or efficiency over expected
-- route participation and route share
-- catchable target quality
-- no-huddle pace
-- RPO / play-action tendencies
-- formation or personnel tendencies if available in FTN charting
+`phase-4-receiver-participation-v1`
 
-### Suggested Priority Within The Phase
+- `rank_corr delta:  -0.0006`
+- `weekly_mae delta: +0.007`
+- `season_mae delta: +0.072`
+- Did not clear the promotion rule. WR weekly rank corr moved slightly positive, but the average readout regressed and QB/RB/TE did not hold cleanly enough to justify promotion.
 
-1. QB pressure/blitz splits
-2. WR route participation and catchable-target quality
-3. RB rushing efficiency-over-expected
-4. team no-huddle / play-action context
+`phase-4-rb-efficiency-v1`
 
-### Planning Notes
+- `rank_corr delta:  -0.0003`
+- `weekly_mae delta: +0.000`
+- `season_mae delta: -0.063`
+- Did not clear the promotion rule. The season MAE average improved slightly, but the overall readout was effectively flat to negative and did not produce a material core-position win.
 
-- keep this separate from `usage`
-- design as a tracking/charting layer with its own feature registry and coverage reporting
-- this is now the home for the deferred participation/tracking expansion that
-  Phase 2 deliberately did not absorb
+`phase-4-qb-context-v1`
+
+- `rank_corr delta:  +0.0002`
+- `weekly_mae delta: +0.007`
+- `season_mae delta: +0.047`
+- Did not clear the promotion rule. The average rank-correlation move was nominal while both MAE averages regressed.
+
+### Bundle Decision
+
+The combined Phase 4 bundle was not run.
+
+Reason:
+
+- none of the isolated slices produced materially positive evidence
+- two slices regressed on average
+- the remaining slice was effectively flat and still regressed at least one core metric
+- that is not strong enough to justify taking interaction risk on the combined bundle
+
+### Verification
+
+Verification command run after the doc updates:
+
+```bash
+uv run pytest tests/test_data/test_tracking tests/test_validation/test_config.py tests/test_validation/test_coverage.py tests/test_validation/test_parallel.py tests/test_validation/test_backtester.py tests/test_validation/test_validate_script.py tests/test_validation/test_market_history_pipeline.py tests/test_validation/test_role_trend_pipeline.py -v
+```
+
+Result:
+
+- `161 passed`
+
+### Current Phase 4 Readout
+
+- `tracking` remains a valid family in code, but it should stay default-off on current evidence
+- the new backfill means data coverage is no longer the blocker for this phase
+- the next useful Phase 4 work is not "run the bundle"; it is a narrower redesign or retune of individual tracking slices
+- the receiver-participation and QB-context runs both logged the same small snap crosswalk gap: `WillRo08` unmatched at `0.2%`
+
+### Next Priority
+
+Phase 4 is no longer the next default-on candidate.
+
+What follows from the current artifact set:
+
+- keep `tracking.enabled: false`
+- do not run the combined bundle from this slice set
+- move the main planning priority to Phase 5, or come back to Phase 4 only with a narrower hypothesis for one slice at a time
 
 ## Phase 5: PFF Granularity V2
 
@@ -542,10 +582,10 @@ Do not re-open these until:
 
 That keeps the retest from becoming a noisy rerun of earlier sweeps.
 
-## New Config Families To Add
+## Accuracy Config Families
 
-Future planners should use new top-level families instead of overloading
-`usage`:
+Accuracy work is now split across explicit top-level families instead of
+overloading `usage`:
 
 - `ensemble`
 - `role_trend`
@@ -572,8 +612,8 @@ Reason:
 ### Then
 
 - Phase 3 if historical market data can be acquired cleanly
-- Phase 4 as the deferred participation / tracking expansion track
 - Phase 5 as the deeper PFF granularity track
+- Phase 4 follow-on only if a narrower tracking slice is redesigned and re-validated cleanly
 
 ### Last
 
@@ -595,9 +635,9 @@ The roadmap is successful if future phases produce:
 
 If only one or two follow-up planning sessions are opened next, the best order is:
 
-1. Phase 4: tracking and charting expansion
+1. Phase 5: PFF granularity V2
 2. Phase 3 follow-on: `2022` market-history backfill and re-validation
-3. Phase 5: PFF granularity V2
+3. Phase 4 follow-on: redesign one tracking slice at a time before any bundle retry
 
 ## Research Anchors
 

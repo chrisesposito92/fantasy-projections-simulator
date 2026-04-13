@@ -140,6 +140,31 @@ class TestBuildEngineConfigs:
         assert configs["market_history_config"] is not None
         assert configs["market_history_config"].enabled is True
 
+    def test_defaults_include_disabled_tracking_config_until_phase4_promotion(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "tracking_config" in configs
+        assert configs["tracking_config"] is None
+
+    def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "tracking.enabled=true",
+                "tracking.window_weeks=6",
+                "tracking.receiver_participation.min_targets=11",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["tracking_config"] is not None
+        assert configs["tracking_config"].window_weeks == 6
+        assert configs["tracking_config"].receiver_participation.min_targets == 11
+
     def test_market_history_override_propagates(self):
         defaults = load_defaults()
         overridden = apply_overrides(defaults, ["market_history.enabled=false"])
@@ -170,6 +195,7 @@ class TestBuildBareEngineConfigs:
         assert configs["vegas_config"] is None
         assert configs["props_config"] is None
         assert configs["usage_config"] is None
+        assert configs["tracking_config"] is None
         assert configs["availability_config"] is None
         assert configs["role_trend_config"] is None
         assert configs["market_history_config"] is None

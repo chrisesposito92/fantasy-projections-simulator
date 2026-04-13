@@ -356,6 +356,7 @@ def run_season(
                 props_config=arm_b_configs.get("props_config"),
                 availability_config=arm_b_configs.get("availability_config"),
                 usage_config=arm_b_configs.get("usage_config"),
+                tracking_config=arm_b_configs.get("tracking_config"),
                 game_script_config=arm_b_configs.get("game_script_config"),
                 goal_line_concentration_config=arm_b_configs.get(
                     "goal_line_concentration_config"

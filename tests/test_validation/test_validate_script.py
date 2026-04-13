@@ -50,6 +50,7 @@ def test_run_season_threads_game_script_config_into_dual_arm_build():
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": None,
             "goal_line_concentration_config": None,
             "td_tendency_config": None,
@@ -60,6 +61,7 @@ def test_run_season_threads_game_script_config_into_dual_arm_build():
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": game_script_config,
             "goal_line_concentration_config": None,
             "td_tendency_config": None,
@@ -110,6 +112,7 @@ def test_run_season_threads_goal_line_concentration_config_into_dual_arm_build()
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": None,
             "goal_line_concentration_config": None,
             "td_tendency_config": None,
@@ -120,6 +123,7 @@ def test_run_season_threads_goal_line_concentration_config_into_dual_arm_build()
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": None,
             "goal_line_concentration_config": arm_b_goal_line_concentration_config,
             "td_tendency_config": None,
@@ -170,6 +174,7 @@ def test_run_season_threads_td_tendency_config_into_dual_arm_build():
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": None,
             "goal_line_concentration_config": None,
             "td_tendency_config": None,
@@ -180,6 +185,7 @@ def test_run_season_threads_td_tendency_config_into_dual_arm_build():
             "vegas_config": None,
             "props_config": None,
             "usage_config": None,
+            "tracking_config": None,
             "game_script_config": None,
             "goal_line_concentration_config": None,
             "td_tendency_config": arm_b_td_tendency_config,
@@ -199,6 +205,74 @@ def test_run_season_threads_td_tendency_config_into_dual_arm_build():
     call_kwargs = mock_build_games_parallel.call_args.kwargs
     assert call_kwargs["dual_arm"] is True
     assert call_kwargs["td_tendency_config"] is arm_b_td_tendency_config
+
+
+def test_run_season_threads_tracking_config_into_bare_baseline_dual_arm_build():
+    validate = _load_validate_module()
+
+    with patch.object(validate, "simulate_games_parallel", return_value=[]), \
+         patch.object(validate, "build_games_parallel", return_value=[]) as mock_build_games_parallel, \
+         patch.object(validate, "load_actual_scores", return_value=[]), \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        tracking_config = object()
+        arm_a_configs = {
+            "pff_config": None,
+            "weather_config": None,
+            "vegas_config": None,
+            "props_config": None,
+            "usage_config": None,
+            "tracking_config": None,
+            "availability_config": None,
+            "role_trend_config": None,
+            "market_history_config": None,
+            "game_script_config": None,
+            "goal_line_concentration_config": None,
+            "td_tendency_config": None,
+        }
+        arm_b_configs = {
+            "pff_config": None,
+            "weather_config": None,
+            "vegas_config": None,
+            "props_config": None,
+            "usage_config": None,
+            "tracking_config": tracking_config,
+            "availability_config": None,
+            "role_trend_config": None,
+            "market_history_config": None,
+            "game_script_config": None,
+            "goal_line_concentration_config": None,
+            "td_tendency_config": None,
+        }
+
+        validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs=arm_a_configs,
+            arm_b_configs=arm_b_configs,
+            positions=["QB"],
+            max_workers=1,
+        )
+
+    call_kwargs = mock_build_games_parallel.call_args.kwargs
+    assert call_kwargs["dual_arm"] is True
+    assert call_kwargs["tracking_config"] is tracking_config
 
 
 def test_run_season_does_not_thread_market_history_config_into_build_kwargs():
@@ -236,6 +310,7 @@ def test_run_season_does_not_thread_market_history_config_into_build_kwargs():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "availability_config": None,
                 "role_trend_config": None,
                 "market_history_config": None,
@@ -249,6 +324,7 @@ def test_run_season_does_not_thread_market_history_config_into_build_kwargs():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "availability_config": None,
                 "role_trend_config": None,
                 "market_history_config": object(),
@@ -301,6 +377,7 @@ def test_run_season_threads_scoring_config_into_market_history_adjusters():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "availability_config": None,
                 "role_trend_config": None,
                 "market_history_config": object(),
@@ -314,6 +391,7 @@ def test_run_season_threads_scoring_config_into_market_history_adjusters():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "availability_config": None,
                 "role_trend_config": None,
                 "market_history_config": object(),
@@ -382,6 +460,7 @@ def test_run_season_prints_game_script_summary_when_profiles_are_collected():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -392,6 +471,7 @@ def test_run_season_prints_game_script_summary_when_profiles_are_collected():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": object(),
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -647,7 +727,11 @@ def test_main_uses_top_level_market_history_coverage_for_promotion_scope():
     with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
          patch.object(validate, "load_defaults", return_value=defaults), \
          patch.object(validate, "resolve_scoring", return_value={}), \
-         patch.object(validate, "build_engine_configs", return_value={"td_tendency_config": object()}), \
+         patch.object(
+             validate,
+             "build_engine_configs",
+             return_value={"tracking_config": None, "td_tendency_config": object()},
+         ), \
          patch.object(validate, "collect_signal_coverage", return_value=coverage_summary, create=True), \
          patch.object(validate, "print_header"), \
          patch.object(validate, "run_season", side_effect=[
@@ -857,6 +941,7 @@ def test_run_season_blends_arm_b_with_ensemble_when_enabled():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -867,6 +952,7 @@ def test_run_season_blends_arm_b_with_ensemble_when_enabled():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -980,6 +1066,7 @@ def test_run_season_blends_arm_b_with_ensemble_in_cached_arm_a_path():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -990,6 +1077,7 @@ def test_run_season_blends_arm_b_with_ensemble_in_cached_arm_a_path():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -1051,6 +1139,7 @@ def test_run_season_skips_ensembler_when_ff_opportunity_subsignal_is_disabled():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -1061,6 +1150,7 @@ def test_run_season_skips_ensembler_when_ff_opportunity_subsignal_is_disabled():
                 "vegas_config": None,
                 "props_config": None,
                 "usage_config": None,
+                "tracking_config": None,
                 "game_script_config": None,
                 "goal_line_concentration_config": None,
                 "td_tendency_config": None,
@@ -1124,7 +1214,11 @@ def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline
     with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
          patch.object(validate, "load_defaults", return_value=defaults), \
          patch.object(validate, "resolve_scoring", return_value={}), \
-         patch.object(validate, "build_engine_configs", return_value={"td_tendency_config": object()}), \
+         patch.object(
+             validate,
+             "build_engine_configs",
+             return_value={"tracking_config": None, "td_tendency_config": object()},
+         ), \
          patch.object(validate, "collect_signal_coverage", return_value=coverage_summary, create=True) as mock_collect_signal_coverage, \
          patch.object(validate, "print_header") as mock_print_header, \
          patch.object(validate, "run_season", return_value={

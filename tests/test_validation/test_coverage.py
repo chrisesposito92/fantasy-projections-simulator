@@ -12,6 +12,7 @@ from fantasy_sim.validation.coverage import (
     collect_signal_coverage,
 )
 from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+from fantasy_sim.data.tracking.models import TrackingConfig
 from fantasy_sim.data.usage.models import RouteRateConfig, NgsConfig, UsageConfig
 
 
@@ -28,6 +29,10 @@ def _base_config(
     usage_enabled: bool = True,
     usage_ngs_enabled: bool = True,
     usage_route_rate_enabled: bool = True,
+    tracking_enabled: bool = False,
+    tracking_receiver_enabled: bool = True,
+    tracking_rb_enabled: bool = True,
+    tracking_qb_enabled: bool = True,
 ) -> dict:
     return {
         "vegas": {"props": {"enabled": props_enabled}},
@@ -37,6 +42,12 @@ def _base_config(
             "enabled": usage_enabled,
             "ngs": {"enabled": usage_ngs_enabled},
             "route_rate": {"enabled": usage_route_rate_enabled},
+        },
+        "tracking": {
+            "enabled": tracking_enabled,
+            "receiver_participation": {"enabled": tracking_receiver_enabled},
+            "rb_efficiency": {"enabled": tracking_rb_enabled},
+            "qb_context": {"enabled": tracking_qb_enabled},
         },
     }
 
@@ -300,6 +311,92 @@ def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(
     )
 
     assert coverage["usage.route_rate"].status == "disabled"
+
+
+def test_tracking_reports_slice_and_family_coverage_from_required_inputs(tmp_path):
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(cache_dir / f"pbp_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"ftn_charting_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"participation_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"ngs_passing_{season}.parquet")
+    _write_parquet_placeholder(cache_dir / "ngs_rushing_2023.parquet")
+
+    coverage = collect_signal_coverage(
+        _base_config(tracking_enabled=True),
+        [2023, 2024],
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["tracking.receiver_participation"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Requires FTN charting plus season PBP parquet coverage for each test season",
+    )
+    assert coverage["tracking.rb_efficiency"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note="Requires FTN charting, NGS rushing, and season PBP parquet coverage for each test season",
+    )
+    assert coverage["tracking.qb_context"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Requires participation, FTN charting, NGS passing, and season PBP parquet coverage for each test season",
+    )
+    assert coverage["tracking"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note="Tracking family coverage is the intersection of enabled tracking slices",
+    )
+
+
+def test_tracking_family_uses_intersection_of_enabled_slices_only(tmp_path):
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(cache_dir / "pbp_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "ftn_charting_2024.parquet")
+
+    coverage = collect_signal_coverage(
+        {
+            "tracking_config": TrackingConfig(
+                enabled=True,
+                rb_efficiency=TrackingConfig().rb_efficiency,
+                receiver_participation=TrackingConfig().receiver_participation,
+                qb_context=TrackingConfig().qb_context,
+            )
+        },
+        [2024],
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["tracking"].status == "none"
+
+    typed_config = TrackingConfig(enabled=True)
+    typed_config.rb_efficiency.enabled = False
+    typed_config.qb_context.enabled = False
+    coverage = collect_signal_coverage(
+        {"tracking_config": typed_config},
+        [2024],
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["tracking.receiver_participation"].covered_seasons == [2024]
+    assert coverage["tracking.rb_efficiency"].status == "disabled"
+    assert coverage["tracking.qb_context"].status == "disabled"
+    assert coverage["tracking"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2024],
+        missing_seasons=[],
+        note="Tracking family coverage is the intersection of enabled tracking slices",
+    )
 
 
 def test_market_history_reports_partial_for_covered_2023_only(tmp_path):
