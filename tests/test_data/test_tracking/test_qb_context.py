@@ -124,7 +124,7 @@ def test_qb_context_updates_team_context_and_starting_qb():
     backup = roster.players[1]
     assert team_dists.pace_factor == pytest.approx(1.0 * pace_factor)
     assert team_dists.play_calling.default["pass"] == pytest.approx(0.55 * pass_factor)
-    assert team_dists.play_calling.default["run"] == pytest.approx(0.45)
+    assert team_dists.play_calling.default["pass"] + team_dists.play_calling.default["run"] == pytest.approx(1.0)
     assert team_dists.turnover_rates.sack_rate == pytest.approx(0.06 * sack_factor)
     assert starter.usage.scramble_rate == pytest.approx(0.08 * scramble_factor)
     assert backup.usage.scramble_rate == pytest.approx(0.03)
@@ -154,6 +154,6 @@ def test_qb_context_skips_qb_below_min_dropbacks():
     starter = roster.players[0]
     assert team_dists.pace_factor == pytest.approx(1.0)
     assert team_dists.play_calling.default["pass"] == pytest.approx(0.55)
-    assert team_dists.play_calling.default["run"] == pytest.approx(0.45)
+    assert team_dists.play_calling.default["pass"] + team_dists.play_calling.default["run"] == pytest.approx(1.0)
     assert team_dists.turnover_rates.sack_rate == pytest.approx(0.06)
     assert starter.usage.scramble_rate == pytest.approx(0.08)
