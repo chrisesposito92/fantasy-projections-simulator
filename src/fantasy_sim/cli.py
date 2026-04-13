@@ -11,6 +11,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.market_history import load_market_history_config
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.role_trend.config import load_role_trend_config
+from fantasy_sim.data.tracking import load_tracking_config
 from fantasy_sim.data.weather.config import load_weather_config
 from fantasy_sim.data.vegas.config import load_props_config, load_vegas_config
 from fantasy_sim.data.availability.config import load_availability_config
@@ -141,6 +142,7 @@ def _make_builder(
     usage_config = load_usage_config(defaults)
     if usage_flag is not None:
         usage_config.enabled = usage_flag
+    tracking_config = load_tracking_config(defaults)
     game_script_config = load_game_script_config(defaults)
     goal_line_concentration_config = load_goal_line_concentration_config(defaults)
     td_tendency_config = load_td_tendency_config(defaults)
@@ -153,6 +155,7 @@ def _make_builder(
         props_config=props_config,
         availability_config=availability_config,
         usage_config=usage_config,
+        tracking_config=tracking_config,
         game_script_config=game_script_config,
         goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
@@ -1368,6 +1371,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     usage_config = load_usage_config(defaults)
     if usage is not None:
         usage_config.enabled = usage
+    tracking_config = load_tracking_config(defaults)
 
     click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
     click.echo(f"Training data: {season - training_years}-{season - 1}\n")
@@ -1381,6 +1385,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         weather_config=weather_config,
         vegas_config=vegas_config,
         usage_config=usage_config,
+        tracking_config=tracking_config,
         role_trend_config=role_trend_config,
         market_history_config=market_history_config,
         ensemble_config=ensemble_config,

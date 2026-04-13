@@ -340,6 +340,29 @@ def collect_signal_coverage(
         ("usage_config", "usage"),
         ("usage",),
     )
+    tracking_enabled = _signal_enabled(
+        config,
+        ("tracking_config", "tracking"),
+        ("tracking",),
+    )
+    tracking_receiver_enabled = _signal_enabled(
+        config,
+        ("tracking_config", "tracking"),
+        ("tracking", "receiver_participation"),
+        nested_path=("receiver_participation",),
+    )
+    tracking_rb_enabled = _signal_enabled(
+        config,
+        ("tracking_config", "tracking"),
+        ("tracking", "rb_efficiency"),
+        nested_path=("rb_efficiency",),
+    )
+    tracking_qb_enabled = _signal_enabled(
+        config,
+        ("tracking_config", "tracking"),
+        ("tracking", "qb_context"),
+        nested_path=("qb_context",),
+    )
     usage_ngs_enabled = _signal_enabled(
         config,
         ("usage_config", "usage"),
@@ -519,6 +542,30 @@ def collect_signal_coverage(
         season: [cache_path / f"ngs_receiving_{season}.parquet"]
         for season in seasons
     }
+    tracking_receiver_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            cache_path / f"ftn_charting_{season}.parquet",
+            cache_path / f"pbp_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    tracking_rb_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            cache_path / f"ftn_charting_{season}.parquet",
+            cache_path / f"ngs_rushing_{season}.parquet",
+            cache_path / f"pbp_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    tracking_qb_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            cache_path / f"participation_{season}.parquet",
+            cache_path / f"ftn_charting_{season}.parquet",
+            cache_path / f"ngs_passing_{season}.parquet",
+            cache_path / f"pbp_{season}.parquet",
+        ]
+        for season in seasons
+    }
 
     market_history_signals = {
         "market_history.crosswalk": _build_signal(
@@ -610,8 +657,38 @@ def collect_signal_coverage(
             "rosters_weekly cache to build the crosswalk"
         ),
     )
+    tracking_signals = {
+        "tracking.receiver_participation": _build_signal(
+            tracking_enabled and tracking_receiver_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                tracking_receiver_paths_by_season,
+            ),
+            note="Requires FTN charting plus season PBP parquet coverage for each test season",
+        ),
+        "tracking.rb_efficiency": _build_signal(
+            tracking_enabled and tracking_rb_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, tracking_rb_paths_by_season),
+            note="Requires FTN charting, NGS rushing, and season PBP parquet coverage for each test season",
+        ),
+        "tracking.qb_context": _build_signal(
+            tracking_enabled and tracking_qb_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, tracking_qb_paths_by_season),
+            note="Requires participation, FTN charting, NGS passing, and season PBP parquet coverage for each test season",
+        ),
+    }
+    tracking_signals["tracking"] = _build_signal(
+        tracking_enabled,
+        seasons,
+        _intersect_enabled_coverage(seasons, tracking_signals.values()),
+        note="Tracking family coverage is the intersection of enabled tracking slices",
+    )
 
     return {
+        **tracking_signals,
         **market_history_signals,
         "props": _build_signal(
             props_enabled,

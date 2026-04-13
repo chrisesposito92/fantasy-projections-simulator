@@ -16,6 +16,7 @@ from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModif
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.availability.models import AvailabilityConfig
+from fantasy_sim.data.tracking.models import TrackingConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
@@ -62,6 +63,7 @@ class GameContextBuilder:
         props_config: PropsConfig | None = None,
         availability_config: AvailabilityConfig | None = None,
         usage_config: UsageConfig | None = None,
+        tracking_config: TrackingConfig | None = None,
         game_script_config: GameScriptConfig | None = None,
         goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
@@ -187,6 +189,13 @@ class GameContextBuilder:
             self._usage_engine = UsageEngine(self._usage_config, self.loader)
             logger.info("Usage engine enabled")
 
+        self._tracking_engine = None
+        self._tracking_config = tracking_config or TrackingConfig(enabled=False)
+        if self._tracking_config.enabled:
+            from fantasy_sim.data.tracking.engine import TrackingEngine
+            self._tracking_engine = TrackingEngine(self._tracking_config)
+            logger.info("Tracking engine enabled")
+
         self._game_script_config = game_script_config or GameScriptConfig(enabled=False)
         self._game_script_engine = None
         if self._game_script_config.enabled:
@@ -272,7 +281,25 @@ class GameContextBuilder:
                 )
             else:
                 usage_fingerprint = (False,)
-            cache_key = (ts_key, target_season, week, props_enabled, usage_fingerprint)
+            _tracking_cfg = getattr(self, "_tracking_config", None)
+            if _tracking_cfg is not None and _tracking_cfg.enabled:
+                tracking_fingerprint = (
+                    _tracking_cfg.enabled,
+                    _tracking_cfg.window_weeks,
+                    _tracking_cfg.receiver_participation.enabled,
+                    _tracking_cfg.rb_efficiency.enabled,
+                    _tracking_cfg.qb_context.enabled,
+                )
+            else:
+                tracking_fingerprint = (False,)
+            cache_key = (
+                ts_key,
+                target_season,
+                week,
+                props_enabled,
+                usage_fingerprint,
+                tracking_fingerprint,
+            )
             if cache_key not in self._player_models_cache:
                 if rosters is not None:
                     current_rosters = rosters
@@ -741,6 +768,15 @@ class GameContextBuilder:
             # MUST normalize after usage mutations (review HIGH concern: shares must sum to 1.0
             # before props engine runs, otherwise subsequent engines operate on invalid shares)
             from fantasy_sim.data.player_builder import _normalize_roster_shares
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
+
+        # Tracking engine: FTN/NGS/participation pre-sim adjustments after usage, before props.
+        if getattr(self, "_tracking_engine", None) is not None and target_season and week:
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+
+            self._tracking_engine.apply(home_roster, home_dists, target_season, week)
+            self._tracking_engine.apply(away_roster, away_dists, target_season, week)
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
 

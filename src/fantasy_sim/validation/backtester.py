@@ -12,6 +12,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.market_history.models import MarketHistoryConfig
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.role_trend.models import RoleTrendConfig
+from fantasy_sim.data.tracking.models import TrackingConfig
 from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
 from fantasy_sim.data.usage.models import UsageConfig
@@ -75,6 +76,7 @@ class Backtester:
         vegas_config: VegasConfig | None = None,
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
+        tracking_config: TrackingConfig | None = None,
         role_trend_config: RoleTrendConfig | None = None,
         market_history_config: MarketHistoryConfig | None = None,
         ensemble_config: EnsembleConfig | None = None,
@@ -97,6 +99,7 @@ class Backtester:
         self._vegas_config = vegas_config
         self._props_config = props_config
         self._usage_config = usage_config
+        self._tracking_config = tracking_config
         self._role_trend_config = role_trend_config
         self._market_history_config = market_history_config
         self._ensemble_config = ensemble_config
@@ -144,6 +147,7 @@ class Backtester:
             vegas_config=self._vegas_config,
             props_config=self._props_config,
             usage_config=self._usage_config,
+            tracking_config=self._tracking_config,
             max_workers=self.max_workers,
             dual_arm=False,
         )
