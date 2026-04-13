@@ -178,6 +178,7 @@ class TestBuildBareEngineConfigs:
         assert configs["vegas_config"] is None
         assert configs["props_config"] is None
         assert configs["usage_config"] is None
+        assert configs["tracking_config"] is None
         assert configs["availability_config"] is None
         assert configs["role_trend_config"] is None
         assert configs["market_history_config"] is None

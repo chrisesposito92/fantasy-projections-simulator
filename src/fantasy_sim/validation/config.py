@@ -76,8 +76,8 @@ def build_engine_configs(config: dict) -> dict:
     """Build all engine config dataclasses from a full config dict.
 
     Returns a dict with keys: pff_config, weather_config, vegas_config,
-    props_config, usage_config, availability_config, role_trend_config,
-    market_history_config, game_script_config,
+    props_config, usage_config, tracking_config, availability_config,
+    role_trend_config, market_history_config, game_script_config,
     goal_line_concentration_config, td_tendency_config.
     Each value is the config dataclass if enabled, or None if disabled.
     """
