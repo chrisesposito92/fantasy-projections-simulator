@@ -223,12 +223,18 @@ def run_season(
         else None
     )
     arm_a_market_history = (
-        MarketHistoryProjectionAdjuster(arm_a_configs["market_history_config"])
+        MarketHistoryProjectionAdjuster(
+            arm_a_configs["market_history_config"],
+            scoring_config=scoring_config,
+        )
         if arm_a_configs.get("market_history_config") is not None
         else None
     )
     arm_b_market_history = (
-        MarketHistoryProjectionAdjuster(arm_b_configs["market_history_config"])
+        MarketHistoryProjectionAdjuster(
+            arm_b_configs["market_history_config"],
+            scoring_config=scoring_config,
+        )
         if arm_b_configs.get("market_history_config") is not None
         else None
     )

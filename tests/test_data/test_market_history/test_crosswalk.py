@@ -70,3 +70,27 @@ def test_build_for_season_skips_ambiguous_same_name_on_both_teams():
 
     assert "Alex Smith" not in frame["player_name"].to_list()
 
+
+def test_build_for_season_preserves_null_schedule_game_id_when_matching_by_teams():
+    loader = MagicMock(spec=DataLoader)
+    loader.load_rosters.return_value = _rosters().filter(pl.col("player_id") == "BUF-QB1")
+    crosswalk = OddsPlayerCrosswalk(loader=loader)
+
+    frame = crosswalk.build_for_season(
+        pl.DataFrame(
+            {
+                "season": [2024],
+                "week": [1],
+                "schedule_game_id": [None],
+                "player_name": ["Josh Allen"],
+                "player_name_normalized": ["josh allen"],
+                "home_team": ["Buffalo Bills"],
+                "away_team": ["Arizona Cardinals"],
+            }
+        ),
+        2024,
+    )
+
+    row = frame.row(0, named=True)
+    assert row["player_id"] == "BUF-QB1"
+    assert row["schedule_game_id"] is None

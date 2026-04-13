@@ -11,8 +11,9 @@ The Phase 3 runtime redesign, The Odds API to nflverse crosswalk, post-sim
 adjuster rewrite, and validation reruns are complete on this branch. The
 canonical current state lives in:
 
-- [accuracy-roadmap.md](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/docs/accuracy-roadmap.md)
-- [accuracy-stack-audit.md](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/docs/accuracy-stack-audit.md)
+- [accuracy-roadmap.md](./accuracy-roadmap.md)
+- [accuracy-stack-audit.md](./accuracy-stack-audit.md)
+ 
 
 ## Current State
 

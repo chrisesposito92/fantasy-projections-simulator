@@ -142,12 +142,11 @@ class TestBuildEngineConfigs:
 
     def test_market_history_override_propagates(self):
         defaults = load_defaults()
-        overridden = apply_overrides(defaults, ["market_history.enabled=true"])
+        overridden = apply_overrides(defaults, ["market_history.enabled=false"])
 
         configs = build_engine_configs(overridden)
 
-        assert configs["market_history_config"] is not None
-        assert configs["market_history_config"].enabled is True
+        assert configs["market_history_config"] is None
 
     def test_disabled_engine_returns_none(self):
         defaults = load_defaults()

@@ -167,7 +167,11 @@ class OddsPlayerCrosswalk:
                 {
                     "season": int(row["season"]),
                     "week": week,
-                    "schedule_game_id": str(row["schedule_game_id"]),
+                    "schedule_game_id": (
+                        str(row["schedule_game_id"])
+                        if row.get("schedule_game_id") is not None
+                        else None
+                    ),
                     "player_name": str(row["player_name"]),
                     "player_name_normalized": query,
                     "player_id": str(chosen["player_id"]),

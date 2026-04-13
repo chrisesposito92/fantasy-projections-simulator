@@ -31,7 +31,7 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--week", type=int, nargs="+")
     parser.add_argument("--markets", nargs="+", default=list(DEFAULT_PROP_MARKETS))
     parser.add_argument("--regions", default="us")
-    parser.add_argument("--snapshot-label", default="close")
+    parser.add_argument("--snapshot-label", default="close_core8")
     parser.add_argument(
         "--date-source",
         choices=(
