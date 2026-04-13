@@ -452,9 +452,9 @@ uv run python scripts/fetch_market_history_props.py --season YEAR [YEAR ...] [OP
 |------|---------|-------------|
 | `--season YEAR [YEAR ...]` | *(required)* | Seasons to fetch |
 | `--week N [N ...]` | all | Restrict to specific weeks |
-| `--markets KEY [KEY ...]` | core 7 markets | Markets to request from The Odds API |
+| `--markets KEY [KEY ...]` | core 8 markets | Markets to request from The Odds API |
 | `--regions REGION` | `us` | Region(s) to request; NFL use should generally stay `us` |
-| `--snapshot-label LABEL` | `close` | Cache label for this snapshot set |
+| `--snapshot-label LABEL` | `close_core8` | Cache label for this snapshot set |
 | `--date-source FIELD` | `commence_time` | Inventory field used to build the historical snapshot date |
 | `--offset-minutes N` | `0` | Offset added to the selected `date-source` |
 | `--delay SECONDS` | `0.5` | Sleep between requests |
@@ -487,11 +487,13 @@ uv run python scripts/fetch_market_history_props.py \
   --season 2024 \
   --week 1 \
   --markets player_pass_yds \
+  --snapshot-label close_core8 \
   --limit 1
 
 # Close snapshots for all core markets in 2023-2025
 uv run python scripts/fetch_market_history_props.py \
-  --season 2023 2024 2025
+  --season 2023 2024 2025 \
+  --snapshot-label close_core8
 
 # Pull a pre-kick snapshot 30 minutes before kickoff
 uv run python scripts/fetch_market_history_props.py \
@@ -499,6 +501,31 @@ uv run python scripts/fetch_market_history_props.py \
   --snapshot-label close_minus_30 \
   --date-source commence_time \
   --offset-minutes -30
+```
+
+### `build_market_history_player_markets.py`
+
+Builds processed **market-native player-week signals** from cached raw props
+JSON. This is the current processed layer for The Odds API player props.
+
+```bash
+uv run python scripts/build_market_history_player_markets.py --season YEAR [YEAR ...] [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--season YEAR [YEAR ...]` | *(required)* | Seasons to build |
+| `--snapshot-label LABEL` | `close_core8` | Raw props snapshot label to aggregate |
+
+**Processed output:**
+- `~/.fantasy-sim/market-history/processed/player_markets_<season>_<snapshot-label>.parquet`
+
+**Examples:**
+```bash
+# Build processed player-week market signals from the close-core8 archive
+uv run python scripts/build_market_history_player_markets.py \
+  --season 2023 2024 2025 \
+  --snapshot-label close_core8
 ```
 
 ### `import_market_history.py`
