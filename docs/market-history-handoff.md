@@ -3,6 +3,17 @@
 Date: 2026-04-13
 Branch: `codex/phase-3-market-history`
 
+## Status Note
+
+This handoff is now historical.
+
+The Phase 3 runtime redesign, The Odds API to nflverse crosswalk, post-sim
+adjuster rewrite, and validation reruns are complete on this branch. The
+canonical current state lives in:
+
+- [accuracy-roadmap.md](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/docs/accuracy-roadmap.md)
+- [accuracy-stack-audit.md](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/docs/accuracy-stack-audit.md)
+
 ## Current State
 
 The branch now has three distinct layers of work:
@@ -33,9 +44,13 @@ The **new real data path** is the market-native processed parquet:
 - `player_markets_2024_close_core8.parquet`
 - `player_markets_2025_close_core8.parquet`
 
-Those files are **not yet wired into the simulator**.
+Those files are now wired into the simulator and validation path.
 
-So the next session should **not** run more A/B tests yet.
+Promoted validation artifacts:
+
+- `phase-3-market-history-v2-real-schema`
+- `phase-3-market-history-v2-real-schema-qb-wr`
+- `phase-3-market-history-v2-total-lift`
 
 ## Completed Data Pulls
 
@@ -203,74 +218,18 @@ Recommendation:
 Open snapshots are only worth adding later if movement becomes important after
 the real market-native integration is working.
 
-## What Is Left To Do
+## Completed From This Handoff
 
-### 1. Redesign `market_history` runtime around market-native player-week signals
+- `market_history` runtime redesigned around market-native player-week signals
+- The Odds API to nflverse `player_id` crosswalk implemented
+- post-sim adjuster reworked to use the real `player_markets_*_close_core8`
+  schema
+- validation coverage switched to the new processed files and crosswalk inputs
+- Phase 3 rerun with fresh A/B artifacts and promoted to default-on
 
-Current problem:
+## Remaining Follow-On Work
 
-- runtime scoring and coverage still revolve around the placeholder fantasy-ish
-  shape (`open_fpts`, `close_fpts`, etc.)
-
-Target:
-
-- use the real processed market-native parquet as the canonical source
-
-### 2. Build The Odds API -> nflverse `player_id` crosswalk
-
-Current problem:
-
-- raw/player-market data identifies players by **name only**
-- current PFF crosswalk is not sufficient
-
-Likely ingredients:
-
-- standardized player name
-- team
-- nflverse roster data
-- ambiguity guard
-- reuse ideas from:
-  - [crosswalk.py](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/vegas/crosswalk.py)
-
-### 3. Rework the post-sim adjuster
-
-Current problem:
-
-- [market_history.py](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/scoring/market_history.py)
-  still expects the old processed abstraction
-
-Target:
-
-- adapt the post-sim layer to the real market-native processed schema
-
-### 4. Only then rerun Phase 3 validation
-
-Do **not** run new A/B tests until steps 1-3 are done.
-
-Once the real schema and crosswalk are in:
-
-- rebuild processed market signals
-- run one single marginal validation artifact
-- update docs again if the result changes
-
-## Recommended Next Session Prompt
-
-Use this as the kickoff prompt in the next session:
-
-> Continue on branch `codex/phase-3-market-history`. The Odds API event inventory and close-only props backfill for `2023-2025` are complete, and `player_markets_<season>_close_core8.parquet` exists. Do not run new A/B tests yet. First redesign `market_history` around market-native player-week signals, then build the The Odds API -> nflverse player crosswalk, then rework the post-sim adjuster to use that real schema.
-
-## Suggested First Commands For The Next Session
-
-```bash
-git switch codex/phase-3-market-history
-
-uv run python - <<'PY'
-from pathlib import Path
-import polars as pl
-base = Path.home()/'.fantasy-sim'/'market-history'/'processed'
-for season in (2023, 2024, 2025):
-    path = base / f'player_markets_{season}_close_core8.parquet'
-    df = pl.read_parquet(path)
-    print('season', season, 'rows', df.height, 'markets', sorted(df['market_key'].unique().to_list()))
-PY
-```
+- `2022` market-history backfill, if a credible source can be acquired
+- optional expansion beyond the promoted `close_core8` market set
+- open-snapshot experimentation only if the promoted close-only path stops
+  improving results

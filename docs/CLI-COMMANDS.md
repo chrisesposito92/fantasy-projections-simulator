@@ -530,8 +530,10 @@ uv run python scripts/build_market_history_player_markets.py \
 
 ### `import_market_history.py`
 
-Builds processed season parquet from already-cached raw weekly market-history
-files. This does not hit the network.
+Legacy importer for the older placeholder `market_history_weekly_<season>.parquet`
+cache. The current Phase 3 runtime uses
+`build_market_history_player_markets.py` and
+`player_markets_<season>_<snapshot-label>.parquet` instead.
 
 ```bash
 uv run python scripts/import_market_history.py --season YEAR [YEAR ...]

@@ -348,25 +348,27 @@ Future planners should treat that artifact as the Phase 2 decision record.
 
 ### Status
 
-Implemented in v1, but not promoted to the default stack.
+Implemented in v2 and promoted to the default stack.
 
-The current decision artifact shows partial historical coverage and a
-covered-season result that is effectively flat, with a slight season-level MAE
-regression. That is not enough to justify turning `market_history` on by
-default.
+The earlier `phase-3-market-history-v1` artifact is now superseded by the
+market-native The Odds API integration. After rewiring `market_history` around
+`player_markets_<season>_<snapshot_label>.parquet`, building the The Odds API
+to nflverse crosswalk, and rerunning covered-season validation, the Phase 3
+evidence is positive enough to turn `market_history` on by default.
 
 ### Phase 3 v1 Scope
 
 - `market_history` implemented as a post-sim layer
-- processed market-history cache built for 2023 and 2024
+- processed market-native cache built for 2023 and 2024 validation seasons,
+  with 2025 local data also present
 - promotion evidence evaluated with explicit covered-season reporting
 - 2022 treated as no-data / uncovered rather than neutral evidence
 
 ### Promotion Artifact
 
-Phase 3 decision artifact:
+Phase 3 promotion artifact:
 
-- label: `phase-3-market-history-v1`
+- label: `phase-3-market-history-v2-real-schema`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
 - validation coverage: `market_history=partial(2023,2024)`
@@ -375,27 +377,48 @@ Phase 3 decision artifact:
 - promotion evidence scope: `covered_only`
 
 ```text
-rank_corr delta:  -0.0003
-weekly_mae delta: -0.011
-season_mae delta: +0.036
+rank_corr delta:  +0.0075
+weekly_mae delta: -0.065
+season_mae delta: -1.288
 ```
 
 Artifact interpretation:
 
-- the stack-wide average summary still includes 2022, but that season had no
-  market-history coverage
-- market-specific promotion evidence therefore must use the explicit
+- the stack-wide average summary still includes 2022, but that season remains
+  no-data for `market_history`
+- market-specific promotion evidence therefore continues to use the explicit
   `covered_only` readout instead of folding 2022 into the averages as neutral
   evidence
-- the covered-only result does not justify promoting `market_history` to
-  default-on
+- the covered-only marginal result is positive on all three top-line metrics,
+  so Phase 3 is promoted despite the missing 2022 backfill
+
+Secondary confirmation artifact:
+
+- label: `phase-3-market-history-v2-real-schema-qb-wr`
+- covered-only deltas:
+  - `rank_corr delta:  +0.0080`
+  - `weekly_mae delta: -0.071`
+  - `season_mae delta: -1.301`
+
+Primary tie-breaker positions also improved in weekly validation:
+
+- QB weekly rank corr `+0.0086`, weekly MAE `-0.049`
+- WR weekly rank corr `+0.0144`, weekly MAE `-0.045`
+
+Promoted Phase 3 defaults:
+
+- `market_history.enabled: true`
+- `market_history.snapshot_label: close_core8`
+- keep `market_history` between `role_trend` and `ensemble.ff_opportunity`
+- keep `role_trend.enabled: false` until a later phase revalidates it
 
 ### Follow-On Work
 
 - backfill `2022` market-history data so promotion evidence can cover all three
-  backtest seasons
-- re-run a single marginal validation artifact after the `2022` backfill lands
-- keep this as follow-on work, not a blocker for moving on to Phase 4
+  backtest seasons with the same market-native path
+- consider open-snapshot or wider market-set expansion only after the promoted
+  close-only path has been in use long enough to judge its real value
+- keep both as follow-on work, not blockers for moving on to Phase 4
 
 ## Phase 4: Tracking And Charting Expansion
 

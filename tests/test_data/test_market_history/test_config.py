@@ -55,7 +55,19 @@ def test_load_market_history_config_defaults_are_isolated_between_calls():
 def test_load_market_history_config_matches_checked_in_defaults():
     cfg = load_market_history_config(_load_defaults_yaml())
 
-    assert cfg == MarketHistoryConfig()
+    assert cfg.enabled is True
+    assert cfg.data_dir is None
+    assert cfg.snapshot_label == "close_core8"
+    assert cfg.positions == ("QB", "RB", "WR", "TE")
+    assert cfg.weights == {
+        "QB": 0.20,
+        "RB": 0.15,
+        "WR": 0.20,
+        "TE": 0.15,
+    }
+    assert cfg.min_coverage_weeks == 1
+    assert cfg.min_books == 2
+    assert cfg.dispersion_scale == 3.0
     assert cfg.features == MarketHistoryFeatureFlags()
 
 

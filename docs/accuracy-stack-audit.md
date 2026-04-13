@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot from the 2026-04-10 deep-dive session.
+Research snapshot updated through the Phase 3 v2 market-history promotion.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -44,6 +44,8 @@ Active in `config/defaults.yaml` as of this audit:
 - `availability.injuries.enabled: false`
 - `availability.depth_charts.enabled: true`
 - `availability.usage_fallback.enabled: true`
+- `market_history.enabled: true`
+- `market_history.snapshot_label: close_core8`
 - `role_trend.enabled: false`
 - `role_trend.positions: [QB, RB, WR, TE]`
 - `game_script.enabled: true`
@@ -57,7 +59,6 @@ Built but currently parked or disabled:
 - `pff.talent.enabled: false`
 - `usage.ngs.enabled: false`
 - `usage.route_rate.enabled: false`
-- `market_history.enabled: false`
 - `game_script.leading_late_rb.enabled: false`
 - `goal_line_concentration.enabled: false`
 
@@ -195,12 +196,16 @@ Examples of useful columns verified locally:
 
 Observed under `~/.fantasy-sim/market-history/processed/`:
 
-- `market_history_weekly_2023.parquet`
-- `market_history_weekly_2024.parquet`
+- `events_inventory_2023.parquet`
+- `events_inventory_2024.parquet`
+- `events_inventory_2025.parquet`
+- `player_markets_2023_close_core8.parquet`
+- `player_markets_2024_close_core8.parquet`
+- `player_markets_2025_close_core8.parquet`
 
-Validation semantics from the Phase 3 v1 artifact:
+Validation semantics from the promoted Phase 3 v2 artifacts:
 
-- Phase 3 v1 covers `2023-2024` only
+- Phase 3 promotion evidence still covers `2023-2024` only
 - `2022` is explicitly uncovered for `market_history`
 - market-specific promotion evidence uses `covered_only`
 - stack-wide summaries may still show `2022`, but it must not be folded into
@@ -315,28 +320,35 @@ v1 rule for evidence interpretation:
 
 ## Phase 3 Market History Notes
 
-- `market_history` is implemented in v1 as a post-sim layer
-- the processed local store currently covers `2023-2024`
+- `market_history` is implemented in v2 as a post-sim layer
+- the processed local store currently includes `2023-2025`
 - `2022` is explicitly uncovered in the validation artifact
-- the Phase 3 decision artifact is `phase-3-market-history-v1`
+- the promoted Phase 3 artifact is `phase-3-market-history-v2-real-schema`
 - promotion evidence scope is `covered_only`
-- current default state remains `market_history.enabled: false`
+- current default state is `market_history.enabled: true`
+- current promoted snapshot source is `snapshot_label: close_core8`
 
-Phase 3 v1 artifact:
+Phase 3 v2 artifact:
 
-- label: `phase-3-market-history-v1`
+- label: `phase-3-market-history-v2-real-schema`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
 - coverage: `market_history=partial(2023,2024)`
 - covered seasons: `2023, 2024`
 - uncovered seasons: `2022`
-- `rank_corr delta:  -0.0003`
-- `weekly_mae delta: -0.011`
-- `season_mae delta: +0.036`
+- `rank_corr delta:  +0.0075`
+- `weekly_mae delta: -0.065`
+- `season_mae delta: -1.288`
+
+QB/WR tie-breaker confirmation:
+
+- label: `phase-3-market-history-v2-real-schema-qb-wr`
+- QB weekly rank corr `+0.0086`, weekly MAE `-0.049`
+- WR weekly rank corr `+0.0144`, weekly MAE `-0.045`
 
 Interpretation:
 
-- the covered-only deltas are too flat to justify default-on promotion
+- the covered-only deltas are strong enough to justify default-on promotion
 - stack-wide averages still include `2022`, but that season is no-data for
   `market_history` and cannot be treated as neutral evidence for the layer
 - `2022` backfill is follow-on work, not a prerequisite for moving on to other
@@ -420,10 +432,10 @@ Still caveats:
 
 ## Remaining Evaluation Caveats
 
-### 1. Market-history evidence is covered-only in Phase 3 v1
+### 1. Market-history evidence is still covered-only in Phase 3 v2
 
 The current market-history implementation has processed season parquet for
-`2023-2024`, while `2022` is explicitly uncovered.
+`2023-2025`, while `2022` is explicitly uncovered in historical validation.
 
 Implication:
 
@@ -431,8 +443,8 @@ Implication:
   readout
 - stack-wide summaries may still show `2022`, but `2022` cannot be folded into
   market-layer averages as neutral evidence
-- the current artifact does not justify changing the default state from
-  `market_history.enabled: false`
+- the promoted Phase 3 v2 artifact justifies `market_history.enabled: true`,
+  but only because the positive readout came from the covered seasons alone
 
 ### 2. Some recent comparisons are not isolated
 
