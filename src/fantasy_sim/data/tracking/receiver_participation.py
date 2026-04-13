@@ -6,6 +6,8 @@ import polars as pl
 from fantasy_sim.data.tracking.models import ReceiverParticipationConfig
 from fantasy_sim.models.player import TeamRoster
 
+RECEIVER_POSITIONS = {"WR", "TE"}
+
 
 def _bounded_factor(
     value: float,
@@ -59,6 +61,8 @@ class ReceiverParticipationEngine:
         }
 
         for player in roster.players:
+            if player.position not in RECEIVER_POSITIONS:
+                continue
             if player.position not in self.config.positions:
                 continue
 

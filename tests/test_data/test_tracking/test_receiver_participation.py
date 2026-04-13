@@ -123,3 +123,33 @@ def test_receiver_participation_skips_te_below_min_targets():
     assert te.usage.target_share == 0.12
     assert te.usage.air_yards_share == 0.10
     assert te.outcomes.catch_rate == 0.66
+
+
+def test_receiver_participation_never_affects_rb_even_if_config_includes_it():
+    roster = TeamRoster(
+        team="BUF",
+        players=[
+            _make_player("rb-1", "RB", target_share=0.15, air_yards_share=0.07, catch_rate=0.54),
+            _make_player("wr-1", "WR", target_share=0.20, air_yards_share=0.18, catch_rate=0.62),
+        ],
+    )
+    features = pl.DataFrame(
+        {
+            "team": ["BUF", "BUF"],
+            "player_id": ["rb-1", "wr-1"],
+            "targets": [18, 16],
+            "catchable_rate": [0.95, 0.82],
+            "contested_rate": [0.08, 0.12],
+            "mean_air_yards": [6.0, 14.5],
+        }
+    )
+    config = load_tracking_config({}).receiver_participation
+    config.positions = ("WR", "TE", "RB")
+    engine = ReceiverParticipationEngine(config)
+
+    engine.apply(roster, features)
+
+    rb = roster.players[0]
+    assert rb.usage.target_share == 0.15
+    assert rb.usage.air_yards_share == 0.07
+    assert rb.outcomes.catch_rate == 0.54
