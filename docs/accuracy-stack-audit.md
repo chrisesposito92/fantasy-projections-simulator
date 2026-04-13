@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 3 v2 market-history promotion.
+Research snapshot updated through the Phase 4 slice artifacts.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -39,6 +39,12 @@ Active in `config/defaults.yaml` as of this audit:
 - `vegas.props.enabled: true`
 - `usage.enabled: true`
 - `usage.cpoe.enabled: true`
+- `tracking.enabled: false`
+- `tracking.window_weeks: 4`
+- `tracking.receiver_participation.enabled: true`
+- `tracking.receiver_participation.positions: [WR, TE]`
+- `tracking.rb_efficiency.enabled: true`
+- `tracking.qb_context.enabled: true`
 - `availability.enabled: true`
 - `availability.positions: [QB, RB, WR, TE]`
 - `availability.injuries.enabled: false`
@@ -70,22 +76,23 @@ Built but currently parked or disabled:
 2. Vegas game environment
 3. Availability engine
 4. Usage engine
-5. Player props
-6. Matchup engine
-7. Tier engine and optional team-context integration
-8. Coverage engine
-9. DST baseline engine
-10. Kicker engine
-11. TD tendency engine
-12. Weather engine
-13. Runtime game script overlays during simulation
-14. User overrides
+5. Tracking engine
+6. Player props
+7. Matchup engine
+8. Tier engine and optional team-context integration
+9. Coverage engine
+10. DST baseline engine
+11. Kicker engine
+12. TD tendency engine
+13. Weather engine
+14. Runtime game script overlays during simulation
+15. User overrides
 
 End-to-end projection flow after simulation:
 
-15. Post-sim `role_trend` adjustment
-16. Post-sim `market_history` adjustment
-17. Post-sim `ensemble.ff_opportunity` blend
+16. Post-sim `role_trend` adjustment
+17. Post-sim `market_history` adjustment
+18. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
@@ -93,6 +100,7 @@ Important distinction:
 - it is resolved live from `GameState` and applied transiently during play calling
 - `availability` runs before `usage`, so explicit inactive / limited decisions
   are applied before softer usage refinement touches shares
+- `tracking` now runs after `usage` and before props, with roster shares re-normalized after tracking mutations
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
@@ -113,7 +121,7 @@ The repo currently has:
 
 - core simulation engine
 - validation harnesses
-- PFF/weather/vegas/usage/game-script/TD-tendency layers
+- PFF/weather/vegas/usage/tracking/game-script/TD-tendency layers
 - docs describing prior experiments and sweeps
 
 Most relevant files for accuracy work:
@@ -135,6 +143,7 @@ Relevant local stores under `~/.fantasy-sim`:
 Relevant subpaths for currently enabled features:
 
 - ff-opportunity weekly cache: `~/.fantasy-sim/cache/ff_opportunity_weekly_<season>.parquet`
+- tracking caches: `~/.fantasy-sim/cache/participation_<season>.parquet`, `~/.fantasy-sim/cache/ftn_charting_<season>.parquet`, `~/.fantasy-sim/cache/ngs_passing_<season>.parquet`, and `~/.fantasy-sim/cache/ngs_rushing_<season>.parquet`
 - market-history processed cache: `~/.fantasy-sim/market-history/processed/`
 - player props cache: `~/.fantasy-sim/pff/props/`
 
@@ -148,6 +157,10 @@ Observed local caches:
 - snap counts for 2022-2024
 - weekly player stats for 2022-2025
 - NGS receiving caches for 2022-2024
+- participation caches for 2022-2024
+- FTN charting caches for 2022-2024
+- NGS passing caches for 2022-2024
+- NGS rushing caches for 2022-2024
 - `ff_opportunity_weekly_2022.parquet`
 - `ff_opportunity_weekly_2023.parquet`
 - `ff_opportunity_weekly_2024.parquet`
@@ -246,12 +259,17 @@ Important distinction for planning and validation:
   `DataLoader.load_injuries()`
 - depth charts: verified loader exists and local parquet cache is created on
   demand by `DataLoader.load_depth_charts()`
-- participation: verified loader exists in `nflreadpy`, but this project does
-  not yet wrap or cache it in `DataLoader`
+- participation: wrapped by `DataLoader.load_participation()` and cached under
+  `~/.fantasy-sim/cache/participation_<season>.parquet`
+- FTN charting: wrapped by `DataLoader.load_ftn_charting()` and cached under
+  `~/.fantasy-sim/cache/ftn_charting_<season>.parquet`
+- NGS passing/rushing: wrapped by `DataLoader.load_nextgen_stats()` and cached
+  under `~/.fantasy-sim/cache/ngs_passing_<season>.parquet` and
+  `~/.fantasy-sim/cache/ngs_rushing_<season>.parquet`
 
-That means injuries and depth charts are implemented inputs for the current
-availability path, while participation is still only a verified future-phase
-data surface.
+That means the core Phase 4 tracking inputs are no longer future-only data
+surfaces; they are implemented loader paths with local backfilled cache state
+for `2022-2024`.
 
 ## Phase 1 Ensemble Implementation Notes
 
@@ -354,6 +372,43 @@ Interpretation:
 - `2022` backfill is follow-on work, not a prerequisite for moving on to other
   phases
 
+## Phase 4 Tracking Notes
+
+- `tracking` is implemented as a pre-sim layer after `usage` and before props
+- current default state is `tracking.enabled: false`
+- the family ships three slice toggles:
+  - `tracking.receiver_participation.enabled: true`
+  - `tracking.rb_efficiency.enabled: true`
+  - `tracking.qb_context.enabled: true`
+- required local tracking cache files are now present for `2022-2024`
+
+Phase 4 isolated artifacts run on this branch:
+
+- `phase-4-receiver-participation-v1`
+  - `rank_corr delta:  -0.0006`
+  - `weekly_mae delta: +0.007`
+  - `season_mae delta: +0.072`
+- `phase-4-rb-efficiency-v1`
+  - `rank_corr delta:  -0.0003`
+  - `weekly_mae delta: +0.000`
+  - `season_mae delta: -0.063`
+- `phase-4-qb-context-v1`
+  - `rank_corr delta:  +0.0002`
+  - `weekly_mae delta: +0.007`
+  - `season_mae delta: +0.047`
+
+Interpretation:
+
+- none of the three isolated slices produced a material core-position win
+- two slices regressed on average
+- the remaining slice was effectively flat overall
+- the combined bundle was therefore not run
+
+Observed run caveat from the receiver/QB slices:
+
+- `Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
+- `Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
@@ -427,6 +482,7 @@ Still caveats:
 
 - Phase 3 market-history promotion evidence is currently `covered_only`
 - `2022` remains explicitly uncovered for `market_history`
+- Phase 4 tracking evidence is currently isolated-slice evidence only; no bundle readout exists because the slices were not strong enough to justify it
 - weekly ledger history is still partly legacy
 - older pre-schema ledger entries are still directional evidence, not apples-to-apples comparisons
 
@@ -446,7 +502,32 @@ Implication:
 - the promoted Phase 3 v2 artifact justifies `market_history.enabled: true`,
   but only because the positive readout came from the covered seasons alone
 
-### 2. Some recent comparisons are not isolated
+### 2. Phase 4 tracking decisions must stay slice-by-slice
+
+The current Phase 4 evidence is three isolated marginal runs, not a bundle run.
+
+Implication:
+
+- the current readout supports keeping `tracking.enabled: false`
+- no "maybe the bundle interaction helps" inference should be made from these
+  slice results
+- a future Phase 4 retry should change one slice or one parameter family at a
+  time, then re-run isolated validation before any combined bundle
+
+### 3. Tracking crosswalk coverage is very close to full, but not perfect
+
+The receiver-participation and QB-context artifacts both logged the same small
+snap crosswalk gap:
+
+- `Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
+- `Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
+
+Implication:
+
+- this is small enough that it did not block Phase 4 evaluation
+- it should still be treated as a real data-quality caveat for participation-based slices
+
+### 4. Some recent comparisons are not isolated
 
 Examples:
 
@@ -458,7 +539,7 @@ Examples:
 
 Use these runs as directional evidence, not clean causal proof.
 
-### 3. Weekly validation record is partially legacy
+### 5. Weekly validation record is partially legacy
 
 `results/weekly_ab_ledger.json` is effectively empty, while the useful weekly
 evidence still lives in `results/weekly_ab_ledger_pre-2022-2024.json`.
@@ -478,6 +559,9 @@ Useful reference points from the preserved local unified ledger snapshot:
 | `game-script-off` | `+0.1532` | `-0.617` | `-11.120` |
 | `game-script-trailing-control-400` | `+0.1534` | `-0.591` | `-10.997` |
 | `goal-line-concentration-400` | `+0.1512` | `-0.598` | `-11.416` |
+| `phase-4-receiver-participation-v1` | `-0.0006` | `+0.007` | `+0.072` |
+| `phase-4-qb-context-v1` | `+0.0002` | `+0.007` | `+0.047` |
+| `phase-4-rb-efficiency-v1` | `-0.0003` | `+0.000` | `-0.063` |
 
 Interpretation:
 
@@ -496,7 +580,7 @@ Interpretation:
 ### Strong local opportunities
 
 - high-resolution PFF slices already exist locally
-- `nflreadpy` already exposes the next set of promising feeds
+- `nflreadpy` tracking feeds are now backfilled locally for `2022-2024`
 - historical props are the clearest missing paid-data gap
 
 ### Operational rules for future planning
