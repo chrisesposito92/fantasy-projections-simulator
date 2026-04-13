@@ -74,30 +74,36 @@ class ReceiverParticipationEngine:
             if row is None:
                 continue
 
+            catchable_rate = row["catchable_rate"]
+            contested_rate = row["contested_rate"]
+            mean_air_yards = row["mean_air_yards"]
+            if catchable_rate is None or contested_rate is None or mean_air_yards is None:
+                continue
+
             targets = row["targets"]
             if targets is None or targets < self.config.min_targets:
                 continue
 
             target_factor = _bounded_factor(
-                float(row["catchable_rate"]),
+                float(catchable_rate),
                 baselines["catchable_rate"],
                 self.config.target_share_sensitivity,
                 self.config.factor_clamp,
             )
             air_factor = _bounded_factor(
-                float(row["mean_air_yards"]),
+                float(mean_air_yards),
                 baselines["mean_air_yards"],
                 self.config.air_yards_sensitivity,
                 self.config.factor_clamp,
             )
             catchable_factor = _bounded_factor(
-                float(row["catchable_rate"]),
+                float(catchable_rate),
                 baselines["catchable_rate"],
                 self.config.catchable_target_sensitivity,
                 self.config.factor_clamp,
             )
             contested_factor = _bounded_factor(
-                float(row["contested_rate"]),
+                float(contested_rate),
                 baselines["contested_rate"],
                 self.config.contested_target_sensitivity,
                 self.config.factor_clamp,
