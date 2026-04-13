@@ -196,6 +196,28 @@ def _config_flag(
     return default
 
 
+def _config_value(
+    config: object,
+    config_keys: tuple[str, ...],
+    raw_path: tuple[str, ...],
+    *,
+    nested_path: tuple[str, ...],
+    default: object,
+) -> object:
+    for key in config_keys:
+        section = _config_section(config, key)
+        if section is None:
+            continue
+        value = _config_get(section, *nested_path, default=None)
+        if value is not None:
+            return value
+
+    value = _config_get(config, *raw_path, default=None)
+    if value is not None:
+        return value
+    return default
+
+
 def _parquet_columns(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -336,11 +358,14 @@ def collect_signal_coverage(
         ("pff", "depth_role"),
         nested_path=("depth_role",),
     )
-    pff_section = _config_section(config, "pff_config") or _config_section(config, "pff")
     depth_role_positions = tuple(
-        _config_get(pff_section, "depth_role", "positions", default=("WR", "TE"))
-        if pff_section is not None
-        else ("WR", "TE")
+        _config_value(
+            config,
+            ("pff_config", "pff"),
+            ("pff", "depth_role", "positions"),
+            nested_path=("depth_role", "positions"),
+            default=("WR", "TE"),
+        )
     )
     weather_enabled = _signal_enabled(
         config,
@@ -581,6 +606,9 @@ def collect_signal_coverage(
     depth_role_paths_by_season: dict[int, list[Path]] = {
         season: [
             pff_path / f"receiving_depth_{season}.parquet",
+            pff_path / f"receiving_summary_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
             cache_path / f"rosters_weekly_{season}.parquet",
         ]
         for season in seasons
@@ -732,19 +760,28 @@ def collect_signal_coverage(
             pff_enabled and depth_role_enabled,
             seasons,
             depth_role_coverage,
-            note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
         ),
         "pff.depth_role.wr": _build_signal(
             pff_enabled and depth_role_enabled and "WR" in depth_role_positions,
             seasons,
             depth_role_coverage,
-            note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
         ),
         "pff.depth_role.te": _build_signal(
             pff_enabled and depth_role_enabled and "TE" in depth_role_positions,
             seasons,
             depth_role_coverage,
-            note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
         ),
         "weather": _build_signal(
             weather_enabled,
