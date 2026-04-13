@@ -247,6 +247,13 @@ class DepthRoleConfig:
 
 
 @dataclass
+class DepthRoleFactors:
+    """Per-player bounded role adjustments from PFF receiving-depth data."""
+    target_share_factor: float = 1.0
+    air_yards_share_factor: float = 1.0
+
+
+@dataclass
 class KickerConfig:
     """Configuration for the PFF kicker engine."""
     enabled: bool = True
