@@ -5,6 +5,8 @@ from __future__ import annotations
 from fantasy_sim.data.pff.models import (
     ArchetypeConfig,
     CoverageConfig,
+    DepthRoleConfig,
+    DepthRolePositionConfig,
     DstBaselineConfig,
     KickerConfig,
     MatchupConfig,
@@ -177,6 +179,42 @@ def load_pff_config(config: dict) -> PffConfig:
         min_games=cov_raw.get("min_games", 4),
     )
 
+    depth_role_raw = pff.get("depth_role", {})
+    depth_role = DepthRoleConfig(
+        enabled=depth_role_raw.get("enabled", False),
+        positions=tuple(depth_role_raw.get("positions", ["WR", "TE"])),
+        wr=DepthRolePositionConfig(
+            target_share_sensitivity=depth_role_raw.get("wr", {}).get(
+                "target_share_sensitivity",
+                0.10,
+            ),
+            air_yards_share_sensitivity=depth_role_raw.get("wr", {}).get(
+                "air_yards_share_sensitivity",
+                0.12,
+            ),
+            factor_clamp=tuple(
+                depth_role_raw.get("wr", {}).get("factor_clamp", [0.94, 1.06])
+            ),
+        ),
+        te=DepthRolePositionConfig(
+            target_share_sensitivity=depth_role_raw.get("te", {}).get(
+                "target_share_sensitivity",
+                0.08,
+            ),
+            air_yards_share_sensitivity=depth_role_raw.get("te", {}).get(
+                "air_yards_share_sensitivity",
+                0.06,
+            ),
+            factor_clamp=tuple(
+                depth_role_raw.get("te", {}).get("factor_clamp", [0.95, 1.05])
+            ),
+        ),
+        min_routes=depth_role_raw.get("min_routes", 15),
+        min_targets=depth_role_raw.get("min_targets", 6),
+        min_games=depth_role_raw.get("min_games", 4),
+        early_season_blend=depth_role_raw.get("early_season_blend", True),
+    )
+
     kicker_raw = pff.get("kicker", {})
     kicker = KickerConfig(
         enabled=kicker_raw.get("enabled", True),
@@ -201,6 +239,7 @@ def load_pff_config(config: dict) -> PffConfig:
         tier_engine=tier_engine,
         team_context=team_context,
         coverage=coverage,
+        depth_role=depth_role,
         kicker=kicker,
         dst_baseline=dst_baseline,
     )

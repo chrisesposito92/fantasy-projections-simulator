@@ -214,6 +214,39 @@ class CoverageConfig:
 
 
 @dataclass
+class DepthRolePositionConfig:
+    """Position-specific sensitivity and clamps for PFF depth-role adjustments."""
+    target_share_sensitivity: float
+    air_yards_share_sensitivity: float
+    factor_clamp: tuple[float, float]
+
+
+@dataclass
+class DepthRoleConfig:
+    """Configuration for the PFF WR/TE depth-role engine."""
+    enabled: bool = False
+    positions: tuple[str, ...] = ("WR", "TE")
+    wr: DepthRolePositionConfig = field(
+        default_factory=lambda: DepthRolePositionConfig(
+            target_share_sensitivity=0.10,
+            air_yards_share_sensitivity=0.12,
+            factor_clamp=(0.94, 1.06),
+        )
+    )
+    te: DepthRolePositionConfig = field(
+        default_factory=lambda: DepthRolePositionConfig(
+            target_share_sensitivity=0.08,
+            air_yards_share_sensitivity=0.06,
+            factor_clamp=(0.95, 1.05),
+        )
+    )
+    min_routes: int = 15
+    min_targets: int = 6
+    min_games: int = 4
+    early_season_blend: bool = True
+
+
+@dataclass
 class KickerConfig:
     """Configuration for the PFF kicker engine."""
     enabled: bool = True
@@ -249,5 +282,6 @@ class PffConfig:
     tier_engine: TierConfig = field(default_factory=TierConfig)
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
+    depth_role: DepthRoleConfig = field(default_factory=DepthRoleConfig)
     kicker: KickerConfig = field(default_factory=KickerConfig)
     dst_baseline: DstBaselineConfig = field(default_factory=DstBaselineConfig)

@@ -186,6 +186,22 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"] is not None
         assert configs["pff_config"].matchup.enabled is False
 
+    def test_pff_depth_role_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.depth_role.enabled=true",
+                "pff.depth_role.wr.target_share_sensitivity=0.14",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].depth_role.enabled is True
+        assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
+
 
 class TestBuildBareEngineConfigs:
     def test_all_none(self):

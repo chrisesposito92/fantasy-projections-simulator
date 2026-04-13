@@ -4,6 +4,8 @@ import pytest
 
 from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.data.pff.models import (
+    DepthRoleConfig,
+    DepthRolePositionConfig,
     MatchupConfig,
     MatchupContext,
     PffConfig,
@@ -136,3 +138,62 @@ def test_load_pff_config_coverage_defaults():
     assert pff.coverage.enabled is True
     assert pff.coverage.catch_rate_sensitivity == 0.04
     assert pff.coverage.factor_clamp == (0.97, 1.03)
+
+
+def test_load_pff_config_depth_role_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.depth_role, DepthRoleConfig)
+    assert cfg.depth_role.enabled is False
+    assert cfg.depth_role.positions == ("WR", "TE")
+    assert cfg.depth_role.min_routes == 15
+    assert cfg.depth_role.min_targets == 6
+    assert cfg.depth_role.min_games == 4
+    assert cfg.depth_role.early_season_blend is True
+    assert cfg.depth_role.wr == DepthRolePositionConfig(
+        target_share_sensitivity=0.10,
+        air_yards_share_sensitivity=0.12,
+        factor_clamp=(0.94, 1.06),
+    )
+    assert cfg.depth_role.te == DepthRolePositionConfig(
+        target_share_sensitivity=0.08,
+        air_yards_share_sensitivity=0.06,
+        factor_clamp=(0.95, 1.05),
+    )
+
+
+def test_load_pff_config_depth_role_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "depth_role": {
+                    "enabled": True,
+                    "positions": ["WR"],
+                    "min_routes": 22,
+                    "min_targets": 9,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                    "wr": {
+                        "target_share_sensitivity": 0.14,
+                        "air_yards_share_sensitivity": 0.16,
+                        "factor_clamp": [0.92, 1.08],
+                    },
+                    "te": {
+                        "target_share_sensitivity": 0.07,
+                        "air_yards_share_sensitivity": 0.05,
+                        "factor_clamp": [0.96, 1.04],
+                    },
+                },
+            }
+        }
+    )
+
+    assert cfg.depth_role.enabled is True
+    assert cfg.depth_role.positions == ("WR",)
+    assert cfg.depth_role.min_routes == 22
+    assert cfg.depth_role.min_targets == 9
+    assert cfg.depth_role.min_games == 5
+    assert cfg.depth_role.early_season_blend is False
+    assert cfg.depth_role.wr.factor_clamp == (0.92, 1.08)
+    assert cfg.depth_role.te.factor_clamp == (0.96, 1.04)
