@@ -40,15 +40,15 @@ class ReceiverParticipationEngine:
         if not required_columns.issubset(features.columns):
             return
 
+        baselines = self._feature_baselines(features)
+        if baselines is None:
+            return
+
         team_features = features
         if "team" in features.columns:
             team_features = features.filter(pl.col("team") == roster.team)
             if team_features.is_empty():
                 return
-
-        baselines = self._feature_baselines(team_features)
-        if baselines is None:
-            return
 
         feature_rows = {
             row["player_id"]: row

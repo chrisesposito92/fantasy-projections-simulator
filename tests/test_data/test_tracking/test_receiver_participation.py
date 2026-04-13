@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
+import pytest
 
 from fantasy_sim.data.tracking.config import load_tracking_config
 from fantasy_sim.data.tracking.receiver_participation import ReceiverParticipationEngine
@@ -32,6 +33,12 @@ def _make_player(
     )
 
 
+def _bounded_factor(value: float, baseline: float, sensitivity: float, clamp: tuple[float, float]) -> float:
+    lower, upper = clamp
+    factor = 1.0 + ((value - baseline) / baseline) * sensitivity
+    return float(min(max(factor, lower), upper))
+
+
 def test_receiver_participation_boosts_wr_usage_and_catch_rate():
     roster = TeamRoster(
         team="BUF",
@@ -42,12 +49,12 @@ def test_receiver_participation_boosts_wr_usage_and_catch_rate():
     )
     features = pl.DataFrame(
         {
-            "team": ["BUF", "BUF", "BUF"],
-            "player_id": ["wr-1", "wr-2", "te-1"],
-            "targets": [16, 14, 7],
-            "catchable_rate": [0.82, 0.61, 0.77],
-            "contested_rate": [0.12, 0.19, 0.24],
-            "mean_air_yards": [14.5, 9.4, 10.8],
+            "team": ["BUF", "BUF", "BUF", "NYJ"],
+            "player_id": ["wr-1", "wr-2", "te-1", "nyj-wr"],
+            "targets": [16, 14, 7, 20],
+            "catchable_rate": [0.82, 0.61, 0.77, 0.98],
+            "contested_rate": [0.12, 0.19, 0.24, 0.40],
+            "mean_air_yards": [14.5, 9.4, 10.8, 3.5],
         }
     )
     engine = ReceiverParticipationEngine(load_tracking_config({}).receiver_participation)
@@ -55,9 +62,39 @@ def test_receiver_participation_boosts_wr_usage_and_catch_rate():
     engine.apply(roster, features)
 
     wr = roster.players[0]
-    assert wr.usage.target_share > 0.20
-    assert wr.usage.air_yards_share > 0.18
-    assert wr.outcomes.catch_rate > 0.62
+    catchable_baseline = features.get_column("catchable_rate").mean()
+    contested_baseline = features.get_column("contested_rate").mean()
+    air_yards_baseline = features.get_column("mean_air_yards").mean()
+
+    target_factor = _bounded_factor(
+        0.82,
+        catchable_baseline,
+        engine.config.target_share_sensitivity,
+        engine.config.factor_clamp,
+    )
+    air_factor = _bounded_factor(
+        14.5,
+        air_yards_baseline,
+        engine.config.air_yards_sensitivity,
+        engine.config.factor_clamp,
+    )
+    catchable_factor = _bounded_factor(
+        0.82,
+        catchable_baseline,
+        engine.config.catchable_target_sensitivity,
+        engine.config.factor_clamp,
+    )
+    contested_factor = _bounded_factor(
+        0.12,
+        contested_baseline,
+        engine.config.contested_target_sensitivity,
+        engine.config.factor_clamp,
+    )
+
+    assert wr.usage.target_share == pytest.approx(0.20 * target_factor)
+    assert wr.usage.air_yards_share == pytest.approx(0.18 * air_factor)
+    assert wr.outcomes.catch_rate == pytest.approx(0.62 * catchable_factor * contested_factor)
+    assert wr.outcomes.receiving_yards_dist == pytest.approx(np.array([10.0, 20.0]) * air_factor)
 
 
 def test_receiver_participation_skips_te_below_min_targets():
