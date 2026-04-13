@@ -24,6 +24,10 @@ def _bounded_factor(
     return float(np.clip(factor, lower, upper))
 
 
+def _clamp_unit_interval(value: float) -> float:
+    return float(np.clip(value, 0.0, 1.0))
+
+
 class ReceiverParticipationEngine:
     def __init__(self, config: ReceiverParticipationConfig):
         self.config = config
@@ -108,7 +112,13 @@ class ReceiverParticipationEngine:
 
             player.usage.target_share *= target_factor
             player.usage.air_yards_share *= air_factor
-            player.outcomes.catch_rate *= catch_factor
+            player.outcomes.catch_rate = _clamp_unit_interval(
+                player.outcomes.catch_rate * catch_factor
+            )
+            if player.outcomes.red_zone_catch_rate > 0:
+                player.outcomes.red_zone_catch_rate = _clamp_unit_interval(
+                    player.outcomes.red_zone_catch_rate * catch_factor
+                )
 
             if player.outcomes.receiving_yards_dist is not None:
                 player.outcomes.receiving_yards_dist = (

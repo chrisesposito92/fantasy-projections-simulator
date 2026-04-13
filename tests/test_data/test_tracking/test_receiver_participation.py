@@ -15,6 +15,7 @@ def _make_player(
     target_share: float,
     air_yards_share: float,
     catch_rate: float,
+    red_zone_catch_rate: float = 0.0,
     receiving_yards_dist: list[float] | None = None,
 ) -> PlayerModel:
     return PlayerModel(
@@ -28,6 +29,7 @@ def _make_player(
         ),
         outcomes=PlayerOutcomes(
             catch_rate=catch_rate,
+            red_zone_catch_rate=red_zone_catch_rate,
             receiving_yards_dist=None if receiving_yards_dist is None else np.array(receiving_yards_dist),
         ),
     )
@@ -153,3 +155,167 @@ def test_receiver_participation_never_affects_rb_even_if_config_includes_it():
     assert rb.usage.target_share == 0.15
     assert rb.usage.air_yards_share == 0.07
     assert rb.outcomes.catch_rate == 0.54
+
+
+def test_receiver_participation_clamps_catch_rates_and_updates_red_zone_rate():
+    roster = TeamRoster(
+        team="BUF",
+        players=[
+            _make_player(
+                "wr-1",
+                "WR",
+                target_share=0.20,
+                air_yards_share=0.18,
+                catch_rate=0.99,
+                red_zone_catch_rate=0.96,
+            ),
+            _make_player("wr-2", "WR", target_share=0.05, air_yards_share=0.04, catch_rate=0.40),
+        ],
+    )
+    features = pl.DataFrame(
+        {
+            "team": ["BUF", "BUF"],
+            "player_id": ["wr-1", "wr-2"],
+            "targets": [18, 18],
+            "catchable_rate": [0.99, 0.01],
+            "contested_rate": [0.01, 0.99],
+            "mean_air_yards": [20.0, 1.0],
+        }
+    )
+    engine = ReceiverParticipationEngine(load_tracking_config({}).receiver_participation)
+
+    engine.apply(roster, features)
+
+    wr = roster.players[0]
+    assert wr.outcomes.catch_rate == 1.0
+    assert wr.outcomes.red_zone_catch_rate == 1.0
+
+
+def test_receiver_participation_disabled_leaves_players_unchanged():
+    roster = TeamRoster(
+        team="BUF",
+        players=[
+            _make_player(
+                "wr-1",
+                "WR",
+                target_share=0.20,
+                air_yards_share=0.18,
+                catch_rate=0.62,
+                red_zone_catch_rate=0.58,
+                receiving_yards_dist=[10.0, 20.0],
+            ),
+        ],
+    )
+    features = pl.DataFrame(
+        {
+            "team": ["BUF"],
+            "player_id": ["wr-1"],
+            "targets": [16],
+            "catchable_rate": [0.82],
+            "contested_rate": [0.12],
+            "mean_air_yards": [14.5],
+        }
+    )
+    config = load_tracking_config({}).receiver_participation
+    config.enabled = False
+    engine = ReceiverParticipationEngine(config)
+
+    before = roster.players[0]
+    before_state = (
+        before.usage.target_share,
+        before.usage.air_yards_share,
+        before.outcomes.catch_rate,
+        before.outcomes.red_zone_catch_rate,
+        before.outcomes.receiving_yards_dist.copy(),
+    )
+
+    engine.apply(roster, features)
+
+    after = roster.players[0]
+    assert after.usage.target_share == before_state[0]
+    assert after.usage.air_yards_share == before_state[1]
+    assert after.outcomes.catch_rate == before_state[2]
+    assert after.outcomes.red_zone_catch_rate == before_state[3]
+    assert np.array_equal(after.outcomes.receiving_yards_dist, before_state[4])
+
+
+def test_receiver_participation_empty_features_leaves_players_unchanged():
+    roster = TeamRoster(
+        team="BUF",
+        players=[
+            _make_player(
+                "wr-1",
+                "WR",
+                target_share=0.20,
+                air_yards_share=0.18,
+                catch_rate=0.62,
+                red_zone_catch_rate=0.58,
+                receiving_yards_dist=[10.0, 20.0],
+            ),
+        ],
+    )
+    features = pl.DataFrame()
+    engine = ReceiverParticipationEngine(load_tracking_config({}).receiver_participation)
+
+    before = roster.players[0]
+    before_state = (
+        before.usage.target_share,
+        before.usage.air_yards_share,
+        before.outcomes.catch_rate,
+        before.outcomes.red_zone_catch_rate,
+        before.outcomes.receiving_yards_dist.copy(),
+    )
+
+    engine.apply(roster, features)
+
+    after = roster.players[0]
+    assert after.usage.target_share == before_state[0]
+    assert after.usage.air_yards_share == before_state[1]
+    assert after.outcomes.catch_rate == before_state[2]
+    assert after.outcomes.red_zone_catch_rate == before_state[3]
+    assert np.array_equal(after.outcomes.receiving_yards_dist, before_state[4])
+
+
+def test_receiver_participation_missing_required_columns_leaves_players_unchanged():
+    roster = TeamRoster(
+        team="BUF",
+        players=[
+            _make_player(
+                "wr-1",
+                "WR",
+                target_share=0.20,
+                air_yards_share=0.18,
+                catch_rate=0.62,
+                red_zone_catch_rate=0.58,
+                receiving_yards_dist=[10.0, 20.0],
+            ),
+        ],
+    )
+    features = pl.DataFrame(
+        {
+            "team": ["BUF"],
+            "player_id": ["wr-1"],
+            "targets": [16],
+            "catchable_rate": [0.82],
+            "contested_rate": [0.12],
+        }
+    )
+    engine = ReceiverParticipationEngine(load_tracking_config({}).receiver_participation)
+
+    before = roster.players[0]
+    before_state = (
+        before.usage.target_share,
+        before.usage.air_yards_share,
+        before.outcomes.catch_rate,
+        before.outcomes.red_zone_catch_rate,
+        before.outcomes.receiving_yards_dist.copy(),
+    )
+
+    engine.apply(roster, features)
+
+    wr = roster.players[0]
+    assert wr.usage.target_share == before_state[0]
+    assert wr.usage.air_yards_share == before_state[1]
+    assert wr.outcomes.catch_rate == before_state[2]
+    assert wr.outcomes.red_zone_catch_rate == before_state[3]
+    assert np.array_equal(wr.outcomes.receiving_yards_dist, before_state[4])
