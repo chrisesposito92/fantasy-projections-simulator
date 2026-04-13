@@ -12,6 +12,7 @@ from fantasy_sim.data.pff.models import (
 from fantasy_sim.models.player import TeamRoster
 
 _BUCKETS = ("behind_los", "short", "medium", "deep")
+_SIDES = ("left", "center", "right")
 
 
 def _bounded_ratio_factor(
@@ -27,23 +28,34 @@ def _bounded_ratio_factor(
     return float(np.clip(factor, lower, upper))
 
 
-def _safe_bucket_target(column: str) -> pl.Expr:
+def _safe_numeric_column(column: str) -> pl.Expr:
     return pl.coalesce([pl.col(column).cast(pl.Float64), pl.lit(0.0)])
 
 
-def _sum_bucket_expr(columns: list[str], suffix: str, alias: str) -> pl.Expr:
-    exprs = [
-        _safe_bucket_target(column)
-        for bucket in _BUCKETS
-        if (column := f"{bucket}_{suffix}") in columns
-    ]
+def _sum_available_columns(
+    columns: list[str],
+    candidates: list[str],
+    alias: str,
+) -> pl.Expr:
+    exprs = [_safe_numeric_column(column) for column in candidates if column in columns]
     if not exprs:
         return pl.lit(0.0).alias(alias)
 
     expr = exprs[0]
-    for bucket_expr in exprs[1:]:
-        expr = expr + bucket_expr
+    for column_expr in exprs[1:]:
+        expr = expr + column_expr
     return expr.alias(alias)
+
+
+def _route_volume_expr(columns: list[str]) -> pl.Expr:
+    side_route_columns = [
+        f"{side}_{bucket}_routes" for side in _SIDES for bucket in _BUCKETS
+    ]
+    if any(column in columns for column in side_route_columns):
+        return _sum_available_columns(columns, side_route_columns, "_routes")
+
+    bucket_route_columns = [f"{bucket}_routes" for bucket in _BUCKETS]
+    return _sum_available_columns(columns, bucket_route_columns, "_routes")
 
 
 def _air_proxy_expr(columns: list[str]) -> pl.Expr:
@@ -54,7 +66,7 @@ def _air_proxy_expr(columns: list[str]) -> pl.Expr:
         if target_column not in columns or adot_column not in columns:
             continue
         exprs.append(
-            _safe_bucket_target(target_column)
+            _safe_numeric_column(target_column)
             * pl.coalesce([pl.col(adot_column).cast(pl.Float64), pl.lit(0.0)])
         )
 
@@ -100,8 +112,12 @@ class DepthRoleEngine:
                 | ((pl.col("season") == target_season) & (pl.col("week") < max_week))
             )
             .with_columns(
-                _sum_bucket_expr(df.columns, "routes", "_routes"),
-                _sum_bucket_expr(df.columns, "targets", "_targets"),
+                _route_volume_expr(df.columns),
+                _sum_available_columns(
+                    df.columns,
+                    [f"{bucket}_targets" for bucket in _BUCKETS],
+                    "_targets",
+                ),
                 _air_proxy_expr(df.columns),
             )
         )
