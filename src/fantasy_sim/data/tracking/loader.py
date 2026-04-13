@@ -133,11 +133,32 @@ class TrackingInputLoader:
         )
 
     def load_receiver_features(self, season: int, week: int) -> pl.DataFrame:
+        ftn = self._loader.load_ftn_charting([season])
+        if ftn is None or ftn.is_empty():
+            return self._empty_frame(RECEIVER_FEATURE_SCHEMA)
+        ftn = self._rename_columns(
+            ftn,
+            {
+                "nflverse_game_id": "game_id",
+                "nflverse_play_id": "play_id",
+            },
+        )
+        receiver_ftn_required = {"game_id", "play_id", "is_catchable_ball", "is_contested_ball"}
+        if not receiver_ftn_required.issubset(ftn.columns):
+            return self._empty_frame(RECEIVER_FEATURE_SCHEMA)
+
         joined = self._joined_pbp_ftn(season)
         if joined.is_empty():
             return self._empty_frame(RECEIVER_FEATURE_SCHEMA)
 
-        required = {"posteam", "receiver_player_id", "air_yards", "pass_attempt"}
+        required = {
+            "posteam",
+            "receiver_player_id",
+            "air_yards",
+            "pass_attempt",
+            "is_catchable_ball",
+            "is_contested_ball",
+        }
         if not required.issubset(joined.columns):
             return self._empty_frame(RECEIVER_FEATURE_SCHEMA)
 
