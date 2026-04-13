@@ -552,6 +552,24 @@ class TestBuildGamesParallelDualArm:
         assert mock_builder_cls.call_args.kwargs["tracking_config"] is config
 
     @patch("fantasy_sim.validation.parallel.GameContextBuilder")
+    def test_warm_builders_preloads_tracking_inputs(self, mock_builder_cls):
+        from fantasy_sim.validation.parallel import _warm_builders
+
+        builder = self._mock_builder()
+        builder.warm = MagicMock()
+        mock_builder_cls.return_value = builder
+
+        builders = {"single": builder}
+        game_args = [
+            ("KC", "BUF", [2022, 2023], 2024, 5, "game_1", 42),
+            ("DAL", "PHI", [2022, 2023], 2024, 3, "game_2", 43),
+        ]
+
+        _warm_builders(builders, game_args, dual_arm=False)
+
+        builder.warm.assert_called_once_with([2022, 2023], 2024, [3, 5])
+
+    @patch("fantasy_sim.validation.parallel.GameContextBuilder")
     def test_dual_arm_only_threads_goal_line_concentration_to_on_builder(self, mock_builder_cls):
         from fantasy_sim.validation.parallel import build_games_parallel
 

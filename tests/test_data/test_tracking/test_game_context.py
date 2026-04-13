@@ -1,8 +1,11 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import polars as pl
 
 from fantasy_sim.data.game_context import GameContextBuilder
+from fantasy_sim.data.tracking.engine import TrackingEngine
+from fantasy_sim.data.tracking.loader import TrackingInputLoader
 from fantasy_sim.data.tracking.models import TrackingConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.vegas.models import PropsConfig
@@ -155,3 +158,68 @@ def test_build_game_applies_tracking_between_usage_and_props(tmp_path):
         "normalize:KC",
         "normalize:BUF",
     ]
+
+
+def test_tracking_engine_caches_weekly_features_across_apply_calls():
+    loader = MagicMock(spec=TrackingInputLoader)
+    loader.load_receiver_features.return_value = pl.DataFrame(
+        {
+            "team": ["KC"],
+            "player_id": ["KC_WR1"],
+            "targets": [12],
+            "catchable_rate": [0.8],
+            "contested_rate": [0.2],
+            "mean_air_yards": [12.0],
+        }
+    )
+    loader.load_rb_features.return_value = pl.DataFrame(
+        {
+            "team": ["KC"],
+            "player_id": ["KC_RB1"],
+            "attempts": [18],
+            "no_huddle_rate": [0.2],
+            "play_action_rate": [0.25],
+            "rush_yoe_per_att": [0.8],
+        }
+    )
+    loader.load_qb_features.return_value = pl.DataFrame(
+        {
+            "team": ["KC"],
+            "player_id": ["KC_QB1"],
+            "dropbacks": [28],
+            "pressure_rate": [0.2],
+            "no_huddle_rate": [0.1],
+            "play_action_rate": [0.2],
+            "blitz_rate": [0.2],
+            "avg_time_to_throw": [2.8],
+            "aggressiveness": [0.15],
+            "cpoe": [2.0],
+        }
+    )
+    engine = TrackingEngine(TrackingConfig(enabled=True), loader=loader)
+
+    engine.apply(_make_roster("KC"), _make_dists("KC"), 2024, 5)
+    engine.apply(_make_roster("BUF"), _make_dists("BUF"), 2024, 5)
+
+    loader.load_receiver_features.assert_called_once_with(2024, 5)
+    loader.load_rb_features.assert_called_once_with(2024, 5)
+    loader.load_qb_features.assert_called_once_with(2024, 5)
+
+
+def test_builder_warm_preloads_tracking_inputs():
+    builder = object.__new__(GameContextBuilder)
+    builder._ensure_pipeline = MagicMock()
+    builder.loader = MagicMock()
+    builder._ensure_pff_crosswalk = MagicMock()
+    builder._tier_engine = None
+    builder._usage_config = UsageConfig(enabled=False)
+    builder._cpoe_warmed = False
+    builder._ensure_kicker_engine = MagicMock()
+    builder._ensure_dst_baseline_engine = MagicMock()
+    builder._availability_engine = None
+    builder._tracking_engine = MagicMock()
+    builder._player_models_cache = {}
+
+    builder.warm([2022, 2023, 2024], 2024, [5, 1, 5, 3])
+
+    builder._tracking_engine.warm.assert_called_once_with(2024, [5, 1, 5, 3])

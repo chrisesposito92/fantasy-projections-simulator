@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import threading
+
+import polars as pl
+
 from fantasy_sim.data.tracking.loader import TrackingInputLoader
 from fantasy_sim.data.tracking.models import TrackingConfig
 from fantasy_sim.data.tracking.qb_context import QbContextEngine
@@ -24,6 +28,59 @@ class TrackingEngine:
         )
         self._rb_efficiency_engine = RbEfficiencyEngine(config.rb_efficiency)
         self._qb_context_engine = QbContextEngine(config.qb_context)
+        self._feature_cache: dict[tuple[str, int, int], pl.DataFrame] = {}
+        self._feature_lock = threading.Lock()
+
+    def _cached_features(
+        self,
+        feature_name: str,
+        season: int,
+        week: int,
+        loader_fn,
+    ) -> pl.DataFrame:
+        cache_key = (feature_name, season, week)
+        with self._feature_lock:
+            cached = self._feature_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            features = loader_fn(season, week)
+            self._feature_cache[cache_key] = features
+            return features
+
+    def _receiver_features(self, season: int, week: int) -> pl.DataFrame:
+        return self._cached_features(
+            "receiver_participation",
+            season,
+            week,
+            self._loader.load_receiver_features,
+        )
+
+    def _rb_features(self, season: int, week: int) -> pl.DataFrame:
+        return self._cached_features(
+            "rb_efficiency",
+            season,
+            week,
+            self._loader.load_rb_features,
+        )
+
+    def _qb_features(self, season: int, week: int) -> pl.DataFrame:
+        return self._cached_features(
+            "qb_context",
+            season,
+            week,
+            self._loader.load_qb_features,
+        )
+
+    def warm(self, season: int, weeks: list[int]) -> None:
+        for week in sorted(set(weeks)):
+            if week <= 1:
+                continue
+            if self.config.receiver_participation.enabled:
+                self._receiver_features(season, week)
+            if self.config.rb_efficiency.enabled:
+                self._rb_features(season, week)
+            if self.config.qb_context.enabled:
+                self._qb_features(season, week)
 
     def apply(
         self,
@@ -36,13 +93,13 @@ class TrackingEngine:
             return
 
         if self.config.receiver_participation.enabled:
-            receiver_features = self._loader.load_receiver_features(season, week)
+            receiver_features = self._receiver_features(season, week)
             self._receiver_participation_engine.apply(roster, receiver_features)
 
         if self.config.rb_efficiency.enabled:
-            rb_features = self._loader.load_rb_features(season, week)
+            rb_features = self._rb_features(season, week)
             self._rb_efficiency_engine.apply(roster, rb_features)
 
         if self.config.qb_context.enabled:
-            qb_features = self._loader.load_qb_features(season, week)
+            qb_features = self._qb_features(season, week)
             self._qb_context_engine.apply(roster, team_dists, qb_features)
