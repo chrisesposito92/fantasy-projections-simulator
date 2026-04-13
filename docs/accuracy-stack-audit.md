@@ -140,7 +140,7 @@ Relevant local stores under `~/.fantasy-sim`:
 - `pff/`
 - `weather/`
 
-Relevant subpaths for currently enabled features:
+Relevant subpaths for enabled features and evaluated/backfilled feature families:
 
 - ff-opportunity weekly cache: `~/.fantasy-sim/cache/ff_opportunity_weekly_<season>.parquet`
 - tracking caches: `~/.fantasy-sim/cache/participation_<season>.parquet`, `~/.fantasy-sim/cache/ftn_charting_<season>.parquet`, `~/.fantasy-sim/cache/ngs_passing_<season>.parquet`, and `~/.fantasy-sim/cache/ngs_rushing_<season>.parquet`
@@ -412,7 +412,7 @@ uv run pytest tests/test_data/test_tracking tests/test_validation/test_config.py
 
 Verification result:
 
-- `161 passed in 1.48s`
+- `161 passed`
 
 Observed run caveat from the receiver/QB slices:
 

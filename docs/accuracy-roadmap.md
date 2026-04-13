@@ -484,7 +484,7 @@ uv run pytest tests/test_data/test_tracking tests/test_validation/test_config.py
 
 Result:
 
-- `161 passed in 1.48s`
+- `161 passed`
 
 ### Current Phase 4 Readout
 
