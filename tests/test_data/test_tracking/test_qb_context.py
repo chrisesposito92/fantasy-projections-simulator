@@ -157,3 +157,31 @@ def test_qb_context_skips_qb_below_min_dropbacks():
     assert team_dists.play_calling.default["pass"] + team_dists.play_calling.default["run"] == pytest.approx(1.0)
     assert team_dists.turnover_rates.sack_rate == pytest.approx(0.06)
     assert starter.usage.scramble_rate == pytest.approx(0.08)
+
+
+def test_qb_context_clips_pass_rate_and_renormalizes_run_rate():
+    roster = TeamRoster(
+        team="BUF",
+        players=[_make_qb("qb-starter", snap_share=0.80, scramble_rate=0.08)],
+    )
+    team_dists = _make_team_distributions()
+    team_dists.play_calling.default["pass"] = 0.99
+    team_dists.play_calling.default["run"] = 0.01
+    features = pl.DataFrame(
+        {
+            "team": ["BUF", "MIA"],
+            "player_id": ["qb-starter", "mia-qb"],
+            "dropbacks": [32, 30],
+            "no_huddle_rate": [0.20, 0.10],
+            "play_action_rate": [0.50, 0.20],
+            "pressure_rate": [0.22, 0.18],
+            "blitz_rate": [0.30, 0.24],
+        }
+    )
+    engine = QbContextEngine(QbContextConfig())
+
+    engine.apply(roster, team_dists, features)
+
+    assert team_dists.play_calling.default["pass"] == pytest.approx(1.0)
+    assert team_dists.play_calling.default["run"] == pytest.approx(0.0)
+    assert team_dists.play_calling.default["pass"] + team_dists.play_calling.default["run"] == pytest.approx(1.0)
