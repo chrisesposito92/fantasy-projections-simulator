@@ -468,10 +468,11 @@ uv run python scripts/fetch_market_history_props.py --season YEAR [YEAR ...] [OP
 - `next_snapshot_timestamp`
 
 **Default core markets:**
+- `player_pass_attempts`
 - `player_pass_yds`
 - `player_pass_tds`
+- `player_rush_attempts`
 - `player_rush_yds`
-- `player_rush_tds`
 - `player_receptions`
 - `player_reception_yds`
 - `player_anytime_td`

@@ -20,10 +20,11 @@ from fantasy_sim.data.market_history.events_inventory import (
 DEFAULT_MARKET_HISTORY_RAW_PROPS_DIR = DEFAULT_MARKET_HISTORY_DIR / "raw" / "props"
 
 DEFAULT_PROP_MARKETS: tuple[str, ...] = (
+    "player_pass_attempts",
     "player_pass_yds",
     "player_pass_tds",
+    "player_rush_attempts",
     "player_rush_yds",
-    "player_rush_tds",
     "player_receptions",
     "player_reception_yds",
     "player_anytime_td",
