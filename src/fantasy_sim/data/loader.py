@@ -108,6 +108,24 @@ class DataLoader:
         self._save_cache(df, cache_path)
         return df
 
+    def load_participation(self, seasons: list[int]) -> pl.DataFrame:
+        cache_path = self._cache_key("participation", seasons)
+        cached = self._load_cached(cache_path)
+        if cached is not None:
+            return cached
+        df = nflreadpy.load_participation(seasons)
+        self._save_cache(df, cache_path)
+        return df
+
+    def load_ftn_charting(self, seasons: list[int]) -> pl.DataFrame:
+        cache_path = self._cache_key("ftn_charting", seasons)
+        cached = self._load_cached(cache_path)
+        if cached is not None:
+            return cached
+        df = nflreadpy.load_ftn_charting(seasons)
+        self._save_cache(df, cache_path)
+        return df
+
     def load_pff_facet(
         self,
         facet: str,
