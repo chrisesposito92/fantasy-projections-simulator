@@ -148,6 +148,23 @@ class TestBuildEngineConfigs:
         assert "tracking_config" in configs
         assert configs["tracking_config"] is None
 
+    def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "tracking.enabled=true",
+                "tracking.window_weeks=6",
+                "tracking.receiver_participation.min_targets=11",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["tracking_config"] is not None
+        assert configs["tracking_config"].window_weeks == 6
+        assert configs["tracking_config"].receiver_participation.min_targets == 11
+
     def test_market_history_override_propagates(self):
         defaults = load_defaults()
         overridden = apply_overrides(defaults, ["market_history.enabled=false"])
