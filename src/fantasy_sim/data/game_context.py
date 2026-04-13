@@ -193,7 +193,15 @@ class GameContextBuilder:
         self._tracking_config = tracking_config or TrackingConfig(enabled=False)
         if self._tracking_config.enabled:
             from fantasy_sim.data.tracking.engine import TrackingEngine
-            self._tracking_engine = TrackingEngine(self._tracking_config)
+            from fantasy_sim.data.tracking.loader import TrackingInputLoader
+
+            self._tracking_engine = TrackingEngine(
+                self._tracking_config,
+                loader=TrackingInputLoader(
+                    loader=self.loader,
+                    window_weeks=self._tracking_config.window_weeks,
+                ),
+            )
             logger.info("Tracking engine enabled")
 
         self._game_script_config = game_script_config or GameScriptConfig(enabled=False)
