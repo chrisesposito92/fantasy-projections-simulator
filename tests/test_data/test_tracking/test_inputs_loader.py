@@ -227,6 +227,45 @@ def test_load_rb_features_aggregates_and_uses_only_prior_weeks():
     loader.load_nextgen_stats.assert_called_once_with([2024], stat_type="rushing")
 
 
+def test_load_rb_features_skips_ngs_without_player_id_and_uses_numeric_defaults():
+    loader = Mock()
+    loader.load_pbp.return_value = pl.DataFrame(
+        {
+            "game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "play_id": [41, 42],
+            "season": [2024, 2024],
+            "week": [4, 4],
+            "posteam": ["KC", "KC"],
+            "rusher_player_id": ["gsis-rb1", "gsis-rb1"],
+            "rush_attempt": [1, 1],
+        }
+    )
+    loader.load_ftn_charting.return_value = pl.DataFrame()
+    loader.load_nextgen_stats.return_value = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [4],
+            "rush_yards_over_expected_per_att": [9.9],
+        }
+    )
+
+    result = TrackingInputLoader(loader=loader, window_weeks=4).load_rb_features(
+        season=2024,
+        week=5,
+    )
+
+    assert result.to_dicts() == [
+        {
+            "team": "KC",
+            "player_id": "gsis-rb1",
+            "attempts": 2,
+            "no_huddle_rate": 0.0,
+            "play_action_rate": 0.0,
+            "rush_yoe_per_att": 0.0,
+        }
+    ]
+
+
 def test_load_qb_features_uses_only_prior_weeks():
     loader = Mock()
     loader.load_pbp.return_value = pl.DataFrame(
@@ -303,6 +342,60 @@ def test_load_qb_features_uses_only_prior_weeks():
     ]
     loader.load_pbp.assert_called_once_with([2024])
     loader.load_nextgen_stats.assert_called_once_with([2024], stat_type="passing")
+
+
+def test_load_qb_features_uses_numeric_defaults_for_partial_optional_sources():
+    loader = Mock()
+    loader.load_pbp.return_value = pl.DataFrame(
+        {
+            "game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "play_id": [41, 42],
+            "season": [2024, 2024],
+            "week": [4, 4],
+            "posteam": ["KC", "KC"],
+            "passer_player_id": ["gsis-qb1", "gsis-qb1"],
+            "pass_attempt": [1, 1],
+        }
+    )
+    loader.load_participation.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "play_id": [41, 42],
+            "season": [2024, 2024],
+            "week": [4, 4],
+            "was_pressure": [1, 0],
+        }
+    )
+    loader.load_ftn_charting.return_value = pl.DataFrame()
+    loader.load_nextgen_stats.return_value = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [4],
+            "avg_time_to_throw": [8.8],
+            "aggressiveness": [0.75],
+            "completion_percentage_above_expectation": [12.0],
+        }
+    )
+
+    result = TrackingInputLoader(loader=loader, window_weeks=4).load_qb_features(
+        season=2024,
+        week=5,
+    )
+
+    assert result.to_dicts() == [
+        {
+            "team": "KC",
+            "player_id": "gsis-qb1",
+            "dropbacks": 2,
+            "pressure_rate": 0.5,
+            "no_huddle_rate": 0.0,
+            "play_action_rate": 0.0,
+            "blitz_rate": 0.0,
+            "avg_time_to_throw": 0.0,
+            "aggressiveness": 0.0,
+            "cpoe": 0.0,
+        }
+    ]
 
 
 @pytest.mark.parametrize(

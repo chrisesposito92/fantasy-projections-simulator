@@ -60,6 +60,22 @@ QB_OPTIONAL_SCHEMA: SchemaDict = {
     "cpoe": pl.Float64,
 }
 
+RB_OPTIONAL_DEFAULTS: dict[str, float] = {
+    "is_no_huddle": 0.0,
+    "is_play_action": 0.0,
+    "rush_yoe_per_att": 0.0,
+}
+
+QB_OPTIONAL_DEFAULTS: dict[str, float] = {
+    "was_pressure": 0.0,
+    "is_no_huddle": 0.0,
+    "is_play_action": 0.0,
+    "n_blitzers": 0.0,
+    "avg_time_to_throw": 0.0,
+    "aggressiveness": 0.0,
+    "cpoe": 0.0,
+}
+
 SCHEMA_COLUMN_NAMES: dict[str, list[str]] = {
     "receiver": list(RECEIVER_FEATURE_SCHEMA),
     "rb": list(RB_FEATURE_SCHEMA),
@@ -115,17 +131,24 @@ class TrackingInputLoader:
             & (pl.col("week") < week)
         )
 
-    def _join_keys(self, left: pl.DataFrame, right: pl.DataFrame) -> list[str]:
-        preferred = ["season", "week", "player_id"]
-        available = [key for key in preferred if key in left.columns and key in right.columns]
-        if available:
-            return available
-        if "player_id" in left.columns and "player_id" in right.columns:
-            return ["player_id"]
-        return []
+    def _player_join_keys(self, left: pl.DataFrame, right: pl.DataFrame) -> list[str]:
+        if "player_id" not in left.columns or "player_id" not in right.columns:
+            return []
+        join_keys = [key for key in ("season", "week") if key in left.columns and key in right.columns]
+        join_keys.append("player_id")
+        return join_keys
 
     def _rate(self, column: str) -> pl.Expr:
         return pl.col(column).cast(pl.Float64).mean()
+
+    def _fill_numeric_defaults(self, df: pl.DataFrame, defaults: dict[str, float]) -> pl.DataFrame:
+        return df.with_columns(
+            [
+                pl.col(name).cast(pl.Float64).fill_null(default).alias(name)
+                for name, default in defaults.items()
+                if name in df.columns
+            ]
+        )
 
     def _joined_pbp_ftn(self, season: int) -> pl.DataFrame:
         pbp = self._loader.load_pbp([season])
@@ -236,7 +259,7 @@ class TrackingInputLoader:
                 },
             )
             ngs = self._window_filter(ngs, season, week)
-            join_keys = self._join_keys(rushes, ngs)
+            join_keys = self._player_join_keys(rushes, ngs)
             if join_keys and "rush_yoe_per_att" in ngs.columns:
                 rushes = rushes.join(
                     ngs.select([*join_keys, "rush_yoe_per_att"])
@@ -246,6 +269,7 @@ class TrackingInputLoader:
                 )
 
         rushes = self._ensure_columns(rushes, RB_OPTIONAL_SCHEMA)
+        rushes = self._fill_numeric_defaults(rushes, RB_OPTIONAL_DEFAULTS)
 
         result = (
             rushes
@@ -328,7 +352,7 @@ class TrackingInputLoader:
                 },
             )
             ngs = self._window_filter(ngs, season, week)
-            join_keys = self._join_keys(qbs, ngs)
+            join_keys = self._player_join_keys(qbs, ngs)
             ngs_columns = [name for name in ["avg_time_to_throw", "aggressiveness", "cpoe"] if name in ngs.columns]
             if join_keys and ngs_columns:
                 qbs = qbs.join(
@@ -338,6 +362,7 @@ class TrackingInputLoader:
                 )
 
         qbs = self._ensure_columns(qbs, QB_OPTIONAL_SCHEMA)
+        qbs = self._fill_numeric_defaults(qbs, QB_OPTIONAL_DEFAULTS)
 
         result = (
             qbs
