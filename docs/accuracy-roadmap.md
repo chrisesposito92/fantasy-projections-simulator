@@ -474,6 +474,18 @@ Reason:
 - the remaining slice was effectively flat and still regressed at least one core metric
 - that is not strong enough to justify taking interaction risk on the combined bundle
 
+### Verification
+
+Verification command run after the doc updates:
+
+```bash
+uv run pytest tests/test_data/test_tracking tests/test_validation/test_config.py tests/test_validation/test_coverage.py tests/test_validation/test_parallel.py tests/test_validation/test_backtester.py tests/test_validation/test_validate_script.py tests/test_validation/test_market_history_pipeline.py tests/test_validation/test_role_trend_pipeline.py -v
+```
+
+Result:
+
+- `161 passed in 1.48s`
+
 ### Current Phase 4 Readout
 
 - `tracking` remains a valid family in code, but it should stay default-off on current evidence

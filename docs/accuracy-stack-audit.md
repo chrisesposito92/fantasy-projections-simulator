@@ -404,6 +404,16 @@ Interpretation:
 - the remaining slice was effectively flat overall
 - the combined bundle was therefore not run
 
+Phase 4 verification command run after the doc updates:
+
+```bash
+uv run pytest tests/test_data/test_tracking tests/test_validation/test_config.py tests/test_validation/test_coverage.py tests/test_validation/test_parallel.py tests/test_validation/test_backtester.py tests/test_validation/test_validate_script.py tests/test_validation/test_market_history_pipeline.py tests/test_validation/test_role_trend_pipeline.py -v
+```
+
+Verification result:
+
+- `161 passed in 1.48s`
+
 Observed run caveat from the receiver/QB slices:
 
 - `Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
