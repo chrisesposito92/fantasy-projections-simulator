@@ -202,6 +202,16 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"].depth_role.enabled is True
         assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
 
+    def test_pff_depth_role_invalid_position_override_raises(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            ["pff.depth_role.positions=[WR,QB]"],
+        )
+
+        with pytest.raises(ValueError, match="Invalid pff\\.depth_role\\.positions config"):
+            build_engine_configs(overridden)
+
 
 class TestBuildBareEngineConfigs:
     def test_all_none(self):

@@ -20,6 +20,8 @@ from fantasy_sim.data.pff.models import (
     TierConfig,
 )
 
+_SUPPORTED_DEPTH_ROLE_POSITIONS = {"WR", "TE"}
+
 
 def load_pff_config(config: dict) -> PffConfig:
     """Extract PFF config from the full defaults config dict.
@@ -180,9 +182,19 @@ def load_pff_config(config: dict) -> PffConfig:
     )
 
     depth_role_raw = pff.get("depth_role", {})
+    depth_role_positions = tuple(depth_role_raw.get("positions", ["WR", "TE"]))
+    invalid_positions = [
+        pos for pos in depth_role_positions if pos not in _SUPPORTED_DEPTH_ROLE_POSITIONS
+    ]
+    if invalid_positions:
+        raise ValueError(
+            "Invalid pff.depth_role.positions config: "
+            f"{', '.join(invalid_positions)}. "
+            "Supported positions: WR, TE"
+        )
     depth_role = DepthRoleConfig(
         enabled=depth_role_raw.get("enabled", False),
-        positions=tuple(depth_role_raw.get("positions", ["WR", "TE"])),
+        positions=depth_role_positions,
         wr=DepthRolePositionConfig(
             target_share_sensitivity=depth_role_raw.get("wr", {}).get(
                 "target_share_sensitivity",
