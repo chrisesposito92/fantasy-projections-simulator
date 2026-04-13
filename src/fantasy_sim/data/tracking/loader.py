@@ -111,6 +111,16 @@ class TrackingInputLoader:
             return df.with_columns(missing)
         return df
 
+    def _normalize_game_play_keys(self, df: pl.DataFrame) -> pl.DataFrame:
+        expressions: list[pl.Expr] = []
+        if "game_id" in df.columns:
+            expressions.append(pl.col("game_id").cast(pl.Utf8).alias("game_id"))
+        if "play_id" in df.columns:
+            expressions.append(pl.col("play_id").cast(pl.Float64).alias("play_id"))
+        if expressions:
+            return df.with_columns(expressions)
+        return df
+
     def _cast_to_schema(self, df: pl.DataFrame, schema: SchemaDict) -> pl.DataFrame:
         return (
             df.with_columns(
@@ -154,6 +164,7 @@ class TrackingInputLoader:
         pbp = self._loader.load_pbp([season])
         if pbp is None or pbp.is_empty():
             return pl.DataFrame()
+        pbp = self._normalize_game_play_keys(pbp)
 
         ftn = self._loader.load_ftn_charting([season])
         if ftn is None or ftn.is_empty():
@@ -166,6 +177,7 @@ class TrackingInputLoader:
                 "nflverse_play_id": "play_id",
             },
         )
+        ftn = self._normalize_game_play_keys(ftn)
         join_keys = ["game_id", "play_id"]
         if not set(join_keys).issubset(pbp.columns) or not set(join_keys).issubset(ftn.columns):
             return self._ensure_columns(pbp, FTN_JOIN_SCHEMA)
@@ -290,6 +302,7 @@ class TrackingInputLoader:
         pbp = self._loader.load_pbp([season])
         if pbp is None or pbp.is_empty():
             return self._empty_frame(QB_FEATURE_SCHEMA)
+        pbp = self._normalize_game_play_keys(pbp)
 
         required_pbp = {"game_id", "play_id", "season", "week", "posteam", "passer_player_id", "pass_attempt"}
         if not required_pbp.issubset(pbp.columns):
@@ -313,12 +326,13 @@ class TrackingInputLoader:
                 "nflverse_game_id": "game_id",
             },
         )
+        participation = self._normalize_game_play_keys(participation)
         required_participation = {"game_id", "play_id", "was_pressure"}
         if not required_participation.issubset(participation.columns):
             return self._empty_frame(QB_FEATURE_SCHEMA)
 
         participation = (
-            self._window_filter(participation, season, week)
+            participation
             .select(["game_id", "play_id", "was_pressure"])
             .unique(subset=["game_id", "play_id"], keep="first")
         )
@@ -333,6 +347,7 @@ class TrackingInputLoader:
                     "nflverse_play_id": "play_id",
                 },
             )
+            ftn = self._normalize_game_play_keys(ftn)
             if {"game_id", "play_id"}.issubset(ftn.columns):
                 qbs = qbs.join(
                     self._ensure_columns(ftn, FTN_JOIN_SCHEMA)

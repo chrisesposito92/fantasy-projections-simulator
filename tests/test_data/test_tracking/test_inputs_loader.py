@@ -398,6 +398,67 @@ def test_load_qb_features_uses_numeric_defaults_for_partial_optional_sources():
     ]
 
 
+def test_load_qb_features_handles_real_schema_join_key_mismatches():
+    loader = Mock()
+    loader.load_pbp.return_value = pl.DataFrame(
+        {
+            "game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "play_id": [41.0, 42.0],
+            "season": [2024, 2024],
+            "week": [4, 4],
+            "posteam": ["KC", "KC"],
+            "passer_player_id": ["gsis-qb1", "gsis-qb1"],
+            "pass_attempt": [1, 1],
+        }
+    )
+    loader.load_participation.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "play_id": [41, 42],
+            "was_pressure": [1, 0],
+        }
+    )
+    loader.load_ftn_charting.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN"],
+            "nflverse_play_id": [41, 42],
+            "is_no_huddle": [1, 0],
+            "is_play_action": [0, 1],
+            "n_blitzers": [1, 0],
+        }
+    )
+    loader.load_nextgen_stats.return_value = pl.DataFrame(
+        {
+            "player_gsis_id": ["gsis-qb1"],
+            "season": [2024],
+            "week": [4],
+            "avg_time_to_throw": [2.8],
+            "aggressiveness": [0.17],
+            "completion_percentage_above_expectation": [6.0],
+        }
+    )
+
+    result = TrackingInputLoader(loader=loader, window_weeks=4).load_qb_features(
+        season=2024,
+        week=5,
+    )
+
+    assert result.to_dicts() == [
+        {
+            "team": "KC",
+            "player_id": "gsis-qb1",
+            "dropbacks": 2,
+            "pressure_rate": 0.5,
+            "no_huddle_rate": 0.5,
+            "play_action_rate": 0.5,
+            "blitz_rate": 0.5,
+            "avg_time_to_throw": 2.8,
+            "aggressiveness": 0.17,
+            "cpoe": 6.0,
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("method_name", "schema"),
     [
