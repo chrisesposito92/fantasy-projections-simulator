@@ -14,6 +14,7 @@ from fantasy_sim.data.vegas.config import load_vegas_config, load_props_config
 from fantasy_sim.data.availability.config import load_availability_config
 from fantasy_sim.data.role_trend.config import load_role_trend_config
 from fantasy_sim.data.usage.config import load_usage_config
+from fantasy_sim.data.tracking.config import load_tracking_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
@@ -85,6 +86,7 @@ def build_engine_configs(config: dict) -> dict:
     vegas = load_vegas_config(config)
     props = load_props_config(config)
     usage = load_usage_config(config)
+    tracking = load_tracking_config(config)
     availability = load_availability_config(config)
     role_trend = load_role_trend_config(config)
     market_history = load_market_history_config(config)
@@ -97,6 +99,7 @@ def build_engine_configs(config: dict) -> dict:
         "vegas_config": vegas if vegas.enabled else None,
         "props_config": props if props.enabled else None,
         "usage_config": usage if usage.enabled else None,
+        "tracking_config": tracking if tracking.enabled else None,
         "availability_config": availability if availability.enabled else None,
         "role_trend_config": role_trend if role_trend.enabled else None,
         "market_history_config": market_history if market_history.enabled else None,
@@ -116,6 +119,7 @@ def build_bare_engine_configs() -> dict:
         "vegas_config": None,
         "props_config": None,
         "usage_config": None,
+        "tracking_config": None,
         "availability_config": None,
         "role_trend_config": None,
         "market_history_config": None,

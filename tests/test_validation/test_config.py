@@ -140,6 +140,14 @@ class TestBuildEngineConfigs:
         assert configs["market_history_config"] is not None
         assert configs["market_history_config"].enabled is True
 
+    def test_defaults_include_disabled_tracking_config_until_phase4_promotion(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "tracking_config" in configs
+        assert configs["tracking_config"] is None
+
     def test_market_history_override_propagates(self):
         defaults = load_defaults()
         overridden = apply_overrides(defaults, ["market_history.enabled=false"])

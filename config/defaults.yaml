@@ -238,6 +238,33 @@ usage:
     sensitivity: 0.5
     min_routes: 10
 
+tracking:
+  enabled: false
+  window_weeks: 4
+  receiver_participation:
+    enabled: true
+    positions: [WR, TE]
+    target_share_sensitivity: 0.18
+    air_yards_sensitivity: 0.12
+    catchable_target_sensitivity: 0.08
+    contested_target_sensitivity: -0.04
+    factor_clamp: [0.92, 1.08]
+    min_targets: 8
+  rb_efficiency:
+    enabled: true
+    carry_share_sensitivity: 0.10
+    rush_yards_sensitivity: 0.08
+    factor_clamp: [0.93, 1.07]
+    min_attempts: 12
+  qb_context:
+    enabled: true
+    pass_rate_sensitivity: 0.04
+    pace_sensitivity: 0.03
+    scramble_sensitivity: 0.06
+    sack_rate_sensitivity: 0.05
+    factor_clamp: [0.94, 1.06]
+    min_dropbacks: 20
+
 ensemble:
   enabled: true
   ff_opportunity:
