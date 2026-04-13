@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+from unittest.mock import Mock
+
+import polars as pl
+
+from fantasy_sim.data.tracking.loader import TrackingInputLoader
+
+
+def test_load_receiver_features_joins_ftn_flags_to_targeted_receiver():
+    loader = Mock()
+    loader.load_pbp.return_value = pl.DataFrame(
+        {
+            "game_id": ["2024_01_KC_BUF", "2024_02_KC_BAL", "2024_02_KC_BAL", "2024_03_KC_LV"],
+            "play_id": [11, 21, 22, 31],
+            "season": [2024, 2024, 2024, 2024],
+            "week": [1, 2, 2, 3],
+            "posteam": ["KC", "KC", "KC", "KC"],
+            "receiver_player_id": ["gsis-wr1", "gsis-wr1", "gsis-wr2", "gsis-wr1"],
+            "air_yards": [10.0, 20.0, 5.0, 40.0],
+            "pass_attempt": [1, 1, 1, 1],
+        }
+    )
+    loader.load_ftn_charting.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_01_KC_BUF", "2024_02_KC_BAL", "2024_02_KC_BAL", "2024_03_KC_LV"],
+            "nflverse_play_id": [11, 21, 22, 31],
+            "is_catchable_ball": [1, 0, 1, 0],
+            "is_contested_ball": [0, 1, 0, 1],
+            "is_no_huddle": [0, 1, 0, 1],
+            "is_play_action": [0, 1, 0, 1],
+            "n_blitzers": [0, 1, 0, 2],
+        }
+    )
+
+    feature_loader = TrackingInputLoader(loader=loader, window_weeks=4)
+
+    result = feature_loader.load_receiver_features(season=2024, week=3)
+
+    assert result.columns == [
+        "team",
+        "player_id",
+        "targets",
+        "catchable_rate",
+        "contested_rate",
+        "mean_air_yards",
+    ]
+    assert result.sort(["team", "player_id"]).to_dicts() == [
+        {
+            "team": "KC",
+            "player_id": "gsis-wr1",
+            "targets": 2,
+            "catchable_rate": 0.5,
+            "contested_rate": 0.5,
+            "mean_air_yards": 15.0,
+        },
+        {
+            "team": "KC",
+            "player_id": "gsis-wr2",
+            "targets": 1,
+            "catchable_rate": 1.0,
+            "contested_rate": 0.0,
+            "mean_air_yards": 5.0,
+        },
+    ]
+    loader.load_pbp.assert_called_once_with([2024])
+    loader.load_ftn_charting.assert_called_once_with([2024])
+
+
+def test_load_qb_features_uses_only_prior_weeks():
+    loader = Mock()
+    loader.load_participation.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN", "2024_05_KC_LV"],
+            "play_id": [41, 42, 51],
+            "season": [2024, 2024, 2024],
+            "week": [4, 4, 5],
+            "team": ["KC", "KC", "KC"],
+            "player_id": ["gsis-qb1", "gsis-qb1", "gsis-qb1"],
+            "was_pressure": [1, 0, 1],
+            "number_of_pass_rushers": [4, 4, 5],
+        }
+    )
+    loader.load_ftn_charting.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN", "2024_05_KC_LV"],
+            "nflverse_play_id": [41, 42, 51],
+            "is_catchable_ball": [1, 1, 1],
+            "is_contested_ball": [0, 0, 0],
+            "is_no_huddle": [1, 0, 1],
+            "is_play_action": [0, 1, 1],
+            "n_blitzers": [1, 0, 3],
+        }
+    )
+    loader.load_nextgen_stats.return_value = pl.DataFrame(
+        {
+            "player_gsis_id": ["gsis-qb1", "gsis-qb1"],
+            "season": [2024, 2024],
+            "week": [4, 5],
+            "avg_time_to_throw": [2.8, 4.6],
+            "aggressiveness": [0.17, 0.45],
+            "completion_percentage_above_expectation": [6.0, -3.0],
+        }
+    )
+
+    feature_loader = TrackingInputLoader(loader=loader, window_weeks=4)
+
+    result = feature_loader.load_qb_features(season=2024, week=5)
+
+    assert result.columns == [
+        "team",
+        "player_id",
+        "dropbacks",
+        "pressure_rate",
+        "no_huddle_rate",
+        "play_action_rate",
+        "blitz_rate",
+        "avg_time_to_throw",
+        "aggressiveness",
+        "cpoe",
+    ]
+    assert result.to_dicts() == [
+        {
+            "team": "KC",
+            "player_id": "gsis-qb1",
+            "dropbacks": 2,
+            "pressure_rate": 0.5,
+            "no_huddle_rate": 0.5,
+            "play_action_rate": 0.5,
+            "blitz_rate": 0.5,
+            "avg_time_to_throw": 2.8,
+            "aggressiveness": 0.17,
+            "cpoe": 6.0,
+        }
+    ]
+    loader.load_participation.assert_called_once_with([2024])
+    loader.load_ftn_charting.assert_called_once_with([2024])
+    loader.load_nextgen_stats.assert_called_once_with([2024], stat_type="passing")
