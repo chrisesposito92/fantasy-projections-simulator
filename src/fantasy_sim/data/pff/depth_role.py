@@ -68,19 +68,8 @@ class DepthRoleEngine:
         if df.is_empty():
             return pl.DataFrame()
 
-        reverse_crosswalk = pl.DataFrame(
-            {
-                "pff_player_id": list(pff_crosswalk.keys()),
-                "player_id": list(pff_crosswalk.values()),
-            }
-        )
-        if reverse_crosswalk.is_empty():
-            return pl.DataFrame()
-
         df = (
-            df.rename({"player_id": "pff_player_id"})
-            .join(reverse_crosswalk, on="pff_player_id", how="inner")
-            .filter(pl.col("position").is_in(list(self._config.positions)))
+            df.filter(pl.col("position").is_in(list(self._config.positions)))
             .filter(pl.col("season").is_in(seasons))
             .filter(
                 (pl.col("season") < target_season)
@@ -95,8 +84,33 @@ class DepthRoleEngine:
         if df.is_empty():
             return pl.DataFrame()
 
+        team_totals = (
+            df.group_by(["season", "team"])
+            .agg(
+                pl.col("_targets").sum().alias("team_targets"),
+                pl.col("_air_proxy").sum().alias("team_air_proxy"),
+            )
+        )
+
+        reverse_crosswalk = pl.DataFrame(
+            {
+                "pff_player_id": list(pff_crosswalk.keys()),
+                "player_id": list(pff_crosswalk.values()),
+            }
+        )
+        if reverse_crosswalk.is_empty():
+            return pl.DataFrame()
+
+        mapped_df = df.rename({"player_id": "pff_player_id"}).join(
+            reverse_crosswalk,
+            on="pff_player_id",
+            how="inner",
+        )
+        if mapped_df.is_empty():
+            return pl.DataFrame()
+
         player_roles = (
-            df.group_by(["season", "team", "player_id", "position"])
+            mapped_df.group_by(["season", "team", "player_id", "position"])
             .agg(
                 pl.col("_routes").sum().alias("routes"),
                 pl.col("_targets").sum().alias("targets"),
@@ -104,22 +118,38 @@ class DepthRoleEngine:
                 pl.col("game_id").n_unique().alias("games"),
             )
         )
-        team_totals = (
+        mapped_team_totals = (
             player_roles.group_by(["season", "team"])
             .agg(
-                pl.col("targets").sum().alias("team_targets"),
-                pl.col("air_proxy").sum().alias("team_air_proxy"),
+                pl.col("targets").sum().alias("mapped_team_targets"),
+                pl.col("air_proxy").sum().alias("mapped_team_air_proxy"),
             )
         )
-        return player_roles.join(team_totals, on=["season", "team"], how="left").with_columns(
-            pl.when(pl.col("team_targets") > 0)
-            .then(pl.col("targets") / pl.col("team_targets"))
-            .otherwise(pl.lit(0.0))
-            .alias("target_role"),
-            pl.when(pl.col("team_air_proxy") > 0)
-            .then(pl.col("air_proxy") / pl.col("team_air_proxy"))
-            .otherwise(pl.lit(0.0))
-            .alias("air_role"),
+        return (
+            player_roles.join(team_totals, on=["season", "team"], how="left")
+            .join(mapped_team_totals, on=["season", "team"], how="left")
+            .with_columns(
+                (
+                    (
+                        (pl.col("mapped_team_targets") - pl.col("team_targets")).abs() <= 1e-9
+                    )
+                    & (
+                        (pl.col("mapped_team_air_proxy") - pl.col("team_air_proxy")).abs()
+                        <= 1e-9
+                    )
+                )
+                .alias("team_coverage_complete")
+            )
+            .with_columns(
+                pl.when(pl.col("team_targets") > 0)
+                .then(pl.col("targets") / pl.col("team_targets"))
+                .otherwise(pl.lit(0.0))
+                .alias("target_role"),
+                pl.when(pl.col("team_air_proxy") > 0)
+                .then(pl.col("air_proxy") / pl.col("team_air_proxy"))
+                .otherwise(pl.lit(0.0))
+                .alias("air_role"),
+            )
         )
 
     def _position_config(self, position: str) -> DepthRolePositionConfig:
@@ -130,9 +160,15 @@ class DepthRoleEngine:
         current_row: dict | None,
         previous_row: dict | None,
     ) -> dict | None:
+        if current_row is not None and not current_row["team_coverage_complete"]:
+            return None
+        if previous_row is not None and not previous_row["team_coverage_complete"]:
+            previous_row = None
         if current_row is None and previous_row is None:
             return None
         if current_row is None:
+            if not self._config.early_season_blend:
+                return None
             return previous_row
         if (
             not self._config.early_season_blend

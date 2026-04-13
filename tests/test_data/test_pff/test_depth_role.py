@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import polars as pl
 
 from fantasy_sim.data.pff.depth_role import DepthRoleEngine
@@ -85,6 +86,24 @@ def _engine(pff_dir) -> DepthRoleEngine:
         min_targets=6,
         min_games=4,
         early_season_blend=True,
+    )
+    return DepthRoleEngine(PffLoader(pff_dir), config)
+
+
+def _engine_with_config(
+    pff_dir,
+    *,
+    early_season_blend: bool = True,
+) -> DepthRoleEngine:
+    config = DepthRoleConfig(
+        enabled=True,
+        positions=("WR", "TE"),
+        wr=DepthRolePositionConfig(0.10, 0.12, (0.94, 1.06)),
+        te=DepthRolePositionConfig(0.08, 0.06, (0.95, 1.05)),
+        min_routes=15,
+        min_targets=6,
+        min_games=4,
+        early_season_blend=early_season_blend,
     )
     return DepthRoleEngine(PffLoader(pff_dir), config)
 
@@ -174,6 +193,45 @@ def test_apply_adjusts_wr_and_te_role_volume_only(tmp_path):
     assert wr_b.usage.air_yards_share < 0.24
     assert te_a.usage.target_share > 0.18
     assert rb_a.usage.target_share == 0.10
+
+
+def test_apply_clamps_extreme_roles_and_keeps_non_volume_fields_unchanged(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            {
+                "player_id": 101,
+                "player": "WR A",
+                "team": "KC",
+                "position": "LWR",
+                "season": 2024,
+                "week": 1,
+                "game_id": "g1",
+                "routes": 35,
+                "targets": 12,
+                "short_targets": 0,
+                "medium_targets": 0,
+                "deep_targets": 12,
+                "behind_los_targets": 0,
+                "short_avg_depth_of_target": 0.0,
+                "medium_avg_depth_of_target": 0.0,
+                "deep_avg_depth_of_target": 25.0,
+                "behind_los_avg_depth_of_target": -1.0,
+            },
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.61
+    engine = _engine(pff_dir)
+
+    engine.apply(roster, {101: "WR_A"}, 2024, 18)
+
+    assert wr_a.usage.target_share == pytest.approx(0.28 * 1.06)
+    assert wr_a.usage.air_yards_share == pytest.approx(0.34 * 1.06)
+    assert wr_a.outcomes.catch_rate == pytest.approx(0.61)
 
 
 def test_low_sample_players_stay_neutral(tmp_path):
@@ -309,3 +367,100 @@ def test_missing_crosswalk_stays_neutral(tmp_path):
     wr_a = next(player for player in roster.players if player.player_id == "WR_A")
     assert wr_a.usage.target_share == 0.28
     assert wr_a.usage.air_yards_share == 0.34
+
+
+def test_partial_crosswalk_team_denominator_stays_neutral(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            {
+                "player_id": 101,
+                "player": "WR A",
+                "team": "KC",
+                "position": "LWR",
+                "season": 2024,
+                "week": 1,
+                "game_id": "g1",
+                "routes": 30,
+                "targets": 10,
+                "short_targets": 2,
+                "medium_targets": 3,
+                "deep_targets": 5,
+                "behind_los_targets": 0,
+                "short_avg_depth_of_target": 4.0,
+                "medium_avg_depth_of_target": 11.0,
+                "deep_avg_depth_of_target": 24.0,
+                "behind_los_avg_depth_of_target": -1.0,
+            },
+            {
+                "player_id": 102,
+                "player": "WR B",
+                "team": "KC",
+                "position": "RWR",
+                "season": 2024,
+                "week": 1,
+                "game_id": "g1",
+                "routes": 32,
+                "targets": 10,
+                "short_targets": 3,
+                "medium_targets": 4,
+                "deep_targets": 3,
+                "behind_los_targets": 0,
+                "short_avg_depth_of_target": 5.0,
+                "medium_avg_depth_of_target": 11.0,
+                "deep_avg_depth_of_target": 18.0,
+                "behind_los_avg_depth_of_target": -1.0,
+            },
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.58
+    engine = _engine(pff_dir)
+
+    engine.apply(roster, {101: "WR_A"}, 2024, 18)
+
+    assert wr_a.usage.target_share == pytest.approx(0.28)
+    assert wr_a.usage.air_yards_share == pytest.approx(0.34)
+    assert wr_a.outcomes.catch_rate == pytest.approx(0.58)
+
+
+def test_disabled_blend_does_not_fallback_to_previous_season_only(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2023,
+        [
+            {
+                "player_id": 101,
+                "player": "WR A",
+                "team": "KC",
+                "position": "LWR",
+                "season": 2023,
+                "week": 10,
+                "game_id": "old",
+                "routes": 34,
+                "targets": 11,
+                "short_targets": 2,
+                "medium_targets": 3,
+                "deep_targets": 6,
+                "behind_los_targets": 0,
+                "short_avg_depth_of_target": 5.0,
+                "medium_avg_depth_of_target": 11.0,
+                "deep_avg_depth_of_target": 23.0,
+                "behind_los_avg_depth_of_target": -1.0,
+            }
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.64
+    engine = _engine_with_config(pff_dir, early_season_blend=False)
+
+    engine.apply(roster, {101: "WR_A"}, 2024, 2)
+
+    assert wr_a.usage.target_share == pytest.approx(0.28)
+    assert wr_a.usage.air_yards_share == pytest.approx(0.34)
+    assert wr_a.outcomes.catch_rate == pytest.approx(0.64)
