@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import polars as pl
+from polars._typing import SchemaDict
 
 from fantasy_sim.data.loader import DataLoader
 
-RECEIVER_FEATURE_SCHEMA: dict[str, pl.DataType] = {
+RECEIVER_FEATURE_SCHEMA: SchemaDict = {
     "team": pl.Utf8,
     "player_id": pl.Utf8,
     "targets": pl.Int64,
@@ -13,7 +14,7 @@ RECEIVER_FEATURE_SCHEMA: dict[str, pl.DataType] = {
     "mean_air_yards": pl.Float64,
 }
 
-RB_FEATURE_SCHEMA: dict[str, pl.DataType] = {
+RB_FEATURE_SCHEMA: SchemaDict = {
     "team": pl.Utf8,
     "player_id": pl.Utf8,
     "attempts": pl.Int64,
@@ -22,7 +23,7 @@ RB_FEATURE_SCHEMA: dict[str, pl.DataType] = {
     "rush_yoe_per_att": pl.Float64,
 }
 
-QB_FEATURE_SCHEMA: dict[str, pl.DataType] = {
+QB_FEATURE_SCHEMA: SchemaDict = {
     "team": pl.Utf8,
     "player_id": pl.Utf8,
     "dropbacks": pl.Int64,
@@ -35,13 +36,43 @@ QB_FEATURE_SCHEMA: dict[str, pl.DataType] = {
     "cpoe": pl.Float64,
 }
 
+FTN_JOIN_SCHEMA: SchemaDict = {
+    "is_catchable_ball": pl.Float64,
+    "is_contested_ball": pl.Float64,
+    "is_no_huddle": pl.Float64,
+    "is_play_action": pl.Float64,
+    "n_blitzers": pl.Float64,
+}
+
+RB_OPTIONAL_SCHEMA: SchemaDict = {
+    "is_no_huddle": pl.Float64,
+    "is_play_action": pl.Float64,
+    "rush_yoe_per_att": pl.Float64,
+}
+
+QB_OPTIONAL_SCHEMA: SchemaDict = {
+    "was_pressure": pl.Float64,
+    "is_no_huddle": pl.Float64,
+    "is_play_action": pl.Float64,
+    "n_blitzers": pl.Float64,
+    "avg_time_to_throw": pl.Float64,
+    "aggressiveness": pl.Float64,
+    "cpoe": pl.Float64,
+}
+
+SCHEMA_COLUMN_NAMES: dict[str, list[str]] = {
+    "receiver": list(RECEIVER_FEATURE_SCHEMA),
+    "rb": list(RB_FEATURE_SCHEMA),
+    "qb": list(QB_FEATURE_SCHEMA),
+}
+
 
 class TrackingInputLoader:
-    def __init__(self, loader: DataLoader = DataLoader(), window_weeks: int = 4):
-        self._loader = loader
+    def __init__(self, loader: DataLoader | None = None, window_weeks: int = 4):
+        self._loader = loader or DataLoader()
         self._window_weeks = window_weeks
 
-    def _empty_frame(self, schema: dict[str, pl.DataType]) -> pl.DataFrame:
+    def _empty_frame(self, schema: SchemaDict) -> pl.DataFrame:
         return pl.DataFrame(schema=schema)
 
     def _rename_columns(self, df: pl.DataFrame, mapping: dict[str, str]) -> pl.DataFrame:
@@ -54,11 +85,7 @@ class TrackingInputLoader:
             return df.rename(rename_map)
         return df
 
-    def _ensure_columns(
-        self,
-        df: pl.DataFrame,
-        columns: dict[str, pl.DataType],
-    ) -> pl.DataFrame:
+    def _ensure_columns(self, df: pl.DataFrame, columns: SchemaDict) -> pl.DataFrame:
         missing = [
             pl.lit(None, dtype=dtype).alias(name)
             for name, dtype in columns.items()
@@ -68,11 +95,18 @@ class TrackingInputLoader:
             return df.with_columns(missing)
         return df
 
+    def _cast_to_schema(self, df: pl.DataFrame, schema: SchemaDict) -> pl.DataFrame:
+        return (
+            df.with_columns(
+                [pl.col(name).cast(dtype).alias(name) for name, dtype in schema.items()]
+            )
+            .select(list(schema))
+        )
+
     def _window_filter(self, df: pl.DataFrame, season: int, week: int) -> pl.DataFrame:
         if df.is_empty() or week <= 1:
             return df.clear()
-        required = {"season", "week"}
-        if not required.issubset(df.columns):
+        if "season" not in df.columns or "week" not in df.columns:
             return df.clear()
         min_week = max(1, week - self._window_weeks)
         return df.filter(
@@ -86,8 +120,9 @@ class TrackingInputLoader:
         available = [key for key in preferred if key in left.columns and key in right.columns]
         if available:
             return available
-        fallback = ["player_id"] if "player_id" in left.columns and "player_id" in right.columns else []
-        return fallback
+        if "player_id" in left.columns and "player_id" in right.columns:
+            return ["player_id"]
+        return []
 
     def _rate(self, column: str) -> pl.Expr:
         return pl.col(column).cast(pl.Float64).mean()
@@ -99,7 +134,7 @@ class TrackingInputLoader:
 
         ftn = self._loader.load_ftn_charting([season])
         if ftn is None or ftn.is_empty():
-            return pbp
+            return self._ensure_columns(pbp, FTN_JOIN_SCHEMA)
 
         ftn = self._rename_columns(
             ftn,
@@ -109,33 +144,23 @@ class TrackingInputLoader:
             },
         )
         join_keys = ["game_id", "play_id"]
-        if not set(join_keys).issubset(ftn.columns) or not set(join_keys).issubset(pbp.columns):
-            return self._ensure_columns(
-                pbp,
-                {
-                    "is_catchable_ball": pl.Float64,
-                    "is_contested_ball": pl.Float64,
-                    "is_no_huddle": pl.Float64,
-                    "is_play_action": pl.Float64,
-                    "n_blitzers": pl.Float64,
-                },
-            )
-        joined = pbp.join(ftn, on=join_keys, how="left")
-        return self._ensure_columns(
-            joined,
-            {
-                "is_catchable_ball": pl.Float64,
-                "is_contested_ball": pl.Float64,
-                "is_no_huddle": pl.Float64,
-                "is_play_action": pl.Float64,
-                "n_blitzers": pl.Float64,
-            },
+        if not set(join_keys).issubset(pbp.columns) or not set(join_keys).issubset(ftn.columns):
+            return self._ensure_columns(pbp, FTN_JOIN_SCHEMA)
+
+        joined = pbp.join(
+            self._ensure_columns(ftn, FTN_JOIN_SCHEMA)
+            .select([*join_keys, *FTN_JOIN_SCHEMA.keys()])
+            .unique(subset=join_keys, keep="first"),
+            on=join_keys,
+            how="left",
         )
+        return self._ensure_columns(joined, FTN_JOIN_SCHEMA)
 
     def load_receiver_features(self, season: int, week: int) -> pl.DataFrame:
         ftn = self._loader.load_ftn_charting([season])
         if ftn is None or ftn.is_empty():
             return self._empty_frame(RECEIVER_FEATURE_SCHEMA)
+
         ftn = self._rename_columns(
             ftn,
             {
@@ -180,9 +205,9 @@ class TrackingInputLoader:
                 ]
             )
             .rename({"posteam": "team", "receiver_player_id": "player_id"})
-            .select(list(RECEIVER_FEATURE_SCHEMA))
+            .select(SCHEMA_COLUMN_NAMES["receiver"])
         )
-        return result.cast(RECEIVER_FEATURE_SCHEMA)
+        return self._cast_to_schema(result, RECEIVER_FEATURE_SCHEMA)
 
     def load_rb_features(self, season: int, week: int) -> pl.DataFrame:
         joined = self._joined_pbp_ftn(season)
@@ -214,19 +239,13 @@ class TrackingInputLoader:
             join_keys = self._join_keys(rushes, ngs)
             if join_keys and "rush_yoe_per_att" in ngs.columns:
                 rushes = rushes.join(
-                    ngs.select([*join_keys, "rush_yoe_per_att"]),
+                    ngs.select([*join_keys, "rush_yoe_per_att"])
+                    .unique(subset=join_keys, keep="first"),
                     on=join_keys,
                     how="left",
                 )
 
-        rushes = self._ensure_columns(
-            rushes,
-            {
-                "is_no_huddle": pl.Float64,
-                "is_play_action": pl.Float64,
-                "rush_yoe_per_att": pl.Float64,
-            },
-        )
+        rushes = self._ensure_columns(rushes, RB_OPTIONAL_SCHEMA)
 
         result = (
             rushes
@@ -239,11 +258,27 @@ class TrackingInputLoader:
                     pl.col("rush_yoe_per_att").cast(pl.Float64).mean().alias("rush_yoe_per_att"),
                 ]
             )
-            .select(list(RB_FEATURE_SCHEMA))
+            .select(SCHEMA_COLUMN_NAMES["rb"])
         )
-        return result.cast(RB_FEATURE_SCHEMA)
+        return self._cast_to_schema(result, RB_FEATURE_SCHEMA)
 
     def load_qb_features(self, season: int, week: int) -> pl.DataFrame:
+        pbp = self._loader.load_pbp([season])
+        if pbp is None or pbp.is_empty():
+            return self._empty_frame(QB_FEATURE_SCHEMA)
+
+        required_pbp = {"game_id", "play_id", "season", "week", "posteam", "passer_player_id", "pass_attempt"}
+        if not required_pbp.issubset(pbp.columns):
+            return self._empty_frame(QB_FEATURE_SCHEMA)
+
+        qbs = (
+            self._window_filter(pbp, season, week)
+            .filter((pl.col("pass_attempt") == 1) & pl.col("passer_player_id").is_not_null())
+            .rename({"posteam": "team", "passer_player_id": "player_id"})
+        )
+        if qbs.is_empty():
+            return self._empty_frame(QB_FEATURE_SCHEMA)
+
         participation = self._loader.load_participation([season])
         if participation is None or participation.is_empty():
             return self._empty_frame(QB_FEATURE_SCHEMA)
@@ -252,16 +287,18 @@ class TrackingInputLoader:
             participation,
             {
                 "nflverse_game_id": "game_id",
-                "posteam": "team",
             },
         )
-        required = {"game_id", "play_id", "team", "player_id", "was_pressure"}
-        if not required.issubset(participation.columns):
+        required_participation = {"game_id", "play_id", "was_pressure"}
+        if not required_participation.issubset(participation.columns):
             return self._empty_frame(QB_FEATURE_SCHEMA)
 
-        qbs = self._window_filter(participation, season, week).filter(pl.col("player_id").is_not_null())
-        if qbs.is_empty():
-            return self._empty_frame(QB_FEATURE_SCHEMA)
+        participation = (
+            self._window_filter(participation, season, week)
+            .select(["game_id", "play_id", "was_pressure"])
+            .unique(subset=["game_id", "play_id"], keep="first")
+        )
+        qbs = qbs.join(participation, on=["game_id", "play_id"], how="left")
 
         ftn = self._loader.load_ftn_charting([season])
         if ftn is not None and not ftn.is_empty():
@@ -272,19 +309,12 @@ class TrackingInputLoader:
                     "nflverse_play_id": "play_id",
                 },
             )
-            join_keys = ["game_id", "play_id"]
-            if set(join_keys).issubset(ftn.columns):
-                ftn = self._ensure_columns(
-                    ftn,
-                    {
-                        "is_no_huddle": pl.Float64,
-                        "is_play_action": pl.Float64,
-                        "n_blitzers": pl.Float64,
-                    },
-                )
+            if {"game_id", "play_id"}.issubset(ftn.columns):
                 qbs = qbs.join(
-                    ftn.select([*join_keys, "is_no_huddle", "is_play_action", "n_blitzers"]),
-                    on=join_keys,
+                    self._ensure_columns(ftn, FTN_JOIN_SCHEMA)
+                    .select(["game_id", "play_id", "is_no_huddle", "is_play_action", "n_blitzers"])
+                    .unique(subset=["game_id", "play_id"], keep="first"),
+                    on=["game_id", "play_id"],
                     how="left",
                 )
 
@@ -299,21 +329,15 @@ class TrackingInputLoader:
             )
             ngs = self._window_filter(ngs, season, week)
             join_keys = self._join_keys(qbs, ngs)
-            ngs_cols = [name for name in ["avg_time_to_throw", "aggressiveness", "cpoe"] if name in ngs.columns]
-            if join_keys and ngs_cols:
-                qbs = qbs.join(ngs.select([*join_keys, *ngs_cols]), on=join_keys, how="left")
+            ngs_columns = [name for name in ["avg_time_to_throw", "aggressiveness", "cpoe"] if name in ngs.columns]
+            if join_keys and ngs_columns:
+                qbs = qbs.join(
+                    ngs.select([*join_keys, *ngs_columns]).unique(subset=join_keys, keep="first"),
+                    on=join_keys,
+                    how="left",
+                )
 
-        qbs = self._ensure_columns(
-            qbs,
-            {
-                "is_no_huddle": pl.Float64,
-                "is_play_action": pl.Float64,
-                "n_blitzers": pl.Float64,
-                "avg_time_to_throw": pl.Float64,
-                "aggressiveness": pl.Float64,
-                "cpoe": pl.Float64,
-            },
-        )
+        qbs = self._ensure_columns(qbs, QB_OPTIONAL_SCHEMA)
 
         result = (
             qbs
@@ -330,6 +354,6 @@ class TrackingInputLoader:
                     pl.col("cpoe").cast(pl.Float64).mean().alias("cpoe"),
                 ]
             )
-            .select(list(QB_FEATURE_SCHEMA))
+            .select(SCHEMA_COLUMN_NAMES["qb"])
         )
-        return result.cast(QB_FEATURE_SCHEMA)
+        return self._cast_to_schema(result, QB_FEATURE_SCHEMA)

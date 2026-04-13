@@ -229,16 +229,36 @@ def test_load_rb_features_aggregates_and_uses_only_prior_weeks():
 
 def test_load_qb_features_uses_only_prior_weeks():
     loader = Mock()
-    loader.load_participation.return_value = pl.DataFrame(
+    loader.load_pbp.return_value = pl.DataFrame(
         {
-            "nflverse_game_id": ["2024_04_KC_DEN", "2024_04_KC_DEN", "2024_05_KC_LV"],
+            "game_id": [
+                "2024_04_KC_DEN",
+                "2024_04_KC_DEN",
+                "2024_05_KC_LV",
+            ],
             "play_id": [41, 42, 51],
             "season": [2024, 2024, 2024],
             "week": [4, 4, 5],
-            "team": ["KC", "KC", "KC"],
-            "player_id": ["gsis-qb1", "gsis-qb1", "gsis-qb1"],
-            "was_pressure": [1, 0, 1],
-            "number_of_pass_rushers": [4, 4, 5],
+            "posteam": ["KC", "KC", "KC"],
+            "passer_player_id": ["gsis-qb1", "gsis-qb1", "gsis-qb1"],
+            "pass_attempt": [1, 1, 1],
+        }
+    )
+    loader.load_participation.return_value = pl.DataFrame(
+        {
+            "nflverse_game_id": [
+                "2024_04_KC_DEN",
+                "2024_04_KC_DEN",
+                "2024_04_KC_DEN",
+                "2024_05_KC_LV",
+            ],
+            "play_id": [41, 42, 99, 51],
+            "season": [2024, 2024, 2024, 2024],
+            "week": [4, 4, 4, 5],
+            "team": ["KC", "KC", "KC", "KC"],
+            "player_id": ["gsis-qb1", "gsis-qb1", "gsis-qb1", "gsis-qb1"],
+            "was_pressure": [1, 0, 1, 1],
+            "number_of_pass_rushers": [4, 4, 6, 5],
         }
     )
     loader.load_ftn_charting.return_value = pl.DataFrame(
@@ -281,6 +301,7 @@ def test_load_qb_features_uses_only_prior_weeks():
             "cpoe": 6.0,
         }
     ]
+    loader.load_pbp.assert_called_once_with([2024])
     loader.load_nextgen_stats.assert_called_once_with([2024], stat_type="passing")
 
 
