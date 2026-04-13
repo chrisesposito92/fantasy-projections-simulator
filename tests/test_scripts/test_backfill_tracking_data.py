@@ -26,4 +26,6 @@ def test_backfill_tracking_data_loads_all_required_sources():
     loader.load_ftn_charting.assert_any_call([2022])
     loader.load_ftn_charting.assert_any_call([2023])
     loader.load_nextgen_stats.assert_any_call([2022], stat_type="passing")
+    loader.load_nextgen_stats.assert_any_call([2023], stat_type="passing")
     loader.load_nextgen_stats.assert_any_call([2022], stat_type="rushing")
+    loader.load_nextgen_stats.assert_any_call([2023], stat_type="rushing")
