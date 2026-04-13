@@ -160,6 +160,20 @@ def _resolve_market_history_path(
     return DEFAULT_MARKET_HISTORY_DIR
 
 
+def _resolve_market_history_snapshot_label(config: object) -> str:
+    market_history_config = _config_section(config, "market_history_config")
+    if market_history_config is None:
+        market_history_config = _config_section(config, "market_history")
+    snapshot_label = (
+        _config_get(market_history_config, "snapshot_label", default=None)
+        if market_history_config is not None
+        else None
+    )
+    if snapshot_label is None:
+        snapshot_label = _config_get(config, "market_history", "snapshot_label", default=None)
+    return str(snapshot_label) if snapshot_label is not None else "close_core8"
+
+
 def _config_flag(
     config: object,
     config_keys: tuple[str, ...],
@@ -186,6 +200,16 @@ def _parquet_columns(path: Path) -> set[str]:
     if not path.exists():
         return set()
     return set(pl.read_parquet_schema(path).keys())
+
+
+def _parquet_unique_values(path: Path, column: str) -> set[str]:
+    if not path.exists():
+        return set()
+    schema = pl.read_parquet_schema(path)
+    if column not in schema:
+        return set()
+    values = pl.read_parquet(path, columns=[column]).get_column(column).drop_nulls().unique()
+    return {str(value) for value in values.to_list()}
 
 
 def _intersect_enabled_coverage(
@@ -294,6 +318,7 @@ def collect_signal_coverage(
     route_rate_pff_path = _resolve_route_rate_pff_path(config, pff_dir)
     props_path = _resolve_props_path(config, props_dir)
     market_history_path = _resolve_market_history_path(config, market_history_dir)
+    market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
         config,
@@ -371,32 +396,11 @@ def collect_signal_coverage(
         ("market_history_config", "market_history"),
         ("market_history",),
     )
-    market_history_open_enabled = _config_flag(
-        config,
-        ("market_history_config", "market_history"),
-        ("market_history", "features", "open_fpts"),
-        nested_path=("features", "open_fpts"),
-        default=True,
-    )
-    market_history_close_enabled = _config_flag(
-        config,
-        ("market_history_config", "market_history"),
-        ("market_history", "features", "close_fpts"),
-        nested_path=("features", "close_fpts"),
-        default=True,
-    )
     market_history_dispersion_enabled = _config_flag(
         config,
         ("market_history_config", "market_history"),
         ("market_history", "features", "dispersion"),
         nested_path=("features", "dispersion"),
-        default=True,
-    )
-    market_history_movement_enabled = _config_flag(
-        config,
-        ("market_history_config", "market_history"),
-        ("market_history", "features", "movement"),
-        nested_path=("features", "movement"),
         default=True,
     )
     market_history_anytime_td_enabled = _config_flag(
@@ -412,13 +416,27 @@ def collect_signal_coverage(
         for season in seasons
     }
     market_history_paths: dict[int, Path] = {
-        season: market_history_path / f"market_history_weekly_{season}.parquet"
+        season: market_history_path / f"player_markets_{season}_{market_history_snapshot_label}.parquet"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
         season: _parquet_columns(path)
         for season, path in market_history_paths.items()
     }
+    market_history_keys_by_season: dict[int, set[str]] = {
+        season: _parquet_unique_values(path, "market_key")
+        for season, path in market_history_paths.items()
+    }
+    market_history_crosswalk_coverage = _covered_seasons_from_required_paths(
+        seasons,
+        {
+            season: [
+                market_history_paths[season],
+                cache_path / f"rosters_weekly_{season}.parquet",
+            ]
+            for season in seasons
+        },
+    )
     pff_required_paths_by_season: dict[int, list[Path]] = {}
     for season in seasons:
         paths: list[Path] = []
@@ -503,43 +521,63 @@ def collect_signal_coverage(
     }
 
     market_history_signals = {
-        "market_history.open_fpts": _build_signal(
-            market_history_enabled and market_history_open_enabled,
+        "market_history.crosswalk": _build_signal(
+            market_history_enabled,
+            seasons,
+            market_history_crosswalk_coverage,
+            note=(
+                "Requires player_markets_<season>_<snapshot_label>.parquet plus "
+                "rosters_weekly cache to resolve The Odds players to nflverse IDs"
+            ),
+        ),
+        "market_history.pass_yards": _build_signal(
+            market_history_enabled,
             seasons,
             [
                 season
                 for season in seasons
-                if "open_fpts" in market_history_columns_by_season.get(season, set())
+                if season in market_history_crosswalk_coverage
+                and "player_pass_yds" in market_history_keys_by_season.get(season, set())
             ],
         ),
-        "market_history.close_fpts": _build_signal(
-            market_history_enabled and market_history_close_enabled,
+        "market_history.pass_tds": _build_signal(
+            market_history_enabled,
             seasons,
             [
                 season
                 for season in seasons
-                if "close_fpts" in market_history_columns_by_season.get(season, set())
+                if season in market_history_crosswalk_coverage
+                and "player_pass_tds" in market_history_keys_by_season.get(season, set())
             ],
         ),
-        "market_history.movement": _build_signal(
-            market_history_enabled and market_history_movement_enabled,
+        "market_history.rush_yards": _build_signal(
+            market_history_enabled,
             seasons,
             [
                 season
                 for season in seasons
-                if {
-                    "open_fpts",
-                    "close_fpts",
-                }.issubset(market_history_columns_by_season.get(season, set()))
+                if season in market_history_crosswalk_coverage
+                and "player_rush_yds" in market_history_keys_by_season.get(season, set())
             ],
         ),
-        "market_history.dispersion": _build_signal(
-            market_history_enabled and market_history_dispersion_enabled,
+        "market_history.receptions": _build_signal(
+            market_history_enabled,
             seasons,
             [
                 season
                 for season in seasons
-                if "line_stddev" in market_history_columns_by_season.get(season, set())
+                if season in market_history_crosswalk_coverage
+                and "player_receptions" in market_history_keys_by_season.get(season, set())
+            ],
+        ),
+        "market_history.receiving_yards": _build_signal(
+            market_history_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if season in market_history_crosswalk_coverage
+                and "player_reception_yds" in market_history_keys_by_season.get(season, set())
             ],
         ),
         "market_history.anytime_td": _build_signal(
@@ -548,7 +586,18 @@ def collect_signal_coverage(
             [
                 season
                 for season in seasons
-                if "anytime_td_prob" in market_history_columns_by_season.get(season, set())
+                if season in market_history_crosswalk_coverage
+                and "player_anytime_td" in market_history_keys_by_season.get(season, set())
+            ],
+        ),
+        "market_history.dispersion": _build_signal(
+            market_history_enabled and market_history_dispersion_enabled,
+            seasons,
+            [
+                season
+                for season in seasons
+                if season in market_history_crosswalk_coverage
+                and "line_stddev" in market_history_columns_by_season.get(season, set())
             ],
         ),
     }
@@ -556,7 +605,10 @@ def collect_signal_coverage(
         market_history_enabled,
         seasons,
         _intersect_enabled_coverage(seasons, market_history_signals.values()),
-        note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+        note=(
+            "Requires player_markets_<season>_<snapshot_label>.parquet plus "
+            "rosters_weekly cache to build the crosswalk"
+        ),
     )
 
     return {

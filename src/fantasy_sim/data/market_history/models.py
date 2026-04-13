@@ -16,6 +16,7 @@ class MarketHistoryFeatureFlags:
 class MarketHistoryConfig:
     enabled: bool = False
     data_dir: str | None = None
+    snapshot_label: str = "close_core8"
     positions: tuple[str, ...] = ("QB", "RB", "WR", "TE")
     weights: dict[str, float] = field(
         default_factory=lambda: {

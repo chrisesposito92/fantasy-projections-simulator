@@ -21,6 +21,7 @@ def test_load_market_history_config_defaults_when_missing():
 
     assert cfg.enabled is False
     assert cfg.data_dir is None
+    assert cfg.snapshot_label == "close_core8"
     assert cfg.positions == ("QB", "RB", "WR", "TE")
     assert cfg.weights == {
         "QB": 0.20,
@@ -64,6 +65,7 @@ def test_load_market_history_config_reads_nested_values():
             "market_history": {
                 "enabled": True,
                 "data_dir": "/tmp/market-history",
+                "snapshot_label": "close_core8",
                 "positions": ["QB", "WR", "TE"],
                 "weights": {
                     "QB": 0.30,
@@ -87,6 +89,7 @@ def test_load_market_history_config_reads_nested_values():
 
     assert cfg.enabled is True
     assert cfg.data_dir == "/tmp/market-history"
+    assert cfg.snapshot_label == "close_core8"
     assert cfg.positions == ("QB", "WR", "TE")
     assert cfg.weights == {
         "QB": 0.30,

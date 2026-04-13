@@ -491,23 +491,47 @@ def test_main_uses_top_level_market_history_coverage_for_promotion_scope():
             status="partial",
             covered_seasons=[2024],
             missing_seasons=[2023],
-            note="Requires processed season parquet at ~/.fantasy-sim/market-history/processed",
+            note=(
+                "Requires player_markets_<season>_<snapshot_label>.parquet plus "
+                "rosters_weekly cache to build the crosswalk"
+            ),
         ),
-        "market_history.open_fpts": SignalCoverage(
+        "market_history.crosswalk": SignalCoverage(
             enabled=True,
             status="full",
             covered_seasons=[2023, 2024],
             missing_seasons=[],
             note=None,
         ),
-        "market_history.close_fpts": SignalCoverage(
+        "market_history.pass_yards": SignalCoverage(
             enabled=True,
             status="full",
             covered_seasons=[2023, 2024],
             missing_seasons=[],
             note=None,
         ),
-        "market_history.movement": SignalCoverage(
+        "market_history.pass_tds": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.rush_yards": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.receptions": SignalCoverage(
+            enabled=True,
+            status="full",
+            covered_seasons=[2023, 2024],
+            missing_seasons=[],
+            note=None,
+        ),
+        "market_history.receiving_yards": SignalCoverage(
             enabled=True,
             status="full",
             covered_seasons=[2023, 2024],

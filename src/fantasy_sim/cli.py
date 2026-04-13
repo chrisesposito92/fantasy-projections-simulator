@@ -175,12 +175,18 @@ def _make_role_trend_adjuster(defaults: dict) -> RoleTrendProjectionAdjuster | N
     return RoleTrendProjectionAdjuster(role_trend_config)
 
 
-def _make_market_history_adjuster(defaults: dict) -> MarketHistoryProjectionAdjuster | None:
+def _make_market_history_adjuster(
+    defaults: dict,
+    scoring_config: dict | None = None,
+) -> MarketHistoryProjectionAdjuster | None:
     """Create the market-history adjuster when the signal is enabled."""
     market_history_config = load_market_history_config(defaults)
     if not market_history_config.enabled:
         return None
-    return MarketHistoryProjectionAdjuster(market_history_config)
+    return MarketHistoryProjectionAdjuster(
+        market_history_config,
+        scoring_config=scoring_config,
+    )
 
 
 def _maybe_blend_player_projs(
@@ -645,7 +651,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
-    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults)
+    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -803,7 +809,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
-    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults)
+    market_history_adjuster = None if detail else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail else _make_ensembler(defaults)
 
     if sims is None:
@@ -1008,7 +1014,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         defaults=defaults,
     )
     role_trend_adjuster = None if detail or demo else _make_role_trend_adjuster(defaults)
-    market_history_adjuster = None if detail or demo else _make_market_history_adjuster(defaults)
+    market_history_adjuster = None if detail or demo else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail or demo else _make_ensembler(defaults)
 
     if sims is None:

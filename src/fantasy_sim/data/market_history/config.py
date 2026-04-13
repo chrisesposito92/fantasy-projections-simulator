@@ -13,6 +13,7 @@ def _build_default_market_history_config() -> MarketHistoryConfig:
     return MarketHistoryConfig(
         enabled=DEFAULT_MARKET_HISTORY_CONFIG.enabled,
         data_dir=DEFAULT_MARKET_HISTORY_CONFIG.data_dir,
+        snapshot_label=DEFAULT_MARKET_HISTORY_CONFIG.snapshot_label,
         positions=tuple(DEFAULT_MARKET_HISTORY_CONFIG.positions),
         weights=dict(DEFAULT_MARKET_HISTORY_CONFIG.weights),
         min_coverage_weeks=DEFAULT_MARKET_HISTORY_CONFIG.min_coverage_weeks,
@@ -38,6 +39,10 @@ def load_market_history_config(defaults: dict) -> MarketHistoryConfig:
     return MarketHistoryConfig(
         enabled=raw.get("enabled", DEFAULT_MARKET_HISTORY_CONFIG.enabled),
         data_dir=raw.get("data_dir", DEFAULT_MARKET_HISTORY_CONFIG.data_dir),
+        snapshot_label=raw.get(
+            "snapshot_label",
+            DEFAULT_MARKET_HISTORY_CONFIG.snapshot_label,
+        ),
         positions=tuple(raw.get("positions", DEFAULT_MARKET_HISTORY_CONFIG.positions)),
         weights=dict(
             raw.get(

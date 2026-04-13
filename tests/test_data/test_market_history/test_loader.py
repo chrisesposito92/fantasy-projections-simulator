@@ -1,163 +1,135 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
 import polars as pl
 
-from fantasy_sim.data.market_history.importer import build_market_history_cache
+from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.market_history.loader import (
+    MARKET_HISTORY_SIGNAL_SCHEMA,
     MarketHistoryLoader,
-    PROCESSED_WEEKLY_SCHEMA,
 )
 from fantasy_sim.data.market_history.models import MarketHistoryConfig
 
 
-def _raw_week_frame(season: int, week: int, *, player_id: str = "QB1") -> pl.DataFrame:
+def _raw_player_markets(season: int) -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "season": [season],
-            "week": [week],
-            "player_id": [player_id],
-            "full_name": ["QB One"],
-            "position": ["QB"],
-            "team": ["KC"],
-            "open_fpts": [18.0],
-            "close_fpts": [19.0],
-            "books": [3],
-            "line_stddev": [1.0],
-            "anytime_td_prob": [0.10],
+            "season": [season, season, season],
+            "week": [1, 1, 1],
+            "event_id": ["event-1", "event-1", "event-1"],
+            "schedule_game_id": [
+                "2024_01_ARI_BUF",
+                "2024_01_ARI_BUF",
+                "2024_01_ARI_BUF",
+            ],
+            "snapshot_label": ["close_core8", "close_core8", "close_core8"],
+            "snapshot_timestamp": [
+                "2024-09-08T17:00:00Z",
+                "2024-09-08T17:00:00Z",
+                "2024-09-08T17:00:00Z",
+            ],
+            "market_key": [
+                "player_pass_yds",
+                "player_rush_yds",
+                "player_pass_yds",
+            ],
+            "player_name": ["Josh Allen", "James Cook", "Unknown Player"],
+            "player_name_normalized": ["josh allen", "james cook", "unknown player"],
+            "home_team": ["Buffalo Bills", "Buffalo Bills", "Buffalo Bills"],
+            "away_team": ["Arizona Cardinals", "Arizona Cardinals", "Arizona Cardinals"],
+            "bookmaker_count": [3, 3, 2],
+            "line": [255.5, 65.5, 199.5],
+            "line_stddev": [0.0, 0.5, 0.0],
+            "over_price": [1.90, 1.88, 1.95],
+            "under_price": [1.90, 1.92, 1.85],
+            "yes_price": [None, None, None],
+            "implied_prob": [None, None, None],
         }
     )
 
 
-def _raw_week_frame_with_duplicate_rows(season: int, week: int) -> pl.DataFrame:
+def _rosters() -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "season": [season, season],
-            "week": [week, week],
-            "player_id": ["QB1", "QB1"],
-            "full_name": ["QB One", "QB One"],
-            "position": ["QB", "QB"],
-            "team": ["KC", "KC"],
-            "open_fpts": [18.0, 18.0],
-            "close_fpts": [19.0, 20.0],
-            "books": [3, 4],
-            "line_stddev": [1.0, 1.1],
-            "anytime_td_prob": [0.10, 0.20],
+            "season": [2024, 2024],
+            "week": [1, 1],
+            "player_id": ["BUF-QB1", "BUF-RB1"],
+            "player_name": ["Josh Allen", "James Cook"],
+            "position": ["QB", "RB"],
+            "team": ["BUF", "BUF"],
         }
     )
 
 
-def test_build_market_history_cache_combines_weeks_into_one_season_file(tmp_path):
-    raw_root = tmp_path / "raw" / "2023"
-    raw_root.mkdir(parents=True)
-    _raw_week_frame(2023, 1).write_parquet(raw_root / "week01.parquet")
-    _raw_week_frame(2023, 2).write_parquet(raw_root / "week02.parquet")
-
-    output_path = build_market_history_cache(
-        2023,
-        raw_dir=tmp_path / "raw",
-        processed_dir=tmp_path / "processed",
+def test_loader_resolves_market_players_to_nflverse_ids(tmp_path):
+    processed = tmp_path / "processed"
+    processed.mkdir()
+    _raw_player_markets(2024).write_parquet(
+        processed / "player_markets_2024_close_core8.parquet"
     )
+    roster_loader = MagicMock(spec=DataLoader)
+    roster_loader.load_rosters.return_value = _rosters()
 
-    frame = pl.read_parquet(output_path)
-
-    assert output_path.name == "market_history_weekly_2023.parquet"
-    assert frame["week"].to_list() == [1, 2]
-    assert frame["player_id"].to_list() == ["QB1", "QB1"]
-
-
-def test_build_market_history_cache_collapses_duplicate_rows(tmp_path):
-    raw_root = tmp_path / "raw" / "2023"
-    raw_root.mkdir(parents=True)
-    _raw_week_frame_with_duplicate_rows(2023, 1).write_parquet(
-        raw_root / "week01.parquet"
-    )
-
-    output_path = build_market_history_cache(
-        2023,
-        raw_dir=tmp_path / "raw",
-        processed_dir=tmp_path / "processed",
-    )
-
-    frame = pl.read_parquet(output_path)
-
-    assert frame.height == 1
-    assert frame["close_fpts"].to_list() == [20.0]
-    assert frame["books"].to_list() == [4]
-
-
-def test_build_market_history_cache_writes_schema_stable_empty_file(tmp_path):
-    output_path = build_market_history_cache(
-        2023,
-        raw_dir=tmp_path / "raw",
-        processed_dir=tmp_path / "processed",
-    )
-
-    frame = pl.read_parquet(output_path)
-
-    assert frame.is_empty()
-    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
-
-
-def test_build_market_history_cache_backfills_missing_optional_columns(tmp_path):
-    raw_root = tmp_path / "raw" / "2023"
-    raw_root.mkdir(parents=True)
-    _raw_week_frame(2023, 1).drop(
-        ["line_stddev", "anytime_td_prob"]
-    ).write_parquet(raw_root / "week01.parquet")
-
-    output_path = build_market_history_cache(
-        2023,
-        raw_dir=tmp_path / "raw",
-        processed_dir=tmp_path / "processed",
-    )
-
-    frame = pl.read_parquet(output_path)
-
-    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
-    assert frame["line_stddev"].to_list() == [None]
-    assert frame["anytime_td_prob"].to_list() == [None]
-
-
-def test_loader_returns_empty_processed_schema_when_file_is_missing(tmp_path):
     loader = MarketHistoryLoader(
-        MarketHistoryConfig(enabled=True, data_dir=str(tmp_path))
+        MarketHistoryConfig(
+            enabled=True,
+            data_dir=str(processed),
+            snapshot_label="close_core8",
+        ),
+        roster_loader=roster_loader,
     )
 
-    frame = loader.load_weekly([2023])
+    frame = loader.load_weekly([2024]).sort(["player_id", "market_key"])
 
-    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
+    assert frame.schema == MARKET_HISTORY_SIGNAL_SCHEMA
+    assert frame["player_id"].to_list() == ["BUF-QB1", "BUF-RB1"]
+    assert frame["full_name"].to_list() == ["Josh Allen", "James Cook"]
+    assert frame["position"].to_list() == ["QB", "RB"]
+    assert frame["team"].to_list() == ["BUF", "BUF"]
+    assert "Unknown Player" not in frame["player_name"].to_list()
+
+
+def test_loader_returns_empty_signal_schema_when_season_file_is_missing(tmp_path):
+    loader = MarketHistoryLoader(
+        MarketHistoryConfig(
+            enabled=True,
+            data_dir=str(tmp_path),
+            snapshot_label="close_core8",
+        ),
+        roster_loader=MagicMock(spec=DataLoader),
+    )
+
+    frame = loader.load_weekly([2024])
+
+    assert frame.schema == MARKET_HISTORY_SIGNAL_SCHEMA
     assert frame.is_empty()
 
 
-def test_loader_backfills_missing_optional_columns_from_partial_processed_file(tmp_path):
+def test_loader_reads_multiple_seasons_from_player_market_store(tmp_path):
     processed = tmp_path / "processed"
     processed.mkdir()
-    _raw_week_frame(2023, 1).drop(
-        ["line_stddev", "anytime_td_prob"]
-    ).write_parquet(processed / "market_history_weekly_2023.parquet")
+    _raw_player_markets(2023).with_columns(
+        pl.lit("2023_01_ARI_BUF").alias("schedule_game_id")
+    ).write_parquet(processed / "player_markets_2023_close_core8.parquet")
+    _raw_player_markets(2024).write_parquet(
+        processed / "player_markets_2024_close_core8.parquet"
+    )
+    roster_loader = MagicMock(spec=DataLoader)
+    roster_loader.load_rosters.side_effect = [
+        _rosters().with_columns(pl.lit(2023).alias("season")),
+        _rosters(),
+    ]
 
     loader = MarketHistoryLoader(
-        MarketHistoryConfig(enabled=True, data_dir=str(processed))
+        MarketHistoryConfig(
+            enabled=True,
+            data_dir=str(processed),
+            snapshot_label="close_core8",
+        ),
+        roster_loader=roster_loader,
     )
-    frame = loader.load_weekly([2023])
+    frame = loader.load_weekly([2023, 2024]).sort(["season", "player_id", "market_key"])
 
-    assert frame.schema == PROCESSED_WEEKLY_SCHEMA
-    assert frame["line_stddev"].to_list() == [None]
-    assert frame["anytime_td_prob"].to_list() == [None]
-
-
-def test_loader_reads_multiple_seasons_from_processed_store(tmp_path):
-    processed = tmp_path / "processed"
-    processed.mkdir()
-    _raw_week_frame(2023, 1).write_parquet(
-        processed / "market_history_weekly_2023.parquet"
-    )
-    _raw_week_frame(2024, 1, player_id="QB2").write_parquet(
-        processed / "market_history_weekly_2024.parquet"
-    )
-
-    loader = MarketHistoryLoader(
-        MarketHistoryConfig(enabled=True, data_dir=str(processed))
-    )
-    frame = loader.load_weekly([2023, 2024]).sort(["season", "player_id"])
-
-    assert frame["season"].to_list() == [2023, 2024]
-    assert frame["player_id"].to_list() == ["QB1", "QB2"]
+    assert frame["season"].unique().to_list() == [2023, 2024]
+    assert frame.height == 4

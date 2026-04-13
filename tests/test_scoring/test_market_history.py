@@ -23,29 +23,57 @@ class _StubLoader:
 def _config(*, enabled: bool = True) -> MarketHistoryConfig:
     return MarketHistoryConfig(
         enabled=enabled,
+        snapshot_label="close_core8",
         weights={"QB": 0.50, "RB": 0.15, "WR": 0.25, "TE": 0.15},
     )
 
 
-def test_adjust_week_blends_covered_rows_and_recomputes_rank():
+def _scoring() -> dict[str, float]:
+    return {
+        "passing_yard": 0.04,
+        "passing_td": 4.0,
+        "interception": -2.0,
+        "rushing_yard": 0.1,
+        "rushing_td": 6.0,
+        "receiving_yard": 0.1,
+        "receiving_td": 6.0,
+        "reception_wr": 1.0,
+        "reception_te": 1.0,
+        "reception_rb": 1.0,
+        "reception_qb": 1.0,
+        "fumble_lost": -2.0,
+    }
+
+
+def test_adjust_week_blends_market_native_rows_and_recomputes_rank():
     loader = _StubLoader(
         pl.DataFrame(
             {
-                "season": [2024, 2024],
-                "week": [1, 1],
-                "player_id": ["QB1", "WR1"],
-                "full_name": ["QB One", "WR One"],
-                "position": ["QB", "WR"],
-                "team": ["KC", "MIN"],
-                "open_fpts": [19.0, 12.0],
-                "close_fpts": [20.0, 12.0],
-                "books": [2, 2],
-                "line_stddev": [0.0, 0.0],
-                "anytime_td_prob": [None, None],
+                "season": [2024, 2024, 2024, 2024, 2024],
+                "week": [1, 1, 1, 1, 1],
+                "player_id": ["QB1", "QB1", "WR1", "WR1", "WR1"],
+                "full_name": ["QB One", "QB One", "WR One", "WR One", "WR One"],
+                "position": ["QB", "QB", "WR", "WR", "WR"],
+                "team": ["KC", "KC", "MIN", "MIN", "MIN"],
+                "market_key": [
+                    "player_pass_yds",
+                    "player_pass_tds",
+                    "player_receptions",
+                    "player_reception_yds",
+                    "player_anytime_td",
+                ],
+                "bookmaker_count": [2, 2, 2, 2, 2],
+                "line": [250.0, 2.5, 6.0, 70.0, None],
+                "line_stddev": [0.0, 0.0, 0.0, 0.0, None],
+                "implied_prob": [None, None, None, None, 0.50],
             }
         )
     )
-    adjuster = MarketHistoryProjectionAdjuster(_config(), loader=loader)
+    adjuster = MarketHistoryProjectionAdjuster(
+        _config(),
+        loader=loader,
+        scoring_config=_scoring(),
+    )
 
     adjusted, stats = adjuster.adjust_week(
         [
@@ -55,6 +83,10 @@ def test_adjust_week_blends_covered_rows_and_recomputes_rank():
                 "position": "WR",
                 "team": "MIN",
                 "fpts": 11.0,
+                "receptions": 4.0,
+                "receiving_yards": 50.0,
+                "rush_tds": 0.0,
+                "receiving_tds": 0.0,
                 "rank": 1,
             },
             {
@@ -63,6 +95,10 @@ def test_adjust_week_blends_covered_rows_and_recomputes_rank():
                 "position": "QB",
                 "team": "KC",
                 "fpts": 10.0,
+                "pass_yards": 200.0,
+                "pass_tds": 1.0,
+                "rush_tds": 0.0,
+                "receiving_tds": 0.0,
                 "rank": 2,
             },
         ],
@@ -73,18 +109,22 @@ def test_adjust_week_blends_covered_rows_and_recomputes_rank():
     qb = next(row for row in adjusted if row["player_id"] == "QB1")
     wr = next(row for row in adjusted if row["player_id"] == "WR1")
 
-    assert qb["fpts"] == 15.1
+    assert qb["fpts"] == 14.0
     assert qb["rank"] == 1
     assert qb["market_history_source"] == "market_history"
     assert qb["market_history_weight"] == 0.5
     assert qb["market_history_covered"] is True
-    assert qb["market_history_prior_fpts"] == 20.25
+    assert qb["market_history_prior_fpts"] == 18.0
     assert qb["market_history_confidence"] == 1.0
-    assert qb["market_history_line_move"] == 1.0
-    assert wr["fpts"] == 11.2
+    assert qb["market_history_market_count"] == 2
+    assert qb["pass_yards"] == 225.0
+    assert qb["pass_tds"] == 1.8
+    assert wr["fpts"] == 13.0
     assert wr["market_history_weight"] == 0.25
     assert wr["market_history_confidence"] == 1.0
-    assert wr["market_history_line_move"] == 0.0
+    assert wr["market_history_market_count"] == 3
+    assert wr["receptions"] == 4.5
+    assert wr["receiving_yards"] == 55.0
     assert stats.covered_rows == 2
     assert stats.uncovered_rows == 0
 
@@ -99,15 +139,19 @@ def test_adjust_week_marks_uncovered_rows_without_changing_fpts():
                 "full_name": ["WR One"],
                 "position": ["WR"],
                 "team": ["MIN"],
-                "open_fpts": [12.0],
-                "close_fpts": [12.0],
-                "books": [2],
+                "market_key": ["player_receptions"],
+                "bookmaker_count": [2],
+                "line": [5.0],
                 "line_stddev": [0.0],
-                "anytime_td_prob": [None],
+                "implied_prob": [None],
             }
         )
     )
-    adjuster = MarketHistoryProjectionAdjuster(_config(), loader=loader)
+    adjuster = MarketHistoryProjectionAdjuster(
+        _config(),
+        loader=loader,
+        scoring_config=_scoring(),
+    )
 
     adjusted, stats = adjuster.adjust_week(
         [
@@ -130,7 +174,7 @@ def test_adjust_week_marks_uncovered_rows_without_changing_fpts():
     assert row["market_history_weight"] == 0.0
     assert row["market_history_covered"] is False
     assert "market_history_confidence" not in row
-    assert "market_history_line_move" not in row
+    assert "market_history_market_count" not in row
     assert stats.covered_rows == 0
     assert stats.uncovered_rows == 1
 
@@ -145,15 +189,19 @@ def test_adjust_week_caches_normalized_priors_by_season():
                 "full_name": ["QB One"],
                 "position": ["QB"],
                 "team": ["KC"],
-                "open_fpts": [19.0],
-                "close_fpts": [20.0],
-                "books": [2],
+                "market_key": ["player_pass_yds"],
+                "bookmaker_count": [2],
+                "line": [250.0],
                 "line_stddev": [0.0],
-                "anytime_td_prob": [None],
+                "implied_prob": [None],
             }
         )
     )
-    adjuster = MarketHistoryProjectionAdjuster(_config(), loader=loader)
+    adjuster = MarketHistoryProjectionAdjuster(
+        _config(),
+        loader=loader,
+        scoring_config=_scoring(),
+    )
     projections = [
         {
             "player_id": "QB1",
@@ -161,6 +209,7 @@ def test_adjust_week_caches_normalized_priors_by_season():
             "position": "QB",
             "team": "KC",
             "fpts": 10.0,
+            "pass_yards": 200.0,
             "rank": 1,
         }
     ]

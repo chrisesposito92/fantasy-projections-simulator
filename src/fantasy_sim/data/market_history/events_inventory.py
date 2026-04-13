@@ -13,6 +13,10 @@ from polars._typing import SchemaDict
 
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.market_history.loader import DEFAULT_MARKET_HISTORY_PROCESSED_DIR
+from fantasy_sim.data.market_history.teams import (
+    TEAM_ABBREV_TO_NAME,
+    TEAM_NAME_TO_ABBREV,
+)
 
 DEFAULT_MARKET_HISTORY_DIR = Path.home() / ".fantasy-sim" / "market-history"
 DEFAULT_MARKET_HISTORY_ENV_FILE = DEFAULT_MARKET_HISTORY_DIR / ".env"
@@ -24,46 +28,6 @@ SPORT_KEY = "americanfootball_nfl"
 DEFAULT_DELAY_SECONDS = 0.5
 DEFAULT_TIMEOUT_SECONDS = 30.0
 MAX_RETRIES = 3
-
-TEAM_ABBREV_TO_NAME: dict[str, str] = {
-    "ARI": "Arizona Cardinals",
-    "ATL": "Atlanta Falcons",
-    "BAL": "Baltimore Ravens",
-    "BUF": "Buffalo Bills",
-    "CAR": "Carolina Panthers",
-    "CHI": "Chicago Bears",
-    "CIN": "Cincinnati Bengals",
-    "CLE": "Cleveland Browns",
-    "DAL": "Dallas Cowboys",
-    "DEN": "Denver Broncos",
-    "DET": "Detroit Lions",
-    "GB": "Green Bay Packers",
-    "HOU": "Houston Texans",
-    "IND": "Indianapolis Colts",
-    "JAX": "Jacksonville Jaguars",
-    "KC": "Kansas City Chiefs",
-    "LAC": "Los Angeles Chargers",
-    "LV": "Las Vegas Raiders",
-    "LAR": "Los Angeles Rams",
-    "LA": "Los Angeles Rams",
-    "MIA": "Miami Dolphins",
-    "MIN": "Minnesota Vikings",
-    "NE": "New England Patriots",
-    "NO": "New Orleans Saints",
-    "NYG": "New York Giants",
-    "NYJ": "New York Jets",
-    "PHI": "Philadelphia Eagles",
-    "PIT": "Pittsburgh Steelers",
-    "SEA": "Seattle Seahawks",
-    "SF": "San Francisco 49ers",
-    "TB": "Tampa Bay Buccaneers",
-    "TEN": "Tennessee Titans",
-    "WAS": "Washington Commanders",
-}
-
-TEAM_NAME_TO_ABBREV: dict[str, str] = {
-    name: abbr for abbr, name in TEAM_ABBREV_TO_NAME.items()
-}
 
 ScheduleRow: TypeAlias = dict[str, str | int]
 

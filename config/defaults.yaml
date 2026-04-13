@@ -257,6 +257,7 @@ ensemble:
 market_history:
   enabled: false
   data_dir: null
+  snapshot_label: close_core8
   positions: [QB, RB, WR, TE]
   weights:
     QB: 0.20

@@ -203,7 +203,8 @@ class Backtester:
             and self._market_history_config.enabled
         ):
             market_history_adjuster = MarketHistoryProjectionAdjuster(
-                self._market_history_config
+                self._market_history_config,
+                scoring_config=scoring_config,
             )
 
         spec_by_id = {s.game_id: s for s in specs}
