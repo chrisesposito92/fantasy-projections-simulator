@@ -314,6 +314,29 @@ def test_pff_depth_role_position_signals_respect_configured_positions(tmp_path):
     assert coverage["pff.depth_role.te"].status == "disabled"
 
 
+def test_pff_depth_role_is_disabled_when_parent_pff_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2024,):
+        _write_parquet_placeholder(pff_dir / f"receiving_depth_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].depth_role.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role"].status == "disabled"
+    assert coverage["pff.depth_role.wr"].status == "disabled"
+    assert coverage["pff.depth_role.te"].status == "disabled"
+
+
 def test_usage_reports_partial_when_snap_counts_or_pbp_missing_for_one_season(tmp_path):
     cache_dir = tmp_path / "cache"
     _write_parquet_placeholder(cache_dir / "snap_counts_2023.parquet")

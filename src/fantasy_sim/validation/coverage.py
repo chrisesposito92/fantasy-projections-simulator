@@ -729,19 +729,19 @@ def collect_signal_coverage(
             ),
         ),
         "pff.depth_role": _build_signal(
-            depth_role_enabled,
+            pff_enabled and depth_role_enabled,
             seasons,
             depth_role_coverage,
             note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
         ),
         "pff.depth_role.wr": _build_signal(
-            depth_role_enabled and "WR" in depth_role_positions,
+            pff_enabled and depth_role_enabled and "WR" in depth_role_positions,
             seasons,
             depth_role_coverage,
             note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
         ),
         "pff.depth_role.te": _build_signal(
-            depth_role_enabled and "TE" in depth_role_positions,
+            pff_enabled and depth_role_enabled and "TE" in depth_role_positions,
             seasons,
             depth_role_coverage,
             note="Requires receiving_depth parquet plus rosters_weekly cache to build the PFF crosswalk",
