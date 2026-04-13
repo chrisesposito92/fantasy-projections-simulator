@@ -29,6 +29,7 @@ from fantasy_sim.data.ensemble import EnsembleConfig, load_ensemble_config
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
@@ -221,16 +222,32 @@ def run_season(
         if arm_b_configs.get("role_trend_config") is not None
         else None
     )
+    arm_a_market_history = (
+        MarketHistoryProjectionAdjuster(
+            arm_a_configs["market_history_config"],
+            scoring_config=scoring_config,
+        )
+        if arm_a_configs.get("market_history_config") is not None
+        else None
+    )
+    arm_b_market_history = (
+        MarketHistoryProjectionAdjuster(
+            arm_b_configs["market_history_config"],
+            scoring_config=scoring_config,
+        )
+        if arm_b_configs.get("market_history_config") is not None
+        else None
+    )
 
     arm_a_build_configs = {
         key: value
         for key, value in arm_a_configs.items()
-        if key != "role_trend_config"
+        if key not in {"role_trend_config", "market_history_config"}
     }
     arm_b_build_configs = {
         key: value
         for key, value in arm_b_configs.items()
-        if key != "role_trend_config"
+        if key not in {"role_trend_config", "market_history_config"}
     }
 
     loader = DataLoader()
@@ -310,6 +327,7 @@ def run_season(
                 season=test_season,
                 week=spec.week,
                 role_trend_adjuster=arm_b_role_trend,
+                market_history_adjuster=arm_b_market_history,
                 ensembler=arm_b_ensembler,
             )
             for proj in projections:
@@ -431,11 +449,15 @@ def run_season(
             spec = spec_by_id_a[result.game_id] if is_arm_a else spec_by_id_b[result.game_id]
             ensembler = arm_a_ensembler if is_arm_a else arm_b_ensembler
             role_trend_adjuster = arm_a_role_trend if is_arm_a else arm_b_role_trend
+            market_history_adjuster = (
+                arm_a_market_history if is_arm_a else arm_b_market_history
+            )
             projections = apply_projection_layers(
                 result.projections,
                 season=test_season,
                 week=spec.week,
                 role_trend_adjuster=role_trend_adjuster,
+                market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
             )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
@@ -615,6 +637,45 @@ def print_season_results(season_results: list[SeasonMetrics]) -> None:
         print(f"    rank_corr delta:  {avg_rc:+.4f}")
         print(f"    weekly_mae delta: {avg_wm:+.3f}")
         print(f"    season_mae delta: {avg_sm:+.3f}")
+
+
+def print_market_history_results(
+    season_results: list[SeasonMetrics],
+    coverage_summary: Mapping[str, SignalCoverage] | None,
+) -> None:
+    signal = (coverage_summary or {}).get("market_history")
+    if signal is None or not signal.enabled:
+        return
+
+    covered = signal.covered_seasons
+    uncovered = signal.missing_seasons
+
+    print("\n" + "=" * 68)
+    print("  MARKET HISTORY COVERED-SEASON READOUT")
+    print("=" * 68)
+    print(
+        f"  covered seasons   : {', '.join(str(season) for season in covered) or '(none)'}"
+    )
+    print(
+        f"  uncovered seasons : {', '.join(str(season) for season in uncovered) or '(none)'}"
+    )
+    print("  promotion scope   : covered_only")
+
+    covered_results = [
+        season_result
+        for season_result in season_results
+        if season_result.test_season in covered
+    ]
+    if not covered_results:
+        print("  no covered seasons; market-specific averages skipped")
+        return
+
+    avg_rc = sum(r.rank_corr_delta for r in covered_results) / len(covered_results)
+    avg_wm = sum(r.weekly_mae_delta for r in covered_results) / len(covered_results)
+    avg_sm = sum(r.season_mae_delta for r in covered_results) / len(covered_results)
+    print(f"  rank_corr delta:  {avg_rc:+.4f}")
+    print(f"  weekly_mae delta: {avg_wm:+.3f}")
+    print(f"  season_mae delta: {avg_sm:+.3f}")
 
 
 def print_weekly_results(
@@ -824,6 +885,7 @@ def main() -> int:
 
     # Print results
     print_season_results(all_season_metrics)
+    print_market_history_results(all_season_metrics, coverage_summary)
 
     weekly_summaries: list[WeeklyPositionSummary] | None = None
     dir_accuracy: DirectionalAccuracyResult | None = None
@@ -843,6 +905,7 @@ def main() -> int:
 
     # Save to ledger
     if args.label:
+        market_history_signal = (coverage_summary or {}).get("market_history")
         entry = LedgerEntry(
             schema_version=CURRENT_LEDGER_SCHEMA_VERSION,
             label=args.label,
@@ -855,6 +918,11 @@ def main() -> int:
             comparison_mode=comparison_mode,
             overrides=args.overrides,
             seed_mode=SEED_MODE,
+            promotion_evidence_scope=(
+                "covered_only"
+                if market_history_signal is not None and market_history_signal.enabled
+                else None
+            ),
             coverage_summary=coverage_summary,
             config_snapshot=arm_b_dict if args.overrides else defaults,
             season_results=all_season_metrics,

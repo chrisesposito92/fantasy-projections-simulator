@@ -1,12 +1,15 @@
 from dataclasses import dataclass
-from pathlib import Path
 from collections import defaultdict
 import math
+from pathlib import Path
+
 import zlib
+
 import numpy as np
 import polars as pl
 from fantasy_sim.data.ensemble.models import EnsembleConfig
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.data.market_history.models import MarketHistoryConfig
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.role_trend.models import RoleTrendConfig
 from fantasy_sim.data.weather.models import WeatherConfig
@@ -14,6 +17,7 @@ from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.metrics import (
@@ -72,6 +76,7 @@ class Backtester:
         props_config: PropsConfig | None = None,
         usage_config: UsageConfig | None = None,
         role_trend_config: RoleTrendConfig | None = None,
+        market_history_config: MarketHistoryConfig | None = None,
         ensemble_config: EnsembleConfig | None = None,
         max_workers: int = 1,
     ):
@@ -93,6 +98,7 @@ class Backtester:
         self._props_config = props_config
         self._usage_config = usage_config
         self._role_trend_config = role_trend_config
+        self._market_history_config = market_history_config
         self._ensemble_config = ensemble_config
         self.max_workers = max_workers
 
@@ -191,6 +197,15 @@ class Backtester:
         role_trend_adjuster = None
         if self._role_trend_config is not None and self._role_trend_config.enabled:
             role_trend_adjuster = RoleTrendProjectionAdjuster(self._role_trend_config)
+        market_history_adjuster = None
+        if (
+            self._market_history_config is not None
+            and self._market_history_config.enabled
+        ):
+            market_history_adjuster = MarketHistoryProjectionAdjuster(
+                self._market_history_config,
+                scoring_config=scoring_config,
+            )
 
         spec_by_id = {s.game_id: s for s in specs}
 
@@ -202,6 +217,7 @@ class Backtester:
                 season=self.test_season,
                 week=wk,
                 role_trend_adjuster=role_trend_adjuster,
+                market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
             )
             for proj in projections:

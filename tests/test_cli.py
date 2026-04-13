@@ -180,6 +180,7 @@ class TestWeekCommand:
         MockEnsembler.return_value.blend_week.assert_not_called()
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
@@ -188,6 +189,7 @@ class TestWeekCommand:
         MockLoader,
         MockBuilder,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -196,7 +198,9 @@ class TestWeekCommand:
              "home_team": "KC", "away_team": "BUF"},
         ])
         role_trend_adjuster = object()
+        market_history_adjuster = object()
         mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_make_market_history_adjuster.return_value = market_history_adjuster
         mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
 
         result = runner.invoke(main, ["week", "1", "--season", "2024", "--sims", "10"])
@@ -204,8 +208,13 @@ class TestWeekCommand:
         assert result.exit_code == 0
         mock_apply_projection_layers.assert_called()
         assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
+        assert (
+            mock_apply_projection_layers.call_args.kwargs["market_history_adjuster"]
+            is market_history_adjuster
+        )
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
@@ -214,6 +223,7 @@ class TestWeekCommand:
         MockLoader,
         MockBuilder,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -226,6 +236,7 @@ class TestWeekCommand:
 
         assert result.exit_code == 0
         mock_make_role_trend_adjuster.assert_not_called()
+        mock_make_market_history_adjuster.assert_not_called()
         mock_apply_projection_layers.assert_not_called()
 
 
@@ -309,6 +320,7 @@ class TestGameCommand:
         assert "AWAY" in result.output
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
@@ -317,6 +329,7 @@ class TestGameCommand:
         MockLoader,
         MockBuilder,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -325,7 +338,9 @@ class TestGameCommand:
              "home_team": "KC", "away_team": "BUF"},
         ])
         role_trend_adjuster = object()
+        market_history_adjuster = object()
         mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_make_market_history_adjuster.return_value = market_history_adjuster
         mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
 
         result = runner.invoke(main, ["game", "KC", "BUF", "--week", "5", "--sims", "10"])
@@ -333,6 +348,10 @@ class TestGameCommand:
         assert result.exit_code == 0
         mock_apply_projection_layers.assert_called_once()
         assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
+        assert (
+            mock_apply_projection_layers.call_args.kwargs["market_history_adjuster"]
+            is market_history_adjuster
+        )
 
     @patch("fantasy_sim.cli.FfOpportunityProjectionEnsembler")
     @patch("fantasy_sim.cli.load_ensemble_config")
@@ -356,10 +375,12 @@ class TestGameCommand:
         MockEnsembler.assert_not_called()
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     def test_game_demo_mode_skips_projection_layers(
         self,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -369,14 +390,18 @@ class TestGameCommand:
 
         assert result.exit_code == 0
         mock_make_role_trend_adjuster.assert_not_called()
+        mock_make_market_history_adjuster.assert_not_called()
         mock_apply_projection_layers.assert_called_once()
         assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is None
+        assert mock_apply_projection_layers.call_args.kwargs["market_history_adjuster"] is None
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     def test_game_detail_mode_skips_projection_layers(
         self,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -384,6 +409,7 @@ class TestGameCommand:
 
         assert result.exit_code == 0
         mock_make_role_trend_adjuster.assert_not_called()
+        mock_make_market_history_adjuster.assert_not_called()
         mock_apply_projection_layers.assert_not_called()
 
 
@@ -466,22 +492,27 @@ class TestBacktestCommand:
 
     @patch("fantasy_sim.cli.format_backtest_report", return_value="backtest report")
     @patch("fantasy_sim.cli.Backtester")
+    @patch("fantasy_sim.cli.load_market_history_config")
     @patch("fantasy_sim.cli.load_ensemble_config")
     def test_backtest_passes_ensemble_config_to_constructor(
         self,
         mock_load_ensemble_config,
+        mock_load_market_history_config,
         MockBacktester,
         mock_format_report,
         runner,
     ):
         """backtest should pass the resolved ensemble config into Backtester."""
         from fantasy_sim.data.ensemble.models import EnsembleConfig, FfOpportunityConfig
+        from fantasy_sim.data.market_history.models import MarketHistoryConfig
 
         ensemble_config = EnsembleConfig(
             enabled=True,
             ff_opportunity=FfOpportunityConfig(enabled=True),
         )
+        market_history_config = MarketHistoryConfig(enabled=True)
         mock_load_ensemble_config.return_value = ensemble_config
+        mock_load_market_history_config.return_value = market_history_config
         MockBacktester.return_value.run.return_value = object()
 
         result = runner.invoke(main, ["backtest", "--season", "2024", "--sims", "10"])
@@ -489,6 +520,10 @@ class TestBacktestCommand:
         assert result.exit_code == 0
         assert MockBacktester.call_args is not None
         assert MockBacktester.call_args.kwargs["ensemble_config"] is ensemble_config
+        assert (
+            MockBacktester.call_args.kwargs["market_history_config"]
+            is market_history_config
+        )
         mock_format_report.assert_called_once()
 
 
@@ -689,6 +724,7 @@ class TestSeasonByWeek:
         assert "Season Projections" in result.output
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
@@ -697,12 +733,15 @@ class TestSeasonByWeek:
         MockLoader,
         MockBuilder,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
         _wire_mocks(MockLoader, MockBuilder, self._SEASON_SCHEDULE[:1])
         role_trend_adjuster = object()
+        market_history_adjuster = object()
         mock_make_role_trend_adjuster.return_value = role_trend_adjuster
+        mock_make_market_history_adjuster.return_value = market_history_adjuster
         mock_apply_projection_layers.side_effect = lambda projections, **_: [dict(row) for row in projections]
 
         result = runner.invoke(main, ["season", "--season", "2024", "--sims", "5"])
@@ -710,8 +749,13 @@ class TestSeasonByWeek:
         assert result.exit_code == 0
         mock_apply_projection_layers.assert_called_once()
         assert mock_apply_projection_layers.call_args.kwargs["role_trend_adjuster"] is role_trend_adjuster
+        assert (
+            mock_apply_projection_layers.call_args.kwargs["market_history_adjuster"]
+            is market_history_adjuster
+        )
 
     @patch("fantasy_sim.cli.apply_projection_layers")
+    @patch("fantasy_sim.cli._make_market_history_adjuster")
     @patch("fantasy_sim.cli._make_role_trend_adjuster")
     @patch("fantasy_sim.cli.GameContextBuilder")
     @patch("fantasy_sim.cli.DataLoader")
@@ -720,6 +764,7 @@ class TestSeasonByWeek:
         MockLoader,
         MockBuilder,
         mock_make_role_trend_adjuster,
+        mock_make_market_history_adjuster,
         mock_apply_projection_layers,
         runner,
     ):
@@ -729,6 +774,7 @@ class TestSeasonByWeek:
 
         assert result.exit_code == 0
         mock_make_role_trend_adjuster.assert_not_called()
+        mock_make_market_history_adjuster.assert_not_called()
         mock_apply_projection_layers.assert_not_called()
 
     @patch("fantasy_sim.cli.GameContextBuilder")

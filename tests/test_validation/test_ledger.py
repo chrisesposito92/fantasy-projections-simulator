@@ -152,3 +152,14 @@ def test_format_ledger_table_with_entries():
     assert "bare" in table
     assert "total_lift" in table
     assert "usage.ngs.enabled=true" in table
+
+
+def test_ledger_roundtrip_preserves_promotion_evidence_scope(tmp_path):
+    path = tmp_path / "test_ledger.json"
+    entry = _make_entry("phase-3-market-history-v1")
+    entry.promotion_evidence_scope = "covered_only"
+
+    save_ledger(path, [entry])
+    loaded = load_ledger(path)
+
+    assert loaded[0].promotion_evidence_scope == "covered_only"

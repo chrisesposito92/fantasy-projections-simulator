@@ -394,6 +394,158 @@ Output format: `table` (terminal, default), `csv`, or `json`. Use with `--output
 
 ---
 
+## Standalone Market-History Scripts
+
+These are standalone scripts used to build the local historical market archive
+under `~/.fantasy-sim/market-history/`. They are not `fantasy-sim`
+subcommands.
+
+### `fetch_market_history_events.py`
+
+Fetches and caches The Odds API historical NFL **event ids** by gameday, then
+builds season inventory parquet files. This is the first acquisition step and
+should be run before pulling player props.
+
+```bash
+uv run python scripts/fetch_market_history_events.py --season YEAR [YEAR ...] [OPTIONS]
+```
+
+**Auth:** Reads `THE_ODDS_API_KEY` (or legacy `THE_ODDS_API`) from
+`~/.fantasy-sim/market-history/.env` or the shell environment.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--season YEAR [YEAR ...]` | *(required)* | Seasons to fetch, e.g. `2023 2024 2025` |
+| `--delay SECONDS` | `0.5` | Sleep between requests |
+| `--force` | off | Re-fetch raw JSON even if the cache file already exists |
+| `--rebuild-only` | off | Skip network calls and rebuild inventory parquet from cached raw JSON |
+
+**Raw cache layout:**
+- `~/.fantasy-sim/market-history/raw/events/<season>/<gameday>.json`
+
+**Processed output:**
+- `~/.fantasy-sim/market-history/processed/events_inventory_<season>.parquet`
+
+**Examples:**
+```bash
+# Fetch regular-season event inventory for 2023-2025
+uv run python scripts/fetch_market_history_events.py --season 2023 2024 2025
+
+# Rebuild inventories from raw cached JSON only
+uv run python scripts/fetch_market_history_events.py --season 2023 2024 2025 --rebuild-only
+
+# Re-fetch 2025 event snapshots from the API
+uv run python scripts/fetch_market_history_events.py --season 2025 --force
+```
+
+### `fetch_market_history_props.py`
+
+Fetches and caches The Odds API historical **player props** for cached event
+inventory rows. This is the second acquisition step and runs against the
+season inventories produced by `fetch_market_history_events.py`.
+
+```bash
+uv run python scripts/fetch_market_history_props.py --season YEAR [YEAR ...] [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--season YEAR [YEAR ...]` | *(required)* | Seasons to fetch |
+| `--week N [N ...]` | all | Restrict to specific weeks |
+| `--markets KEY [KEY ...]` | core 8 markets | Markets to request from The Odds API |
+| `--regions REGION` | `us` | Region(s) to request; NFL use should generally stay `us` |
+| `--snapshot-label LABEL` | `close_core8` | Cache label for this snapshot set |
+| `--date-source FIELD` | `commence_time` | Inventory field used to build the historical snapshot date |
+| `--offset-minutes N` | `0` | Offset added to the selected `date-source` |
+| `--delay SECONDS` | `0.5` | Sleep between requests |
+| `--limit N` | — | Limit the number of events fetched; useful for probing |
+| `--force` | off | Re-fetch even if the raw props snapshot already exists |
+
+**Supported `--date-source` values:**
+- `commence_time`
+- `snapshot_date`
+- `previous_snapshot_timestamp`
+- `next_snapshot_timestamp`
+
+**Default core markets:**
+- `player_pass_attempts`
+- `player_pass_yds`
+- `player_pass_tds`
+- `player_rush_attempts`
+- `player_rush_yds`
+- `player_receptions`
+- `player_reception_yds`
+- `player_anytime_td`
+
+**Raw cache layout:**
+- `~/.fantasy-sim/market-history/raw/props/<season>/<snapshot-label>/<event_id>.json`
+
+**Examples:**
+```bash
+# One-event probe for 2024 Week 1 close snapshots
+uv run python scripts/fetch_market_history_props.py \
+  --season 2024 \
+  --week 1 \
+  --markets player_pass_yds \
+  --snapshot-label close_core8 \
+  --limit 1
+
+# Close snapshots for all core markets in 2023-2025
+uv run python scripts/fetch_market_history_props.py \
+  --season 2023 2024 2025 \
+  --snapshot-label close_core8
+
+# Pull a pre-kick snapshot 30 minutes before kickoff
+uv run python scripts/fetch_market_history_props.py \
+  --season 2025 \
+  --snapshot-label close_minus_30 \
+  --date-source commence_time \
+  --offset-minutes -30
+```
+
+### `build_market_history_player_markets.py`
+
+Builds processed **market-native player-week signals** from cached raw props
+JSON. This is the current processed layer for The Odds API player props.
+
+```bash
+uv run python scripts/build_market_history_player_markets.py --season YEAR [YEAR ...] [OPTIONS]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--season YEAR [YEAR ...]` | *(required)* | Seasons to build |
+| `--snapshot-label LABEL` | `close_core8` | Raw props snapshot label to aggregate |
+
+**Processed output:**
+- `~/.fantasy-sim/market-history/processed/player_markets_<season>_<snapshot-label>.parquet`
+
+**Examples:**
+```bash
+# Build processed player-week market signals from the close-core8 archive
+uv run python scripts/build_market_history_player_markets.py \
+  --season 2023 2024 2025 \
+  --snapshot-label close_core8
+```
+
+### `import_market_history.py`
+
+Legacy importer for the older placeholder `market_history_weekly_<season>.parquet`
+cache. The current Phase 3 runtime uses
+`build_market_history_player_markets.py` and
+`player_markets_<season>_<snapshot-label>.parquet` instead.
+
+```bash
+uv run python scripts/import_market_history.py --season YEAR [YEAR ...]
+```
+
+**Examples:**
+```bash
+uv run python scripts/import_market_history.py --season 2023 2024 2025
+```
+
+---
+
 ## Resolution Order
 
 When multiple config sources are used, they merge in this order (later overrides earlier):

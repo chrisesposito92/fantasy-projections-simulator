@@ -74,7 +74,7 @@ base PBP model → vegas (pace + pass rate) → availability → normalize → u
 
 Post-sim projection order:
 
-role_trend → ensemble.ff_opportunity
+role_trend → market_history → ensemble.ff_opportunity
 
 ### Three-Layer Cache
 
@@ -146,7 +146,7 @@ Six active layers in `data/pff/`, configured in `defaults.yaml` under `pff:`. CL
 
 ## Current State
 
-All development phases complete through the Phase 2 accuracy initiative. Key completed features:
+All development phases complete through the Phase 3 accuracy initiative. Key completed features:
 - Core simulation engine with play-by-play resolution and Monte Carlo runner
 - Player models from PBP data with roster separation (stats vs team assignment)
 - Red zone accuracy (TD gates, per-player RZ catch rates, QB fumble check)
@@ -161,6 +161,7 @@ All development phases complete through the Phase 2 accuracy initiative. Key com
 - Player props engine: Bayesian blending from The Odds API with name crosswalk (VEG-03)
 - Phase 1 promoted: post-sim `ff_opportunity` ensemble for QB/RB/WR/TE
 - Phase 2 promoted: `availability.enabled=true` with `availability.injuries.enabled=false`
+- Phase 3 promoted: `market_history.enabled=true` with `snapshot_label=close_core8`
 - Phase 2 kept off: `role_trend.enabled=false`
 - Weekly + season A/B validation harnesses with persistent ledgers
 

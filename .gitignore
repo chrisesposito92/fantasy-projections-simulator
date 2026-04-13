@@ -22,3 +22,5 @@ results/
 .planning/
 
 .bg-shell/
+
+.env

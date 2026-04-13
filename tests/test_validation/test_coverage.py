@@ -65,6 +65,49 @@ def _write_roster_cache(cache_dir: Path, seasons: tuple[int, ...]) -> None:
         _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
 
 
+def _write_market_history_player_markets(
+    market_dir: Path,
+    season: int,
+    *,
+    include_anytime: bool = True,
+) -> None:
+    import polars as pl
+
+    market_keys = [
+        "player_pass_yds",
+        "player_pass_tds",
+        "player_rush_yds",
+        "player_receptions",
+        "player_reception_yds",
+    ]
+    if include_anytime:
+        market_keys.append("player_anytime_td")
+
+    size = len(market_keys)
+    pl.DataFrame(
+        {
+            "season": [season] * size,
+            "week": [1] * size,
+            "event_id": ["event-1"] * size,
+            "schedule_game_id": [f"{season}_01_ARI_BUF"] * size,
+            "snapshot_label": ["close_core8"] * size,
+            "snapshot_timestamp": ["2024-09-08T17:00:00Z"] * size,
+            "market_key": market_keys,
+            "player_name": ["Josh Allen"] * size,
+            "player_name_normalized": ["josh allen"] * size,
+            "home_team": ["Buffalo Bills"] * size,
+            "away_team": ["Arizona Cardinals"] * size,
+            "bookmaker_count": [3] * size,
+            "line": [255.5, 2.0, 25.5, 5.5, 65.5] + ([None] if include_anytime else []),
+            "line_stddev": [0.0, 0.0, 0.5, 0.0, 0.5] + ([None] if include_anytime else []),
+            "over_price": [1.9] * size,
+            "under_price": [1.9] * size,
+            "yes_price": ([None] * (size - 1)) + ([2.2] if include_anytime else [None]),
+            "implied_prob": ([None] * (size - 1)) + ([0.4545] if include_anytime else [None]),
+        }
+    ).write_parquet(market_dir / f"player_markets_{season}_close_core8.parquet")
+
+
 def _default_engine_configs() -> dict:
     return build_engine_configs(load_defaults())
 
@@ -257,6 +300,72 @@ def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(
     )
 
     assert coverage["usage.route_rate"].status == "disabled"
+
+
+def test_market_history_reports_partial_for_covered_2023_only(tmp_path):
+    market_dir = tmp_path / "market-history"
+    cache_dir = tmp_path / "cache"
+    market_dir.mkdir()
+    _write_market_history_player_markets(market_dir, 2023)
+    _write_roster_cache(cache_dir, (2023,))
+
+    coverage = collect_signal_coverage(
+        {"market_history": {"enabled": True, "data_dir": str(market_dir)}},
+        [2022, 2023, 2024],
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["market_history"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2022, 2024],
+        note=(
+            "Requires player_markets_<season>_<snapshot_label>.parquet plus "
+            "rosters_weekly cache to build the crosswalk"
+        ),
+    )
+    assert coverage["market_history.crosswalk"].covered_seasons == [2023]
+    assert coverage["market_history.pass_yards"].covered_seasons == [2023]
+    assert coverage["market_history.pass_tds"].covered_seasons == [2023]
+    assert coverage["market_history.rush_yards"].covered_seasons == [2023]
+    assert coverage["market_history.receptions"].covered_seasons == [2023]
+    assert coverage["market_history.receiving_yards"].covered_seasons == [2023]
+    assert coverage["market_history.dispersion"].covered_seasons == [2023]
+    assert coverage["market_history.anytime_td"].covered_seasons == [2023]
+
+
+def test_market_history_top_level_excludes_season_missing_enabled_feature_columns(tmp_path):
+    market_dir = tmp_path / "market-history"
+    cache_dir = tmp_path / "cache"
+    market_dir.mkdir()
+    _write_market_history_player_markets(market_dir, 2023, include_anytime=False)
+    _write_roster_cache(cache_dir, (2023,))
+
+    coverage = collect_signal_coverage(
+        {"market_history": {"enabled": True, "data_dir": str(market_dir)}},
+        [2023],
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["market_history"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2023],
+        note=(
+            "Requires player_markets_<season>_<snapshot_label>.parquet plus "
+            "rosters_weekly cache to build the crosswalk"
+        ),
+    )
+    assert coverage["market_history.crosswalk"].covered_seasons == [2023]
+    assert coverage["market_history.pass_yards"].covered_seasons == [2023]
+    assert coverage["market_history.pass_tds"].covered_seasons == [2023]
+    assert coverage["market_history.rush_yards"].covered_seasons == [2023]
+    assert coverage["market_history.receptions"].covered_seasons == [2023]
+    assert coverage["market_history.receiving_yards"].covered_seasons == [2023]
+    assert coverage["market_history.dispersion"].covered_seasons == [2023]
+    assert coverage["market_history.anytime_td"].covered_seasons == []
 
 
 def test_ensemble_ff_opportunity_reports_full_runtime_coverage_when_enabled():

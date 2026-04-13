@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot from the 2026-04-10 deep-dive session.
+Research snapshot updated through the Phase 3 v2 market-history promotion.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -42,6 +42,10 @@ Active in `config/defaults.yaml` as of this audit:
 - `availability.enabled: true`
 - `availability.positions: [QB, RB, WR, TE]`
 - `availability.injuries.enabled: false`
+- `availability.depth_charts.enabled: true`
+- `availability.usage_fallback.enabled: true`
+- `market_history.enabled: true`
+- `market_history.snapshot_label: close_core8`
 - `role_trend.enabled: false`
 - `role_trend.positions: [QB, RB, WR, TE]`
 - `game_script.enabled: true`
@@ -80,7 +84,8 @@ Built but currently parked or disabled:
 End-to-end projection flow after simulation:
 
 15. Post-sim `role_trend` adjustment
-16. Post-sim `ensemble.ff_opportunity` blend
+16. Post-sim `market_history` adjustment
+17. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
@@ -91,9 +96,10 @@ Important distinction:
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
-- `role_trend` is also post-sim and runs before `ensemble`
-- `player` and `--detail` CLI output currently bypass both post-sim layers
-  (`role_trend` and `ensemble`)
+- `role_trend` is also post-sim and runs before `market_history`
+- `market_history` is post-sim and runs before `ensemble.ff_opportunity`
+- `player` and `--detail` CLI output currently bypass all three post-sim layers
+  (`role_trend`, `market_history`, and `ensemble`)
 - the `player` command always uses detailed projections rather than the
   aggregated non-detail projection flow
 
@@ -122,12 +128,14 @@ Most relevant files for accuracy work:
 Relevant local stores under `~/.fantasy-sim`:
 
 - `cache/`
+- `market-history/`
 - `pff/`
 - `weather/`
 
 Relevant subpaths for currently enabled features:
 
 - ff-opportunity weekly cache: `~/.fantasy-sim/cache/ff_opportunity_weekly_<season>.parquet`
+- market-history processed cache: `~/.fantasy-sim/market-history/processed/`
 - player props cache: `~/.fantasy-sim/pff/props/`
 
 ### nflverse / local cache coverage
@@ -148,7 +156,9 @@ Observed local caches:
 
 Observed under `~/.fantasy-sim/pff/processed/`:
 
-- 295 parquet files across NFL and NCAA
+- 190 NFL parquet files
+- 105 NCAA parquet files
+- one stray `.DS_Store`
 - NFL coverage from 2018-2025
 - NFL fantasy receiving/passing red-zone data from 2015-2025
 - NCAA facets from 2021-2025
@@ -181,6 +191,25 @@ Examples of useful columns verified locally:
 - `passing_detail`: pressure, blitz, no-pressure, screen, play-action, depth, field-side, sack, turnover-worthy, and completion split columns
 - `receiving_depth`: route participation and output split by behind/short/medium/deep and left/center/right
 - `offense_run_blocking`: `gap_grades_run_block`, `zone_grades_run_block`, and corresponding snap counts
+
+### Market history
+
+Observed under `~/.fantasy-sim/market-history/processed/`:
+
+- `events_inventory_2023.parquet`
+- `events_inventory_2024.parquet`
+- `events_inventory_2025.parquet`
+- `player_markets_2023_close_core8.parquet`
+- `player_markets_2024_close_core8.parquet`
+- `player_markets_2025_close_core8.parquet`
+
+Validation semantics from the promoted Phase 3 v2 artifacts:
+
+- Phase 3 promotion evidence still covers `2023-2024` only
+- `2022` is explicitly uncovered for `market_history`
+- market-specific promotion evidence uses `covered_only`
+- stack-wide summaries may still show `2022`, but it must not be folded into
+  market-layer averages as neutral evidence
 
 ### Props history
 
@@ -289,6 +318,42 @@ v1 rule for evidence interpretation:
 - usage-only evidence cannot create starter-out decisions
 - broader participation / tracking evidence remains deferred to the tracking phase
 
+## Phase 3 Market History Notes
+
+- `market_history` is implemented in v2 as a post-sim layer
+- the processed local store currently includes `2023-2025`
+- `2022` is explicitly uncovered in the validation artifact
+- the promoted Phase 3 artifact is `phase-3-market-history-v2-real-schema`
+- promotion evidence scope is `covered_only`
+- current default state is `market_history.enabled: true`
+- current promoted snapshot source is `snapshot_label: close_core8`
+
+Phase 3 v2 artifact:
+
+- label: `phase-3-market-history-v2-real-schema`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `market_history=partial(2023,2024)`
+- covered seasons: `2023, 2024`
+- uncovered seasons: `2022`
+- `rank_corr delta:  +0.0075`
+- `weekly_mae delta: -0.065`
+- `season_mae delta: -1.288`
+
+QB/WR tie-breaker confirmation:
+
+- label: `phase-3-market-history-v2-real-schema-qb-wr`
+- QB weekly rank corr `+0.0086`, weekly MAE `-0.049`
+- WR weekly rank corr `+0.0144`, weekly MAE `-0.045`
+
+Interpretation:
+
+- the covered-only deltas are strong enough to justify default-on promotion
+- stack-wide averages still include `2022`, but that season is no-data for
+  `market_history` and cannot be treated as neutral evidence for the layer
+- `2022` backfill is follow-on work, not a prerequisite for moving on to other
+  phases
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
@@ -355,25 +420,31 @@ Resolved in the new validation path:
 - `td_tendency_config` is now threaded through bare dual-arm validation
 - `baseline=defaults` is now a first-class marginal validation path
 - validation rows now carry config-schema version and comparison metadata
-- per-run coverage reporting now covers props, PFF, weather, and usage
+- per-run coverage reporting now covers props, market history, PFF, weather,
+  and usage
 
 Still caveats:
 
-- historical props are still missing for 2022-2024
+- Phase 3 market-history promotion evidence is currently `covered_only`
+- `2022` remains explicitly uncovered for `market_history`
 - weekly ledger history is still partly legacy
 - older pre-schema ledger entries are still directional evidence, not apples-to-apples comparisons
 
 ## Remaining Evaluation Caveats
 
-### 1. Historical props are absent for the main backtest seasons
+### 1. Market-history evidence is still covered-only in Phase 3 v2
 
-Defaults enable props, but props files exist only for 2025.
+The current market-history implementation has processed season parquet for
+`2023-2025`, while `2022` is explicitly uncovered in historical validation.
 
 Implication:
 
-- 2022-2024 validation does not actually evaluate props as a historical signal
-- "props enabled" in current defaults is operationally true for forward use, but
-  largely inert in historical A/B
+- market-specific promotion evidence must use the explicit `covered_only`
+  readout
+- stack-wide summaries may still show `2022`, but `2022` cannot be folded into
+  market-layer averages as neutral evidence
+- the promoted Phase 3 v2 artifact justifies `market_history.enabled: true`,
+  but only because the positive readout came from the covered seasons alone
 
 ### 2. Some recent comparisons are not isolated
 
