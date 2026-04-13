@@ -129,7 +129,7 @@ class TestBuildEngineConfigs:
         assert configs["game_script_config"] is not None
         assert configs["game_script_config"].enabled is True
 
-    def test_defaults_enable_promoted_availability_but_keep_role_trend_disabled(self):
+    def test_defaults_enable_promoted_availability_and_market_history_but_keep_role_trend_disabled(self):
         defaults = load_defaults()
         configs = build_engine_configs(defaults)
 
@@ -137,7 +137,8 @@ class TestBuildEngineConfigs:
         assert configs["availability_config"].enabled is True
         assert configs["availability_config"].injuries.enabled is False
         assert configs["role_trend_config"] is None
-        assert configs["market_history_config"] is None
+        assert configs["market_history_config"] is not None
+        assert configs["market_history_config"].enabled is True
 
     def test_market_history_override_propagates(self):
         defaults = load_defaults()

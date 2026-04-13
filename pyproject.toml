@@ -35,6 +35,7 @@ packages = ["src/fantasy_sim"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = ["--import-mode=importlib"]
 markers = [
     "integration: tests that call nflreadpy (slow, requires network)",
     "statistical: tests that run bulk simulations (slow)",
