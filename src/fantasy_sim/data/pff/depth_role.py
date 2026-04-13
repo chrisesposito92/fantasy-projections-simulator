@@ -31,15 +31,39 @@ def _safe_bucket_target(column: str) -> pl.Expr:
     return pl.coalesce([pl.col(column).cast(pl.Float64), pl.lit(0.0)])
 
 
-def _air_proxy_expr() -> pl.Expr:
-    expr = pl.lit(0.0)
+def _sum_bucket_expr(columns: list[str], suffix: str, alias: str) -> pl.Expr:
+    exprs = [
+        _safe_bucket_target(column)
+        for bucket in _BUCKETS
+        if (column := f"{bucket}_{suffix}") in columns
+    ]
+    if not exprs:
+        return pl.lit(0.0).alias(alias)
+
+    expr = exprs[0]
+    for bucket_expr in exprs[1:]:
+        expr = expr + bucket_expr
+    return expr.alias(alias)
+
+
+def _air_proxy_expr(columns: list[str]) -> pl.Expr:
+    exprs: list[pl.Expr] = []
     for bucket in _BUCKETS:
-        expr = expr + (
-            _safe_bucket_target(f"{bucket}_targets")
-            * pl.coalesce(
-                [pl.col(f"{bucket}_avg_depth_of_target").cast(pl.Float64), pl.lit(0.0)]
-            )
+        target_column = f"{bucket}_targets"
+        adot_column = f"{bucket}_avg_depth_of_target"
+        if target_column not in columns or adot_column not in columns:
+            continue
+        exprs.append(
+            _safe_bucket_target(target_column)
+            * pl.coalesce([pl.col(adot_column).cast(pl.Float64), pl.lit(0.0)])
         )
+
+    if not exprs:
+        return pl.lit(0.0).alias("_air_proxy")
+
+    expr = exprs[0]
+    for bucket_expr in exprs[1:]:
+        expr = expr + bucket_expr
     return expr.alias("_air_proxy")
 
 
@@ -76,9 +100,9 @@ class DepthRoleEngine:
                 | ((pl.col("season") == target_season) & (pl.col("week") < max_week))
             )
             .with_columns(
-                pl.coalesce([pl.col("routes").cast(pl.Float64), pl.lit(0.0)]).alias("_routes"),
-                pl.coalesce([pl.col("targets").cast(pl.Float64), pl.lit(0.0)]).alias("_targets"),
-                _air_proxy_expr(),
+                _sum_bucket_expr(df.columns, "routes", "_routes"),
+                _sum_bucket_expr(df.columns, "targets", "_targets"),
+                _air_proxy_expr(df.columns),
             )
         )
         if df.is_empty():
