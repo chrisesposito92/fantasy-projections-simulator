@@ -276,11 +276,35 @@ def test_early_season_blend_uses_previous_season_when_current_sample_is_thin(tmp
 
 def test_missing_crosswalk_stays_neutral(tmp_path):
     pff_dir = tmp_path / "pff" / "processed" / "nfl"
-    _write_receiving_depth(pff_dir, 2024, [])
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            {
+                "player_id": 101,
+                "player": "WR A",
+                "team": "KC",
+                "position": "LWR",
+                "season": 2024,
+                "week": 1,
+                "game_id": "g1",
+                "routes": 30,
+                "targets": 10,
+                "short_targets": 2,
+                "medium_targets": 3,
+                "deep_targets": 5,
+                "behind_los_targets": 0,
+                "short_avg_depth_of_target": 4.0,
+                "medium_avg_depth_of_target": 11.0,
+                "deep_avg_depth_of_target": 24.0,
+                "behind_los_avg_depth_of_target": -1.0,
+            }
+        ],
+    )
     roster = _make_roster()
     engine = _engine(pff_dir)
 
-    engine.apply(roster, {}, 2024, 18)
+    engine.apply(roster, {999: "WR_A"}, 2024, 18)
 
     wr_a = next(player for player in roster.players if player.player_id == "WR_A")
     assert wr_a.usage.target_share == 0.28
