@@ -5,9 +5,16 @@ import argparse
 from fantasy_sim.data.loader import DataLoader
 
 
+def _season_type(value: str) -> int:
+    season = int(value)
+    if season < 2022:
+        raise argparse.ArgumentTypeError("season must be 2022 or later")
+    return season
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seasons", nargs="+", type=int, required=True)
+    parser.add_argument("--seasons", nargs="+", type=_season_type, required=True)
     return parser.parse_args(argv)
 
 

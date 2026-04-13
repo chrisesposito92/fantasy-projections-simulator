@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _load_script_module():
     script_path = Path(__file__).resolve().parents[2] / "scripts" / "backfill_tracking_data.py"
@@ -29,3 +31,14 @@ def test_backfill_tracking_data_loads_all_required_sources():
     loader.load_nextgen_stats.assert_any_call([2023], stat_type="passing")
     loader.load_nextgen_stats.assert_any_call([2022], stat_type="rushing")
     loader.load_nextgen_stats.assert_any_call([2023], stat_type="rushing")
+
+
+def test_backfill_tracking_data_rejects_pre_2022_seasons(capsys):
+    module = _load_script_module()
+
+    with pytest.raises(SystemExit) as excinfo:
+        module.main(["--seasons", "2021"])
+
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert "season must be 2022 or later" in captured.err
