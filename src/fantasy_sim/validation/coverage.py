@@ -364,6 +364,12 @@ def collect_signal_coverage(
         ("pff", "qb_split"),
         nested_path=("qb_split",),
     )
+    matchup_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "matchup"),
+        nested_path=("matchup",),
+    )
     depth_role_efficiency_enabled = (
         pff_enabled
         and depth_role_enabled
@@ -800,7 +806,7 @@ def collect_signal_coverage(
             ),
         ),
         "pff.qb_split": _build_signal(
-            pff_enabled and qb_split_enabled,
+            pff_enabled and matchup_enabled and qb_split_enabled,
             seasons,
             _covered_seasons_from_required_paths(seasons, qb_split_paths_by_season),
             note=(

@@ -179,6 +179,38 @@ def test_compute_penalizes_pressure_sensitive_qb_in_tough_matchup():
     assert factors.yards_scale_factor >= 0.94
 
 
+def test_compute_includes_target_season_rows_when_not_in_training_seasons():
+    engine = _engine(
+        pl.DataFrame(
+            {
+                "season": [2024, 2024],
+                "week": [3, 3],
+                "team": ["KC", "BUF"],
+                "player_id": [101, 202],
+                "game_id": [1, 2],
+                "pressure_dropbacks": [10, 10],
+                "no_pressure_dropbacks": [20, 20],
+                "pressure_completion_percent": [45.0, 60.0],
+                "no_pressure_completion_percent": [75.0, 75.0],
+                "pressure_ypa": [5.0, 7.0],
+                "no_pressure_ypa": [8.0, 8.0],
+            }
+        )
+    )
+
+    factors = engine.compute(
+        roster=_make_roster("KC"),
+        pff_crosswalk={101: "00-0031234", 202: "00-0039999"},
+        training_seasons=[2023],
+        target_season=2024,
+        max_week=4,
+        matchup_context=MatchupContext(sack_rate_factor=1.20, ol_pass_block_factor=0.90),
+    )
+
+    assert factors.catch_rate_factor < 1.0
+    assert factors.yards_scale_factor < 1.0
+
+
 def test_compute_returns_neutral_for_neutral_pressure_environment():
     engine = _engine(_passing_detail_df())
 

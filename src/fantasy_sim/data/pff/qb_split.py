@@ -234,7 +234,11 @@ class QbSplitEngine:
         if qb_pff_id is None:
             return QbSplitFactors()
 
-        aggregated = self._aggregate_rows(training_seasons, target_season, max_week)
+        seasons_with_target = training_seasons
+        if target_season not in seasons_with_target:
+            seasons_with_target = training_seasons + [target_season]
+
+        aggregated = self._aggregate_rows(seasons_with_target, target_season, max_week)
         if aggregated.is_empty():
             return QbSplitFactors()
 

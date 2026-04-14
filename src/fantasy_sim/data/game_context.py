@@ -963,11 +963,12 @@ class GameContextBuilder:
 
         if self._qb_split_engine is not None and target_season and week:
             self._ensure_pff_crosswalk(training_seasons, target_season)
+            qb_split_seasons = _seasons_with_target(training_seasons, target_season)
 
             home_qb_split = self._qb_split_engine.compute(
                 roster=home_roster,
                 pff_crosswalk=self._pff_crosswalk,
-                training_seasons=training_seasons,
+                training_seasons=qb_split_seasons,
                 target_season=target_season,
                 max_week=week,
                 matchup_context=home_matchup_ctx,
@@ -975,7 +976,7 @@ class GameContextBuilder:
             away_qb_split = self._qb_split_engine.compute(
                 roster=away_roster,
                 pff_crosswalk=self._pff_crosswalk,
-                training_seasons=training_seasons,
+                training_seasons=qb_split_seasons,
                 target_season=target_season,
                 max_week=week,
                 matchup_context=away_matchup_ctx,
