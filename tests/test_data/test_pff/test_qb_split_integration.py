@@ -147,6 +147,57 @@ def test_ensure_pff_crosswalk_includes_target_season_summaries_for_target_only_q
     ]
 
 
+def test_ensure_pff_crosswalk_rebuilds_when_roster_season_changes(tmp_path):
+    builder = GameContextBuilder(cache_dir=tmp_path / "cache")
+    builder._pff_loader = MagicMock()
+    builder._pff_loader.load_facet.return_value = pl.DataFrame(
+        {
+            "player_id": [101],
+            "player": ["QB One"],
+            "team": ["KC"],
+            "season": [2024],
+            "week": [1],
+        }
+    )
+    builder._pff_loader.build_crosswalk.side_effect = [
+        {101: "KC_QB_2024"},
+        {101: "KC_QB_2025"},
+    ]
+    builder.loader.load_rosters = MagicMock(
+        side_effect=[
+            pl.DataFrame(
+                {
+                    "player_id": ["KC_QB_2024"],
+                    "player_name": ["QB One"],
+                    "team": ["KC"],
+                    "position": ["QB"],
+                    "pff_id": [101],
+                }
+            ),
+            pl.DataFrame(
+                {
+                    "player_id": ["KC_QB_2025"],
+                    "player_name": ["QB One"],
+                    "team": ["KC"],
+                    "position": ["QB"],
+                    "pff_id": [101],
+                }
+            ),
+        ]
+    )
+
+    builder._ensure_pff_crosswalk(training_seasons=[2024], target_season=2024)
+    first_crosswalk = builder._pff_crosswalk
+
+    builder._ensure_pff_crosswalk(training_seasons=[2024], target_season=2025)
+
+    assert first_crosswalk == {101: "KC_QB_2024"}
+    assert builder._pff_crosswalk == {101: "KC_QB_2025"}
+    assert builder._pff_loader.build_crosswalk.call_count == 2
+    assert builder.loader.load_rosters.call_args_list[0].args == ([2024],)
+    assert builder.loader.load_rosters.call_args_list[1].args == ([2025],)
+
+
 def test_build_game_applies_qb_split_after_tier_before_depth_role(tmp_path):
     builder = GameContextBuilder(cache_dir=tmp_path / "cache")
     builder.build_team_distributions = MagicMock(side_effect=[_make_dists("KC"), _make_dists("BUF")])

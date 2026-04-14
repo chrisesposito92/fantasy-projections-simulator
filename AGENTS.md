@@ -56,7 +56,7 @@ uv run fantasy-sim backtest --season 2024 --sims 50
 
 Pipeline: Data → Models → Engine → Scoring → Output
 
-1. **Data Layer** (`data/`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models. PFF subpackage (`data/pff/`) provides 6 intelligence engines. Weather subpackage (`data/weather/`) adds game-day adjustments.
+1. **Data Layer** (`data/`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models. PFF subpackage (`data/pff/`) provides multiple intelligence engines, including the QB split layer. Weather subpackage (`data/weather/`) adds game-day adjustments.
 2. **Models** (`models/`) — Shared dataclasses: GameStateBucket, distributions, player/roster models
 3. **Engine** (`engine/`) — Play-by-play game simulation with player-level tracking and Monte Carlo runner
 4. **Config** (`config/`) — YAML config with `_inherit` scoring preset chains (PPR → half_ppr → standard)
@@ -70,7 +70,7 @@ Pipeline: Data → Models → Engine → Scoring → Output
 
 `GameContextBuilder.build_game()`:
 
-base PBP model → vegas (pace + pass rate) → availability → normalize → usage → normalize → props → normalize → matchup → team context + tier blend → normalize → coverage → DST baseline → kicker → TD tendency → weather
+base PBP model → vegas (pace + pass rate) → availability → normalize → usage → normalize → props → normalize → matchup → team context + tier blend → normalize → qb_split → depth_role → normalize → coverage → DST baseline → kicker → TD tendency → weather
 
 Post-sim projection order:
 
@@ -102,18 +102,19 @@ Player models separate stats (historical PBP, cached/expensive) from team assign
 
 ## PFF Intelligence Layer
 
-Six active layers in `data/pff/`, configured in `defaults.yaml` under `pff:`. CLI `--pff/--no-pff` flag.
+Multiple active layers in `data/pff/`, configured in `defaults.yaml` under `pff:`. CLI `--pff/--no-pff` flag.
 
 | Engine | What it does | Key config |
 |--------|-------------|------------|
 | **TierEngine** | 5 grade-based tiers, blends tier distributions with PBP data by reliability (floor=0.20, cap=0.80). WR archetypes (slot/possession/deep). NCAA rookies via `pff_id` bridge. QBs only blend fumble_rate. | `pff.tier_engine` |
 | **TeamContextEngine** | Season-level team environment: pass rate → WR/TE target_share, OL run block → RB rush yards, QB quality → WR/TE catch_rate. Snap-weighted. | `pff.team_context` |
 | **MatchupEngine** | Per-game z-score factors from defensive + OL data. 7 factors, medium sensitivities (0.06-0.075). Same-season rolling window, early-season blend. | `pff.matchup` |
+| **QbSplitEngine** | Per-game receiver efficiency factors derived from QB pressure splits, applied after tier/team-context adjustments and before depth-role/coverage. | `pff.qb_split` |
 | **CoverageEngine** | Per-WR modifiers from CB matchup (alignment-based: RWR→LCB, LWR→RCB, slot→SCB). Catch rate + YPR. WR-only. Clamp [0.97, 1.03]. | `pff.coverage` |
 | **KickerEngine** | Per-kicker FG accuracy with Bayesian shrinkage toward league average. | `pff.kicker` |
 | **DstBaselineEngine** | Fumble rate factor (z-score) + team-specific defensive TD rates (Bayesian shrinkage). | `pff.dst_baseline` |
 
-- `--config-override` on validation scripts supports: `tier_engine`, `talent`, `matchup`, `team_context`, `ncaa_rookie`, `weather`
+- `--config-override` on validation scripts supports: `tier_engine`, `talent`, `matchup`, `team_context`, `qb_split`, `ncaa_rookie`, `weather`
 - A/B validation with persistent ledger: `scripts/validate_pff_signal.py --show-ledger`
 - All engines use same-season rolling window (`week < max_week`) with early-season blend (linear ramp, `min_games=4`)
 
@@ -153,7 +154,7 @@ All development phases complete through the Phase 3 accuracy initiative. Key com
 - Passing yards calibration (catch yards boost, clock runoff tuning)
 - Share normalization fix (carry/target shares sum to 1.0 on current roster)
 - PFF scraper (21 facets, NFL 2019-2025 + NCAA 2022-2025)
-- PFF intelligence: tier engine, matchup, team context, coverage, kicker, DST baseline
+- PFF intelligence: tier engine, matchup, team context, qb split, coverage, kicker, DST baseline
 - NCAA rookie tier assignment via pff_id bridge
 - WR depth-of-target archetypes (slot/possession/deep)
 - Weather engine (wind/temp/precipitation from Open-Meteo)

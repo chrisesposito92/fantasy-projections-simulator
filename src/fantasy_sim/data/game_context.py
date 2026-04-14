@@ -88,6 +88,7 @@ class GameContextBuilder:
         self._matchup_engine = None
         self._talent_stabilizer = None
         self._pff_crosswalk: dict[int, str] | None = None
+        self._pff_crosswalk_roster_season: int | None = None
         self._pff_loader = None
 
         if self._pff_config.enabled:
@@ -673,7 +674,14 @@ class GameContextBuilder:
         target_season: int | None = None,
     ) -> None:
         """Build PFF crosswalk if not already cached."""
-        if self._pff_crosswalk is not None or self._pff_loader is None:
+        if self._pff_loader is None:
+            return
+
+        roster_season = target_season or max(training_seasons)
+        if (
+            self._pff_crosswalk is not None
+            and self._pff_crosswalk_roster_season == roster_season
+        ):
             return
 
         seasons = _seasons_with_target(training_seasons, target_season)
@@ -681,16 +689,21 @@ class GameContextBuilder:
         for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
             df = self._pff_loader.load_facet(facet, seasons)
             if not df.is_empty():
-                frames.append(df.select(["player_id", "player", "team"]))
+                cols = ["player_id", "player", "team"]
+                if "season" in df.columns:
+                    cols.append("season")
+                if "week" in df.columns:
+                    cols.append("week")
+                frames.append(df.select(cols))
         if not frames:
             return
 
-        pff_data = pl.concat(frames).unique(subset=["player_id"])
-        roster_season = target_season or max(training_seasons)
+        pff_data = pl.concat(frames, how="diagonal_relaxed")
         nfl_roster = self.loader.load_rosters([roster_season])
         self._pff_crosswalk = self._pff_loader.build_crosswalk(
             pff_data, nfl_roster, roster_season
         )
+        self._pff_crosswalk_roster_season = roster_season
 
     def _ensure_kicker_engine(
         self, training_seasons: list[int], target_season: int | None,

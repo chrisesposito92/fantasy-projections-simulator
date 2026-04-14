@@ -171,10 +171,25 @@ class PffLoader:
 
         crosswalk: dict[int, str] = {}
 
-        # Get unique PFF players
-        pff_players = pff_data.select(
-            ["player_id", "player", "team"]
-        ).unique(subset=["player_id"])
+        # Keep the latest season/week row per PFF player so transferred players
+        # fall back against their current team when roster.pff_id is unavailable.
+        player_cols = ["player_id", "player", "team"]
+        order_cols: list[str] = []
+        if "season" in pff_data.columns:
+            player_cols.append("season")
+            order_cols.append("season")
+        if "week" in pff_data.columns:
+            player_cols.append("week")
+            order_cols.append("week")
+
+        pff_players = pff_data.select(player_cols)
+        if order_cols:
+            pff_players = pff_players.sort(
+                ["player_id", *order_cols],
+                descending=[False, *([True] * len(order_cols))],
+                nulls_last=True,
+            )
+        pff_players = pff_players.unique(subset=["player_id"], keep="first")
 
         if pff_players.is_empty() or roster.is_empty():
             self._crosswalk_cache[season] = crosswalk
