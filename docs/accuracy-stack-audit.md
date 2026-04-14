@@ -32,6 +32,7 @@ Active in `config/defaults.yaml` as of this audit:
 - `pff.tier_engine.enabled: true`
 - `pff.matchup.enabled: true`
 - `pff.coverage.enabled: true`
+- `pff.qb_split.enabled: false`
 - `pff.depth_role.enabled: false`
 - `pff.depth_role.efficiency.enabled: false`
 - `pff.kicker.enabled: true`
@@ -106,6 +107,8 @@ Important distinction:
 - `tracking` now runs after `usage` and before props, with roster shares re-normalized after tracking mutations
 - `pff.depth_role` now runs after the tier/team-context step, re-normalizes
   roster shares, and stays before per-WR coverage matchup adjustments
+- `pff.qb_split` now runs in the runtime stack and is the first active consumer
+  of PFF `passing_detail`, but it remains parked behind its own disabled flag
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
@@ -428,11 +431,15 @@ Observed run caveat from the receiver/QB slices:
 
 - `pff.depth_role` is now implemented in code
 - `pff.depth_role.efficiency` is now implemented in code
-- it remains nested under the existing `pff.depth_role` family
+- `pff.qb_split` is now implemented in code
+- `pff.depth_role.efficiency` remains nested under the existing
+  `pff.depth_role` family
 - current local `receiving_depth` NFL coverage is `2018-2025`
 - `pff.depth_role` uses `receiving_depth` plus `rosters_weekly` crosswalk inputs
 - `pff.depth_role.efficiency` uses `receiving_depth`, the PFF summary trio,
   and `rosters_weekly` crosswalk inputs
+- `pff.qb_split` uses `passing_detail` plus the PFF/NFLverse QB crosswalk path
+- `passing_detail` is now used by the runtime through `pff.qb_split`
 - it currently adjusts:
   - `catch_rate`
   - proportional `red_zone_catch_rate`
@@ -447,12 +454,19 @@ Observed run caveat from the receiver/QB slices:
 - the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
 - the focused Phase 5B decision artifact ran as
   `phase-5-depth-role-efficiency-v2-activated`
+- the focused Phase 5C decision artifact ran as `phase-5-qb-split-v1`
+- Phase 5C coverage in the run header was `pff.qb_split=full(2022,2023,2024)`
+- the Phase 5C run stayed effectively flat and is not promotable:
+  - `rank_corr delta:  +0.0005`
+  - `weekly_mae delta: -0.000`
+  - `season_mae delta: -0.028`
 - the Phase 5B run stayed effectively flat and is not promotable:
   - `rank_corr delta:  +0.0000`
   - `weekly_mae delta: -0.002`
   - `season_mae delta: +0.030`
 - current default state remains `pff.depth_role.enabled: false`
 - current default state remains `pff.depth_role.efficiency.enabled: false`
+- current default state remains `pff.qb_split.enabled: false`
 - current Phase 5A evidence is not promotable:
   - `rank_corr delta:  -0.0005`
   - `weekly_mae delta: +0.002`
@@ -461,6 +475,7 @@ Observed run caveat from the receiver/QB slices:
 ### Immediate Next Phase 5 Decision
 
 - decide whether to retune `WR/TE efficiency v2`
+- or retune `QB split engine`
 - or move on to the later deferred Phase 5 follow-ons
 - do not auto-promote or auto-bundle Phase 5A and Phase 5B from the current
   evidence
@@ -478,7 +493,6 @@ Observed run caveat from the receiver/QB slices:
 
 ### Deferred Phase 5 Follow-Ons
 
-- `QB split engine`
 - `RB scheme-fit engine`
 
 ## What The Current Ledgers Actually Tell Us
@@ -637,6 +651,7 @@ Useful reference points from the preserved local unified ledger snapshot:
 | `phase-5-depth-role-v1` | `-0.0005` | `+0.002` | `+0.013` |
 | `phase-5-depth-role-efficiency-v2` | `+0.0002` | `-0.002` | `-0.017` |
 | `phase-5-depth-role-efficiency-v2-activated` | `+0.0000` | `-0.002` | `+0.030` |
+| `phase-5-qb-split-v1` | `+0.0005` | `-0.000` | `-0.028` |
 
 Interpretation:
 

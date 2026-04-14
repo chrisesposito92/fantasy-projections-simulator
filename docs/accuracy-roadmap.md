@@ -509,8 +509,8 @@ What follows from the current artifact set:
 
 - Phase 5A `WR/TE Depth-Role V1`: implemented, validated, not promoted
 - Phase 5B `WR/TE efficiency v2`: implemented, validated, not promoted
+- Phase 5C `QB split engine`: implemented, validated, not promoted
 - explicitly deferred:
-  - `QB split engine`
   - `RB scheme-fit engine`
 
 ### Phase 5A Scope
@@ -570,6 +570,31 @@ Superseded setup artifact:
 - this earlier row is useful as a setup/debug artifact, but it is not the
   Phase 5B decision record because the coverage header left the depth-role
   family disabled
+
+### Phase 5C Scope
+
+- `passing_detail` only
+- QB-specific pass-catcher efficiency splits
+- pre-sim efficiency only
+- implemented through `pff.qb_split`
+- no promotion from the first marginal validation artifact
+
+### Phase 5C Validation Artifact
+
+- label: `phase-5-qb-split-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.qb_split=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0005`
+  - `weekly_mae delta: -0.000`
+  - `season_mae delta: -0.028`
+- verdict:
+  - implemented and validated
+  - not promoted
+  - keep `pff.qb_split.enabled: false`
+  - keep `RB scheme-fit engine` as the remaining deferred Phase 5 follow-on
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 
