@@ -505,51 +505,130 @@ What follows from the current artifact set:
 
 ## Phase 5: PFF Granularity V2
 
-### Why It Still Ranks High
+### Status
 
-PFF is already the deepest proprietary source in the stack, but the project is
-using only a fraction of what has been scraped and processed locally.
+- Phase 5A `WR/TE Depth-Role V1`: implemented, validated, not promoted
+- Phase 5B `WR/TE efficiency v2`: implemented, validated, not promoted
+- Phase 5C `QB split engine`: implemented, validated, not promoted
+- Phase 5D `RB scheme-fit engine`: implemented, validated, not promoted
 
-Most promising underused local assets:
+### Phase 5A Scope
 
-- `passing_detail`
-- `receiving_depth`
+- `receiving_depth` only
+- `WR` and `TE` only
+- pre-sim role/volume only
+- `target_share` and `air_yards_share` only
+- no catch-rate or receiving-efficiency mutation
+
+### Validation Artifact
+
+- label: `phase-5-depth-role-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.depth_role=full(2022,2023,2024)`
+  - `pff.depth_role.wr=full(2022,2023,2024)`
+  - `pff.depth_role.te=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0005`
+  - `weekly_mae delta: +0.002`
+  - `season_mae delta: +0.013`
+
+### Phase 5B Scope
+
+- `receiving_depth` only
+- `WR` and `TE` only
+- pre-sim efficiency only
+- `catch_rate`
+- proportional `red_zone_catch_rate`
+- base `receiving_yards_dist`
+- no volume changes
+
+### Phase 5B Validation Artifact
+
+- decision artifact label: `phase-5-depth-role-efficiency-v2-activated`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.depth_role=full(2022,2023,2024)`
+  - `pff.depth_role.wr=full(2022,2023,2024)`
+  - `pff.depth_role.te=full(2022,2023,2024)`
+  - `pff.depth_role.efficiency=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: +0.030`
+
+Superseded setup artifact:
+
+- `phase-5-depth-role-efficiency-v2`
+- top-line deltas:
+  - `rank_corr delta:  +0.0002`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: -0.017`
+- this earlier row is useful as a setup/debug artifact, but it is not the
+  Phase 5B decision record because the coverage header left the depth-role
+  family disabled
+
+### Phase 5C Scope
+
+- `passing_detail` only
+- QB-specific pass-catcher efficiency splits
+- pre-sim efficiency only
+- implemented through `pff.qb_split`
+- no promotion from the first marginal validation artifact
+
+### Phase 5C Validation Artifact
+
+- decision artifact label: `phase-5-qb-split-v1-postfix`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.qb_split=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: +0.006`
+  - `season_mae delta: +0.020`
+
+Superseded pre-fix artifact:
+
+- `phase-5-qb-split-v1`
+- top-line deltas:
+  - `rank_corr delta:  +0.0005`
+  - `weekly_mae delta: -0.000`
+  - `season_mae delta: -0.028`
+- this earlier row is useful as pre-fix evidence, but it is not the current
+  Phase 5C decision record for the branch after the qb-split follow-up fixes
+- verdict:
+  - implemented and validated
+  - not promoted
+  - keep `pff.qb_split.enabled: false`
+
+### Phase 5D Scope
+
 - `rushing_direction`
-- gap/zone run-blocking splits
+- `offense_run_blocking`
+- RB-specific rushing-efficiency only
+- pre-sim `rushing_yards_dist` only
+- implemented through `pff.rb_scheme_fit`
+- no promotion from the first marginal validation artifact
 
-### Candidate Uses
+### Phase 5D Validation Artifact
 
-- QB split-dependent efficiency profiles from `passing_detail`
-- WR/TE depth-role modeling from `receiving_depth`
-- RB run-direction and scheme fit from `rushing_direction`
-- gap vs zone line fit using `offense_run_blocking`
-- richer goal-line and red-zone role priors from fantasy and depth tables
-
-### Suggested Internal Breakdown
-
-#### 5A. QB PFF Split Engine
-
-- clean pocket vs pressure
-- blitz vs no blitz
-- short/intermediate/deep efficiency
-
-#### 5B. WR/TE Depth Role Engine
-
-- behind/short/medium/deep route profile
-- direction and alignment role stability
-- target-quality-conditioned weekly role archetypes
-
-#### 5C. RB Scheme Fit Engine
-
-- gap vs zone blocker environment
-- run-direction tendencies
-- player fit to line profile
-
-### Planning Notes
-
-- This phase has strong upside, but the feature design needs discipline
-- Do not dump all granular columns into one monolithic "better PFF" layer
-- Split by QB / WR-TE / RB sub-engines so failed ideas can be isolated cleanly
+- decision artifact label: `phase-5-rb-scheme-fit-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.rb_scheme_fit=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0018`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.040`
+- verdict:
+  - implemented and validated
+  - not promoted
+  - keep `pff.rb_scheme_fit.enabled: false`
+  - inferred from the run: the top-line lift is too small to justify promotion and weekly QB/WR both regressed
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 

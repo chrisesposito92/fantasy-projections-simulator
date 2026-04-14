@@ -3,10 +3,17 @@
 import pytest
 
 from fantasy_sim.data.pff.config import load_pff_config
+from fantasy_sim.config.loader import load_defaults
 from fantasy_sim.data.pff.models import (
+    DepthRoleConfig,
+    DepthRoleEfficiencyConfig,
+    DepthRoleEfficiencyPositionConfig,
+    DepthRolePositionConfig,
     MatchupConfig,
     MatchupContext,
     PffConfig,
+    RbSchemeFitConfig,
+    QbSplitConfig,
     TalentConfig,
 )
 
@@ -136,3 +143,302 @@ def test_load_pff_config_coverage_defaults():
     assert pff.coverage.enabled is True
     assert pff.coverage.catch_rate_sensitivity == 0.04
     assert pff.coverage.factor_clamp == (0.97, 1.03)
+
+
+def test_load_pff_config_depth_role_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.depth_role, DepthRoleConfig)
+    assert cfg.depth_role.enabled is False
+    assert cfg.depth_role.positions == ("WR", "TE")
+    assert cfg.depth_role.min_routes == 15
+    assert cfg.depth_role.min_targets == 6
+    assert cfg.depth_role.min_games == 4
+    assert cfg.depth_role.early_season_blend is True
+    assert cfg.depth_role.wr == DepthRolePositionConfig(
+        target_share_sensitivity=0.10,
+        air_yards_share_sensitivity=0.12,
+        factor_clamp=(0.94, 1.06),
+    )
+    assert cfg.depth_role.te == DepthRolePositionConfig(
+        target_share_sensitivity=0.08,
+        air_yards_share_sensitivity=0.06,
+        factor_clamp=(0.95, 1.05),
+    )
+
+
+def test_load_pff_config_depth_role_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    assert isinstance(cfg.depth_role, DepthRoleConfig)
+    assert cfg.depth_role.enabled is False
+    assert cfg.depth_role.positions == ("WR", "TE")
+    assert cfg.depth_role.min_routes == 15
+    assert cfg.depth_role.min_targets == 6
+    assert cfg.depth_role.min_games == 4
+    assert cfg.depth_role.early_season_blend is True
+    assert cfg.depth_role.wr == DepthRolePositionConfig(
+        target_share_sensitivity=0.10,
+        air_yards_share_sensitivity=0.12,
+        factor_clamp=(0.94, 1.06),
+    )
+    assert cfg.depth_role.te == DepthRolePositionConfig(
+        target_share_sensitivity=0.08,
+        air_yards_share_sensitivity=0.06,
+        factor_clamp=(0.95, 1.05),
+    )
+
+
+def test_load_pff_config_depth_role_efficiency_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    eff = cfg.depth_role.efficiency
+    assert isinstance(eff, DepthRoleEfficiencyConfig)
+    assert eff.enabled is False
+    assert eff.min_routes == 15
+    assert eff.min_receptions == 6
+    assert eff.min_games == 4
+    assert eff.catch_rate_clamp == (0.94, 1.06)
+    assert eff.yards_scale_clamp == (0.92, 1.08)
+    assert eff.wr == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.08,
+        yards_scale_sensitivity=0.10,
+    )
+    assert eff.te == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.06,
+        yards_scale_sensitivity=0.08,
+    )
+
+
+def test_load_pff_config_depth_role_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "depth_role": {
+                    "enabled": True,
+                    "positions": ["WR"],
+                    "min_routes": 22,
+                    "min_targets": 9,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                    "wr": {
+                        "target_share_sensitivity": 0.14,
+                        "air_yards_share_sensitivity": 0.16,
+                        "factor_clamp": [0.92, 1.08],
+                    },
+                    "te": {
+                        "target_share_sensitivity": 0.07,
+                        "air_yards_share_sensitivity": 0.05,
+                        "factor_clamp": [0.96, 1.04],
+                    },
+                },
+            }
+        }
+    )
+
+    assert cfg.depth_role.enabled is True
+    assert cfg.depth_role.positions == ("WR",)
+    assert cfg.depth_role.min_routes == 22
+    assert cfg.depth_role.min_targets == 9
+    assert cfg.depth_role.min_games == 5
+    assert cfg.depth_role.early_season_blend is False
+    assert cfg.depth_role.wr.target_share_sensitivity == 0.14
+    assert cfg.depth_role.wr.air_yards_share_sensitivity == 0.16
+    assert cfg.depth_role.wr.factor_clamp == (0.92, 1.08)
+    assert cfg.depth_role.te.target_share_sensitivity == 0.07
+    assert cfg.depth_role.te.air_yards_share_sensitivity == 0.05
+    assert cfg.depth_role.te.factor_clamp == (0.96, 1.04)
+
+
+def test_load_pff_config_qb_split_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.qb_split, QbSplitConfig)
+    assert cfg.qb_split.enabled is False
+    assert cfg.qb_split.completion_sensitivity == 0.10
+    assert cfg.qb_split.yards_sensitivity == 0.12
+    assert cfg.qb_split.catch_rate_clamp == (0.95, 1.05)
+    assert cfg.qb_split.yards_scale_clamp == (0.94, 1.06)
+    assert cfg.qb_split.min_pressure_dropbacks == 20
+    assert cfg.qb_split.min_clean_dropbacks == 40
+    assert cfg.qb_split.min_games == 4
+    assert cfg.qb_split.early_season_blend is True
+
+
+def test_load_pff_config_rb_scheme_fit_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.rb_scheme_fit, RbSchemeFitConfig)
+    assert cfg.rb_scheme_fit.enabled is False
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.10
+    assert cfg.rb_scheme_fit.factor_clamp == (0.94, 1.06)
+    assert cfg.rb_scheme_fit.min_attempts == 20
+    assert cfg.rb_scheme_fit.min_games == 4
+    assert cfg.rb_scheme_fit.early_season_blend is True
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.65
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.35
+
+
+def test_load_pff_config_rb_scheme_fit_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    assert isinstance(cfg.rb_scheme_fit, RbSchemeFitConfig)
+    assert cfg.rb_scheme_fit.enabled is False
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.10
+    assert cfg.rb_scheme_fit.factor_clamp == (0.94, 1.06)
+    assert cfg.rb_scheme_fit.min_attempts == 20
+    assert cfg.rb_scheme_fit.min_games == 4
+    assert cfg.rb_scheme_fit.early_season_blend is True
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.65
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.35
+
+
+def test_load_pff_config_rb_scheme_fit_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "rb_scheme_fit": {
+                    "enabled": True,
+                    "rush_yards_sensitivity": 0.14,
+                    "factor_clamp": [0.92, 1.08],
+                    "min_attempts": 28,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                    "scheme_usage_weight": 0.70,
+                    "blocking_alignment_weight": 0.30,
+                },
+            }
+        }
+    )
+
+    assert cfg.rb_scheme_fit.enabled is True
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.14
+    assert cfg.rb_scheme_fit.factor_clamp == (0.92, 1.08)
+    assert cfg.rb_scheme_fit.min_attempts == 28
+    assert cfg.rb_scheme_fit.min_games == 5
+    assert cfg.rb_scheme_fit.early_season_blend is False
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.70
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.30
+
+
+def test_load_pff_config_qb_split_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    assert isinstance(cfg.qb_split, QbSplitConfig)
+    assert cfg.qb_split.enabled is False
+    assert cfg.qb_split.completion_sensitivity == 0.10
+    assert cfg.qb_split.yards_sensitivity == 0.12
+    assert cfg.qb_split.catch_rate_clamp == (0.95, 1.05)
+    assert cfg.qb_split.yards_scale_clamp == (0.94, 1.06)
+    assert cfg.qb_split.min_pressure_dropbacks == 20
+    assert cfg.qb_split.min_clean_dropbacks == 40
+    assert cfg.qb_split.min_games == 4
+    assert cfg.qb_split.early_season_blend is True
+
+
+def test_load_pff_config_qb_split_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "qb_split": {
+                    "enabled": True,
+                    "completion_sensitivity": 0.18,
+                    "yards_sensitivity": 0.16,
+                    "catch_rate_clamp": [0.96, 1.04],
+                    "yards_scale_clamp": [0.95, 1.05],
+                    "min_pressure_dropbacks": 28,
+                    "min_clean_dropbacks": 55,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                },
+            }
+        }
+    )
+
+    assert cfg.qb_split.enabled is True
+    assert cfg.qb_split.completion_sensitivity == 0.18
+    assert cfg.qb_split.yards_sensitivity == 0.16
+    assert cfg.qb_split.catch_rate_clamp == (0.96, 1.04)
+    assert cfg.qb_split.yards_scale_clamp == (0.95, 1.05)
+    assert cfg.qb_split.min_pressure_dropbacks == 28
+    assert cfg.qb_split.min_clean_dropbacks == 55
+    assert cfg.qb_split.min_games == 5
+    assert cfg.qb_split.early_season_blend is False
+
+
+def test_load_pff_config_depth_role_efficiency_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    eff = cfg.depth_role.efficiency
+    assert isinstance(eff, DepthRoleEfficiencyConfig)
+    assert eff.enabled is False
+    assert eff.min_routes == 15
+    assert eff.min_receptions == 6
+    assert eff.min_games == 4
+    assert eff.catch_rate_clamp == (0.94, 1.06)
+    assert eff.yards_scale_clamp == (0.92, 1.08)
+    assert eff.wr == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.08,
+        yards_scale_sensitivity=0.10,
+    )
+    assert eff.te == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.06,
+        yards_scale_sensitivity=0.08,
+    )
+
+
+def test_load_pff_config_depth_role_efficiency_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "depth_role": {
+                    "efficiency": {
+                        "enabled": True,
+                        "min_routes": 18,
+                        "min_receptions": 8,
+                        "min_games": 5,
+                        "catch_rate_clamp": [0.95, 1.05],
+                        "yards_scale_clamp": [0.93, 1.07],
+                        "wr": {
+                            "catch_rate_sensitivity": 0.11,
+                            "yards_scale_sensitivity": 0.13,
+                        },
+                        "te": {
+                            "catch_rate_sensitivity": 0.09,
+                            "yards_scale_sensitivity": 0.07,
+                        },
+                    }
+                },
+            }
+        }
+    )
+
+    eff = cfg.depth_role.efficiency
+    assert eff.enabled is True
+    assert eff.min_routes == 18
+    assert eff.min_receptions == 8
+    assert eff.min_games == 5
+    assert eff.catch_rate_clamp == (0.95, 1.05)
+    assert eff.yards_scale_clamp == (0.93, 1.07)
+    assert eff.wr.catch_rate_sensitivity == 0.11
+    assert eff.wr.yards_scale_sensitivity == 0.13
+    assert eff.te.catch_rate_sensitivity == 0.09
+    assert eff.te.yards_scale_sensitivity == 0.07
+
+
+def test_load_pff_config_depth_role_rejects_invalid_positions():
+    with pytest.raises(ValueError, match="Invalid pff\\.depth_role\\.positions config"):
+        load_pff_config(
+            {
+                "pff": {
+                    "enabled": True,
+                    "depth_role": {
+                        "positions": ["WR", "QB"],
+                    },
+                }
+            }
+        )

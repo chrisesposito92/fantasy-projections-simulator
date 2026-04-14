@@ -171,12 +171,27 @@ class PffLoader:
 
         crosswalk: dict[int, str] = {}
 
-        # Get unique PFF players
-        pff_players = pff_data.select(
-            ["player_id", "player", "team"]
-        ).unique(subset=["player_id"])
+        # Keep the latest season/week row per PFF player so transferred players
+        # fall back against their current team when roster.pff_id is unavailable.
+        player_cols = ["player_id", "player", "team"]
+        order_cols: list[str] = []
+        if "season" in pff_data.columns:
+            player_cols.append("season")
+            order_cols.append("season")
+        if "week" in pff_data.columns:
+            player_cols.append("week")
+            order_cols.append("week")
 
-        if pff_players.is_empty() or roster.is_empty():
+        pff_players = pff_data.select(player_cols)
+        if order_cols:
+            pff_players = pff_players.sort(
+                ["player_id", *order_cols],
+                descending=[False, *([True] * len(order_cols))],
+                nulls_last=True,
+            )
+        pff_players_latest = pff_players.unique(subset=["player_id"], keep="first")
+
+        if pff_players_latest.is_empty() or roster.is_empty():
             self._crosswalk_cache[season] = crosswalk
             return crosswalk
 
@@ -196,7 +211,7 @@ class PffLoader:
                 .unique(subset=["_pff_id_int"])
             )
 
-            matched = pff_players.join(
+            matched = pff_players_latest.join(
                 roster_with_pff,
                 left_on="player_id",
                 right_on="_pff_id_int",
@@ -211,7 +226,7 @@ class PffLoader:
         # --- Layer 2: exact name + team match ---
         unmatched_pff = pff_players.filter(
             ~pl.col("player_id").is_in(list(crosswalk.keys()))
-        )
+        ).unique(subset=["player_id", "player", "team"], keep="first")
 
         if not unmatched_pff.is_empty():
             # Roster name + team lookup
@@ -233,7 +248,7 @@ class PffLoader:
                 crosswalk[row["player_id"]] = row["player_id_right"]
 
         layer2_count = len(crosswalk) - layer1_count
-        total = pff_players.height
+        total = pff_players_latest.height
         coverage = len(crosswalk) / total * 100 if total > 0 else 0
 
         logger.info(

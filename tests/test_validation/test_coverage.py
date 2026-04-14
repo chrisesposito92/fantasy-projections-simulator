@@ -76,6 +76,12 @@ def _write_roster_cache(cache_dir: Path, seasons: tuple[int, ...]) -> None:
         _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
 
 
+def _write_pff_summary_trio(pff_dir: Path, seasons: tuple[int, ...]) -> None:
+    for season in seasons:
+        for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
+            _write_parquet_placeholder(pff_dir / f"{facet}_{season}.parquet")
+
+
 def _write_market_history_player_markets(
     market_dir: Path,
     season: int,
@@ -236,6 +242,409 @@ def test_usage_route_rate_reports_partial_when_crosswalk_inputs_are_missing_for_
             "plus rosters_weekly cache to build the crosswalk"
         ),
     )
+
+
+def test_pff_depth_role_reports_full_when_crosswalk_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"receiving_depth_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires receiving_depth parquet, the PFF summary trio, "
+            "and rosters_weekly cache to build the PFF crosswalk"
+        ),
+    )
+    assert coverage["pff.depth_role.wr"].status == "full"
+    assert coverage["pff.depth_role.te"].status == "full"
+
+
+def test_pff_depth_role_reports_partial_when_crosswalk_inputs_are_missing_for_one_season(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "receiving_depth_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires receiving_depth parquet, the PFF summary trio, "
+            "and rosters_weekly cache to build the PFF crosswalk"
+        ),
+    )
+
+
+def test_pff_depth_role_position_signals_respect_configured_positions(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2024,):
+        _write_parquet_placeholder(pff_dir / f"receiving_depth_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+    _write_pff_summary_trio(pff_dir, (2024,))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+    engine_configs["pff_config"].depth_role.positions = ("WR",)
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role.wr"].status == "full"
+    assert coverage["pff.depth_role.te"].status == "disabled"
+
+
+def test_pff_depth_role_reports_none_when_summary_trio_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "receiving_depth_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires receiving_depth parquet, the PFF summary trio, "
+            "and rosters_weekly cache to build the PFF crosswalk"
+        ),
+    )
+
+
+def test_pff_qb_split_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"passing_detail_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"passing_summary_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
+
+
+def test_pff_qb_split_reports_partial_when_one_season_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "passing_detail_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "passing_summary_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
+
+
+def test_pff_rb_scheme_fit_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"rushing_direction_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"offense_run_blocking_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"rushing_summary_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].rb_scheme_fit.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.rb_scheme_fit"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires rushing_direction parquet, offense_run_blocking parquet, "
+            "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+        ),
+    )
+
+
+def test_pff_rb_scheme_fit_reports_partial_when_one_required_input_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "rushing_direction_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "offense_run_blocking_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_summary_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_direction_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_summary_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].rb_scheme_fit.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.rb_scheme_fit"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires rushing_direction parquet, offense_run_blocking parquet, "
+            "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+        ),
+    )
+
+
+def test_pff_rb_scheme_fit_disabled_when_parent_pff_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "rushing_direction_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "offense_run_blocking_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_summary_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].rb_scheme_fit.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.rb_scheme_fit"] == SignalCoverage(
+        enabled=False,
+        status="disabled",
+        covered_seasons=[],
+        missing_seasons=[],
+        note=(
+            "Requires rushing_direction parquet, offense_run_blocking parquet, "
+            "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+        ),
+    )
+
+
+def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "passing_detail_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "passing_summary_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=False,
+        status="disabled",
+        covered_seasons=[],
+        missing_seasons=[],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
+
+
+def test_pff_qb_split_disabled_when_matchup_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "passing_detail_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "passing_summary_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].qb_split.enabled = True
+    engine_configs["pff_config"].matchup.enabled = False
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=False,
+        status="disabled",
+        covered_seasons=[],
+        missing_seasons=[],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
+
+
+def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        for facet in ("receiving_depth", "receiving_summary", "rushing_summary", "passing_summary"):
+            _write_parquet_placeholder(pff_dir / f"{facet}_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+    engine_configs["pff_config"].depth_role.efficiency.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role.efficiency"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Requires receiving_depth, the PFF summary trio, and rosters_weekly cache to support the depth-role efficiency path",
+    )
+
+
+def test_pff_depth_role_efficiency_disabled_when_parent_depth_role_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for facet in ("receiving_depth", "receiving_summary", "rushing_summary", "passing_summary"):
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = True
+    engine_configs["pff_config"].depth_role.enabled = True
+    engine_configs["pff_config"].depth_role.efficiency.enabled = True
+    engine_configs["pff_config"].depth_role.enabled = False
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role.efficiency"].status == "disabled"
+
+
+def test_pff_depth_role_is_disabled_when_parent_pff_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2024,):
+        _write_parquet_placeholder(pff_dir / f"receiving_depth_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+    _write_pff_summary_trio(pff_dir, (2024,))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].depth_role.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role"].status == "disabled"
+    assert coverage["pff.depth_role.wr"].status == "disabled"
+    assert coverage["pff.depth_role.te"].status == "disabled"
 
 
 def test_usage_reports_partial_when_snap_counts_or_pbp_missing_for_one_season(tmp_path):

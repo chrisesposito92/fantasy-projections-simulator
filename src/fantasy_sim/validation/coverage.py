@@ -196,6 +196,28 @@ def _config_flag(
     return default
 
 
+def _config_value(
+    config: object,
+    config_keys: tuple[str, ...],
+    raw_path: tuple[str, ...],
+    *,
+    nested_path: tuple[str, ...],
+    default: object,
+) -> object:
+    for key in config_keys:
+        section = _config_section(config, key)
+        if section is None:
+            continue
+        value = _config_get(section, *nested_path, default=None)
+        if value is not None:
+            return value
+
+    value = _config_get(config, *raw_path, default=None)
+    if value is not None:
+        return value
+    return default
+
+
 def _parquet_columns(path: Path) -> set[str]:
     if not path.exists():
         return set()
@@ -329,6 +351,49 @@ def collect_signal_coverage(
         config,
         ("pff_config", "pff"),
         ("pff",),
+    )
+    depth_role_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "depth_role"),
+        nested_path=("depth_role",),
+    )
+    rb_scheme_fit_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "rb_scheme_fit"),
+        nested_path=("rb_scheme_fit",),
+    )
+    qb_split_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "qb_split"),
+        nested_path=("qb_split",),
+    )
+    matchup_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "matchup"),
+        nested_path=("matchup",),
+    )
+    depth_role_efficiency_enabled = (
+        pff_enabled
+        and depth_role_enabled
+        and _signal_enabled(
+            config,
+            ("pff_config", "pff"),
+            ("pff", "depth_role", "efficiency"),
+            nested_path=("depth_role", "efficiency"),
+        )
+    )
+    depth_role_positions = tuple(
+        _config_value(
+            config,
+            ("pff_config", "pff"),
+            ("pff", "depth_role", "positions"),
+            nested_path=("depth_role", "positions"),
+            default=("WR", "TE"),
+        )
     )
     weather_enabled = _signal_enabled(
         config,
@@ -566,6 +631,47 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    depth_role_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"receiving_depth_{season}.parquet",
+            pff_path / f"receiving_summary_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    qb_split_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"passing_detail_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    rb_scheme_fit_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"rushing_direction_{season}.parquet",
+            pff_path / f"offense_run_blocking_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"receiving_depth_{season}.parquet",
+            pff_path / f"receiving_summary_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    depth_role_coverage = _covered_seasons_from_required_paths(
+        seasons,
+        depth_role_paths_by_season,
+    )
 
     market_history_signals = {
         "market_history.crosswalk": _build_signal(
@@ -704,6 +810,60 @@ def collect_signal_coverage(
                 "Requires the current default-on PFF stack: tier_engine, "
                 "matchup, coverage, kicker, and dst_baseline inputs"
             ),
+        ),
+        "pff.depth_role": _build_signal(
+            pff_enabled and depth_role_enabled,
+            seasons,
+            depth_role_coverage,
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
+        ),
+        "pff.qb_split": _build_signal(
+            pff_enabled and matchup_enabled and qb_split_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, qb_split_paths_by_season),
+            note=(
+                "Requires passing_detail parquet, passing_summary parquet, "
+                "and rosters_weekly cache to build the PFF QB crosswalk"
+            ),
+        ),
+        "pff.rb_scheme_fit": _build_signal(
+            pff_enabled and rb_scheme_fit_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, rb_scheme_fit_paths_by_season),
+            note=(
+                "Requires rushing_direction parquet, offense_run_blocking parquet, "
+                "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+            ),
+        ),
+        "pff.depth_role.wr": _build_signal(
+            pff_enabled and depth_role_enabled and "WR" in depth_role_positions,
+            seasons,
+            depth_role_coverage,
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
+        ),
+        "pff.depth_role.te": _build_signal(
+            pff_enabled and depth_role_enabled and "TE" in depth_role_positions,
+            seasons,
+            depth_role_coverage,
+            note=(
+                "Requires receiving_depth parquet, the PFF summary trio, "
+                "and rosters_weekly cache to build the PFF crosswalk"
+            ),
+        ),
+        "pff.depth_role.efficiency": _build_signal(
+            depth_role_efficiency_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(
+                seasons,
+                depth_role_efficiency_paths_by_season,
+            ),
+            note="Requires receiving_depth, the PFF summary trio, and rosters_weekly cache to support the depth-role efficiency path",
         ),
         "weather": _build_signal(
             weather_enabled,

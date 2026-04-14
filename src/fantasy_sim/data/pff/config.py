@@ -5,6 +5,10 @@ from __future__ import annotations
 from fantasy_sim.data.pff.models import (
     ArchetypeConfig,
     CoverageConfig,
+    DepthRoleConfig,
+    DepthRoleEfficiencyConfig,
+    DepthRoleEfficiencyPositionConfig,
+    DepthRolePositionConfig,
     DstBaselineConfig,
     KickerConfig,
     MatchupConfig,
@@ -12,11 +16,15 @@ from fantasy_sim.data.pff.models import (
     NcaaRookieConfig,
     PffConfig,
     PositionGradeConfig,
+    RbSchemeFitConfig,
+    QbSplitConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
     TeamContextConfig,
     TierConfig,
 )
+
+_SUPPORTED_DEPTH_ROLE_POSITIONS = {"WR", "TE"}
 
 
 def load_pff_config(config: dict) -> PffConfig:
@@ -177,6 +185,110 @@ def load_pff_config(config: dict) -> PffConfig:
         min_games=cov_raw.get("min_games", 4),
     )
 
+    depth_role_raw = pff.get("depth_role", {})
+    depth_role_positions = tuple(depth_role_raw.get("positions", ["WR", "TE"]))
+    efficiency_raw = depth_role_raw.get("efficiency", {})
+    invalid_positions = [
+        pos for pos in depth_role_positions if pos not in _SUPPORTED_DEPTH_ROLE_POSITIONS
+    ]
+    if invalid_positions:
+        raise ValueError(
+            "Invalid pff.depth_role.positions config: "
+            f"{', '.join(invalid_positions)}. "
+            "Supported positions: WR, TE"
+        )
+    depth_role = DepthRoleConfig(
+        enabled=depth_role_raw.get("enabled", False),
+        positions=depth_role_positions,
+        wr=DepthRolePositionConfig(
+            target_share_sensitivity=depth_role_raw.get("wr", {}).get(
+                "target_share_sensitivity",
+                0.10,
+            ),
+            air_yards_share_sensitivity=depth_role_raw.get("wr", {}).get(
+                "air_yards_share_sensitivity",
+                0.12,
+            ),
+            factor_clamp=tuple(
+                depth_role_raw.get("wr", {}).get("factor_clamp", [0.94, 1.06])
+            ),
+        ),
+        te=DepthRolePositionConfig(
+            target_share_sensitivity=depth_role_raw.get("te", {}).get(
+                "target_share_sensitivity",
+                0.08,
+            ),
+            air_yards_share_sensitivity=depth_role_raw.get("te", {}).get(
+                "air_yards_share_sensitivity",
+                0.06,
+            ),
+            factor_clamp=tuple(
+                depth_role_raw.get("te", {}).get("factor_clamp", [0.95, 1.05])
+            ),
+        ),
+        min_routes=depth_role_raw.get("min_routes", 15),
+        min_targets=depth_role_raw.get("min_targets", 6),
+        min_games=depth_role_raw.get("min_games", 4),
+        early_season_blend=depth_role_raw.get("early_season_blend", True),
+        efficiency=DepthRoleEfficiencyConfig(
+            enabled=efficiency_raw.get("enabled", False),
+            min_routes=efficiency_raw.get("min_routes", 15),
+            min_receptions=efficiency_raw.get("min_receptions", 6),
+            min_games=efficiency_raw.get("min_games", 4),
+            catch_rate_clamp=tuple(
+                efficiency_raw.get("catch_rate_clamp", [0.94, 1.06])
+            ),
+            yards_scale_clamp=tuple(
+                efficiency_raw.get("yards_scale_clamp", [0.92, 1.08])
+            ),
+            wr=DepthRoleEfficiencyPositionConfig(
+                catch_rate_sensitivity=efficiency_raw.get("wr", {}).get(
+                    "catch_rate_sensitivity",
+                    0.08,
+                ),
+                yards_scale_sensitivity=efficiency_raw.get("wr", {}).get(
+                    "yards_scale_sensitivity",
+                    0.10,
+                ),
+            ),
+            te=DepthRoleEfficiencyPositionConfig(
+                catch_rate_sensitivity=efficiency_raw.get("te", {}).get(
+                    "catch_rate_sensitivity",
+                    0.06,
+                ),
+                yards_scale_sensitivity=efficiency_raw.get("te", {}).get(
+                    "yards_scale_sensitivity",
+                    0.08,
+                ),
+            ),
+        ),
+    )
+
+    rb_scheme_fit_raw = pff.get("rb_scheme_fit", {})
+    rb_scheme_fit = RbSchemeFitConfig(
+        enabled=rb_scheme_fit_raw.get("enabled", False),
+        rush_yards_sensitivity=rb_scheme_fit_raw.get("rush_yards_sensitivity", 0.10),
+        factor_clamp=tuple(rb_scheme_fit_raw.get("factor_clamp", [0.94, 1.06])),
+        min_attempts=rb_scheme_fit_raw.get("min_attempts", 20),
+        min_games=rb_scheme_fit_raw.get("min_games", 4),
+        early_season_blend=rb_scheme_fit_raw.get("early_season_blend", True),
+        scheme_usage_weight=rb_scheme_fit_raw.get("scheme_usage_weight", 0.65),
+        blocking_alignment_weight=rb_scheme_fit_raw.get("blocking_alignment_weight", 0.35),
+    )
+
+    qb_split_raw = pff.get("qb_split", {})
+    qb_split = QbSplitConfig(
+        enabled=qb_split_raw.get("enabled", False),
+        completion_sensitivity=qb_split_raw.get("completion_sensitivity", 0.10),
+        yards_sensitivity=qb_split_raw.get("yards_sensitivity", 0.12),
+        catch_rate_clamp=tuple(qb_split_raw.get("catch_rate_clamp", [0.95, 1.05])),
+        yards_scale_clamp=tuple(qb_split_raw.get("yards_scale_clamp", [0.94, 1.06])),
+        min_pressure_dropbacks=qb_split_raw.get("min_pressure_dropbacks", 20),
+        min_clean_dropbacks=qb_split_raw.get("min_clean_dropbacks", 40),
+        min_games=qb_split_raw.get("min_games", 4),
+        early_season_blend=qb_split_raw.get("early_season_blend", True),
+    )
+
     kicker_raw = pff.get("kicker", {})
     kicker = KickerConfig(
         enabled=kicker_raw.get("enabled", True),
@@ -201,6 +313,9 @@ def load_pff_config(config: dict) -> PffConfig:
         tier_engine=tier_engine,
         team_context=team_context,
         coverage=coverage,
+        depth_role=depth_role,
+        rb_scheme_fit=rb_scheme_fit,
+        qb_split=qb_split,
         kicker=kicker,
         dst_baseline=dst_baseline,
     )

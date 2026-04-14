@@ -214,6 +214,119 @@ class CoverageConfig:
 
 
 @dataclass
+class DepthRolePositionConfig:
+    """Position-specific sensitivity and clamps for PFF depth-role adjustments."""
+    target_share_sensitivity: float
+    air_yards_share_sensitivity: float
+    factor_clamp: tuple[float, float]
+
+
+@dataclass
+class DepthRoleEfficiencyPositionConfig:
+    """Position-specific efficiency sensitivities for WR/TE depth-role v2."""
+    catch_rate_sensitivity: float
+    yards_scale_sensitivity: float
+
+
+@dataclass
+class DepthRoleEfficiencyConfig:
+    """Configuration for WR/TE efficiency-only depth-role adjustments."""
+    enabled: bool = False
+    min_routes: int = 15
+    min_receptions: int = 6
+    min_games: int = 4
+    catch_rate_clamp: tuple[float, float] = (0.94, 1.06)
+    yards_scale_clamp: tuple[float, float] = (0.92, 1.08)
+    wr: DepthRoleEfficiencyPositionConfig = field(
+        default_factory=lambda: DepthRoleEfficiencyPositionConfig(
+            catch_rate_sensitivity=0.08,
+            yards_scale_sensitivity=0.10,
+        )
+    )
+    te: DepthRoleEfficiencyPositionConfig = field(
+        default_factory=lambda: DepthRoleEfficiencyPositionConfig(
+            catch_rate_sensitivity=0.06,
+            yards_scale_sensitivity=0.08,
+        )
+    )
+
+
+@dataclass
+class DepthRoleConfig:
+    """Configuration for the PFF WR/TE depth-role engine."""
+    enabled: bool = False
+    positions: tuple[str, ...] = ("WR", "TE")
+    wr: DepthRolePositionConfig = field(
+        default_factory=lambda: DepthRolePositionConfig(
+            target_share_sensitivity=0.10,
+            air_yards_share_sensitivity=0.12,
+            factor_clamp=(0.94, 1.06),
+        )
+    )
+    te: DepthRolePositionConfig = field(
+        default_factory=lambda: DepthRolePositionConfig(
+            target_share_sensitivity=0.08,
+            air_yards_share_sensitivity=0.06,
+            factor_clamp=(0.95, 1.05),
+        )
+    )
+    min_routes: int = 15
+    min_targets: int = 6
+    min_games: int = 4
+    early_season_blend: bool = True
+    efficiency: DepthRoleEfficiencyConfig = field(
+        default_factory=DepthRoleEfficiencyConfig
+    )
+
+
+@dataclass
+class DepthRoleFactors:
+    """Per-player bounded role adjustments from PFF receiving-depth data."""
+    target_share_factor: float = 1.0
+    air_yards_share_factor: float = 1.0
+
+
+@dataclass
+class RbSchemeFitConfig:
+    """Configuration for the PFF RB scheme-fit engine."""
+    enabled: bool = False
+    rush_yards_sensitivity: float = 0.10
+    factor_clamp: tuple[float, float] = (0.94, 1.06)
+    min_attempts: int = 20
+    min_games: int = 4
+    early_season_blend: bool = True
+    scheme_usage_weight: float = 0.65
+    blocking_alignment_weight: float = 0.35
+
+
+@dataclass
+class RbSchemeFitFactors:
+    """Per-RB bounded scheme-fit adjustments."""
+    rushing_yards_factor: float = 1.0
+
+
+@dataclass
+class QbSplitConfig:
+    """Configuration for QB pressure vs clean-pocket split adjustments."""
+    enabled: bool = False
+    completion_sensitivity: float = 0.10
+    yards_sensitivity: float = 0.12
+    catch_rate_clamp: tuple[float, float] = (0.95, 1.05)
+    yards_scale_clamp: tuple[float, float] = (0.94, 1.06)
+    min_pressure_dropbacks: int = 20
+    min_clean_dropbacks: int = 40
+    min_games: int = 4
+    early_season_blend: bool = True
+
+
+@dataclass
+class QbSplitFactors:
+    """Per-QB bounded pressure split adjustments."""
+    catch_rate_factor: float = 1.0
+    yards_scale_factor: float = 1.0
+
+
+@dataclass
 class KickerConfig:
     """Configuration for the PFF kicker engine."""
     enabled: bool = True
@@ -249,5 +362,8 @@ class PffConfig:
     tier_engine: TierConfig = field(default_factory=TierConfig)
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
+    depth_role: DepthRoleConfig = field(default_factory=DepthRoleConfig)
+    rb_scheme_fit: RbSchemeFitConfig = field(default_factory=RbSchemeFitConfig)
+    qb_split: QbSplitConfig = field(default_factory=QbSplitConfig)
     kicker: KickerConfig = field(default_factory=KickerConfig)
     dst_baseline: DstBaselineConfig = field(default_factory=DstBaselineConfig)

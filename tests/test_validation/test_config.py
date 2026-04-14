@@ -186,6 +186,87 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"] is not None
         assert configs["pff_config"].matchup.enabled is False
 
+    def test_pff_depth_role_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.depth_role.enabled=true",
+                "pff.depth_role.wr.target_share_sensitivity=0.14",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].depth_role.enabled is True
+        assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
+
+    def test_pff_rb_scheme_fit_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.rb_scheme_fit.enabled=true",
+                "pff.rb_scheme_fit.rush_yards_sensitivity=0.14",
+                "pff.rb_scheme_fit.min_attempts=28",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].rb_scheme_fit.enabled is True
+        assert configs["pff_config"].rb_scheme_fit.rush_yards_sensitivity == 0.14
+        assert configs["pff_config"].rb_scheme_fit.min_attempts == 28
+
+    def test_pff_qb_split_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.qb_split.enabled=true",
+                "pff.qb_split.completion_sensitivity=0.17",
+                "pff.qb_split.min_pressure_dropbacks=24",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].qb_split.enabled is True
+        assert configs["pff_config"].qb_split.completion_sensitivity == 0.17
+        assert configs["pff_config"].qb_split.min_pressure_dropbacks == 24
+
+    def test_pff_depth_role_efficiency_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.depth_role.efficiency.enabled=true",
+                "pff.depth_role.efficiency.wr.catch_rate_sensitivity=0.11",
+                "pff.depth_role.efficiency.te.yards_scale_sensitivity=0.07",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        eff = configs["pff_config"].depth_role.efficiency
+        assert eff.enabled is True
+        assert eff.wr.catch_rate_sensitivity == 0.11
+        assert eff.te.yards_scale_sensitivity == 0.07
+
+    def test_pff_depth_role_invalid_position_override_raises(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            ["pff.depth_role.positions=[WR,QB]"],
+        )
+
+        with pytest.raises(ValueError, match="Invalid pff\\.depth_role\\.positions config"):
+            build_engine_configs(overridden)
+
 
 class TestBuildBareEngineConfigs:
     def test_all_none(self):

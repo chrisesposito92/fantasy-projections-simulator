@@ -130,6 +130,56 @@ pff:
     factor_clamp: [0.97, 1.03]
     min_games: 4
 
+  depth_role:
+    enabled: false
+    positions: [WR, TE]
+    wr:
+      target_share_sensitivity: 0.10
+      air_yards_share_sensitivity: 0.12
+      factor_clamp: [0.94, 1.06]
+    te:
+      target_share_sensitivity: 0.08
+      air_yards_share_sensitivity: 0.06
+      factor_clamp: [0.95, 1.05]
+    min_routes: 15
+    min_targets: 6
+    min_games: 4
+    early_season_blend: true
+    efficiency:
+      enabled: false
+      min_routes: 15
+      min_receptions: 6
+      min_games: 4
+      catch_rate_clamp: [0.94, 1.06]
+      yards_scale_clamp: [0.92, 1.08]
+      wr:
+        catch_rate_sensitivity: 0.08
+        yards_scale_sensitivity: 0.10
+      te:
+        catch_rate_sensitivity: 0.06
+        yards_scale_sensitivity: 0.08
+
+  rb_scheme_fit:
+    enabled: false
+    rush_yards_sensitivity: 0.10
+    factor_clamp: [0.94, 1.06]
+    min_attempts: 20
+    min_games: 4
+    early_season_blend: true
+    scheme_usage_weight: 0.65
+    blocking_alignment_weight: 0.35
+
+  qb_split:
+    enabled: false
+    completion_sensitivity: 0.10
+    yards_sensitivity: 0.12
+    catch_rate_clamp: [0.95, 1.05]
+    yards_scale_clamp: [0.94, 1.06]
+    min_pressure_dropbacks: 20
+    min_clean_dropbacks: 40
+    min_games: 4
+    early_season_blend: true
+
   # Per-kicker accuracy from PFF field goal data (Bayesian shrinkage)
   kicker:
     enabled: true

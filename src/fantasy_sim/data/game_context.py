@@ -12,7 +12,13 @@ from fantasy_sim.data.player_builder import (
     build_team_roster,
     _aggregate_pbp_stats, _assemble_models, _build_season_weights,
 )
-from fantasy_sim.data.pff.models import PffConfig, MatchupContext, CoverageModifiers
+from fantasy_sim.data.pff.models import (
+    PffConfig,
+    MatchupContext,
+    CoverageModifiers,
+    QbSplitFactors,
+    RbSchemeFitFactors,
+)
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
 from fantasy_sim.data.availability.models import AvailabilityConfig
@@ -83,6 +89,7 @@ class GameContextBuilder:
         self._matchup_engine = None
         self._talent_stabilizer = None
         self._pff_crosswalk: dict[int, str] | None = None
+        self._pff_crosswalk_roster_season: int | None = None
         self._pff_loader = None
 
         if self._pff_config.enabled:
@@ -117,6 +124,40 @@ class GameContextBuilder:
                 self._pff_config.team_context, self._pff_loader
             )
             logger.info("PFF team context engine enabled")
+
+        self._depth_role_engine = None
+        self._rb_scheme_fit_engine = None
+        self._qb_split_engine = None
+
+        if self._pff_config.enabled and self._pff_config.depth_role.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.depth_role import DepthRoleEngine
+
+            self._depth_role_engine = DepthRoleEngine(
+                self._pff_loader,
+                self._pff_config.depth_role,
+            )
+            logger.info("PFF depth-role engine enabled")
+
+        if self._pff_config.enabled and self._pff_config.rb_scheme_fit.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.rb_scheme_fit import RbSchemeFitEngine
+
+            self._rb_scheme_fit_engine = RbSchemeFitEngine(
+                self._pff_loader,
+                self._pff_config.rb_scheme_fit,
+            )
+            logger.info("PFF RB scheme-fit engine enabled")
+
+        if self._pff_config.enabled and self._pff_config.qb_split.enabled:
+            if self._matchup_engine is not None and self._pff_loader:
+                from fantasy_sim.data.pff.qb_split import QbSplitEngine
+
+                self._qb_split_engine = QbSplitEngine(
+                    self._pff_loader,
+                    self._pff_config.qb_split,
+                )
+                logger.info("PFF QB split engine enabled")
+            else:
+                logger.info("PFF QB split requested but matchup engine unavailable; qb split disabled")
 
         self._coverage_engine = None
 
@@ -518,6 +559,68 @@ class GameContextBuilder:
                     )
 
     @staticmethod
+    def _apply_qb_split(
+        roster: TeamRoster,
+        factors: QbSplitFactors | None,
+    ) -> None:
+        """Apply QB pressure-split receiver efficiency factors in-place."""
+        if factors is None:
+            return
+
+        for player in roster.players:
+            if player.position == "QB" or player.usage.target_share <= 0:
+                continue
+
+            if factors.catch_rate_factor != 1.0:
+                old_catch_rate = player.outcomes.catch_rate
+                old_rz_catch_rate = player.outcomes.red_zone_catch_rate
+                player.outcomes.catch_rate = max(
+                    0.0,
+                    min(1.0, old_catch_rate * factors.catch_rate_factor),
+                )
+                if old_catch_rate > 0 and old_rz_catch_rate > 0:
+                    ratio = player.outcomes.catch_rate / old_catch_rate
+                    player.outcomes.red_zone_catch_rate = max(
+                        0.0,
+                        min(1.0, old_rz_catch_rate * ratio),
+                    )
+
+            if (
+                factors.yards_scale_factor != 1.0
+                and player.outcomes.receiving_yards_dist is not None
+                and len(player.outcomes.receiving_yards_dist) > 0
+            ):
+                player.outcomes.receiving_yards_dist = (
+                    player.outcomes.receiving_yards_dist * factors.yards_scale_factor
+                )
+
+    @staticmethod
+    def _apply_rb_scheme_fit(
+        roster: TeamRoster,
+        factors: dict[str, RbSchemeFitFactors] | None,
+    ) -> None:
+        """Apply RB-only rushing yards adjustments in-place."""
+        if not factors:
+            return
+
+        for player in roster.players:
+            if player.position != "RB":
+                continue
+
+            player_factors = factors.get(player.player_id)
+            if (
+                player_factors is None
+                or player_factors.rushing_yards_factor == 1.0
+                or player.outcomes.rushing_yards_dist is None
+                or len(player.outcomes.rushing_yards_dist) == 0
+            ):
+                continue
+
+            player.outcomes.rushing_yards_dist = (
+                player.outcomes.rushing_yards_dist * player_factors.rushing_yards_factor
+            )
+
+    @staticmethod
     def _apply_weather(
         dists: TeamDistributions,
         roster: TeamRoster,
@@ -608,23 +711,38 @@ class GameContextBuilder:
         target_season: int | None = None,
     ) -> None:
         """Build PFF crosswalk if not already cached."""
-        if self._pff_crosswalk is not None or self._pff_loader is None:
+        if self._pff_loader is None:
             return
 
+        roster_season = target_season or max(training_seasons)
+        if (
+            self._pff_crosswalk is not None
+            and self._pff_crosswalk_roster_season == roster_season
+        ):
+            return
+
+        seasons = _seasons_with_target(training_seasons, target_season)
         frames = []
         for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-            df = self._pff_loader.load_facet(facet, training_seasons)
+            df = self._pff_loader.load_facet(facet, seasons)
             if not df.is_empty():
-                frames.append(df.select(["player_id", "player", "team"]))
+                cols = ["player_id", "player", "team"]
+                if "season" in df.columns:
+                    cols.append("season")
+                if "week" in df.columns:
+                    cols.append("week")
+                frames.append(df.select(cols))
         if not frames:
+            self._pff_crosswalk = {}
+            self._pff_crosswalk_roster_season = roster_season
             return
 
-        pff_data = pl.concat(frames).unique(subset=["player_id"])
-        roster_season = target_season or max(training_seasons)
+        pff_data = pl.concat(frames, how="diagonal_relaxed")
         nfl_roster = self.loader.load_rosters([roster_season])
         self._pff_crosswalk = self._pff_loader.build_crosswalk(
             pff_data, nfl_roster, roster_season
         )
+        self._pff_crosswalk_roster_season = roster_season
 
     def _ensure_kicker_engine(
         self, training_seasons: list[int], target_season: int | None,
@@ -808,21 +926,23 @@ class GameContextBuilder:
             _normalize_roster_shares(away_roster)
 
         # PFF matchup adjustments: away D → home offense, home D → away offense
-        if self._matchup_engine is not None:
-            home_ctx = self._matchup_engine.compute(
+        home_matchup_ctx = MatchupContext()
+        away_matchup_ctx = MatchupContext()
+        if self._matchup_engine is not None and target_season and week:
+            home_matchup_ctx = self._matchup_engine.compute(
                 defense_team=away_team,
                 offense_team=home_team,
                 target_season=target_season,
                 max_week=week,
             )
-            away_ctx = self._matchup_engine.compute(
+            away_matchup_ctx = self._matchup_engine.compute(
                 defense_team=home_team,
                 offense_team=away_team,
                 target_season=target_season,
                 max_week=week,
             )
-            self._apply_matchup(home_dists, home_roster, home_ctx)
-            self._apply_matchup(away_dists, away_roster, away_ctx)
+            self._apply_matchup(home_dists, home_roster, home_matchup_ctx)
+            self._apply_matchup(away_dists, away_roster, away_matchup_ctx)
 
         # PFF tier engine (takes precedence over talent stabilizer)
         if self._tier_engine is not None:
@@ -835,16 +955,16 @@ class GameContextBuilder:
             pbp_df = pbp if pbp is not None else self.loader.load_pbp(training_seasons)
 
             # Compute team context (season-level, per-team)
-            home_ctx = None
-            away_ctx = None
+            home_team_ctx = None
+            away_team_ctx = None
             if self._team_context_engine is not None and target_season and week:
-                home_ctx = self._team_context_engine.compute(
+                home_team_ctx = self._team_context_engine.compute(
                     team=home_roster.team,
                     target_season=target_season,
                     max_week=week,
                     pbp=pbp_df,
                 )
-                away_ctx = self._team_context_engine.compute(
+                away_team_ctx = self._team_context_engine.compute(
                     team=away_roster.team,
                     target_season=target_season,
                     max_week=week,
@@ -865,13 +985,13 @@ class GameContextBuilder:
             self._tier_engine.apply_tiers(
                 home_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
-                team_context=home_ctx,
+                team_context=home_team_ctx,
                 cpoe_map=combined_cpoe_map if combined_cpoe_map else None,
             )
             self._tier_engine.apply_tiers(
                 away_roster, self._pff_crosswalk, training_seasons,
                 pbp=pbp_df, nfl_roster=nfl_roster_df, target_season=roster_season,
-                team_context=away_ctx,
+                team_context=away_team_ctx,
                 cpoe_map=combined_cpoe_map if combined_cpoe_map else None,
             )
             _normalize_roster_shares(home_roster)
@@ -890,6 +1010,69 @@ class GameContextBuilder:
             self._talent_stabilizer.stabilize_roster(
                 away_roster, self._pff_crosswalk, training_seasons,
                 nfl_roster=nfl_roster_df, target_season=roster_season,
+            )
+            _normalize_roster_shares(home_roster)
+            _normalize_roster_shares(away_roster)
+
+        if self._rb_scheme_fit_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            rb_scheme_fit_seasons = _seasons_with_target(training_seasons, target_season)
+
+            home_rb_scheme_fit = self._rb_scheme_fit_engine.compute(
+                roster=home_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=rb_scheme_fit_seasons,
+                target_season=target_season,
+                max_week=week,
+            )
+            away_rb_scheme_fit = self._rb_scheme_fit_engine.compute(
+                roster=away_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=rb_scheme_fit_seasons,
+                target_season=target_season,
+                max_week=week,
+            )
+            self._apply_rb_scheme_fit(home_roster, home_rb_scheme_fit)
+            self._apply_rb_scheme_fit(away_roster, away_rb_scheme_fit)
+
+        if self._qb_split_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            qb_split_seasons = _seasons_with_target(training_seasons, target_season)
+
+            home_qb_split = self._qb_split_engine.compute(
+                roster=home_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=qb_split_seasons,
+                target_season=target_season,
+                max_week=week,
+                matchup_context=home_matchup_ctx,
+            )
+            away_qb_split = self._qb_split_engine.compute(
+                roster=away_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=qb_split_seasons,
+                target_season=target_season,
+                max_week=week,
+                matchup_context=away_matchup_ctx,
+            )
+            self._apply_qb_split(home_roster, home_qb_split)
+            self._apply_qb_split(away_roster, away_qb_split)
+
+        if self._depth_role_engine is not None and target_season and week:
+            from fantasy_sim.data.player_builder import _normalize_roster_shares
+
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            self._depth_role_engine.apply(
+                home_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                target_season=target_season,
+                max_week=week,
+            )
+            self._depth_role_engine.apply(
+                away_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                target_season=target_season,
+                max_week=week,
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)

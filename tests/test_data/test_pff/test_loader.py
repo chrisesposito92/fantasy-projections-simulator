@@ -313,6 +313,56 @@ class TestBuildCrosswalk:
         crosswalk = loader.build_crosswalk(pff_data, empty_roster, 2024)
         assert len(crosswalk) == 0
 
+    def test_latest_pff_team_wins_for_name_team_fallback_when_pff_id_missing(self, tmp_path):
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        pff_data = pl.DataFrame(
+            {
+                "player_id": [700, 700],
+                "player": ["Transferred QB", "Transferred QB"],
+                "team": ["LAR", "PIT"],
+                "season": [2023, 2024],
+                "week": [18, 1],
+            }
+        )
+        roster = pl.DataFrame(
+            {
+                "player_id": ["GSIS700"],
+                "player_name": ["Transferred QB"],
+                "team": ["PIT"],
+                "position": ["QB"],
+                "pff_id": [None],
+            }
+        )
+
+        crosswalk = loader.build_crosswalk(pff_data, roster, 2024)
+
+        assert crosswalk == {700: "GSIS700"}
+
+    def test_name_team_fallback_can_match_earlier_team_when_later_team_exists(self, tmp_path):
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        pff_data = pl.DataFrame(
+            {
+                "player_id": [701, 701],
+                "player": ["Moved Player", "Moved Player"],
+                "team": ["KC", "PIT"],
+                "season": [2024, 2024],
+                "week": [3, 10],
+            }
+        )
+        roster = pl.DataFrame(
+            {
+                "player_id": ["GSIS701"],
+                "player_name": ["Moved Player"],
+                "team": ["KC"],
+                "position": ["QB"],
+                "pff_id": [None],
+            }
+        )
+
+        crosswalk = loader.build_crosswalk(pff_data, roster, 2024)
+
+        assert crosswalk == {701: "GSIS701"}
+
 
 # ---------- PffLoader.load_ncaa_facet ----------
 
