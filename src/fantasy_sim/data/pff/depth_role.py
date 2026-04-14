@@ -34,19 +34,6 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
     return float(numerator / denominator)
 
 
-def _bounded_delta_factor(
-    observed: float,
-    baseline: float,
-    sensitivity: float,
-    clamp: tuple[float, float],
-) -> float:
-    lower, upper = clamp
-    if baseline <= 0 or not np.isfinite(observed) or not np.isfinite(baseline):
-        return 1.0
-    factor = 1.0 + (observed - baseline) * sensitivity
-    return float(np.clip(factor, lower, upper))
-
-
 def _safe_numeric_column(column: str) -> pl.Expr:
     return pl.coalesce([pl.col(column).cast(pl.Float64), pl.lit(0.0)])
 
@@ -237,10 +224,17 @@ class DepthRoleEngine:
     def _efficiency_position_config(self, position: str):
         return self._config.efficiency.wr if position == "WR" else self._config.efficiency.te
 
+    def _volume_mutations_enabled(self) -> bool:
+        return self._config.enabled and not self._config.efficiency.enabled
+
+    def _efficiency_mutations_enabled(self) -> bool:
+        return self._config.enabled and self._config.efficiency.enabled
+
     def _blended_role_row(
         self,
         current_row: dict | None,
         previous_row: dict | None,
+        min_games: int,
     ) -> dict | None:
         if current_row is not None and not current_row["team_coverage_complete"]:
             return None
@@ -255,11 +249,11 @@ class DepthRoleEngine:
         if (
             not self._config.early_season_blend
             or previous_row is None
-            or current_row["games"] >= self._config.min_games
+            or current_row["games"] >= min_games
         ):
             return current_row
 
-        weight = current_row["games"] / max(self._config.min_games, 1)
+        weight = current_row["games"] / max(min_games, 1)
         return {
             "target_role": weight * current_row["target_role"]
             + (1.0 - weight) * previous_row["target_role"],
@@ -309,12 +303,13 @@ class DepthRoleEngine:
             self._config.efficiency.yards_scale_clamp,
         )
 
-        player.outcomes.catch_rate = float(
-            np.clip(player.outcomes.catch_rate * catch_factor, 0.0, 1.0)
-        )
+        old_catch_rate = player.outcomes.catch_rate
+        new_catch_rate = float(np.clip(old_catch_rate * catch_factor, 0.0, 1.0))
+        catch_ratio = _safe_ratio(new_catch_rate, old_catch_rate)
+        player.outcomes.catch_rate = new_catch_rate
         if player.outcomes.red_zone_catch_rate > 0:
             player.outcomes.red_zone_catch_rate = float(
-                np.clip(player.outcomes.red_zone_catch_rate * catch_factor, 0.0, 1.0)
+                np.clip(player.outcomes.red_zone_catch_rate * catch_ratio, 0.0, 1.0)
             )
         if player.outcomes.receiving_yards_dist is not None:
             player.outcomes.receiving_yards_dist = (
@@ -357,30 +352,43 @@ class DepthRoleEngine:
             if player.position not in self._config.positions:
                 continue
 
-            row = self._blended_role_row(
-                current_rows.get(player.player_id),
-                previous_rows.get(player.player_id),
-            )
-            if row is None:
-                continue
-            if row["routes"] < self._config.min_routes or row["targets"] < self._config.min_targets:
-                continue
+            current_row = current_rows.get(player.player_id)
+            previous_row = previous_rows.get(player.player_id)
 
-            position_cfg = self._position_config(player.position)
-            factors = DepthRoleFactors(
-                target_share_factor=_bounded_ratio_factor(
-                    row["target_role"],
-                    player.usage.target_share,
-                    position_cfg.target_share_sensitivity,
-                    position_cfg.factor_clamp,
-                ),
-                air_yards_share_factor=_bounded_ratio_factor(
-                    row["air_role"],
-                    player.usage.air_yards_share,
-                    position_cfg.air_yards_share_sensitivity,
-                    position_cfg.factor_clamp,
-                ),
-            )
-            player.usage.target_share *= factors.target_share_factor
-            player.usage.air_yards_share *= factors.air_yards_share_factor
-            self._apply_efficiency(player, row)
+            if self._volume_mutations_enabled():
+                volume_row = self._blended_role_row(
+                    current_row,
+                    previous_row,
+                    min_games=self._config.min_games,
+                )
+                if (
+                    volume_row is not None
+                    and volume_row["routes"] >= self._config.min_routes
+                    and volume_row["targets"] >= self._config.min_targets
+                ):
+                    position_cfg = self._position_config(player.position)
+                    factors = DepthRoleFactors(
+                        target_share_factor=_bounded_ratio_factor(
+                            volume_row["target_role"],
+                            player.usage.target_share,
+                            position_cfg.target_share_sensitivity,
+                            position_cfg.factor_clamp,
+                        ),
+                        air_yards_share_factor=_bounded_ratio_factor(
+                            volume_row["air_role"],
+                            player.usage.air_yards_share,
+                            position_cfg.air_yards_share_sensitivity,
+                            position_cfg.factor_clamp,
+                        ),
+                    )
+                    player.usage.target_share *= factors.target_share_factor
+                    player.usage.air_yards_share *= factors.air_yards_share_factor
+
+            if self._efficiency_mutations_enabled():
+                efficiency_row = self._blended_role_row(
+                    current_row,
+                    previous_row,
+                    min_games=self._config.efficiency.min_games,
+                )
+                if efficiency_row is not None:
+                    self._apply_efficiency(player, efficiency_row)
