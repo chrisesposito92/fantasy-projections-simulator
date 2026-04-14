@@ -445,14 +445,12 @@ Observed run caveat from the receiver/QB slices:
 - legacy `market_history_weekly_2023.parquet` and `market_history_weekly_2024.parquet` exist locally
 - `rushing_direction` is present locally but stored as nested `directions` rows, so RB scheme-fit remains deferred
 - the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
-- the focused Phase 5B marginal validation artifact ran as `phase-5-depth-role-efficiency-v2`
+- the focused Phase 5B decision artifact ran as
+  `phase-5-depth-role-efficiency-v2-activated`
 - the Phase 5B run stayed effectively flat and is not promotable:
-  - `rank_corr delta:  +0.0002`
+  - `rank_corr delta:  +0.0000`
   - `weekly_mae delta: -0.002`
-  - `season_mae delta: -0.017`
-- the Phase 5B run did not activate the intended slice in the coverage header:
-  - `pff.depth_role=disabled`
-  - `pff.depth_role.efficiency=disabled`
+  - `season_mae delta: +0.030`
 - current default state remains `pff.depth_role.enabled: false`
 - current default state remains `pff.depth_role.efficiency.enabled: false`
 - current Phase 5A evidence is not promotable:
@@ -462,10 +460,21 @@ Observed run caveat from the receiver/QB slices:
 
 ### Immediate Next Phase 5 Decision
 
-- decide whether to rerun `WR/TE efficiency v2` with the parent
-  `pff.depth_role` family explicitly enabled so the slice is actually active
-- do not auto-promote or auto-bundle Phase 5A and Phase 5B from the current v2
-  artifact
+- decide whether to retune `WR/TE efficiency v2`
+- or move on to the later deferred Phase 5 follow-ons
+- do not auto-promote or auto-bundle Phase 5A and Phase 5B from the current
+  evidence
+
+### Superseded Setup Artifact
+
+- `phase-5-depth-role-efficiency-v2`
+- top-line deltas:
+  - `rank_corr delta:  +0.0002`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: -0.017`
+- this earlier row is preserved as a setup/debug artifact, but it is not the
+  Phase 5B decision record because the coverage header left the depth-role
+  family disabled
 
 ### Deferred Phase 5 Follow-Ons
 
@@ -627,6 +636,7 @@ Useful reference points from the preserved local unified ledger snapshot:
 | `phase-4-rb-efficiency-v1` | `-0.0003` | `+0.000` | `-0.063` |
 | `phase-5-depth-role-v1` | `-0.0005` | `+0.002` | `+0.013` |
 | `phase-5-depth-role-efficiency-v2` | `+0.0002` | `-0.002` | `-0.017` |
+| `phase-5-depth-role-efficiency-v2-activated` | `+0.0000` | `-0.002` | `+0.030` |
 
 Interpretation:
 

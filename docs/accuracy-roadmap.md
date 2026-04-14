@@ -508,7 +508,7 @@ What follows from the current artifact set:
 ### Status
 
 - Phase 5A `WR/TE Depth-Role V1`: implemented, validated, not promoted
-- current Phase 5 priority: `WR/TE efficiency v2`
+- Phase 5B `WR/TE efficiency v2`: implemented, validated, not promoted
 - explicitly deferred:
   - `QB split engine`
   - `RB scheme-fit engine`
@@ -547,23 +547,29 @@ What follows from the current artifact set:
 
 ### Phase 5B Validation Artifact
 
-- label: `phase-5-depth-role-efficiency-v2`
+- decision artifact label: `phase-5-depth-role-efficiency-v2-activated`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
 - coverage:
-  - `pff.depth_role.efficiency=disabled`
+  - `pff.depth_role=full(2022,2023,2024)`
+  - `pff.depth_role.wr=full(2022,2023,2024)`
+  - `pff.depth_role.te=full(2022,2023,2024)`
+  - `pff.depth_role.efficiency=full(2022,2023,2024)`
 - result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: +0.030`
+
+Superseded setup artifact:
+
+- `phase-5-depth-role-efficiency-v2`
+- top-line deltas:
   - `rank_corr delta:  +0.0002`
   - `weekly_mae delta: -0.002`
   - `season_mae delta: -0.017`
-
-Observed run note:
-
-- the command completed and printed explicit coverage, but the header still
-  showed `pff.depth_role=disabled`, `pff.depth_role.wr=disabled`,
-  `pff.depth_role.te=disabled`, and `pff.depth_role.efficiency=disabled`
-- this means the recorded artifact is flat and non-promotable, but it is not a
-  clean activated `defaults` vs `defaults + efficiency v2` comparison
+- this earlier row is useful as a setup/debug artifact, but it is not the
+  Phase 5B decision record because the coverage header left the depth-role
+  family disabled
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 
