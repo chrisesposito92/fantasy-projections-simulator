@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import polars as pl
 
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.pff.models import (
@@ -85,6 +86,65 @@ def test_qb_split_engine_not_created_without_matchup_dependency(tmp_path):
     assert builder._matchup_engine is None
     assert builder._qb_split_engine is None
     mock_logger.info.assert_any_call("PFF QB split requested but matchup engine unavailable; qb split disabled")
+
+
+def test_ensure_pff_crosswalk_includes_target_season_summaries_for_target_only_qb(tmp_path):
+    builder = GameContextBuilder(cache_dir=tmp_path / "cache")
+    builder._pff_loader = MagicMock()
+    builder.loader.load_rosters = MagicMock(
+        return_value=pl.DataFrame(
+            {
+                "player_id": ["KC_QB"],
+                "player_name": ["QB One"],
+                "team": ["KC"],
+                "position": ["QB"],
+                "pff_id": [101],
+            }
+        )
+    )
+
+    empty_summary = pl.DataFrame({"player_id": [], "player": [], "team": []})
+    target_only_passing = pl.DataFrame(
+        {
+            "player_id": [101],
+            "player": ["QB One"],
+            "team": ["KC"],
+        }
+    )
+
+    def _load_facet(facet: str, seasons: list[int]) -> pl.DataFrame:
+        if facet != "passing_summary":
+            return empty_summary
+        if seasons == [2023]:
+            return empty_summary
+        if seasons == [2023, 2024]:
+            return target_only_passing
+        raise AssertionError(f"Unexpected seasons for {facet}: {seasons}")
+
+    builder._pff_loader.load_facet.side_effect = _load_facet
+    builder._pff_loader.build_crosswalk.return_value = {101: "KC_QB"}
+
+    builder._ensure_pff_crosswalk(training_seasons=[2023], target_season=2024)
+
+    assert builder._pff_crosswalk == {101: "KC_QB"}
+    builder._pff_loader.build_crosswalk.assert_called_once()
+    pff_data, nfl_roster, roster_season = builder._pff_loader.build_crosswalk.call_args.args
+    assert pff_data.to_dicts() == [{"player_id": 101, "player": "QB One", "team": "KC"}]
+    assert nfl_roster.to_dicts() == [
+        {
+            "player_id": "KC_QB",
+            "player_name": "QB One",
+            "team": "KC",
+            "position": "QB",
+            "pff_id": 101,
+        }
+    ]
+    assert roster_season == 2024
+    assert [call.args for call in builder._pff_loader.load_facet.call_args_list] == [
+        ("receiving_summary", [2023, 2024]),
+        ("rushing_summary", [2023, 2024]),
+        ("passing_summary", [2023, 2024]),
+    ]
 
 
 def test_build_game_applies_qb_split_after_tier_before_depth_role(tmp_path):

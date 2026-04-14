@@ -161,6 +161,21 @@ def test_compute_returns_neutral_when_qb_crosswalk_is_missing():
     assert factors == QbSplitFactors()
 
 
+def test_compute_returns_neutral_when_pff_crosswalk_is_none():
+    engine = _engine(_passing_detail_df())
+
+    factors = engine.compute(
+        roster=_make_roster("KC"),
+        pff_crosswalk=None,
+        training_seasons=[2023, 2024],
+        target_season=2024,
+        max_week=4,
+        matchup_context=MatchupContext(sack_rate_factor=1.15, ol_pass_block_factor=0.90),
+    )
+
+    assert factors == QbSplitFactors()
+
+
 def test_compute_penalizes_pressure_sensitive_qb_in_tough_matchup():
     engine = _engine(_passing_detail_df())
 

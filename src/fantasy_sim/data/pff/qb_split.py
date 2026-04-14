@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 import numpy as np
 import polars as pl
@@ -213,7 +214,7 @@ class QbSplitEngine:
     def compute(
         self,
         roster: TeamRoster,
-        pff_crosswalk: dict[int, str],
+        pff_crosswalk: Mapping[int, str] | None,
         training_seasons: list[int],
         target_season: int,
         max_week: int,
@@ -226,6 +227,8 @@ class QbSplitEngine:
             matchup_context.sack_rate_factor * matchup_context.ol_pass_block_factor
         )
         if np.isclose(pressure_environment, 1.0):
+            return QbSplitFactors()
+        if not pff_crosswalk:
             return QbSplitFactors()
 
         starter_qb = roster.get_starting_qb()

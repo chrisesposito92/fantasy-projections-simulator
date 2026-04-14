@@ -676,9 +676,10 @@ class GameContextBuilder:
         if self._pff_crosswalk is not None or self._pff_loader is None:
             return
 
+        seasons = _seasons_with_target(training_seasons, target_season)
         frames = []
         for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-            df = self._pff_loader.load_facet(facet, training_seasons)
+            df = self._pff_loader.load_facet(facet, seasons)
             if not df.is_empty():
                 frames.append(df.select(["player_id", "player", "team"]))
         if not frames:
