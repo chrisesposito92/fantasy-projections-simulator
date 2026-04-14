@@ -358,6 +358,12 @@ def collect_signal_coverage(
         ("pff", "depth_role"),
         nested_path=("depth_role",),
     )
+    qb_split_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "qb_split"),
+        nested_path=("qb_split",),
+    )
     depth_role_efficiency_enabled = (
         pff_enabled
         and depth_role_enabled
@@ -623,6 +629,14 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    qb_split_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"passing_detail_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
         season: [
             pff_path / f"receiving_depth_{season}.parquet",
@@ -783,6 +797,15 @@ def collect_signal_coverage(
             note=(
                 "Requires receiving_depth parquet, the PFF summary trio, "
                 "and rosters_weekly cache to build the PFF crosswalk"
+            ),
+        ),
+        "pff.qb_split": _build_signal(
+            pff_enabled and qb_split_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, qb_split_paths_by_season),
+            note=(
+                "Requires passing_detail parquet, passing_summary parquet, "
+                "and rosters_weekly cache to build the PFF QB crosswalk"
             ),
         ),
         "pff.depth_role.wr": _build_signal(

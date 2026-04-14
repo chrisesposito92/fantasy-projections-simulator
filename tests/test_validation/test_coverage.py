@@ -357,6 +357,80 @@ def test_pff_depth_role_reports_none_when_summary_trio_is_missing(tmp_path):
     )
 
 
+def test_pff_qb_split_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"passing_detail_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"passing_summary_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
+
+
+def test_pff_qb_split_reports_partial_when_one_season_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "passing_detail_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "passing_summary_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"].status == "partial"
+    assert coverage["pff.qb_split"].covered_seasons == [2023]
+    assert coverage["pff.qb_split"].missing_seasons == [2024]
+
+
+def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "passing_detail_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "passing_summary_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].qb_split.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.qb_split"].status == "disabled"
+
+
 def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
