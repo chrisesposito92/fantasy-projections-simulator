@@ -390,6 +390,68 @@ def test_compute_ignores_rare_buckets_and_returns_neutral_when_no_classified_att
     assert factors == {}
 
 
+def test_flatten_direction_rows_handles_nested_duplicate_field_names():
+    loader = MagicMock()
+    loader.load_facet.return_value = pl.DataFrame(
+        {
+            "season": [2024],
+            "week": [3],
+            "team": ["TEN"],
+            "franchise_id": [10],
+            "player_id": [101],
+            "position": ["RB"],
+            "game_id": [2],
+            "directions": [[
+                {
+                    "direction": "ML",
+                    "attempts": 4,
+                    "yards": 20,
+                    "ypa": 5.0,
+                    "player_id": 101,
+                    "franchise_id": 10,
+                },
+                {
+                    "direction": "RE",
+                    "attempts": 3,
+                    "yards": 12,
+                    "ypa": 4.0,
+                    "player_id": 101,
+                    "franchise_id": 10,
+                },
+            ]],
+        }
+    )
+    engine = RbSchemeFitEngine(loader, RbSchemeFitConfig(enabled=True))
+
+    flattened = engine._flatten_direction_rows(
+        seasons=[2024],
+        target_season=2024,
+        max_week=4,
+        pff_crosswalk={101: "ten_rb"},
+    )
+
+    assert flattened.to_dicts() == [
+        {
+            "season": 2024,
+            "team": "TEN",
+            "player_id": "ten_rb",
+            "game_id": 2,
+            "family": "interior",
+            "attempts": 4.0,
+            "yards": 20.0,
+        },
+        {
+            "season": 2024,
+            "team": "TEN",
+            "player_id": "ten_rb",
+            "game_id": 2,
+            "family": "edge",
+            "attempts": 3.0,
+            "yards": 12.0,
+        },
+    ]
+
+
 def test_compute_uses_previous_season_for_early_blend():
     loader = MagicMock()
     loader.load_facet.side_effect = lambda facet, seasons: (

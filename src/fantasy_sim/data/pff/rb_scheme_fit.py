@@ -63,9 +63,14 @@ class RbSchemeFitEngine:
             return pl.DataFrame()
 
         exploded = (
-            filtered.explode("directions")
+            filtered.select(["season", "team", "player_id", "game_id", "directions"])
+            .explode("directions")
             .drop_nulls("directions")
-            .unnest("directions")
+            .with_columns(
+                pl.col("directions").struct.field("direction").alias("direction"),
+                pl.col("directions").struct.field("attempts").alias("attempts"),
+                pl.col("directions").struct.field("yards").alias("yards"),
+            )
             .with_columns(
                 pl.when(pl.col("direction").is_in(list(_INTERIOR_DIRECTIONS)))
                 .then(pl.lit("interior"))
@@ -74,6 +79,7 @@ class RbSchemeFitEngine:
                 .otherwise(pl.lit(None))
                 .alias("family")
             )
+            .drop("directions")
             .filter(pl.col("family").is_not_null())
             .rename({"player_id": "pff_player_id"})
             .join(reverse_crosswalk, on="pff_player_id", how="inner")
