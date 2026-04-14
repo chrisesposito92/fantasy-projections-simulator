@@ -12,6 +12,7 @@ from fantasy_sim.data.pff.models import (
     MatchupConfig,
     MatchupContext,
     PffConfig,
+    QbSplitConfig,
     TalentConfig,
 )
 
@@ -247,6 +248,52 @@ def test_load_pff_config_depth_role_custom_values():
     assert cfg.depth_role.te.target_share_sensitivity == 0.07
     assert cfg.depth_role.te.air_yards_share_sensitivity == 0.05
     assert cfg.depth_role.te.factor_clamp == (0.96, 1.04)
+
+
+def test_load_pff_config_qb_split_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.qb_split, QbSplitConfig)
+    assert cfg.qb_split.enabled is False
+    assert cfg.qb_split.completion_sensitivity == 0.10
+    assert cfg.qb_split.yards_sensitivity == 0.12
+    assert cfg.qb_split.catch_rate_clamp == (0.95, 1.05)
+    assert cfg.qb_split.yards_scale_clamp == (0.94, 1.06)
+    assert cfg.qb_split.min_pressure_dropbacks == 20
+    assert cfg.qb_split.min_clean_dropbacks == 40
+    assert cfg.qb_split.min_games == 4
+    assert cfg.qb_split.early_season_blend is True
+
+
+def test_load_pff_config_qb_split_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "qb_split": {
+                    "enabled": True,
+                    "completion_sensitivity": 0.18,
+                    "yards_sensitivity": 0.16,
+                    "catch_rate_clamp": [0.96, 1.04],
+                    "yards_scale_clamp": [0.95, 1.05],
+                    "min_pressure_dropbacks": 28,
+                    "min_clean_dropbacks": 55,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                },
+            }
+        }
+    )
+
+    assert cfg.qb_split.enabled is True
+    assert cfg.qb_split.completion_sensitivity == 0.18
+    assert cfg.qb_split.yards_sensitivity == 0.16
+    assert cfg.qb_split.catch_rate_clamp == (0.96, 1.04)
+    assert cfg.qb_split.yards_scale_clamp == (0.95, 1.05)
+    assert cfg.qb_split.min_pressure_dropbacks == 28
+    assert cfg.qb_split.min_clean_dropbacks == 55
+    assert cfg.qb_split.min_games == 5
+    assert cfg.qb_split.early_season_blend is False
 
 
 def test_load_pff_config_depth_role_efficiency_defaults():

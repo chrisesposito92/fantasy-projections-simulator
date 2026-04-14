@@ -202,6 +202,24 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"].depth_role.enabled is True
         assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
 
+    def test_pff_qb_split_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.qb_split.enabled=true",
+                "pff.qb_split.completion_sensitivity=0.17",
+                "pff.qb_split.min_pressure_dropbacks=24",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].qb_split.enabled is True
+        assert configs["pff_config"].qb_split.completion_sensitivity == 0.17
+        assert configs["pff_config"].qb_split.min_pressure_dropbacks == 24
+
     def test_pff_depth_role_efficiency_override_propagates(self):
         defaults = load_defaults()
         overridden = apply_overrides(

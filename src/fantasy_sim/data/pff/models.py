@@ -287,6 +287,27 @@ class DepthRoleFactors:
 
 
 @dataclass
+class QbSplitConfig:
+    """Configuration for QB pressure vs clean-pocket split adjustments."""
+    enabled: bool = False
+    completion_sensitivity: float = 0.10
+    yards_sensitivity: float = 0.12
+    catch_rate_clamp: tuple[float, float] = (0.95, 1.05)
+    yards_scale_clamp: tuple[float, float] = (0.94, 1.06)
+    min_pressure_dropbacks: int = 20
+    min_clean_dropbacks: int = 40
+    min_games: int = 4
+    early_season_blend: bool = True
+
+
+@dataclass
+class QbSplitFactors:
+    """Per-QB bounded pressure split adjustments."""
+    catch_rate_factor: float = 1.0
+    yards_scale_factor: float = 1.0
+
+
+@dataclass
 class KickerConfig:
     """Configuration for the PFF kicker engine."""
     enabled: bool = True
@@ -323,5 +344,6 @@ class PffConfig:
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
     depth_role: DepthRoleConfig = field(default_factory=DepthRoleConfig)
+    qb_split: QbSplitConfig = field(default_factory=QbSplitConfig)
     kicker: KickerConfig = field(default_factory=KickerConfig)
     dst_baseline: DstBaselineConfig = field(default_factory=DstBaselineConfig)

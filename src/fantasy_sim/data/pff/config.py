@@ -16,6 +16,7 @@ from fantasy_sim.data.pff.models import (
     NcaaRookieConfig,
     PffConfig,
     PositionGradeConfig,
+    QbSplitConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
     TeamContextConfig,
@@ -262,6 +263,19 @@ def load_pff_config(config: dict) -> PffConfig:
         ),
     )
 
+    qb_split_raw = pff.get("qb_split", {})
+    qb_split = QbSplitConfig(
+        enabled=qb_split_raw.get("enabled", False),
+        completion_sensitivity=qb_split_raw.get("completion_sensitivity", 0.10),
+        yards_sensitivity=qb_split_raw.get("yards_sensitivity", 0.12),
+        catch_rate_clamp=tuple(qb_split_raw.get("catch_rate_clamp", [0.95, 1.05])),
+        yards_scale_clamp=tuple(qb_split_raw.get("yards_scale_clamp", [0.94, 1.06])),
+        min_pressure_dropbacks=qb_split_raw.get("min_pressure_dropbacks", 20),
+        min_clean_dropbacks=qb_split_raw.get("min_clean_dropbacks", 40),
+        min_games=qb_split_raw.get("min_games", 4),
+        early_season_blend=qb_split_raw.get("early_season_blend", True),
+    )
+
     kicker_raw = pff.get("kicker", {})
     kicker = KickerConfig(
         enabled=kicker_raw.get("enabled", True),
@@ -287,6 +301,7 @@ def load_pff_config(config: dict) -> PffConfig:
         team_context=team_context,
         coverage=coverage,
         depth_role=depth_role,
+        qb_split=qb_split,
         kicker=kicker,
         dst_baseline=dst_baseline,
     )
