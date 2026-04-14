@@ -40,7 +40,11 @@ def _make_roster(team: str) -> TeamRoster:
                 "QB",
                 team,
                 PlayerUsage(snap_share=1.0, carry_share=0.12, scramble_rate=0.18),
-                PlayerOutcomes(rushing_yards_dist=np.array([4.0, 7.0])),
+                PlayerOutcomes(
+                    rushing_yards_dist=np.array([4.0, 7.0]),
+                    rushing_td_factor=1.19,
+                    i5_rushing_td_factor=1.27,
+                ),
             ),
             PlayerModel(
                 f"{team}_RB1",
@@ -54,7 +58,12 @@ def _make_roster(team: str) -> TeamRoster:
                     outer_rz_carry_share=0.52,
                     goal_line_carry_share=0.65,
                 ),
-                PlayerOutcomes(rushing_yards_dist=np.array([3.0, 5.0, 8.0])),
+                PlayerOutcomes(
+                    rushing_yards_dist=np.array([3.0, 5.0, 8.0]),
+                    receiving_td_factor=0.91,
+                    rushing_td_factor=1.14,
+                    i5_rushing_td_factor=1.31,
+                ),
             ),
             PlayerModel(
                 f"{team}_RB2",
@@ -68,7 +77,12 @@ def _make_roster(team: str) -> TeamRoster:
                     outer_rz_carry_share=0.16,
                     goal_line_carry_share=0.10,
                 ),
-                PlayerOutcomes(rushing_yards_dist=np.array([2.0, 4.0, 6.0])),
+                PlayerOutcomes(
+                    rushing_yards_dist=np.array([2.0, 4.0, 6.0]),
+                    receiving_td_factor=1.08,
+                    rushing_td_factor=0.87,
+                    i5_rushing_td_factor=1.22,
+                ),
             ),
             PlayerModel(
                 f"{team}_WR1",
@@ -80,6 +94,9 @@ def _make_roster(team: str) -> TeamRoster:
                     catch_rate=0.66,
                     red_zone_catch_rate=0.61,
                     receiving_yards_dist=np.array([9.0, 14.0]),
+                    receiving_td_factor=1.17,
+                    rushing_td_factor=0.95,
+                    i5_rushing_td_factor=0.89,
                 ),
             ),
         ],
@@ -181,38 +198,60 @@ def test_apply_rb_scheme_fit_only_mutates_rb_rushing_yards_dist():
     original_qb_carry_share = qb.usage.carry_share
     original_qb_scramble_rate = qb.usage.scramble_rate
     original_qb_rushing_yards = qb.outcomes.rushing_yards_dist.copy()
+    original_qb_rushing_td_factor = qb.outcomes.rushing_td_factor
+    original_qb_i5_rushing_td_factor = qb.outcomes.i5_rushing_td_factor
     original_rb1_carry_share = rb1.usage.carry_share
     original_rb1_rz_carry_share = rb1.usage.red_zone_carry_share
     original_rb1_outer_rz_carry_share = rb1.usage.outer_rz_carry_share
     original_rb1_goal_line_carry_share = rb1.usage.goal_line_carry_share
     original_rb1_rushing_yards = rb1.outcomes.rushing_yards_dist.copy()
+    original_rb1_receiving_td_factor = rb1.outcomes.receiving_td_factor
+    original_rb1_rushing_td_factor = rb1.outcomes.rushing_td_factor
+    original_rb1_i5_rushing_td_factor = rb1.outcomes.i5_rushing_td_factor
     original_rb2_carry_share = rb2.usage.carry_share
     original_rb2_goal_line_carry_share = rb2.usage.goal_line_carry_share
     original_rb2_rushing_yards = rb2.outcomes.rushing_yards_dist.copy()
+    original_rb2_receiving_td_factor = rb2.outcomes.receiving_td_factor
+    original_rb2_rushing_td_factor = rb2.outcomes.rushing_td_factor
+    original_rb2_i5_rushing_td_factor = rb2.outcomes.i5_rushing_td_factor
     original_wr_target_share = wr.usage.target_share
     original_wr_air_yards_share = wr.usage.air_yards_share
     original_wr_catch_rate = wr.outcomes.catch_rate
     original_wr_rz_catch_rate = wr.outcomes.red_zone_catch_rate
     original_wr_receiving_yards = wr.outcomes.receiving_yards_dist.copy()
+    original_wr_receiving_td_factor = wr.outcomes.receiving_td_factor
+    original_wr_rushing_td_factor = wr.outcomes.rushing_td_factor
+    original_wr_i5_rushing_td_factor = wr.outcomes.i5_rushing_td_factor
 
     GameContextBuilder._apply_rb_scheme_fit(roster, None)
 
     assert qb.usage.carry_share == original_qb_carry_share
     assert qb.usage.scramble_rate == original_qb_scramble_rate
     np.testing.assert_allclose(qb.outcomes.rushing_yards_dist, original_qb_rushing_yards)
+    assert qb.outcomes.rushing_td_factor == original_qb_rushing_td_factor
+    assert qb.outcomes.i5_rushing_td_factor == original_qb_i5_rushing_td_factor
     assert rb1.usage.carry_share == original_rb1_carry_share
     assert rb1.usage.red_zone_carry_share == original_rb1_rz_carry_share
     assert rb1.usage.outer_rz_carry_share == original_rb1_outer_rz_carry_share
     assert rb1.usage.goal_line_carry_share == original_rb1_goal_line_carry_share
     np.testing.assert_allclose(rb1.outcomes.rushing_yards_dist, original_rb1_rushing_yards)
+    assert rb1.outcomes.receiving_td_factor == original_rb1_receiving_td_factor
+    assert rb1.outcomes.rushing_td_factor == original_rb1_rushing_td_factor
+    assert rb1.outcomes.i5_rushing_td_factor == original_rb1_i5_rushing_td_factor
     assert rb2.usage.carry_share == original_rb2_carry_share
     assert rb2.usage.goal_line_carry_share == original_rb2_goal_line_carry_share
     np.testing.assert_allclose(rb2.outcomes.rushing_yards_dist, original_rb2_rushing_yards)
+    assert rb2.outcomes.receiving_td_factor == original_rb2_receiving_td_factor
+    assert rb2.outcomes.rushing_td_factor == original_rb2_rushing_td_factor
+    assert rb2.outcomes.i5_rushing_td_factor == original_rb2_i5_rushing_td_factor
     assert wr.usage.target_share == original_wr_target_share
     assert wr.usage.air_yards_share == original_wr_air_yards_share
     assert wr.outcomes.catch_rate == original_wr_catch_rate
     assert wr.outcomes.red_zone_catch_rate == original_wr_rz_catch_rate
     np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, original_wr_receiving_yards)
+    assert wr.outcomes.receiving_td_factor == original_wr_receiving_td_factor
+    assert wr.outcomes.rushing_td_factor == original_wr_rushing_td_factor
+    assert wr.outcomes.i5_rushing_td_factor == original_wr_i5_rushing_td_factor
 
     GameContextBuilder._apply_rb_scheme_fit(
         roster,
@@ -222,16 +261,27 @@ def test_apply_rb_scheme_fit_only_mutates_rb_rushing_yards_dist():
     assert qb.usage.carry_share == original_qb_carry_share
     assert qb.usage.scramble_rate == original_qb_scramble_rate
     np.testing.assert_allclose(qb.outcomes.rushing_yards_dist, original_qb_rushing_yards)
+    assert qb.outcomes.rushing_td_factor == original_qb_rushing_td_factor
+    assert qb.outcomes.i5_rushing_td_factor == original_qb_i5_rushing_td_factor
     assert rb1.usage.carry_share == original_rb1_carry_share
     assert rb1.usage.red_zone_carry_share == original_rb1_rz_carry_share
     assert rb1.usage.outer_rz_carry_share == original_rb1_outer_rz_carry_share
     assert rb1.usage.goal_line_carry_share == original_rb1_goal_line_carry_share
     np.testing.assert_allclose(rb1.outcomes.rushing_yards_dist, original_rb1_rushing_yards * 1.10)
+    assert rb1.outcomes.receiving_td_factor == original_rb1_receiving_td_factor
+    assert rb1.outcomes.rushing_td_factor == original_rb1_rushing_td_factor
+    assert rb1.outcomes.i5_rushing_td_factor == original_rb1_i5_rushing_td_factor
     assert rb2.usage.carry_share == original_rb2_carry_share
     assert rb2.usage.goal_line_carry_share == original_rb2_goal_line_carry_share
     np.testing.assert_allclose(rb2.outcomes.rushing_yards_dist, original_rb2_rushing_yards)
+    assert rb2.outcomes.receiving_td_factor == original_rb2_receiving_td_factor
+    assert rb2.outcomes.rushing_td_factor == original_rb2_rushing_td_factor
+    assert rb2.outcomes.i5_rushing_td_factor == original_rb2_i5_rushing_td_factor
     assert wr.usage.target_share == original_wr_target_share
     assert wr.usage.air_yards_share == original_wr_air_yards_share
     assert wr.outcomes.catch_rate == original_wr_catch_rate
     assert wr.outcomes.red_zone_catch_rate == original_wr_rz_catch_rate
     np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, original_wr_receiving_yards)
+    assert wr.outcomes.receiving_td_factor == original_wr_receiving_td_factor
+    assert wr.outcomes.rushing_td_factor == original_wr_rushing_td_factor
+    assert wr.outcomes.i5_rushing_td_factor == original_wr_i5_rushing_td_factor
