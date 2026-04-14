@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 5B efficiency validation result.
+Research snapshot updated through the Phase 5C qb-split validation result.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
