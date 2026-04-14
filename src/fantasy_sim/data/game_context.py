@@ -135,14 +135,17 @@ class GameContextBuilder:
             )
             logger.info("PFF depth-role engine enabled")
 
-        if self._pff_config.enabled and self._pff_config.qb_split.enabled and self._pff_loader:
-            from fantasy_sim.data.pff.qb_split import QbSplitEngine
+        if self._pff_config.enabled and self._pff_config.qb_split.enabled:
+            if self._matchup_engine is not None and self._pff_loader:
+                from fantasy_sim.data.pff.qb_split import QbSplitEngine
 
-            self._qb_split_engine = QbSplitEngine(
-                self._pff_loader,
-                self._pff_config.qb_split,
-            )
-            logger.info("PFF QB split engine enabled")
+                self._qb_split_engine = QbSplitEngine(
+                    self._pff_loader,
+                    self._pff_config.qb_split,
+                )
+                logger.info("PFF QB split engine enabled")
+            else:
+                logger.info("PFF QB split requested but matchup engine unavailable; qb split disabled")
 
         self._coverage_engine = None
 

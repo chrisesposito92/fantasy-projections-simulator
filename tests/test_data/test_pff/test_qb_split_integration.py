@@ -3,7 +3,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from fantasy_sim.data.game_context import GameContextBuilder
-from fantasy_sim.data.pff.models import MatchupContext, PffConfig, QbSplitConfig, QbSplitFactors
+from fantasy_sim.data.pff.models import (
+    MatchupConfig,
+    MatchupContext,
+    PffConfig,
+    QbSplitConfig,
+    QbSplitFactors,
+)
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
     DriveStartModel,
@@ -62,6 +68,23 @@ def test_qb_split_engine_created_when_enabled(tmp_path):
 
     assert builder._qb_split_engine is mock_engine.return_value
     mock_engine.assert_called_once_with(mock_loader.return_value, pff_config.qb_split)
+
+
+def test_qb_split_engine_not_created_without_matchup_dependency(tmp_path):
+    pff_config = PffConfig(
+        enabled=True,
+        matchup=MatchupConfig(enabled=False),
+        qb_split=QbSplitConfig(enabled=True),
+    )
+
+    with patch("fantasy_sim.data.pff.loader.PffLoader") as mock_loader:
+        mock_loader.return_value.is_available.return_value = True
+        with patch("fantasy_sim.data.game_context.logger") as mock_logger:
+            builder = GameContextBuilder(cache_dir=tmp_path / "cache", pff_config=pff_config)
+
+    assert builder._matchup_engine is None
+    assert builder._qb_split_engine is None
+    mock_logger.info.assert_any_call("PFF QB split requested but matchup engine unavailable; qb split disabled")
 
 
 def test_build_game_applies_qb_split_after_tier_before_depth_role(tmp_path):
@@ -143,8 +166,23 @@ def test_build_game_applies_qb_split_after_tier_before_depth_role(tmp_path):
 
 def test_apply_qb_split_only_mutates_pass_catcher_efficiency_fields():
     roster = _make_roster("KC")
+    roster.players.append(
+        PlayerModel(
+            "KC_TE1",
+            "TE One",
+            "TE",
+            "KC",
+            PlayerUsage(target_share=0.18, air_yards_share=0.14),
+            PlayerOutcomes(
+                catch_rate=0.70,
+                red_zone_catch_rate=0.0,
+                receiving_yards_dist=np.array([7.0, 9.0]),
+            ),
+        )
+    )
     qb = next(player for player in roster.players if player.position == "QB")
     wr = next(player for player in roster.players if player.position == "WR")
+    te = next(player for player in roster.players if player.position == "TE")
 
     original_qb_catch_rate = qb.outcomes.catch_rate
     original_qb_scramble_rate = qb.usage.scramble_rate
@@ -153,6 +191,9 @@ def test_apply_qb_split_only_mutates_pass_catcher_efficiency_fields():
     original_catch_rate = wr.outcomes.catch_rate
     original_rz_catch_rate = wr.outcomes.red_zone_catch_rate
     original_receiving_yards = wr.outcomes.receiving_yards_dist.copy()
+    original_te_target_share = te.usage.target_share
+    original_te_rz_catch_rate = te.outcomes.red_zone_catch_rate
+    original_te_receiving_yards = te.outcomes.receiving_yards_dist.copy()
 
     GameContextBuilder._apply_qb_split(roster, None)
     assert qb.outcomes.catch_rate == original_qb_catch_rate
@@ -160,6 +201,9 @@ def test_apply_qb_split_only_mutates_pass_catcher_efficiency_fields():
     assert wr.usage.target_share == original_target_share
     assert wr.usage.air_yards_share == original_air_yards_share
     np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, original_receiving_yards)
+    assert te.usage.target_share == original_te_target_share
+    assert te.outcomes.red_zone_catch_rate == original_te_rz_catch_rate
+    np.testing.assert_allclose(te.outcomes.receiving_yards_dist, original_te_receiving_yards)
 
     GameContextBuilder._apply_qb_split(
         roster,
@@ -173,3 +217,7 @@ def test_apply_qb_split_only_mutates_pass_catcher_efficiency_fields():
     assert wr.outcomes.catch_rate == original_catch_rate * 0.90
     assert wr.outcomes.red_zone_catch_rate == original_rz_catch_rate * 0.90
     np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, original_receiving_yards * 1.10)
+    assert te.usage.target_share == original_te_target_share
+    assert te.outcomes.catch_rate == 0.70 * 0.90
+    assert te.outcomes.red_zone_catch_rate == original_te_rz_catch_rate
+    np.testing.assert_allclose(te.outcomes.receiving_yards_dist, original_te_receiving_yards * 1.10)
