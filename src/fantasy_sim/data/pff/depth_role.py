@@ -28,6 +28,25 @@ def _bounded_ratio_factor(
     return float(np.clip(factor, lower, upper))
 
 
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    if denominator <= 0 or not np.isfinite(numerator) or not np.isfinite(denominator):
+        return 0.0
+    return float(numerator / denominator)
+
+
+def _bounded_delta_factor(
+    observed: float,
+    baseline: float,
+    sensitivity: float,
+    clamp: tuple[float, float],
+) -> float:
+    lower, upper = clamp
+    if baseline <= 0 or not np.isfinite(observed) or not np.isfinite(baseline):
+        return 1.0
+    factor = 1.0 + (observed - baseline) * sensitivity
+    return float(np.clip(factor, lower, upper))
+
+
 def _safe_numeric_column(column: str) -> pl.Expr:
     return pl.coalesce([pl.col(column).cast(pl.Float64), pl.lit(0.0)])
 
@@ -118,6 +137,16 @@ class DepthRoleEngine:
                     [f"{bucket}_targets" for bucket in _BUCKETS],
                     "_targets",
                 ),
+                _sum_available_columns(
+                    df.columns,
+                    [f"{bucket}_receptions" for bucket in _BUCKETS],
+                    "_receptions",
+                ),
+                _sum_available_columns(
+                    df.columns,
+                    [f"{bucket}_yards" for bucket in _BUCKETS],
+                    "_yards",
+                ),
                 _air_proxy_expr(df.columns),
             )
         )
@@ -154,6 +183,8 @@ class DepthRoleEngine:
             .agg(
                 pl.col("_routes").sum().alias("routes"),
                 pl.col("_targets").sum().alias("targets"),
+                pl.col("_receptions").sum().alias("receptions"),
+                pl.col("_yards").sum().alias("yards"),
                 pl.col("_air_proxy").sum().alias("air_proxy"),
                 pl.col("game_id").n_unique().alias("games"),
             )
@@ -189,11 +220,22 @@ class DepthRoleEngine:
                 .then(pl.col("air_proxy") / pl.col("team_air_proxy"))
                 .otherwise(pl.lit(0.0))
                 .alias("air_role"),
+                pl.when(pl.col("targets") > 0)
+                .then(pl.col("receptions") / pl.col("targets"))
+                .otherwise(pl.lit(0.0))
+                .alias("catch_efficiency"),
+                pl.when(pl.col("receptions") > 0)
+                .then(pl.col("yards") / pl.col("receptions"))
+                .otherwise(pl.lit(0.0))
+                .alias("yards_per_reception"),
             )
         )
 
     def _position_config(self, position: str) -> DepthRolePositionConfig:
         return self._config.wr if position == "WR" else self._config.te
+
+    def _efficiency_position_config(self, position: str):
+        return self._config.efficiency.wr if position == "WR" else self._config.efficiency.te
 
     def _blended_role_row(
         self,
@@ -225,8 +267,59 @@ class DepthRoleEngine:
             + (1.0 - weight) * previous_row["air_role"],
             "routes": current_row["routes"] + previous_row["routes"],
             "targets": current_row["targets"] + previous_row["targets"],
+            "receptions": current_row["receptions"] + previous_row["receptions"],
+            "yards": current_row["yards"] + previous_row["yards"],
+            "catch_efficiency": _safe_ratio(
+                current_row["receptions"] + previous_row["receptions"],
+                current_row["targets"] + previous_row["targets"],
+            ),
+            "yards_per_reception": _safe_ratio(
+                current_row["yards"] + previous_row["yards"],
+                current_row["receptions"] + previous_row["receptions"],
+            ),
             "games": current_row["games"],
         }
+
+    def _apply_efficiency(
+        self,
+        player,
+        row: dict,
+    ) -> None:
+        if not self._config.efficiency.enabled:
+            return
+        if row["routes"] < self._config.efficiency.min_routes:
+            return
+        if row["receptions"] < self._config.efficiency.min_receptions:
+            return
+
+        pos_cfg = self._efficiency_position_config(player.position)
+
+        catch_factor = _bounded_ratio_factor(
+            row["catch_efficiency"],
+            player.outcomes.catch_rate,
+            pos_cfg.catch_rate_sensitivity,
+            self._config.efficiency.catch_rate_clamp,
+        )
+        yards_factor = _bounded_ratio_factor(
+            row["yards_per_reception"],
+            float(np.mean(player.outcomes.receiving_yards_dist))
+            if player.outcomes.receiving_yards_dist is not None and len(player.outcomes.receiving_yards_dist) > 0
+            else 0.0,
+            pos_cfg.yards_scale_sensitivity,
+            self._config.efficiency.yards_scale_clamp,
+        )
+
+        player.outcomes.catch_rate = float(
+            np.clip(player.outcomes.catch_rate * catch_factor, 0.0, 1.0)
+        )
+        if player.outcomes.red_zone_catch_rate > 0:
+            player.outcomes.red_zone_catch_rate = float(
+                np.clip(player.outcomes.red_zone_catch_rate * catch_factor, 0.0, 1.0)
+            )
+        if player.outcomes.receiving_yards_dist is not None:
+            player.outcomes.receiving_yards_dist = (
+                np.asarray(player.outcomes.receiving_yards_dist, dtype=float) * yards_factor
+            )
 
     def apply(
         self,
@@ -290,3 +383,4 @@ class DepthRoleEngine:
             )
             player.usage.target_share *= factors.target_share_factor
             player.usage.air_yards_share *= factors.air_yards_share_factor
+            self._apply_efficiency(player, row)

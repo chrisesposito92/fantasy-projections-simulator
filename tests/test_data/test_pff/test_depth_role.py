@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import polars as pl
 
 from fantasy_sim.data.pff.depth_role import DepthRoleEngine
 from fantasy_sim.data.pff.loader import PffLoader
-from fantasy_sim.data.pff.models import DepthRoleConfig, DepthRolePositionConfig
+from fantasy_sim.data.pff.models import (
+    DepthRoleConfig,
+    DepthRoleEfficiencyConfig,
+    DepthRoleEfficiencyPositionConfig,
+    DepthRolePositionConfig,
+)
 from fantasy_sim.models.player import PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster
 
 _SIDE_ROUTE_COLUMNS = (
@@ -100,6 +106,14 @@ def _write_receiving_depth(pff_dir, season: int, rows: list[dict]) -> None:
         "medium_avg_depth_of_target": pl.Float64,
         "deep_avg_depth_of_target": pl.Float64,
         "behind_los_avg_depth_of_target": pl.Float64,
+        "behind_los_receptions": pl.Float64,
+        "short_receptions": pl.Float64,
+        "medium_receptions": pl.Float64,
+        "deep_receptions": pl.Float64,
+        "behind_los_yards": pl.Float64,
+        "short_yards": pl.Float64,
+        "medium_yards": pl.Float64,
+        "deep_yards": pl.Float64,
     }
     df = pl.DataFrame(rows, schema=schema, infer_schema_length=None) if rows else pl.DataFrame(schema=schema)
     df.write_parquet(pff_dir / f"receiving_depth_{season}.parquet")
@@ -117,6 +131,7 @@ def _receiving_depth_row(
     side_routes: dict[str, float],
     targets: dict[str, float],
     adots: dict[str, float],
+    extras: dict[str, float] | None = None,
 ) -> dict[str, float | int | str]:
     row: dict[str, float | int | str] = {
         "player_id": player_id,
@@ -138,6 +153,11 @@ def _receiving_depth_row(
         row[f"{bucket}_routes"] = target_value
         row[f"{bucket}_targets"] = target_value
         row[f"{bucket}_avg_depth_of_target"] = adots.get(bucket, 0.0)
+        row[f"{bucket}_receptions"] = 0.0
+        row[f"{bucket}_yards"] = 0.0
+
+    if extras is not None:
+        row.update(extras)
 
     return row
 
@@ -170,6 +190,34 @@ def _engine_with_config(
         min_targets=6,
         min_games=4,
         early_season_blend=early_season_blend,
+    )
+    return DepthRoleEngine(PffLoader(pff_dir), config)
+
+
+def _efficiency_enabled_engine(
+    pff_dir,
+    *,
+    early_season_blend: bool = True,
+) -> DepthRoleEngine:
+    config = DepthRoleConfig(
+        enabled=True,
+        positions=("WR", "TE"),
+        wr=DepthRolePositionConfig(0.10, 0.12, (0.94, 1.06)),
+        te=DepthRolePositionConfig(0.08, 0.06, (0.95, 1.05)),
+        min_routes=15,
+        min_targets=6,
+        min_games=4,
+        early_season_blend=early_season_blend,
+        efficiency=DepthRoleEfficiencyConfig(
+            enabled=True,
+            min_routes=15,
+            min_receptions=6,
+            min_games=4,
+            catch_rate_clamp=(0.94, 1.06),
+            yards_scale_clamp=(0.92, 1.08),
+            wr=DepthRoleEfficiencyPositionConfig(0.08, 0.10),
+            te=DepthRoleEfficiencyPositionConfig(0.06, 0.08),
+        ),
     )
     return DepthRoleEngine(PffLoader(pff_dir), config)
 
@@ -543,3 +591,243 @@ def test_disabled_blend_does_not_fallback_to_previous_season_only(tmp_path):
     assert wr_a.usage.target_share == pytest.approx(0.28)
     assert wr_a.usage.air_yards_share == pytest.approx(0.34)
     assert wr_a.outcomes.catch_rate == pytest.approx(0.64)
+
+
+def test_efficiency_apply_adjusts_catch_rate_and_receiving_yards_dist_only(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            _receiving_depth_row(
+                player_id=101,
+                player="WR A",
+                team="KC",
+                position="LWR",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={
+                    "left_short_routes": 8,
+                    "center_short_routes": 4,
+                    "left_medium_routes": 5,
+                    "center_medium_routes": 3,
+                    "left_deep_routes": 4,
+                    "right_deep_routes": 4,
+                },
+                targets={"short": 4, "medium": 3, "deep": 3},
+                adots={"behind_los": -1.0, "short": 4.0, "medium": 11.0, "deep": 20.0},
+                extras={
+                    "short_receptions": 4,
+                    "medium_receptions": 3,
+                    "deep_receptions": 2,
+                    "short_yards": 32,
+                    "medium_yards": 39,
+                    "deep_yards": 46,
+                },
+            ),
+            _receiving_depth_row(
+                player_id=103,
+                player="TE A",
+                team="KC",
+                position="TE-L",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={
+                    "center_short_routes": 7,
+                    "left_short_routes": 5,
+                    "center_medium_routes": 4,
+                    "left_medium_routes": 2,
+                    "center_deep_routes": 1,
+                },
+                targets={"short": 5, "medium": 2, "deep": 1},
+                adots={"behind_los": -1.0, "short": 4.0, "medium": 8.0, "deep": 16.0},
+                extras={
+                    "short_receptions": 5,
+                    "medium_receptions": 2,
+                    "deep_receptions": 1,
+                    "short_yards": 30,
+                    "medium_yards": 18,
+                    "deep_yards": 16,
+                },
+            ),
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    te_a = next(player for player in roster.players if player.player_id == "TE_A")
+    wr_a.outcomes.catch_rate = 0.60
+    wr_a.outcomes.red_zone_catch_rate = 0.54
+    wr_a.outcomes.receiving_yards_dist = np.array([8.0, 10.0, 12.0])
+    te_a.outcomes.catch_rate = 0.68
+    te_a.outcomes.red_zone_catch_rate = 0.62
+    te_a.outcomes.receiving_yards_dist = np.array([6.0, 8.0, 10.0])
+    wr_a.usage.target_share = 10.0 / 18.0
+    wr_a.usage.air_yards_share = 109.0 / 161.0
+
+    original_wr_target_share = wr_a.usage.target_share
+    original_wr_air_share = wr_a.usage.air_yards_share
+
+    engine = _efficiency_enabled_engine(pff_dir)
+    engine.apply(
+        roster,
+        pff_crosswalk={101: "WR_A", 103: "TE_A"},
+        target_season=2024,
+        max_week=18,
+    )
+
+    assert wr_a.usage.target_share == original_wr_target_share
+    assert wr_a.usage.air_yards_share == original_wr_air_share
+    assert wr_a.outcomes.catch_rate > 0.60
+    assert wr_a.outcomes.red_zone_catch_rate > 0.54
+    assert wr_a.outcomes.receiving_yards_dist.mean() > np.array([8.0, 10.0, 12.0]).mean()
+    assert te_a.outcomes.catch_rate > 0.68
+
+
+def test_efficiency_scales_red_zone_catch_rate_proportionally(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            _receiving_depth_row(
+                player_id=101,
+                player="WR A",
+                team="KC",
+                position="LWR",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={"left_short_routes": 8, "left_medium_routes": 6, "left_deep_routes": 6},
+                targets={"short": 4, "medium": 3, "deep": 3},
+                adots={"short": 4.0, "medium": 11.0, "deep": 20.0, "behind_los": -1.0},
+                extras={
+                    "short_receptions": 4,
+                    "medium_receptions": 3,
+                    "deep_receptions": 2,
+                    "short_yards": 32,
+                    "medium_yards": 39,
+                    "deep_yards": 46,
+                },
+            ),
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.60
+    wr_a.outcomes.red_zone_catch_rate = 0.54
+    wr_a.outcomes.receiving_yards_dist = np.array([8.0, 10.0, 12.0])
+
+    engine = _efficiency_enabled_engine(pff_dir)
+    engine.apply(roster, {101: "WR_A"}, 2024, 18)
+
+    catch_ratio = wr_a.outcomes.catch_rate / 0.60
+    rz_ratio = wr_a.outcomes.red_zone_catch_rate / 0.54
+    assert rz_ratio == pytest.approx(catch_ratio, rel=1e-6)
+
+
+def test_efficiency_stays_neutral_when_reception_sample_is_thin(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            _receiving_depth_row(
+                player_id=101,
+                player="WR A",
+                team="KC",
+                position="LWR",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={"left_short_routes": 8, "left_medium_routes": 6, "left_deep_routes": 6},
+                targets={"short": 3, "medium": 2, "deep": 1},
+                adots={"short": 4.0, "medium": 11.0, "deep": 20.0, "behind_los": -1.0},
+                extras={
+                    "short_receptions": 2,
+                    "medium_receptions": 1,
+                    "deep_receptions": 0,
+                    "short_yards": 14,
+                    "medium_yards": 9,
+                    "deep_yards": 0,
+                },
+            ),
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.60
+    wr_a.outcomes.red_zone_catch_rate = 0.54
+    wr_a.outcomes.receiving_yards_dist = np.array([8.0, 10.0, 12.0])
+    original_dist = wr_a.outcomes.receiving_yards_dist.copy()
+
+    engine = _efficiency_enabled_engine(pff_dir)
+    engine.apply(roster, {101: "WR_A"}, 2024, 18)
+
+    assert wr_a.outcomes.catch_rate == 0.60
+    assert wr_a.outcomes.red_zone_catch_rate == 0.54
+    assert np.array_equal(wr_a.outcomes.receiving_yards_dist, original_dist)
+
+
+def test_efficiency_clamps_catch_rate_and_yards_scale(tmp_path):
+    pff_dir = tmp_path / "pff" / "processed" / "nfl"
+    _write_receiving_depth(
+        pff_dir,
+        2024,
+        [
+            _receiving_depth_row(
+                player_id=101,
+                player="WR A",
+                team="KC",
+                position="LWR",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={"left_short_routes": 10, "left_medium_routes": 8, "left_deep_routes": 8},
+                targets={"short": 5, "medium": 4, "deep": 3},
+                adots={"short": 4.0, "medium": 12.0, "deep": 25.0, "behind_los": -1.0},
+                extras={
+                    "short_receptions": 5,
+                    "medium_receptions": 4,
+                    "deep_receptions": 3,
+                    "short_yards": 100,
+                    "medium_yards": 120,
+                    "deep_yards": 120,
+                },
+            ),
+            _receiving_depth_row(
+                player_id=103,
+                player="TE A",
+                team="KC",
+                position="TE-L",
+                season=2024,
+                week=1,
+                game_id=1,
+                side_routes={"center_short_routes": 10, "center_medium_routes": 8, "center_deep_routes": 8},
+                targets={"short": 5, "medium": 4, "deep": 3},
+                adots={"short": 3.0, "medium": 7.0, "deep": 10.0, "behind_los": -1.0},
+                extras={
+                    "short_receptions": 1,
+                    "medium_receptions": 1,
+                    "deep_receptions": 0,
+                    "short_yards": 5,
+                    "medium_yards": 5,
+                    "deep_yards": 0,
+                },
+            ),
+        ],
+    )
+    roster = _make_roster()
+    wr_a = next(player for player in roster.players if player.player_id == "WR_A")
+    wr_a.outcomes.catch_rate = 0.60
+    wr_a.outcomes.red_zone_catch_rate = 0.54
+    wr_a.outcomes.receiving_yards_dist = np.array([8.0, 10.0, 12.0])
+
+    engine = _efficiency_enabled_engine(pff_dir)
+    engine.apply(roster, {101: "WR_A", 103: "TE_A"}, 2024, 18)
+
+    assert wr_a.outcomes.catch_rate <= 0.60 * 1.06 + 1e-9
+    assert wr_a.outcomes.receiving_yards_dist.mean() <= (
+        np.array([8.0, 10.0, 12.0]).mean() * 1.08 + 1e-9
+    )
