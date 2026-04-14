@@ -405,9 +405,16 @@ def test_pff_qb_split_reports_partial_when_one_season_is_missing(tmp_path):
         cache_dir=cache_dir,
     )
 
-    assert coverage["pff.qb_split"].status == "partial"
-    assert coverage["pff.qb_split"].covered_seasons == [2023]
-    assert coverage["pff.qb_split"].missing_seasons == [2024]
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
 
 
 def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
@@ -428,7 +435,16 @@ def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
         cache_dir=cache_dir,
     )
 
-    assert coverage["pff.qb_split"].status == "disabled"
+    assert coverage["pff.qb_split"] == SignalCoverage(
+        enabled=False,
+        status="disabled",
+        covered_seasons=[],
+        missing_seasons=[],
+        note=(
+            "Requires passing_detail parquet, passing_summary parquet, "
+            "and rosters_weekly cache to build the PFF QB crosswalk"
+        ),
+    )
 
 
 def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
