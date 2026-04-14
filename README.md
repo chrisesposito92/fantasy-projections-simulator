@@ -288,6 +288,8 @@ uv run python scripts/scrape_pff.py --league ncaa --season 2025 --weeks 0-8
 
 - [Configuration Reference](docs/CONFIG.md) — Every override field, scoring key, and config option
 - [CLI Commands](docs/CLI-COMMANDS.md) — Full command reference
+- [Accuracy Roadmap](docs/accuracy-roadmap.md) — Canonical phase ordering, promotion rules, and current validation verdicts
+- [Accuracy Stack Audit](docs/accuracy-stack-audit.md) — Current defaults, runtime order, local data coverage, and evidence caveats
 - [Design Spec](docs/superpowers/specs/2026-03-29-fantasy-projections-simulator-design.md)
 - [Phase 1 Plan](docs/superpowers/plans/2026-03-29-phase1-data-pipeline.md)
 - [Phase 2 Plan](docs/superpowers/plans/2026-03-29-phase2-game-state-machine.md)

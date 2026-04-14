@@ -56,7 +56,7 @@ uv run fantasy-sim backtest --season 2024 --sims 50
 
 Pipeline: Data → Models → Engine → Scoring → Output
 
-1. **Data Layer** (`data/`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models. PFF subpackage (`data/pff/`) provides multiple intelligence engines, including the QB split layer. Weather subpackage (`data/weather/`) adds game-day adjustments.
+1. **Data Layer** (`data/`) — Fetches nflverse data, caches as parquet, preprocesses into probability distributions, builds per-player models. PFF subpackage (`data/pff/`) provides multiple intelligence engines, including the RB scheme-fit and QB split layers. Weather subpackage (`data/weather/`) adds game-day adjustments.
 2. **Models** (`models/`) — Shared dataclasses: GameStateBucket, distributions, player/roster models
 3. **Engine** (`engine/`) — Play-by-play game simulation with player-level tracking and Monte Carlo runner
 4. **Config** (`config/`) — YAML config with `_inherit` scoring preset chains (PPR → half_ppr → standard)
@@ -70,7 +70,7 @@ Pipeline: Data → Models → Engine → Scoring → Output
 
 `GameContextBuilder.build_game()`:
 
-base PBP model → vegas (pace + pass rate) → availability → normalize → usage → normalize → props → normalize → matchup → team context + tier blend → normalize → qb_split → depth_role → normalize → coverage → DST baseline → kicker → TD tendency → weather
+base PBP model → vegas (pace + pass rate) → availability → normalize → usage → normalize → tracking → normalize → props → normalize → matchup → team context + tier blend → normalize → rb_scheme_fit → qb_split → depth_role → normalize → coverage → DST baseline → kicker → TD tendency → weather
 
 Post-sim projection order:
 
@@ -109,12 +109,13 @@ Multiple active layers in `data/pff/`, configured in `defaults.yaml` under `pff:
 | **TierEngine** | 5 grade-based tiers, blends tier distributions with PBP data by reliability (floor=0.20, cap=0.80). WR archetypes (slot/possession/deep). NCAA rookies via `pff_id` bridge. QBs only blend fumble_rate. | `pff.tier_engine` |
 | **TeamContextEngine** | Season-level team environment: pass rate → WR/TE target_share, OL run block → RB rush yards, QB quality → WR/TE catch_rate. Snap-weighted. | `pff.team_context` |
 | **MatchupEngine** | Per-game z-score factors from defensive + OL data. 7 factors, medium sensitivities (0.06-0.075). Same-season rolling window, early-season blend. | `pff.matchup` |
+| **RbSchemeFitEngine** | Per-game RB rushing-efficiency factors derived from `rushing_direction` plus `offense_run_blocking`, applied after tier/team-context adjustments and before qb_split. | `pff.rb_scheme_fit` |
 | **QbSplitEngine** | Per-game receiver efficiency factors derived from QB pressure splits, applied after tier/team-context adjustments and before depth-role/coverage. | `pff.qb_split` |
 | **CoverageEngine** | Per-WR modifiers from CB matchup (alignment-based: RWR→LCB, LWR→RCB, slot→SCB). Catch rate + YPR. WR-only. Clamp [0.97, 1.03]. | `pff.coverage` |
 | **KickerEngine** | Per-kicker FG accuracy with Bayesian shrinkage toward league average. | `pff.kicker` |
 | **DstBaselineEngine** | Fumble rate factor (z-score) + team-specific defensive TD rates (Bayesian shrinkage). | `pff.dst_baseline` |
 
-- `--config-override` on validation scripts supports: `tier_engine`, `talent`, `matchup`, `team_context`, `qb_split`, `ncaa_rookie`, `weather`
+- `--config-override` on validation scripts supports: `tier_engine`, `talent`, `matchup`, `team_context`, `rb_scheme_fit`, `qb_split`, `ncaa_rookie`, `weather`
 - A/B validation with persistent ledger: `scripts/validate_pff_signal.py --show-ledger`
 - All engines use same-season rolling window (`week < max_week`) with early-season blend (linear ramp, `min_games=4`)
 
@@ -147,14 +148,14 @@ Multiple active layers in `data/pff/`, configured in `defaults.yaml` under `pff:
 
 ## Current State
 
-All development phases complete through the Phase 3 accuracy initiative. Key completed features:
+All development phases complete through the current Phase 5 accuracy initiative branch. Key completed features:
 - Core simulation engine with play-by-play resolution and Monte Carlo runner
 - Player models from PBP data with roster separation (stats vs team assignment)
 - Red zone accuracy (TD gates, per-player RZ catch rates, QB fumble check)
 - Passing yards calibration (catch yards boost, clock runoff tuning)
 - Share normalization fix (carry/target shares sum to 1.0 on current roster)
 - PFF scraper (21 facets, NFL 2019-2025 + NCAA 2022-2025)
-- PFF intelligence: tier engine, matchup, team context, qb split, coverage, kicker, DST baseline
+- PFF intelligence: tier engine, matchup, team context, RB scheme-fit, QB split, coverage, kicker, DST baseline
 - NCAA rookie tier assignment via pff_id bridge
 - WR depth-of-target archetypes (slot/possession/deep)
 - Weather engine (wind/temp/precipitation from Open-Meteo)
@@ -164,6 +165,8 @@ All development phases complete through the Phase 3 accuracy initiative. Key com
 - Phase 2 promoted: `availability.enabled=true` with `availability.injuries.enabled=false`
 - Phase 3 promoted: `market_history.enabled=true` with `snapshot_label=close_core8`
 - Phase 2 kept off: `role_trend.enabled=false`
+- Phase 4 kept off: `tracking.enabled=false`
+- Phase 5 slices implemented and kept off: `pff.depth_role.enabled=false`, `pff.depth_role.efficiency.enabled=false`, `pff.rb_scheme_fit.enabled=false`, `pff.qb_split.enabled=false`
 - Weekly + season A/B validation harnesses with persistent ledgers
 
 ## Style
