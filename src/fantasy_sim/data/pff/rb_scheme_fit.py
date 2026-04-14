@@ -157,17 +157,24 @@ class RbSchemeFitEngine:
 
         gap_run_play = float(rows["gap_run_play"].sum())
         zone_run_play = float(rows["zone_run_play"].sum())
+        gap_run_block_snaps = float(rows["gap_run_block_snaps"].sum())
+        zone_run_block_snaps = float(rows["zone_run_block_snaps"].sum())
         total_run_play = gap_run_play + zone_run_play
         if total_run_play <= 0:
             return None
 
-        latest = rows.sort("season")
         return {
             "games": float(rows["games"].sum()),
             "gap_share": _safe_ratio(gap_run_play, total_run_play),
             "zone_share": _safe_ratio(zone_run_play, total_run_play),
-            "gap_grade": float(latest["gap_grade"].tail(1).item()),
-            "zone_grade": float(latest["zone_grade"].tail(1).item()),
+            "gap_grade": _safe_ratio(
+                float((rows["gap_grade"] * rows["gap_run_block_snaps"]).sum()),
+                gap_run_block_snaps,
+            ),
+            "zone_grade": _safe_ratio(
+                float((rows["zone_grade"] * rows["zone_run_block_snaps"]).sum()),
+                zone_run_block_snaps,
+            ),
         }
 
     def _passes_player_gates(self, profile: dict[str, float] | None) -> bool:
@@ -202,6 +209,65 @@ class RbSchemeFitEngine:
             return current_rows
         return pl.concat([current_rows, previous_rows], how="vertical_relaxed")
 
+    def _previous_season_rows(self, rows: pl.DataFrame, target_season: int) -> pl.DataFrame:
+        if rows.is_empty():
+            return pl.DataFrame()
+        previous_seasons = [
+            int(season)
+            for season in rows["season"].unique().to_list()
+            if int(season) < target_season
+        ]
+        if not previous_seasons:
+            return pl.DataFrame()
+        previous_season = max(previous_seasons)
+        return rows.filter(pl.col("season") == previous_season)
+
+    def _select_player_profile(
+        self,
+        rows: pl.DataFrame,
+        target_season: int,
+    ) -> dict[str, float] | None:
+        current_rows = rows.filter(pl.col("season") == target_season)
+        current_profile = self._player_profile(current_rows)
+        if self._passes_player_gates(current_profile):
+            return current_profile
+
+        previous_rows = self._previous_season_rows(rows, target_season)
+        if self._config.early_season_blend and not current_rows.is_empty() and not previous_rows.is_empty():
+            blended_profile = self._player_profile(
+                self._blended_rows(current_rows, previous_rows)
+            )
+            if self._passes_player_gates(blended_profile):
+                return blended_profile
+
+        historical_profile = self._player_profile(rows)
+        if self._passes_player_gates(historical_profile):
+            return historical_profile
+        return None
+
+    def _select_team_profile(
+        self,
+        rows: pl.DataFrame,
+        target_season: int,
+    ) -> dict[str, float] | None:
+        current_rows = rows.filter(pl.col("season") == target_season)
+        current_profile = self._team_profile(current_rows)
+        if self._passes_team_gates(current_profile):
+            return current_profile
+
+        previous_rows = self._previous_season_rows(rows, target_season)
+        if self._config.early_season_blend and not current_rows.is_empty() and not previous_rows.is_empty():
+            blended_profile = self._team_profile(
+                self._blended_rows(current_rows, previous_rows)
+            )
+            if self._passes_team_gates(blended_profile):
+                return blended_profile
+
+        historical_profile = self._team_profile(rows)
+        if self._passes_team_gates(historical_profile):
+            return historical_profile
+        return None
+
     def compute(
         self,
         roster: TeamRoster,
@@ -230,22 +296,9 @@ class RbSchemeFitEngine:
         if usage_weight == 0.0 and blocking_weight == 0.0:
             return {}
 
-        current_team_rows = blocking_rows.filter(
-            (pl.col("team") == roster.team) & (pl.col("season") == target_season)
-        )
-        previous_team_rows = blocking_rows.filter(
-            (pl.col("team") == roster.team) & (pl.col("season") == (target_season - 1))
-        )
-        team_profile = self._team_profile(current_team_rows)
-        if (
-            not self._passes_team_gates(team_profile)
-            and self._config.early_season_blend
-            and not previous_team_rows.is_empty()
-        ):
-            team_profile = self._team_profile(
-                self._blended_rows(current_team_rows, previous_team_rows)
-            )
-        if not self._passes_team_gates(team_profile):
+        team_rows = blocking_rows.filter(pl.col("team") == roster.team)
+        team_profile = self._select_team_profile(team_rows, target_season)
+        if team_profile is None:
             return {}
 
         results: dict[str, RbSchemeFitFactors] = {}
@@ -258,22 +311,9 @@ class RbSchemeFitEngine:
             ):
                 continue
 
-            current_player_rows = direction_rows.filter(
-                (pl.col("player_id") == player.player_id) & (pl.col("season") == target_season)
-            )
-            previous_player_rows = direction_rows.filter(
-                (pl.col("player_id") == player.player_id) & (pl.col("season") == (target_season - 1))
-            )
-            player_profile = self._player_profile(current_player_rows)
-            if (
-                not self._passes_player_gates(player_profile)
-                and self._config.early_season_blend
-                and not previous_player_rows.is_empty()
-            ):
-                player_profile = self._player_profile(
-                    self._blended_rows(current_player_rows, previous_player_rows)
-                )
-            if not self._passes_player_gates(player_profile):
+            player_rows = direction_rows.filter(pl.col("player_id") == player.player_id)
+            player_profile = self._select_player_profile(player_rows, target_season)
+            if player_profile is None:
                 continue
 
             runner_usage_score = (

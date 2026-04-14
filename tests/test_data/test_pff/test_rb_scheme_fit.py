@@ -85,6 +85,104 @@ def _offense_run_blocking_df() -> pl.DataFrame:
     )
 
 
+def _historical_window_rushing_direction_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2022, 2022, 2022, 2024],
+            "week": [7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN"],
+            "player_id": [101, 101, 101, 101],
+            "position": ["RB", "RB", "RB", "RB"],
+            "game_id": [11, 12, 13, 14],
+            "directions": [
+                [
+                    {"direction": "ML", "attempts": 8, "yards": 64, "ypa": 8.0},
+                    {"direction": "MR", "attempts": 6, "yards": 36, "ypa": 6.0},
+                    {"direction": "LE", "attempts": 4, "yards": 12, "ypa": 3.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 6, "yards": 42, "ypa": 7.0},
+                    {"direction": "MR", "attempts": 4, "yards": 20, "ypa": 5.0},
+                    {"direction": "RE", "attempts": 3, "yards": 9, "ypa": 3.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 5, "yards": 35, "ypa": 7.0},
+                    {"direction": "MR", "attempts": 3, "yards": 18, "ypa": 6.0},
+                    {"direction": "LE", "attempts": 2, "yards": 6, "ypa": 3.0},
+                ],
+                [
+                    {"direction": "LE", "attempts": 1, "yards": 3, "ypa": 3.0},
+                ],
+            ],
+        }
+    )
+
+
+def _historical_window_blocking_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2022, 2022, 2022, 2024],
+            "week": [7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN"],
+            "game_id": [11, 12, 13, 14],
+            "gap_snap_counts_run_play": [40, 39, 38, 2],
+            "zone_snap_counts_run_play": [1, 1, 1, 5],
+            "gap_snap_counts_run_block": [40, 39, 38, 2],
+            "zone_snap_counts_run_block": [1, 1, 1, 5],
+            "gap_grades_run_block": [68.0, 67.0, 69.0, 58.0],
+            "zone_grades_run_block": [58.0, 57.0, 59.0, 62.0],
+        }
+    )
+
+
+def _team_blend_rushing_direction_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2023, 2023, 2023, 2024],
+            "week": [7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN"],
+            "player_id": [101, 101, 101, 101],
+            "position": ["RB", "RB", "RB", "RB"],
+            "game_id": [21, 22, 23, 24],
+            "directions": [
+                [
+                    {"direction": "ML", "attempts": 7, "yards": 42, "ypa": 6.0},
+                    {"direction": "MR", "attempts": 5, "yards": 25, "ypa": 5.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 6, "yards": 30, "ypa": 5.0},
+                    {"direction": "MR", "attempts": 4, "yards": 18, "ypa": 4.5},
+                ],
+                [
+                    {"direction": "ML", "attempts": 5, "yards": 20, "ypa": 4.0},
+                    {"direction": "MR", "attempts": 3, "yards": 12, "ypa": 4.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 6, "yards": 24, "ypa": 4.0},
+                    {"direction": "MR", "attempts": 4, "yards": 16, "ypa": 4.0},
+                ],
+            ],
+        }
+    )
+
+
+def _team_blend_blocking_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2023, 2023, 2023, 2024],
+            "week": [7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN"],
+            "game_id": [21, 22, 23, 24],
+            "gap_snap_counts_run_play": [28, 27, 26, 28],
+            "zone_snap_counts_run_play": [4, 5, 4, 4],
+            "gap_snap_counts_run_block": [28, 27, 26, 28],
+            "zone_snap_counts_run_block": [4, 5, 4, 4],
+            "gap_grades_run_block": [72.0, 71.0, 73.0, 40.0],
+            "zone_grades_run_block": [55.0, 54.0, 56.0, 80.0],
+        }
+    )
+
+
 def test_compute_returns_empty_when_crosswalk_is_missing():
     loader = MagicMock()
     loader.load_facet.side_effect = lambda facet, seasons: (
@@ -192,4 +290,69 @@ def test_compute_uses_previous_season_for_early_blend():
         max_week=4,
     )
 
+    assert factors["ten_rb"].rushing_yards_factor > 1.0
+
+
+def test_compute_falls_back_to_full_historical_window_when_current_and_immediate_previous_are_insufficient():
+    loader = MagicMock()
+    loader.load_facet.side_effect = lambda facet, seasons: (
+        _historical_window_rushing_direction_df()
+        if facet == "rushing_direction"
+        else _historical_window_blocking_df()
+    )
+    engine = RbSchemeFitEngine(
+        loader,
+        RbSchemeFitConfig(
+            enabled=True,
+            rush_yards_sensitivity=0.80,
+            min_attempts=20,
+            min_games=3,
+            early_season_blend=True,
+            scheme_usage_weight=1.0,
+            blocking_alignment_weight=0.0,
+            factor_clamp=(0.90, 1.10),
+        ),
+    )
+
+    factors = engine.compute(
+        roster=_make_roster("TEN", rb_id="ten_rb"),
+        pff_crosswalk={101: "ten_rb"},
+        training_seasons=[2022, 2024],
+        target_season=2024,
+        max_week=4,
+    )
+
+    assert "ten_rb" in factors
+    assert factors["ten_rb"].rushing_yards_factor > 1.0
+
+
+def test_compute_blends_previous_team_blocking_grades_when_current_season_is_early():
+    loader = MagicMock()
+    loader.load_facet.side_effect = lambda facet, seasons: (
+        _team_blend_rushing_direction_df()
+        if facet == "rushing_direction"
+        else _team_blend_blocking_df()
+    )
+    engine = RbSchemeFitEngine(
+        loader,
+        RbSchemeFitConfig(
+            enabled=True,
+            rush_yards_sensitivity=0.50,
+            min_attempts=10,
+            min_games=4,
+            scheme_usage_weight=0.0,
+            blocking_alignment_weight=1.0,
+            factor_clamp=(0.90, 1.10),
+        ),
+    )
+
+    factors = engine.compute(
+        roster=_make_roster("TEN", rb_id="ten_rb"),
+        pff_crosswalk={101: "ten_rb"},
+        training_seasons=[2023, 2024],
+        target_season=2024,
+        max_week=4,
+    )
+
+    assert "ten_rb" in factors
     assert factors["ten_rb"].rushing_yards_factor > 1.0
