@@ -510,8 +510,7 @@ What follows from the current artifact set:
 - Phase 5A `WR/TE Depth-Role V1`: implemented, validated, not promoted
 - Phase 5B `WR/TE efficiency v2`: implemented, validated, not promoted
 - Phase 5C `QB split engine`: implemented, validated, not promoted
-- explicitly deferred:
-  - `RB scheme-fit engine`
+- Phase 5D `RB scheme-fit engine`: implemented, validated, not promoted
 
 ### Phase 5A Scope
 
@@ -604,9 +603,32 @@ Superseded pre-fix artifact:
   - implemented and validated
   - not promoted
   - keep `pff.qb_split.enabled: false`
+
+### Phase 5D Scope
+
+- `rushing_direction`
+- `offense_run_blocking`
+- RB-specific rushing-efficiency only
+- pre-sim `rushing_yards_dist` only
+- implemented through `pff.rb_scheme_fit`
+- no promotion from the first marginal validation artifact
+
+### Phase 5D Validation Artifact
+
+- decision artifact label: `phase-5-rb-scheme-fit-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.rb_scheme_fit=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0018`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.040`
+- verdict:
+  - implemented and validated
   - not promoted
-  - keep `pff.qb_split.enabled: false`
-  - keep `RB scheme-fit engine` as the remaining deferred Phase 5 follow-on
+  - keep `pff.rb_scheme_fit.enabled: false`
+  - inferred from the run: the top-line lift is too small to justify promotion and weekly QB/WR both regressed
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 

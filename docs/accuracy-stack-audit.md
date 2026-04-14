@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 5C qb-split validation result.
+Research snapshot updated through the Phase 5D rb-scheme-fit validation result.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -35,6 +35,7 @@ Active in `config/defaults.yaml` as of this audit:
 - `pff.qb_split.enabled: false`
 - `pff.depth_role.enabled: false`
 - `pff.depth_role.efficiency.enabled: false`
+- `pff.rb_scheme_fit.enabled: false`
 - `pff.kicker.enabled: true`
 - `pff.dst_baseline.enabled: true`
 - `weather.enabled: true`
@@ -83,21 +84,22 @@ Built but currently parked or disabled:
 6. Player props
 7. Matchup engine
 8. Tier engine and optional team-context integration
-9. QB split engine
-10. Depth-role engine
-11. Coverage engine
-12. DST baseline engine
-13. Kicker engine
-14. TD tendency engine
-15. Weather engine
-16. Runtime game script overlays during simulation
-17. User overrides
+9. RB scheme-fit engine
+10. QB split engine
+11. Depth-role engine
+12. Coverage engine
+13. DST baseline engine
+14. Kicker engine
+15. TD tendency engine
+16. Weather engine
+17. Runtime game script overlays during simulation
+18. User overrides
 
 End-to-end projection flow after simulation:
 
-18. Post-sim `role_trend` adjustment
-19. Post-sim `market_history` adjustment
-20. Post-sim `ensemble.ff_opportunity` blend
+19. Post-sim `role_trend` adjustment
+20. Post-sim `market_history` adjustment
+21. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
@@ -106,13 +108,17 @@ Important distinction:
 - `availability` runs before `usage`, so explicit inactive / limited decisions
   are applied before softer usage refinement touches shares
 - `tracking` now runs after `usage` and before props, with roster shares re-normalized after tracking mutations
-- `pff.qb_split` now runs after the tier/team-context step and before
-  `pff.depth_role`
+- `pff.rb_scheme_fit` now runs after the tier/team-context step and before
+  `pff.qb_split`
+- `pff.qb_split` now runs after `pff.rb_scheme_fit` and before `pff.depth_role`
 - `pff.depth_role` now runs after the tier/team-context step, re-normalizes
   roster shares, and stays after `pff.qb_split` but before per-WR coverage
   matchup adjustments
-- `pff.qb_split` is the first active runtime consumer of PFF `passing_detail`,
-  but it remains parked behind its own disabled flag
+- PFF `rushing_direction` is now consumed by runtime through
+  `pff.rb_scheme_fit`, but the feature remains parked behind its own disabled
+  flag
+- PFF `passing_detail` is now consumed by runtime through `pff.qb_split`, but
+  that feature also remains parked behind its own disabled flag
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
@@ -435,6 +441,7 @@ Observed run caveat from the receiver/QB slices:
 
 - `pff.depth_role` is now implemented in code
 - `pff.depth_role.efficiency` is now implemented in code
+- `pff.rb_scheme_fit` is now implemented in code
 - `pff.qb_split` is now implemented in code
 - `pff.depth_role.efficiency` remains nested under the existing
   `pff.depth_role` family
@@ -442,7 +449,10 @@ Observed run caveat from the receiver/QB slices:
 - `pff.depth_role` uses `receiving_depth` plus `rosters_weekly` crosswalk inputs
 - `pff.depth_role.efficiency` uses `receiving_depth`, the PFF summary trio,
   and `rosters_weekly` crosswalk inputs
+- `pff.rb_scheme_fit` uses `rushing_direction`, `offense_run_blocking`,
+  `rushing_summary`, and `rosters_weekly` crosswalk inputs
 - `pff.qb_split` uses `passing_detail` plus the PFF/NFLverse QB crosswalk path
+- `rushing_direction` is now consumed by runtime through `pff.rb_scheme_fit`
 - `passing_detail` is now used by the runtime through `pff.qb_split`
 - it currently adjusts:
   - `catch_rate`
@@ -454,17 +464,24 @@ Observed run caveat from the receiver/QB slices:
   - `rz_receiving_yards_dist`
 - local `injuries_2022-2024.parquet` exists
 - legacy `market_history_weekly_2023.parquet` and `market_history_weekly_2024.parquet` exist locally
-- `rushing_direction` is present locally but stored as nested `directions` rows, so RB scheme-fit remains deferred
 - the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
 - the focused Phase 5B decision artifact ran as
   `phase-5-depth-role-efficiency-v2-activated`
 - the focused Phase 5C decision artifact ran as
   `phase-5-qb-split-v1-postfix`
+- the focused Phase 5D decision artifact ran as
+  `phase-5-rb-scheme-fit-v1`
 - Phase 5C coverage in the run header was `pff.qb_split=full(2022,2023,2024)`
+- Phase 5D coverage in the run header was
+  `pff.rb_scheme_fit=full(2022,2023,2024)`
 - the Phase 5C run stayed effectively flat and is not promotable:
   - `rank_corr delta:  +0.0000`
   - `weekly_mae delta: +0.006`
   - `season_mae delta: +0.020`
+- the Phase 5D run showed only small top-line lift and is not promotable:
+  - `rank_corr delta:  +0.0018`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.040`
 - superseded pre-fix artifact:
   - `phase-5-qb-split-v1`
   - `rank_corr delta:  +0.0005`
@@ -476,6 +493,7 @@ Observed run caveat from the receiver/QB slices:
   - `season_mae delta: +0.030`
 - current default state remains `pff.depth_role.enabled: false`
 - current default state remains `pff.depth_role.efficiency.enabled: false`
+- current default state remains `pff.rb_scheme_fit.enabled: false`
 - current default state remains `pff.qb_split.enabled: false`
 - current Phase 5A evidence is not promotable:
   - `rank_corr delta:  -0.0005`
@@ -485,8 +503,9 @@ Observed run caveat from the receiver/QB slices:
 ### Immediate Next Phase 5 Decision
 
 - decide whether to retune `WR/TE efficiency v2`
+- or retune `RB scheme-fit engine`
 - or retune `QB split engine`
-- or move on to the later deferred Phase 5 follow-ons
+- or move on beyond Phase 5 without promoting any of the current parked PFF slices
 - do not auto-promote or auto-bundle Phase 5A and Phase 5B from the current
   evidence
 
@@ -503,7 +522,8 @@ Observed run caveat from the receiver/QB slices:
 
 ### Deferred Phase 5 Follow-Ons
 
-- `RB scheme-fit engine`
+- none currently recorded; `RB scheme-fit engine` is now implemented,
+  validated, and parked
 
 ## What The Current Ledgers Actually Tell Us
 
