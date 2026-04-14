@@ -458,9 +458,15 @@ Observed run caveat from the receiver/QB slices:
 - the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
 - the focused Phase 5B decision artifact ran as
   `phase-5-depth-role-efficiency-v2-activated`
-- the focused Phase 5C decision artifact ran as `phase-5-qb-split-v1`
+- the focused Phase 5C decision artifact ran as
+  `phase-5-qb-split-v1-postfix`
 - Phase 5C coverage in the run header was `pff.qb_split=full(2022,2023,2024)`
 - the Phase 5C run stayed effectively flat and is not promotable:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: +0.006`
+  - `season_mae delta: +0.020`
+- superseded pre-fix artifact:
+  - `phase-5-qb-split-v1`
   - `rank_corr delta:  +0.0005`
   - `weekly_mae delta: -0.000`
   - `season_mae delta: -0.028`
@@ -655,7 +661,7 @@ Useful reference points from the preserved local unified ledger snapshot:
 | `phase-5-depth-role-v1` | `-0.0005` | `+0.002` | `+0.013` |
 | `phase-5-depth-role-efficiency-v2` | `+0.0002` | `-0.002` | `-0.017` |
 | `phase-5-depth-role-efficiency-v2-activated` | `+0.0000` | `-0.002` | `+0.030` |
-| `phase-5-qb-split-v1` | `+0.0005` | `-0.000` | `-0.028` |
+| `phase-5-qb-split-v1-postfix` | `+0.0000` | `+0.006` | `+0.020` |
 
 Interpretation:
 

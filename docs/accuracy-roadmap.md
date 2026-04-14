@@ -581,17 +581,29 @@ Superseded setup artifact:
 
 ### Phase 5C Validation Artifact
 
-- label: `phase-5-qb-split-v1`
+- decision artifact label: `phase-5-qb-split-v1-postfix`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
 - coverage:
   - `pff.qb_split=full(2022,2023,2024)`
 - result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: +0.006`
+  - `season_mae delta: +0.020`
+
+Superseded pre-fix artifact:
+
+- `phase-5-qb-split-v1`
+- top-line deltas:
   - `rank_corr delta:  +0.0005`
   - `weekly_mae delta: -0.000`
   - `season_mae delta: -0.028`
+- this earlier row is useful as pre-fix evidence, but it is not the current
+  Phase 5C decision record for the branch after the qb-split follow-up fixes
 - verdict:
   - implemented and validated
+  - not promoted
+  - keep `pff.qb_split.enabled: false`
   - not promoted
   - keep `pff.qb_split.enabled: false`
   - keep `RB scheme-fit engine` as the remaining deferred Phase 5 follow-on
