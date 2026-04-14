@@ -83,20 +83,21 @@ Built but currently parked or disabled:
 6. Player props
 7. Matchup engine
 8. Tier engine and optional team-context integration
-9. Depth-role engine
-10. Coverage engine
-11. DST baseline engine
-12. Kicker engine
-13. TD tendency engine
-14. Weather engine
-15. Runtime game script overlays during simulation
-16. User overrides
+9. QB split engine
+10. Depth-role engine
+11. Coverage engine
+12. DST baseline engine
+13. Kicker engine
+14. TD tendency engine
+15. Weather engine
+16. Runtime game script overlays during simulation
+17. User overrides
 
 End-to-end projection flow after simulation:
 
-17. Post-sim `role_trend` adjustment
-18. Post-sim `market_history` adjustment
-19. Post-sim `ensemble.ff_opportunity` blend
+18. Post-sim `role_trend` adjustment
+19. Post-sim `market_history` adjustment
+20. Post-sim `ensemble.ff_opportunity` blend
 
 Important distinction:
 
@@ -105,10 +106,13 @@ Important distinction:
 - `availability` runs before `usage`, so explicit inactive / limited decisions
   are applied before softer usage refinement touches shares
 - `tracking` now runs after `usage` and before props, with roster shares re-normalized after tracking mutations
+- `pff.qb_split` now runs after the tier/team-context step and before
+  `pff.depth_role`
 - `pff.depth_role` now runs after the tier/team-context step, re-normalizes
-  roster shares, and stays before per-WR coverage matchup adjustments
-- `pff.qb_split` now runs in the runtime stack and is the first active consumer
-  of PFF `passing_detail`, but it remains parked behind its own disabled flag
+  roster shares, and stays after `pff.qb_split` but before per-WR coverage
+  matchup adjustments
+- `pff.qb_split` is the first active runtime consumer of PFF `passing_detail`,
+  but it remains parked behind its own disabled flag
 - `ensemble` is not part of `GameContextBuilder`; when enabled, it is applied
   post-sim in validation, `Backtester`, and the non-detail `week` / `season`
   / `game` CLI flows after projections are generated
