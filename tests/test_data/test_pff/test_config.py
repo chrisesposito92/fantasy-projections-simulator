@@ -265,6 +265,21 @@ def test_load_pff_config_qb_split_defaults():
     assert cfg.qb_split.early_season_blend is True
 
 
+def test_load_pff_config_qb_split_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    assert isinstance(cfg.qb_split, QbSplitConfig)
+    assert cfg.qb_split.enabled is False
+    assert cfg.qb_split.completion_sensitivity == 0.10
+    assert cfg.qb_split.yards_sensitivity == 0.12
+    assert cfg.qb_split.catch_rate_clamp == (0.95, 1.05)
+    assert cfg.qb_split.yards_scale_clamp == (0.94, 1.06)
+    assert cfg.qb_split.min_pressure_dropbacks == 20
+    assert cfg.qb_split.min_clean_dropbacks == 40
+    assert cfg.qb_split.min_games == 4
+    assert cfg.qb_split.early_season_blend is True
+
+
 def test_load_pff_config_qb_split_custom_values():
     cfg = load_pff_config(
         {
