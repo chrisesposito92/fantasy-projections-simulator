@@ -448,13 +448,15 @@ def test_pff_rb_scheme_fit_reports_full_when_inputs_exist(tmp_path):
     )
 
 
-def test_pff_rb_scheme_fit_reports_partial_when_one_season_is_missing(tmp_path):
+def test_pff_rb_scheme_fit_reports_partial_when_one_required_input_is_missing(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
     _write_parquet_placeholder(pff_dir / "rushing_direction_2023.parquet")
     _write_parquet_placeholder(pff_dir / "offense_run_blocking_2023.parquet")
     _write_parquet_placeholder(pff_dir / "rushing_summary_2023.parquet")
     _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_direction_2024.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_summary_2024.parquet")
     _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
 
     engine_configs = _default_engine_configs()
