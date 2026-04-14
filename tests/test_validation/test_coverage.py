@@ -357,6 +357,56 @@ def test_pff_depth_role_reports_none_when_summary_trio_is_missing(tmp_path):
     )
 
 
+def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        for facet in ("receiving_depth", "receiving_summary", "rushing_summary", "passing_summary"):
+            _write_parquet_placeholder(pff_dir / f"{facet}_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].depth_role.enabled = True
+    engine_configs["pff_config"].depth_role.efficiency.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role.efficiency"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Requires receiving_depth, the PFF summary trio, and rosters_weekly cache to support the depth-role efficiency path",
+    )
+
+
+def test_pff_depth_role_efficiency_disabled_when_parent_family_disabled(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for facet in ("receiving_depth", "receiving_summary", "rushing_summary", "passing_summary"):
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].depth_role.enabled = True
+    engine_configs["pff_config"].depth_role.efficiency.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.depth_role.efficiency"].status == "disabled"
+
+
 def test_pff_depth_role_is_disabled_when_parent_pff_is_disabled(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
