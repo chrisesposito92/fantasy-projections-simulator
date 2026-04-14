@@ -198,6 +198,56 @@ def test_ensure_pff_crosswalk_rebuilds_when_roster_season_changes(tmp_path):
     assert builder.loader.load_rosters.call_args_list[1].args == ([2025],)
 
 
+def test_ensure_pff_crosswalk_clears_stale_cache_when_new_roster_season_has_no_frames(tmp_path):
+    builder = GameContextBuilder(cache_dir=tmp_path / "cache")
+    builder._pff_loader = MagicMock()
+    season_2024_frame = pl.DataFrame(
+        {
+            "player_id": [101],
+            "player": ["QB One"],
+            "team": ["KC"],
+            "season": [2024],
+            "week": [1],
+        }
+    )
+    empty_frame = pl.DataFrame({"player_id": [], "player": [], "team": []})
+
+    def _load_facet(facet: str, seasons: list[int]) -> pl.DataFrame:
+        if seasons == [2024]:
+            return season_2024_frame
+        if seasons == [2024, 2025]:
+            return empty_frame
+        raise AssertionError(f"Unexpected seasons for {facet}: {seasons}")
+
+    builder._pff_loader.load_facet.side_effect = _load_facet
+    builder._pff_loader.build_crosswalk.return_value = {101: "KC_QB_2024"}
+    builder.loader.load_rosters = MagicMock(
+        return_value=pl.DataFrame(
+            {
+                "player_id": ["KC_QB_2024"],
+                "player_name": ["QB One"],
+                "team": ["KC"],
+                "position": ["QB"],
+                "pff_id": [101],
+            }
+        )
+    )
+
+    builder._ensure_pff_crosswalk(training_seasons=[2024], target_season=None)
+
+    assert builder._pff_crosswalk == {101: "KC_QB_2024"}
+    assert builder._pff_crosswalk_roster_season == 2024
+
+    builder._ensure_pff_crosswalk(training_seasons=[2024], target_season=2025)
+
+    assert builder._pff_crosswalk == {}
+    assert builder._pff_crosswalk_roster_season == 2025
+    assert builder._pff_loader.build_crosswalk.call_count == 1
+    assert [call.args for call in builder.loader.load_rosters.call_args_list] == [
+        ([2024],),
+    ]
+
+
 def test_build_game_applies_qb_split_after_tier_before_depth_role(tmp_path):
     builder = GameContextBuilder(cache_dir=tmp_path / "cache")
     builder.build_team_distributions = MagicMock(side_effect=[_make_dists("KC"), _make_dists("BUF")])

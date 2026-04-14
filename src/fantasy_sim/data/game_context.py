@@ -696,6 +696,8 @@ class GameContextBuilder:
                     cols.append("week")
                 frames.append(df.select(cols))
         if not frames:
+            self._pff_crosswalk = {}
+            self._pff_crosswalk_roster_season = roster_season
             return
 
         pff_data = pl.concat(frames, how="diagonal_relaxed")
