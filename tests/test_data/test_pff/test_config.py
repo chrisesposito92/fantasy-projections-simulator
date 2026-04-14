@@ -12,6 +12,7 @@ from fantasy_sim.data.pff.models import (
     MatchupConfig,
     MatchupContext,
     PffConfig,
+    RbSchemeFitConfig,
     QbSplitConfig,
     TalentConfig,
 )
@@ -263,6 +264,63 @@ def test_load_pff_config_qb_split_defaults():
     assert cfg.qb_split.min_clean_dropbacks == 40
     assert cfg.qb_split.min_games == 4
     assert cfg.qb_split.early_season_blend is True
+
+
+def test_load_pff_config_rb_scheme_fit_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    assert isinstance(cfg.rb_scheme_fit, RbSchemeFitConfig)
+    assert cfg.rb_scheme_fit.enabled is False
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.10
+    assert cfg.rb_scheme_fit.factor_clamp == (0.94, 1.06)
+    assert cfg.rb_scheme_fit.min_attempts == 20
+    assert cfg.rb_scheme_fit.min_games == 4
+    assert cfg.rb_scheme_fit.early_season_blend is True
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.65
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.35
+
+
+def test_load_pff_config_rb_scheme_fit_defaults_from_shipped_yaml():
+    cfg = load_pff_config(load_defaults())
+
+    assert isinstance(cfg.rb_scheme_fit, RbSchemeFitConfig)
+    assert cfg.rb_scheme_fit.enabled is False
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.10
+    assert cfg.rb_scheme_fit.factor_clamp == (0.94, 1.06)
+    assert cfg.rb_scheme_fit.min_attempts == 20
+    assert cfg.rb_scheme_fit.min_games == 4
+    assert cfg.rb_scheme_fit.early_season_blend is True
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.65
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.35
+
+
+def test_load_pff_config_rb_scheme_fit_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "rb_scheme_fit": {
+                    "enabled": True,
+                    "rush_yards_sensitivity": 0.14,
+                    "factor_clamp": [0.92, 1.08],
+                    "min_attempts": 28,
+                    "min_games": 5,
+                    "early_season_blend": False,
+                    "scheme_usage_weight": 0.70,
+                    "blocking_alignment_weight": 0.30,
+                },
+            }
+        }
+    )
+
+    assert cfg.rb_scheme_fit.enabled is True
+    assert cfg.rb_scheme_fit.rush_yards_sensitivity == 0.14
+    assert cfg.rb_scheme_fit.factor_clamp == (0.92, 1.08)
+    assert cfg.rb_scheme_fit.min_attempts == 28
+    assert cfg.rb_scheme_fit.min_games == 5
+    assert cfg.rb_scheme_fit.early_season_blend is False
+    assert cfg.rb_scheme_fit.scheme_usage_weight == 0.70
+    assert cfg.rb_scheme_fit.blocking_alignment_weight == 0.30
 
 
 def test_load_pff_config_qb_split_defaults_from_shipped_yaml():

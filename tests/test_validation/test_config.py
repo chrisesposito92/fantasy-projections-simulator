@@ -202,6 +202,24 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"].depth_role.enabled is True
         assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
 
+    def test_pff_rb_scheme_fit_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.rb_scheme_fit.enabled=true",
+                "pff.rb_scheme_fit.rush_yards_sensitivity=0.14",
+                "pff.rb_scheme_fit.min_attempts=28",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].rb_scheme_fit.enabled is True
+        assert configs["pff_config"].rb_scheme_fit.rush_yards_sensitivity == 0.14
+        assert configs["pff_config"].rb_scheme_fit.min_attempts == 28
+
     def test_pff_qb_split_override_propagates(self):
         defaults = load_defaults()
         overridden = apply_overrides(

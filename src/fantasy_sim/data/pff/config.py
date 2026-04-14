@@ -16,6 +16,7 @@ from fantasy_sim.data.pff.models import (
     NcaaRookieConfig,
     PffConfig,
     PositionGradeConfig,
+    RbSchemeFitConfig,
     QbSplitConfig,
     ScheduleAdjustmentConfig,
     TalentConfig,
@@ -263,6 +264,18 @@ def load_pff_config(config: dict) -> PffConfig:
         ),
     )
 
+    rb_scheme_fit_raw = pff.get("rb_scheme_fit", {})
+    rb_scheme_fit = RbSchemeFitConfig(
+        enabled=rb_scheme_fit_raw.get("enabled", False),
+        rush_yards_sensitivity=rb_scheme_fit_raw.get("rush_yards_sensitivity", 0.10),
+        factor_clamp=tuple(rb_scheme_fit_raw.get("factor_clamp", [0.94, 1.06])),
+        min_attempts=rb_scheme_fit_raw.get("min_attempts", 20),
+        min_games=rb_scheme_fit_raw.get("min_games", 4),
+        early_season_blend=rb_scheme_fit_raw.get("early_season_blend", True),
+        scheme_usage_weight=rb_scheme_fit_raw.get("scheme_usage_weight", 0.65),
+        blocking_alignment_weight=rb_scheme_fit_raw.get("blocking_alignment_weight", 0.35),
+    )
+
     qb_split_raw = pff.get("qb_split", {})
     qb_split = QbSplitConfig(
         enabled=qb_split_raw.get("enabled", False),
@@ -301,6 +314,7 @@ def load_pff_config(config: dict) -> PffConfig:
         team_context=team_context,
         coverage=coverage,
         depth_role=depth_role,
+        rb_scheme_fit=rb_scheme_fit,
         qb_split=qb_split,
         kicker=kicker,
         dst_baseline=dst_baseline,

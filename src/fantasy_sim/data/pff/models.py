@@ -287,6 +287,25 @@ class DepthRoleFactors:
 
 
 @dataclass
+class RbSchemeFitConfig:
+    """Configuration for the PFF RB scheme-fit engine."""
+    enabled: bool = False
+    rush_yards_sensitivity: float = 0.10
+    factor_clamp: tuple[float, float] = (0.94, 1.06)
+    min_attempts: int = 20
+    min_games: int = 4
+    early_season_blend: bool = True
+    scheme_usage_weight: float = 0.65
+    blocking_alignment_weight: float = 0.35
+
+
+@dataclass
+class RbSchemeFitFactors:
+    """Per-RB bounded scheme-fit adjustments."""
+    rushing_yards_factor: float = 1.0
+
+
+@dataclass
 class QbSplitConfig:
     """Configuration for QB pressure vs clean-pocket split adjustments."""
     enabled: bool = False
@@ -344,6 +363,7 @@ class PffConfig:
     team_context: TeamContextConfig = field(default_factory=TeamContextConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
     depth_role: DepthRoleConfig = field(default_factory=DepthRoleConfig)
+    rb_scheme_fit: RbSchemeFitConfig = field(default_factory=RbSchemeFitConfig)
     qb_split: QbSplitConfig = field(default_factory=QbSplitConfig)
     kicker: KickerConfig = field(default_factory=KickerConfig)
     dst_baseline: DstBaselineConfig = field(default_factory=DstBaselineConfig)
