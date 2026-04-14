@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import polars as pl
+import pytest
 
 from fantasy_sim.data.pff.models import RbSchemeFitConfig
 from fantasy_sim.data.pff.rb_scheme_fit import RbSchemeFitEngine
@@ -183,6 +184,57 @@ def _team_blend_blocking_df() -> pl.DataFrame:
     )
 
 
+def _non_immediate_prior_rushing_direction_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2021, 2021, 2022, 2022, 2024],
+            "week": [7, 8, 7, 8, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN", "TEN"],
+            "player_id": [101, 101, 101, 101, 101],
+            "position": ["RB", "RB", "RB", "RB", "RB"],
+            "game_id": [31, 32, 41, 42, 51],
+            "directions": [
+                [
+                    {"direction": "LE", "attempts": 8, "yards": 48, "ypa": 6.0},
+                    {"direction": "RE", "attempts": 6, "yards": 30, "ypa": 5.0},
+                ],
+                [
+                    {"direction": "LE", "attempts": 7, "yards": 35, "ypa": 5.0},
+                    {"direction": "RE", "attempts": 5, "yards": 20, "ypa": 4.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 8, "yards": 64, "ypa": 8.0},
+                    {"direction": "MR", "attempts": 6, "yards": 36, "ypa": 6.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 6, "yards": 42, "ypa": 7.0},
+                    {"direction": "MR", "attempts": 4, "yards": 20, "ypa": 5.0},
+                ],
+                [
+                    {"direction": "LE", "attempts": 1, "yards": 3, "ypa": 3.0},
+                ],
+            ],
+        }
+    )
+
+
+def _non_immediate_prior_blocking_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2021, 2021, 2022, 2022, 2024],
+            "week": [7, 8, 7, 8, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN", "TEN"],
+            "game_id": [31, 32, 41, 42, 51],
+            "gap_snap_counts_run_play": [1, 1, 40, 39, 2],
+            "zone_snap_counts_run_play": [18, 17, 1, 1, 5],
+            "gap_snap_counts_run_block": [1, 1, 40, 39, 2],
+            "zone_snap_counts_run_block": [18, 17, 1, 1, 5],
+            "gap_grades_run_block": [55.0, 56.0, 68.0, 67.0, 58.0],
+            "zone_grades_run_block": [66.0, 65.0, 58.0, 57.0, 62.0],
+        }
+    )
+
+
 def test_compute_returns_empty_when_crosswalk_is_missing():
     loader = MagicMock()
     loader.load_facet.side_effect = lambda facet, seasons: (
@@ -356,3 +408,52 @@ def test_compute_blends_previous_team_blocking_grades_when_current_season_is_ear
 
     assert "ten_rb" in factors
     assert factors["ten_rb"].rushing_yards_factor > 1.0
+
+
+def test_compute_does_not_blend_with_non_immediate_prior_season():
+    loader = MagicMock()
+    loader.load_facet.side_effect = lambda facet, seasons: (
+        _non_immediate_prior_rushing_direction_df()
+        if facet == "rushing_direction"
+        else _non_immediate_prior_blocking_df()
+    )
+    engine = RbSchemeFitEngine(
+        loader,
+        RbSchemeFitConfig(
+            enabled=True,
+            rush_yards_sensitivity=0.80,
+            min_attempts=20,
+            min_games=3,
+            early_season_blend=True,
+            scheme_usage_weight=1.0,
+            blocking_alignment_weight=0.0,
+            factor_clamp=(0.90, 1.10),
+        ),
+    )
+
+    factors = engine.compute(
+        roster=_make_roster("TEN", rb_id="ten_rb"),
+        pff_crosswalk={101: "ten_rb"},
+        training_seasons=[2021, 2022, 2024],
+        target_season=2024,
+        max_week=4,
+    )
+
+    assert "ten_rb" in factors
+    assert factors["ten_rb"].rushing_yards_factor == pytest.approx(1.0453601789709173)
+
+
+def test_previous_season_rows_requires_immediate_prior_season():
+    loader = MagicMock()
+    engine = RbSchemeFitEngine(loader, RbSchemeFitConfig(enabled=True))
+
+    rows = pl.DataFrame(
+        {
+            "season": [2021, 2022, 2024],
+            "game_id": [1, 2, 3],
+        }
+    )
+
+    previous_rows = engine._previous_season_rows(rows, target_season=2024)
+
+    assert previous_rows.is_empty()

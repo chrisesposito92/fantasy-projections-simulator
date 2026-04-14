@@ -212,15 +212,8 @@ class RbSchemeFitEngine:
     def _previous_season_rows(self, rows: pl.DataFrame, target_season: int) -> pl.DataFrame:
         if rows.is_empty():
             return pl.DataFrame()
-        previous_seasons = [
-            int(season)
-            for season in rows["season"].unique().to_list()
-            if int(season) < target_season
-        ]
-        if not previous_seasons:
-            return pl.DataFrame()
-        previous_season = max(previous_seasons)
-        return rows.filter(pl.col("season") == previous_season)
+        immediate_previous = target_season - 1
+        return rows.filter(pl.col("season") == immediate_previous)
 
     def _select_player_profile(
         self,
