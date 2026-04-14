@@ -385,7 +385,7 @@ def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
     )
 
 
-def test_pff_depth_role_efficiency_disabled_when_parent_family_disabled(tmp_path):
+def test_pff_depth_role_efficiency_disabled_when_parent_depth_role_disabled(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
     for facet in ("receiving_depth", "receiving_summary", "rushing_summary", "passing_summary"):
@@ -393,9 +393,10 @@ def test_pff_depth_role_efficiency_disabled_when_parent_family_disabled(tmp_path
     _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
 
     engine_configs = _default_engine_configs()
-    engine_configs["pff_config"].enabled = False
+    engine_configs["pff_config"].enabled = True
     engine_configs["pff_config"].depth_role.enabled = True
     engine_configs["pff_config"].depth_role.efficiency.enabled = True
+    engine_configs["pff_config"].depth_role.enabled = False
 
     coverage = collect_signal_coverage(
         engine_configs,
