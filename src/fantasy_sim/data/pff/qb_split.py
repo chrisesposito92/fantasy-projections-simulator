@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import polars as pl
 
 from fantasy_sim.data.pff.loader import PffLoader
 from fantasy_sim.data.pff.models import MatchupContext, QbSplitConfig, QbSplitFactors
 from fantasy_sim.models.player import TeamRoster
+
+logger = logging.getLogger(__name__)
 
 _REQUIRED_COLUMNS = {
     "season",
@@ -41,6 +45,12 @@ class QbSplitEngine:
         if key not in self._cache:
             df = self._loader.load_facet("passing_detail", seasons)
             if df.is_empty() or not _REQUIRED_COLUMNS.issubset(df.columns):
+                missing_columns = sorted(_REQUIRED_COLUMNS.difference(df.columns))
+                if missing_columns:
+                    logger.debug(
+                        "QbSplitEngine missing required passing_detail columns: %s",
+                        ", ".join(missing_columns),
+                    )
                 self._cache[key] = pl.DataFrame()
             else:
                 self._cache[key] = df
@@ -82,7 +92,7 @@ class QbSplitEngine:
                     * pl.col("no_pressure_ypa").cast(pl.Float64)
                 ).alias("_clean_ypa_weight"),
             )
-            .group_by(["season", "team", "player_id"])
+            .group_by(["season", "player_id"])
             .agg(
                 pl.col("pressure_dropbacks").sum().cast(pl.Float64),
                 pl.col("no_pressure_dropbacks").sum().cast(pl.Float64),
@@ -146,9 +156,23 @@ class QbSplitEngine:
             for key in current_row
         }
 
-    def _blended_row(self, qb_rows: pl.DataFrame, target_season: int) -> dict[str, float] | None:
+    def _blended_row(
+        self,
+        qb_rows: pl.DataFrame,
+        target_season: int,
+    ) -> dict[str, float] | None:
         current_row = self._summary(qb_rows.filter(pl.col("season") == target_season))
-        previous_row = self._summary(qb_rows.filter(pl.col("season") < target_season))
+        previous_seasons = [
+            int(season)
+            for season in qb_rows["season"].unique().to_list()
+            if int(season) < target_season
+        ]
+        previous_row = None
+        if previous_seasons:
+            previous_season = max(previous_seasons)
+            previous_row = self._summary(
+                qb_rows.filter(pl.col("season") == previous_season)
+            )
 
         if self._passes_sample_gates(current_row):
             return current_row
@@ -215,9 +239,7 @@ class QbSplitEngine:
             return QbSplitFactors()
 
         qb_row = self._blended_row(
-            aggregated.filter(
-                (pl.col("team") == roster.team) & (pl.col("player_id") == qb_pff_id)
-            ),
+            aggregated.filter(pl.col("player_id") == qb_pff_id),
             target_season,
         )
         qb_traits = self._trait_pair(qb_row)
