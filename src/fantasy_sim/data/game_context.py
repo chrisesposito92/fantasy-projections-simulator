@@ -17,6 +17,7 @@ from fantasy_sim.data.pff.models import (
     MatchupContext,
     CoverageModifiers,
     QbSplitFactors,
+    RbSchemeFitFactors,
 )
 from fantasy_sim.data.weather.models import WeatherConfig, WeatherContext
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig, VegasContext
@@ -125,6 +126,7 @@ class GameContextBuilder:
             logger.info("PFF team context engine enabled")
 
         self._depth_role_engine = None
+        self._rb_scheme_fit_engine = None
         self._qb_split_engine = None
 
         if self._pff_config.enabled and self._pff_config.depth_role.enabled and self._pff_loader:
@@ -135,6 +137,15 @@ class GameContextBuilder:
                 self._pff_config.depth_role,
             )
             logger.info("PFF depth-role engine enabled")
+
+        if self._pff_config.enabled and self._pff_config.rb_scheme_fit.enabled and self._pff_loader:
+            from fantasy_sim.data.pff.rb_scheme_fit import RbSchemeFitEngine
+
+            self._rb_scheme_fit_engine = RbSchemeFitEngine(
+                self._pff_loader,
+                self._pff_config.rb_scheme_fit,
+            )
+            logger.info("PFF RB scheme-fit engine enabled")
 
         if self._pff_config.enabled and self._pff_config.qb_split.enabled:
             if self._matchup_engine is not None and self._pff_loader:
@@ -584,6 +595,32 @@ class GameContextBuilder:
                 )
 
     @staticmethod
+    def _apply_rb_scheme_fit(
+        roster: TeamRoster,
+        factors: dict[str, RbSchemeFitFactors] | None,
+    ) -> None:
+        """Apply RB-only rushing yards adjustments in-place."""
+        if not factors:
+            return
+
+        for player in roster.players:
+            if player.position != "RB":
+                continue
+
+            player_factors = factors.get(player.player_id)
+            if (
+                player_factors is None
+                or player_factors.rushing_yards_factor == 1.0
+                or player.outcomes.rushing_yards_dist is None
+                or len(player.outcomes.rushing_yards_dist) == 0
+            ):
+                continue
+
+            player.outcomes.rushing_yards_dist = (
+                player.outcomes.rushing_yards_dist * player_factors.rushing_yards_factor
+            )
+
+    @staticmethod
     def _apply_weather(
         dists: TeamDistributions,
         roster: TeamRoster,
@@ -976,6 +1013,27 @@ class GameContextBuilder:
             )
             _normalize_roster_shares(home_roster)
             _normalize_roster_shares(away_roster)
+
+        if self._rb_scheme_fit_engine is not None and target_season and week:
+            self._ensure_pff_crosswalk(training_seasons, target_season)
+            rb_scheme_fit_seasons = _seasons_with_target(training_seasons, target_season)
+
+            home_rb_scheme_fit = self._rb_scheme_fit_engine.compute(
+                roster=home_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=rb_scheme_fit_seasons,
+                target_season=target_season,
+                max_week=week,
+            )
+            away_rb_scheme_fit = self._rb_scheme_fit_engine.compute(
+                roster=away_roster,
+                pff_crosswalk=self._pff_crosswalk,
+                training_seasons=rb_scheme_fit_seasons,
+                target_season=target_season,
+                max_week=week,
+            )
+            self._apply_rb_scheme_fit(home_roster, home_rb_scheme_fit)
+            self._apply_rb_scheme_fit(away_roster, away_rb_scheme_fit)
 
         if self._qb_split_engine is not None and target_season and week:
             self._ensure_pff_crosswalk(training_seasons, target_season)
