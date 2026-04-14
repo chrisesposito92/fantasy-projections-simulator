@@ -222,6 +222,36 @@ class DepthRolePositionConfig:
 
 
 @dataclass
+class DepthRoleEfficiencyPositionConfig:
+    """Position-specific efficiency sensitivities for WR/TE depth-role v2."""
+    catch_rate_sensitivity: float
+    yards_scale_sensitivity: float
+
+
+@dataclass
+class DepthRoleEfficiencyConfig:
+    """Configuration for WR/TE efficiency-only depth-role adjustments."""
+    enabled: bool = False
+    min_routes: int = 15
+    min_receptions: int = 6
+    min_games: int = 4
+    catch_rate_clamp: tuple[float, float] = (0.94, 1.06)
+    yards_scale_clamp: tuple[float, float] = (0.92, 1.08)
+    wr: DepthRoleEfficiencyPositionConfig = field(
+        default_factory=lambda: DepthRoleEfficiencyPositionConfig(
+            catch_rate_sensitivity=0.08,
+            yards_scale_sensitivity=0.10,
+        )
+    )
+    te: DepthRoleEfficiencyPositionConfig = field(
+        default_factory=lambda: DepthRoleEfficiencyPositionConfig(
+            catch_rate_sensitivity=0.06,
+            yards_scale_sensitivity=0.08,
+        )
+    )
+
+
+@dataclass
 class DepthRoleConfig:
     """Configuration for the PFF WR/TE depth-role engine."""
     enabled: bool = False
@@ -244,6 +274,9 @@ class DepthRoleConfig:
     min_targets: int = 6
     min_games: int = 4
     early_season_blend: bool = True
+    efficiency: DepthRoleEfficiencyConfig = field(
+        default_factory=DepthRoleEfficiencyConfig
+    )
 
 
 @dataclass

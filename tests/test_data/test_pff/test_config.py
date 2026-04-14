@@ -6,6 +6,8 @@ from fantasy_sim.data.pff.config import load_pff_config
 from fantasy_sim.config.loader import load_defaults
 from fantasy_sim.data.pff.models import (
     DepthRoleConfig,
+    DepthRoleEfficiencyConfig,
+    DepthRoleEfficiencyPositionConfig,
     DepthRolePositionConfig,
     MatchupConfig,
     MatchupContext,
@@ -224,6 +226,67 @@ def test_load_pff_config_depth_role_custom_values():
     assert cfg.depth_role.te.target_share_sensitivity == 0.07
     assert cfg.depth_role.te.air_yards_share_sensitivity == 0.05
     assert cfg.depth_role.te.factor_clamp == (0.96, 1.04)
+
+
+def test_load_pff_config_depth_role_efficiency_defaults():
+    cfg = load_pff_config({"pff": {"enabled": True}})
+
+    eff = cfg.depth_role.efficiency
+    assert isinstance(eff, DepthRoleEfficiencyConfig)
+    assert eff.enabled is False
+    assert eff.min_routes == 15
+    assert eff.min_receptions == 6
+    assert eff.min_games == 4
+    assert eff.catch_rate_clamp == (0.94, 1.06)
+    assert eff.yards_scale_clamp == (0.92, 1.08)
+    assert eff.wr == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.08,
+        yards_scale_sensitivity=0.10,
+    )
+    assert eff.te == DepthRoleEfficiencyPositionConfig(
+        catch_rate_sensitivity=0.06,
+        yards_scale_sensitivity=0.08,
+    )
+
+
+def test_load_pff_config_depth_role_efficiency_custom_values():
+    cfg = load_pff_config(
+        {
+            "pff": {
+                "enabled": True,
+                "depth_role": {
+                    "efficiency": {
+                        "enabled": True,
+                        "min_routes": 18,
+                        "min_receptions": 8,
+                        "min_games": 5,
+                        "catch_rate_clamp": [0.95, 1.05],
+                        "yards_scale_clamp": [0.93, 1.07],
+                        "wr": {
+                            "catch_rate_sensitivity": 0.11,
+                            "yards_scale_sensitivity": 0.13,
+                        },
+                        "te": {
+                            "catch_rate_sensitivity": 0.09,
+                            "yards_scale_sensitivity": 0.07,
+                        },
+                    }
+                },
+            }
+        }
+    )
+
+    eff = cfg.depth_role.efficiency
+    assert eff.enabled is True
+    assert eff.min_routes == 18
+    assert eff.min_receptions == 8
+    assert eff.min_games == 5
+    assert eff.catch_rate_clamp == (0.95, 1.05)
+    assert eff.yards_scale_clamp == (0.93, 1.07)
+    assert eff.wr.catch_rate_sensitivity == 0.11
+    assert eff.wr.yards_scale_sensitivity == 0.13
+    assert eff.te.catch_rate_sensitivity == 0.09
+    assert eff.te.yards_scale_sensitivity == 0.07
 
 
 def test_load_pff_config_depth_role_rejects_invalid_positions():

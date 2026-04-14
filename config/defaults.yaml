@@ -145,6 +145,19 @@ pff:
     min_targets: 6
     min_games: 4
     early_season_blend: true
+    efficiency:
+      enabled: false
+      min_routes: 15
+      min_receptions: 6
+      min_games: 4
+      catch_rate_clamp: [0.94, 1.06]
+      yards_scale_clamp: [0.92, 1.08]
+      wr:
+        catch_rate_sensitivity: 0.08
+        yards_scale_sensitivity: 0.10
+      te:
+        catch_rate_sensitivity: 0.06
+        yards_scale_sensitivity: 0.08
 
   # Per-kicker accuracy from PFF field goal data (Bayesian shrinkage)
   kicker:

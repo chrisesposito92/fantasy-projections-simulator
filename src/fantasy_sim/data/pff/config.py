@@ -6,6 +6,8 @@ from fantasy_sim.data.pff.models import (
     ArchetypeConfig,
     CoverageConfig,
     DepthRoleConfig,
+    DepthRoleEfficiencyConfig,
+    DepthRoleEfficiencyPositionConfig,
     DepthRolePositionConfig,
     DstBaselineConfig,
     KickerConfig,
@@ -183,6 +185,7 @@ def load_pff_config(config: dict) -> PffConfig:
 
     depth_role_raw = pff.get("depth_role", {})
     depth_role_positions = tuple(depth_role_raw.get("positions", ["WR", "TE"]))
+    efficiency_raw = depth_role_raw.get("efficiency", {})
     invalid_positions = [
         pos for pos in depth_role_positions if pos not in _SUPPORTED_DEPTH_ROLE_POSITIONS
     ]
@@ -225,6 +228,38 @@ def load_pff_config(config: dict) -> PffConfig:
         min_targets=depth_role_raw.get("min_targets", 6),
         min_games=depth_role_raw.get("min_games", 4),
         early_season_blend=depth_role_raw.get("early_season_blend", True),
+        efficiency=DepthRoleEfficiencyConfig(
+            enabled=efficiency_raw.get("enabled", False),
+            min_routes=efficiency_raw.get("min_routes", 15),
+            min_receptions=efficiency_raw.get("min_receptions", 6),
+            min_games=efficiency_raw.get("min_games", 4),
+            catch_rate_clamp=tuple(
+                efficiency_raw.get("catch_rate_clamp", [0.94, 1.06])
+            ),
+            yards_scale_clamp=tuple(
+                efficiency_raw.get("yards_scale_clamp", [0.92, 1.08])
+            ),
+            wr=DepthRoleEfficiencyPositionConfig(
+                catch_rate_sensitivity=efficiency_raw.get("wr", {}).get(
+                    "catch_rate_sensitivity",
+                    0.08,
+                ),
+                yards_scale_sensitivity=efficiency_raw.get("wr", {}).get(
+                    "yards_scale_sensitivity",
+                    0.10,
+                ),
+            ),
+            te=DepthRoleEfficiencyPositionConfig(
+                catch_rate_sensitivity=efficiency_raw.get("te", {}).get(
+                    "catch_rate_sensitivity",
+                    0.06,
+                ),
+                yards_scale_sensitivity=efficiency_raw.get("te", {}).get(
+                    "yards_scale_sensitivity",
+                    0.08,
+                ),
+            ),
+        ),
     )
 
     kicker_raw = pff.get("kicker", {})

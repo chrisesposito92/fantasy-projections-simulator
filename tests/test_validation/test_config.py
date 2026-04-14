@@ -202,6 +202,25 @@ class TestBuildEngineConfigs:
         assert configs["pff_config"].depth_role.enabled is True
         assert configs["pff_config"].depth_role.wr.target_share_sensitivity == 0.14
 
+    def test_pff_depth_role_efficiency_override_propagates(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "pff.depth_role.efficiency.enabled=true",
+                "pff.depth_role.efficiency.wr.catch_rate_sensitivity=0.11",
+                "pff.depth_role.efficiency.te.yards_scale_sensitivity=0.07",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["pff_config"] is not None
+        eff = configs["pff_config"].depth_role.efficiency
+        assert eff.enabled is True
+        assert eff.wr.catch_rate_sensitivity == 0.11
+        assert eff.te.yards_scale_sensitivity == 0.07
+
     def test_pff_depth_role_invalid_position_override_raises(self):
         defaults = load_defaults()
         overridden = apply_overrides(
