@@ -189,9 +189,9 @@ class PffLoader:
                 descending=[False, *([True] * len(order_cols))],
                 nulls_last=True,
             )
-        pff_players = pff_players.unique(subset=["player_id"], keep="first")
+        pff_players_latest = pff_players.unique(subset=["player_id"], keep="first")
 
-        if pff_players.is_empty() or roster.is_empty():
+        if pff_players_latest.is_empty() or roster.is_empty():
             self._crosswalk_cache[season] = crosswalk
             return crosswalk
 
@@ -211,7 +211,7 @@ class PffLoader:
                 .unique(subset=["_pff_id_int"])
             )
 
-            matched = pff_players.join(
+            matched = pff_players_latest.join(
                 roster_with_pff,
                 left_on="player_id",
                 right_on="_pff_id_int",
@@ -226,7 +226,7 @@ class PffLoader:
         # --- Layer 2: exact name + team match ---
         unmatched_pff = pff_players.filter(
             ~pl.col("player_id").is_in(list(crosswalk.keys()))
-        )
+        ).unique(subset=["player_id", "player", "team"], keep="first")
 
         if not unmatched_pff.is_empty():
             # Roster name + team lookup
@@ -248,7 +248,7 @@ class PffLoader:
                 crosswalk[row["player_id"]] = row["player_id_right"]
 
         layer2_count = len(crosswalk) - layer1_count
-        total = pff_players.height
+        total = pff_players_latest.height
         coverage = len(crosswalk) / total * 100 if total > 0 else 0
 
         logger.info(

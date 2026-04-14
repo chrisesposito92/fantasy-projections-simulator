@@ -259,8 +259,8 @@ def test_compute_blends_current_and_previous_season_rows_early():
         matchup_context=MatchupContext(sack_rate_factor=1.20, ol_pass_block_factor=0.90),
     )
 
-    assert factors.catch_rate_factor == pytest.approx(0.9989295410471881)
-    assert factors.yards_scale_factor == pytest.approx(0.9983706959706959)
+    assert factors.catch_rate_factor == pytest.approx(0.9992605042016807)
+    assert factors.yards_scale_factor == pytest.approx(0.9989333333333333)
 
 
 def test_compute_uses_prior_history_when_qb_changed_teams():
@@ -303,6 +303,28 @@ def test_compute_blends_only_immediate_previous_season():
         matchup_context=MatchupContext(sack_rate_factor=1.20, ol_pass_block_factor=0.90),
     )
 
-    assert factors.catch_rate_factor == pytest.approx(0.9999374742904155)
-    assert factors.yards_scale_factor == pytest.approx(0.9995300699300699)
+    assert factors.catch_rate_factor == pytest.approx(1.000316577540107)
+    assert factors.yards_scale_factor == pytest.approx(1.0001745454545454)
     assert factors.catch_rate_factor != pytest.approx(0.9976362329259526)
+
+
+def test_compute_falls_back_to_latest_prior_when_immediate_previous_is_missing():
+    engine = _engine(
+        _multi_prior_blend_df(),
+        min_pressure_dropbacks=20,
+        min_clean_dropbacks=40,
+        min_games=4,
+        early_season_blend=True,
+    )
+
+    factors = engine.compute(
+        roster=_make_roster("KC"),
+        pff_crosswalk={101: "00-0031234", 202: "00-0039999"},
+        training_seasons=[2022, 2024],
+        target_season=2024,
+        max_week=4,
+        matchup_context=MatchupContext(sack_rate_factor=1.20, ol_pass_block_factor=0.90),
+    )
+
+    assert factors.catch_rate_factor == pytest.approx(0.9953684210526316)
+    assert factors.yards_scale_factor == pytest.approx(0.994164705882353)

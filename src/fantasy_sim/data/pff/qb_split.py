@@ -151,9 +151,8 @@ class QbSplitEngine:
         if not self._config.early_season_blend or current_row["games"] >= self._config.min_games:
             return current_row
 
-        blend_weight = current_row["games"] / max(self._config.min_games, 1)
         return {
-            key: blend_weight * current_row[key] + (1.0 - blend_weight) * previous_row[key]
+            key: current_row[key] + previous_row[key]
             for key in current_row
         }
 
@@ -163,26 +162,33 @@ class QbSplitEngine:
         target_season: int,
     ) -> dict[str, float] | None:
         current_row = self._summary(qb_rows.filter(pl.col("season") == target_season))
-        previous_seasons = [
+        previous_seasons = sorted(
             int(season)
             for season in qb_rows["season"].unique().to_list()
             if int(season) < target_season
-        ]
-        previous_row = None
+        )
+        immediate_previous_row = None
+        if (target_season - 1) in previous_seasons:
+            immediate_previous_row = self._summary(
+                qb_rows.filter(pl.col("season") == (target_season - 1))
+            )
+
+        fallback_row = None
         if previous_seasons:
-            previous_season = max(previous_seasons)
-            previous_row = self._summary(
-                qb_rows.filter(pl.col("season") == previous_season)
+            fallback_row = self._summary(
+                qb_rows.filter(pl.col("season") == previous_seasons[-1])
             )
 
         if self._passes_sample_gates(current_row):
             return current_row
-        if self._config.early_season_blend and current_row is not None and previous_row is not None:
-            blended = self._blend_rows(current_row, previous_row)
-            if blended is not None and self._passes_sample_gates(previous_row):
+        if self._config.early_season_blend and current_row is not None and immediate_previous_row is not None:
+            blended = self._blend_rows(current_row, immediate_previous_row)
+            if blended is not None and self._passes_sample_gates(blended):
                 return blended
-        if self._passes_sample_gates(previous_row):
-            return previous_row
+        if self._passes_sample_gates(immediate_previous_row):
+            return immediate_previous_row
+        if self._passes_sample_gates(fallback_row):
+            return fallback_row
         return None
 
     def _trait_pair(self, row: dict[str, float] | None) -> tuple[float, float] | None:

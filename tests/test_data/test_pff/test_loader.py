@@ -338,6 +338,31 @@ class TestBuildCrosswalk:
 
         assert crosswalk == {700: "GSIS700"}
 
+    def test_name_team_fallback_can_match_earlier_team_when_later_team_exists(self, tmp_path):
+        loader = PffLoader(tmp_path / "pff" / "processed" / "nfl")
+        pff_data = pl.DataFrame(
+            {
+                "player_id": [701, 701],
+                "player": ["Moved Player", "Moved Player"],
+                "team": ["KC", "PIT"],
+                "season": [2024, 2024],
+                "week": [3, 10],
+            }
+        )
+        roster = pl.DataFrame(
+            {
+                "player_id": ["GSIS701"],
+                "player_name": ["Moved Player"],
+                "team": ["KC"],
+                "position": ["QB"],
+                "pff_id": [None],
+            }
+        )
+
+        crosswalk = loader.build_crosswalk(pff_data, roster, 2024)
+
+        assert crosswalk == {701: "GSIS701"}
+
 
 # ---------- PffLoader.load_ncaa_facet ----------
 
