@@ -358,6 +358,12 @@ def collect_signal_coverage(
         ("pff", "depth_role"),
         nested_path=("depth_role",),
     )
+    rb_scheme_fit_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "rb_scheme_fit"),
+        nested_path=("rb_scheme_fit",),
+    )
     qb_split_enabled = _signal_enabled(
         config,
         ("pff_config", "pff"),
@@ -643,6 +649,15 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    rb_scheme_fit_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"rushing_direction_{season}.parquet",
+            pff_path / f"offense_run_blocking_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
         season: [
             pff_path / f"receiving_depth_{season}.parquet",
@@ -812,6 +827,15 @@ def collect_signal_coverage(
             note=(
                 "Requires passing_detail parquet, passing_summary parquet, "
                 "and rosters_weekly cache to build the PFF QB crosswalk"
+            ),
+        ),
+        "pff.rb_scheme_fit": _build_signal(
+            pff_enabled and rb_scheme_fit_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, rb_scheme_fit_paths_by_season),
+            note=(
+                "Requires rushing_direction parquet, offense_run_blocking parquet, "
+                "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
             ),
         ),
         "pff.depth_role.wr": _build_signal(

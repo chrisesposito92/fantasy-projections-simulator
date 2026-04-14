@@ -417,6 +417,68 @@ def test_pff_qb_split_reports_partial_when_one_season_is_missing(tmp_path):
     )
 
 
+def test_pff_rb_scheme_fit_reports_full_when_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"rushing_direction_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"offense_run_blocking_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"rushing_summary_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].rb_scheme_fit.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.rb_scheme_fit"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires rushing_direction parquet, offense_run_blocking parquet, "
+            "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+        ),
+    )
+
+
+def test_pff_rb_scheme_fit_reports_partial_when_one_season_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet_placeholder(pff_dir / "rushing_direction_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "offense_run_blocking_2023.parquet")
+    _write_parquet_placeholder(pff_dir / "rushing_summary_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2023.parquet")
+    _write_parquet_placeholder(cache_dir / "rosters_weekly_2024.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].rb_scheme_fit.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.rb_scheme_fit"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires rushing_direction parquet, offense_run_blocking parquet, "
+            "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
+        ),
+    )
+
+
 def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
