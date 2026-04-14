@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 5A depth-role validation verdict.
+Research snapshot updated through the Phase 5B efficiency validation result.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -33,6 +33,7 @@ Active in `config/defaults.yaml` as of this audit:
 - `pff.matchup.enabled: true`
 - `pff.coverage.enabled: true`
 - `pff.depth_role.enabled: false`
+- `pff.depth_role.efficiency.enabled: false`
 - `pff.kicker.enabled: true`
 - `pff.dst_baseline.enabled: true`
 - `weather.enabled: true`
@@ -423,24 +424,48 @@ Observed run caveat from the receiver/QB slices:
 - `Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
 - `Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']`
 
-## Phase 5 Depth-Role Notes
+## Phase 5 Efficiency Notes
 
 - `pff.depth_role` is now implemented in code
+- `pff.depth_role.efficiency` is now implemented in code
+- it remains nested under the existing `pff.depth_role` family
 - current local `receiving_depth` NFL coverage is `2018-2025`
 - `pff.depth_role` uses `receiving_depth` plus `rosters_weekly` crosswalk inputs
+- `pff.depth_role.efficiency` uses `receiving_depth`, the PFF summary trio,
+  and `rosters_weekly` crosswalk inputs
+- it currently adjusts:
+  - `catch_rate`
+  - proportional `red_zone_catch_rate`
+  - base `receiving_yards_dist`
+- it does not adjust:
+  - `target_share`
+  - `air_yards_share`
+  - `rz_receiving_yards_dist`
 - local `injuries_2022-2024.parquet` exists
 - legacy `market_history_weekly_2023.parquet` and `market_history_weekly_2024.parquet` exist locally
 - `rushing_direction` is present locally but stored as nested `directions` rows, so RB scheme-fit remains deferred
 - the focused Phase 5A marginal validation artifact completed cleanly as `phase-5-depth-role-v1`
+- the focused Phase 5B marginal validation artifact ran as `phase-5-depth-role-efficiency-v2`
+- the Phase 5B run stayed effectively flat and is not promotable:
+  - `rank_corr delta:  +0.0002`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: -0.017`
+- the Phase 5B run did not activate the intended slice in the coverage header:
+  - `pff.depth_role=disabled`
+  - `pff.depth_role.efficiency=disabled`
 - current default state remains `pff.depth_role.enabled: false`
+- current default state remains `pff.depth_role.efficiency.enabled: false`
 - current Phase 5A evidence is not promotable:
   - `rank_corr delta:  -0.0005`
   - `weekly_mae delta: +0.002`
   - `season_mae delta: +0.013`
 
-### Immediate Next Phase 5 Slice
+### Immediate Next Phase 5 Decision
 
-- `WR/TE efficiency v2`
+- decide whether to rerun `WR/TE efficiency v2` with the parent
+  `pff.depth_role` family explicitly enabled so the slice is actually active
+- do not auto-promote or auto-bundle Phase 5A and Phase 5B from the current v2
+  artifact
 
 ### Deferred Phase 5 Follow-Ons
 
@@ -600,6 +625,8 @@ Useful reference points from the preserved local unified ledger snapshot:
 | `phase-4-receiver-participation-v1` | `-0.0006` | `+0.007` | `+0.072` |
 | `phase-4-qb-context-v1` | `+0.0002` | `+0.007` | `+0.047` |
 | `phase-4-rb-efficiency-v1` | `-0.0003` | `+0.000` | `-0.063` |
+| `phase-5-depth-role-v1` | `-0.0005` | `+0.002` | `+0.013` |
+| `phase-5-depth-role-efficiency-v2` | `+0.0002` | `-0.002` | `-0.017` |
 
 Interpretation:
 

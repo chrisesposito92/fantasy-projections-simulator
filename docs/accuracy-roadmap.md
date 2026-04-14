@@ -507,15 +507,8 @@ What follows from the current artifact set:
 
 ### Status
 
-Implemented for `WR/TE Depth-Role V1`.
-
-The focused verification suite passed, and the isolated marginal validation arm
-completed cleanly with explicit `pff.depth_role` coverage reporting. The
-current marginal evidence is flat-to-slightly negative, so this remains
-implemented but not promoted.
-
-- current Phase 5 priority: `WR/TE Depth-Role V1`
-- next Phase 5 priority: `WR/TE efficiency v2`
+- Phase 5A `WR/TE Depth-Role V1`: implemented, validated, not promoted
+- current Phase 5 priority: `WR/TE efficiency v2`
 - explicitly deferred:
   - `QB split engine`
   - `RB scheme-fit engine`
@@ -541,6 +534,36 @@ implemented but not promoted.
   - `rank_corr delta:  -0.0005`
   - `weekly_mae delta: +0.002`
   - `season_mae delta: +0.013`
+
+### Phase 5B Scope
+
+- `receiving_depth` only
+- `WR` and `TE` only
+- pre-sim efficiency only
+- `catch_rate`
+- proportional `red_zone_catch_rate`
+- base `receiving_yards_dist`
+- no volume changes
+
+### Phase 5B Validation Artifact
+
+- label: `phase-5-depth-role-efficiency-v2`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage:
+  - `pff.depth_role.efficiency=disabled`
+- result:
+  - `rank_corr delta:  +0.0002`
+  - `weekly_mae delta: -0.002`
+  - `season_mae delta: -0.017`
+
+Observed run note:
+
+- the command completed and printed explicit coverage, but the header still
+  showed `pff.depth_role=disabled`, `pff.depth_role.wr=disabled`,
+  `pff.depth_role.te=disabled`, and `pff.depth_role.efficiency=disabled`
+- this means the recorded artifact is flat and non-promotable, but it is not a
+  clean activated `defaults` vs `defaults + efficiency v2` comparison
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 
