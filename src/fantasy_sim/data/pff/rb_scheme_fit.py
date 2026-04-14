@@ -110,20 +110,23 @@ class RbSchemeFitEngine:
         if filtered.is_empty():
             return pl.DataFrame()
 
-        return filtered.group_by(["season", "team"]).agg(
+        return filtered.with_columns(
+            (
+                pl.col("gap_grades_run_block").cast(pl.Float64)
+                * pl.col("gap_snap_counts_run_block").cast(pl.Float64)
+            ).alias("gap_grade_weight"),
+            (
+                pl.col("zone_grades_run_block").cast(pl.Float64)
+                * pl.col("zone_snap_counts_run_block").cast(pl.Float64)
+            ).alias("zone_grade_weight"),
+        ).group_by(["season", "team"]).agg(
             pl.col("game_id").n_unique().alias("games"),
             pl.col("gap_snap_counts_run_play").sum().cast(pl.Float64).alias("gap_run_play"),
             pl.col("zone_snap_counts_run_play").sum().cast(pl.Float64).alias("zone_run_play"),
             pl.col("gap_snap_counts_run_block").sum().cast(pl.Float64).alias("gap_run_block_snaps"),
             pl.col("zone_snap_counts_run_block").sum().cast(pl.Float64).alias("zone_run_block_snaps"),
-            (
-                (pl.col("gap_grades_run_block") * pl.col("gap_snap_counts_run_block")).sum()
-                / pl.col("gap_snap_counts_run_block").sum()
-            ).alias("gap_grade"),
-            (
-                (pl.col("zone_grades_run_block") * pl.col("zone_snap_counts_run_block")).sum()
-                / pl.col("zone_snap_counts_run_block").sum()
-            ).alias("zone_grade"),
+            pl.col("gap_grade_weight").sum().cast(pl.Float64),
+            pl.col("zone_grade_weight").sum().cast(pl.Float64),
         )
 
     def _player_profile(self, rows: pl.DataFrame) -> dict[str, float] | None:
@@ -168,11 +171,11 @@ class RbSchemeFitEngine:
             "gap_share": _safe_ratio(gap_run_play, total_run_play),
             "zone_share": _safe_ratio(zone_run_play, total_run_play),
             "gap_grade": _safe_ratio(
-                float((rows["gap_grade"] * rows["gap_run_block_snaps"]).sum()),
+                float(rows["gap_grade_weight"].sum()),
                 gap_run_block_snaps,
             ),
             "zone_grade": _safe_ratio(
-                float((rows["zone_grade"] * rows["zone_run_block_snaps"]).sum()),
+                float(rows["zone_grade_weight"].sum()),
                 zone_run_block_snaps,
             ),
         }

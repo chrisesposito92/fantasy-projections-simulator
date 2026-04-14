@@ -235,6 +235,79 @@ def _non_immediate_prior_blocking_df() -> pl.DataFrame:
     )
 
 
+def _zero_snap_blocking_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2023, 2024],
+            "week": [8, 3],
+            "team": ["TEN", "TEN"],
+            "game_id": [61, 62],
+            "gap_snap_counts_run_play": [20, 0],
+            "zone_snap_counts_run_play": [0, 18],
+            "gap_snap_counts_run_block": [20, 0],
+            "zone_snap_counts_run_block": [0, 18],
+            "gap_grades_run_block": [65.0, 40.0],
+            "zone_grades_run_block": [50.0, 72.0],
+        }
+    )
+
+
+def _blend_divergence_rushing_direction_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2021, 2021, 2023, 2023, 2023, 2024],
+            "week": [7, 8, 7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN", "TEN", "TEN"],
+            "player_id": [101, 101, 101, 101, 101, 101],
+            "position": ["RB", "RB", "RB", "RB", "RB", "RB"],
+            "game_id": [71, 72, 81, 82, 83, 84],
+            "directions": [
+                [
+                    {"direction": "LE", "attempts": 10, "yards": 80, "ypa": 8.0},
+                    {"direction": "RE", "attempts": 10, "yards": 80, "ypa": 8.0},
+                ],
+                [
+                    {"direction": "LE", "attempts": 10, "yards": 80, "ypa": 8.0},
+                    {"direction": "RE", "attempts": 10, "yards": 80, "ypa": 8.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 10, "yards": 60, "ypa": 6.0},
+                    {"direction": "LE", "attempts": 4, "yards": 8, "ypa": 2.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 10, "yards": 60, "ypa": 6.0},
+                    {"direction": "RE", "attempts": 3, "yards": 6, "ypa": 2.0},
+                ],
+                [
+                    {"direction": "MR", "attempts": 10, "yards": 60, "ypa": 6.0},
+                    {"direction": "LE", "attempts": 3, "yards": 6, "ypa": 2.0},
+                ],
+                [
+                    {"direction": "ML", "attempts": 6, "yards": 36, "ypa": 6.0},
+                    {"direction": "MR", "attempts": 4, "yards": 24, "ypa": 6.0},
+                ],
+            ],
+        }
+    )
+
+
+def _blend_divergence_blocking_df() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "season": [2021, 2021, 2023, 2023, 2023, 2024],
+            "week": [7, 8, 7, 8, 9, 3],
+            "team": ["TEN", "TEN", "TEN", "TEN", "TEN", "TEN"],
+            "game_id": [71, 72, 81, 82, 83, 84],
+            "gap_snap_counts_run_play": [5, 5, 27, 27, 27, 9],
+            "zone_snap_counts_run_play": [45, 45, 3, 3, 3, 1],
+            "gap_snap_counts_run_block": [5, 5, 27, 27, 27, 9],
+            "zone_snap_counts_run_block": [45, 45, 3, 3, 3, 1],
+            "gap_grades_run_block": [58.0, 58.0, 68.0, 68.0, 68.0, 68.0],
+            "zone_grades_run_block": [58.0, 58.0, 58.0, 58.0, 58.0, 58.0],
+        }
+    )
+
+
 def test_compute_returns_empty_when_crosswalk_is_missing():
     loader = MagicMock()
     loader.load_facet.side_effect = lambda facet, seasons: (
@@ -441,6 +514,72 @@ def test_compute_does_not_blend_with_non_immediate_prior_season():
 
     assert "ten_rb" in factors
     assert factors["ten_rb"].rushing_yards_factor == pytest.approx(1.0453601789709173)
+
+
+def test_team_profile_ignores_zero_snap_family_seasons():
+    loader = MagicMock()
+    loader.load_facet.return_value = _zero_snap_blocking_df()
+    engine = RbSchemeFitEngine(loader, RbSchemeFitConfig(enabled=True))
+
+    aggregated = engine._aggregate_team_blocking([2023, 2024], target_season=2024, max_week=4)
+    profile = engine._team_profile(aggregated.filter(pl.col("team") == "TEN"))
+
+    assert profile is not None
+    assert profile["gap_grade"] == pytest.approx(65.0)
+    assert profile["zone_grade"] == pytest.approx(72.0)
+
+
+def test_compute_early_season_blend_changes_factor_vs_historical_fallback():
+    loader = MagicMock()
+    loader.load_facet.side_effect = lambda facet, seasons: (
+        _blend_divergence_rushing_direction_df()
+        if facet == "rushing_direction"
+        else _blend_divergence_blocking_df()
+    )
+    blend_engine = RbSchemeFitEngine(
+        loader,
+        RbSchemeFitConfig(
+            enabled=True,
+            rush_yards_sensitivity=1.0,
+            min_attempts=20,
+            min_games=4,
+            early_season_blend=True,
+            scheme_usage_weight=1.0,
+            blocking_alignment_weight=0.0,
+            factor_clamp=(0.90, 1.20),
+        ),
+    )
+    fallback_engine = RbSchemeFitEngine(
+        loader,
+        RbSchemeFitConfig(
+            enabled=True,
+            rush_yards_sensitivity=1.0,
+            min_attempts=20,
+            min_games=4,
+            early_season_blend=False,
+            scheme_usage_weight=1.0,
+            blocking_alignment_weight=0.0,
+            factor_clamp=(0.90, 1.20),
+        ),
+    )
+
+    blended_factors = blend_engine.compute(
+        roster=_make_roster("TEN", rb_id="ten_rb"),
+        pff_crosswalk={101: "ten_rb"},
+        training_seasons=[2021, 2023, 2024],
+        target_season=2024,
+        max_week=4,
+    )
+    fallback_factors = fallback_engine.compute(
+        roster=_make_roster("TEN", rb_id="ten_rb"),
+        pff_crosswalk={101: "ten_rb"},
+        training_seasons=[2021, 2023, 2024],
+        target_season=2024,
+        max_week=4,
+    )
+
+    assert blended_factors["ten_rb"].rushing_yards_factor == pytest.approx(1.0769230769230769)
+    assert fallback_factors["ten_rb"].rushing_yards_factor == pytest.approx(0.993103448275862)
 
 
 def test_previous_season_rows_requires_immediate_prior_season():
