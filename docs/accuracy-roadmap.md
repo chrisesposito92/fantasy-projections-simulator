@@ -766,12 +766,12 @@ The roadmap is successful if future phases produce:
 
 ### Next Priority
 
-- if none of the isolated Phase 6 retests produce a clear marginal win, keep the
-  parked levers off and move the next planning priority to a narrower redesign
-  rather than a bundle retry
-- if exactly one lever produces a clear marginal win, promote only that lever
-  and keep the rest parked
-- do not run a Phase 6 bundle unless an isolated winner first exists
+- the isolated Phase 6 retests did not produce a promotable winner, so the
+  parked levers stay off at handoff
+- the next planning priority is a narrower redesign rather than a Phase 6
+  bundle retry
+- do not run a Phase 6 bundle unless a future isolated redesign first produces
+  a clear winner
 
 ## Research Anchors
 

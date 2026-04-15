@@ -734,6 +734,7 @@ def collect_signal_coverage(
         season: {
             pff_path / f"fantasy_receiving_{season}.parquet": {
                 "player_id",
+                "week",
                 "rz_rec_targ",
                 "rz_rec_tds",
                 "rz_rush_carries",
@@ -741,6 +742,7 @@ def collect_signal_coverage(
             },
             pff_path / f"fantasy_passing_{season}.parquet": {
                 "player_id",
+                "week",
                 "rz_rush_carries",
                 "rz_rush_tds",
             },
@@ -1007,7 +1009,7 @@ def collect_signal_coverage(
             ),
             note=(
                 "Requires fantasy_receiving and fantasy_passing parquet with "
-                "red-zone TD columns for the tested season; PBP fallback "
+                "week plus red-zone TD columns for the tested season; PBP fallback "
                 "remains a runtime backstop"
             ),
         ),

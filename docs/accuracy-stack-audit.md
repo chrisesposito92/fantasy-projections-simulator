@@ -502,8 +502,8 @@ Observed run caveat from the receiver/QB slices:
 
 ### Phase 5 Decision Record
 
-Historical note: this decision block is preserved for context, but Phase 6 is
-now the active priority.
+Historical note: this decision block is preserved for context. The later Phase
+6 retest queue is complete, so this is no longer an active priority block.
 
 - decide whether to retune `WR/TE efficiency v2`
 - or retune `RB scheme-fit engine`
@@ -688,7 +688,8 @@ Still caveats:
 
 - treat each Phase 6 artifact as isolated marginal evidence
 - do not infer bundle value from multiple flat isolated results
-- if route-rate coverage is fixed, retire the old route-rate path caveat
+- the old route-rate path caveat is resolved; coverage is now explicitly
+  reported and no longer blocks interpretation
 - keep any non-winning lever parked by default until a narrower redesign exists
 
 ### 1. Market-history evidence is still covered-only in Phase 3 v2
