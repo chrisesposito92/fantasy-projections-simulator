@@ -530,7 +530,10 @@ now the active priority.
 
 ## Phase 6 Current Priority
 
-Phase 6 now targets only the still-parked default-off levers:
+The Phase 6 parked-lever retest queue is complete. The remaining Phase 6 work
+is final reconciliation and wrap-up against the current defaults baseline.
+
+Completed parked-lever retests:
 
 - `pff.team_context`
 - `usage.ngs`
@@ -599,7 +602,7 @@ Slice A is now the current baseline:
   - `weekly_mae delta: -0.003`
   - `season_mae delta: -0.064`
 - verdict:
-  - keep `usage.route_rate.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+  - keep `usage.route_rate.enabled: false` because the isolated retest produced no rank-correlation lift and only negligible top-line MAE movement, which is not meaningful promotable lift
 
 ## What The Current Ledgers Actually Tell Us
 

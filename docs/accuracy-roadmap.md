@@ -634,12 +634,12 @@ Superseded pre-fix artifact:
 
 ### Status
 
-In progress.
+Parked-lever retest queue complete. Final reconciliation and wrap-up remain.
 
-Slice A measurement cleanup is complete. The next work is isolated marginal
-retests of the still-parked default-off levers.
+Slice A measurement cleanup is complete, and the isolated marginal retests of
+the still-parked default-off levers have now been recorded.
 
-### Phase 6 Queue
+### Completed Phase 6 Retest Queue
 
 - `pff.team_context`
 - `usage.ngs`
@@ -713,7 +713,7 @@ Reason:
   - `weekly_mae delta: -0.003`
   - `season_mae delta: -0.064`
 - verdict:
-  - keep `usage.route_rate.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+  - keep `usage.route_rate.enabled: false` because the isolated retest produced no rank-correlation lift and only negligible top-line MAE movement, which is not meaningful promotable lift
 
 ## Accuracy Config Families
 
@@ -763,8 +763,8 @@ The roadmap is successful if future phases produce:
 
 ## Immediate Next Planning Targets
 
-1. Phase 6 Slice B4: `usage.route_rate` marginal retest
-2. No additional parked-lever retests remain in the current Phase 6 queue after B4
+1. Phase 6 final reconciliation of the parked-lever retest artifacts against the current defaults baseline
+2. Phase 6 wrap-up documenting that no parked default-off lever earned promotion in this pass
 
 ## Research Anchors
 
