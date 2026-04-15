@@ -15,6 +15,7 @@ DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
 DEFAULT_MARKET_HISTORY_DIR = (
     Path.home() / ".fantasy-sim" / "market-history" / "processed"
 )
+PFF_CROSSWALK_COLUMNS = {"player_id", "player", "team"}
 
 
 @dataclass
@@ -302,6 +303,26 @@ def _covered_seasons_from_required_parquet_columns_by_path(
         ):
             covered.append(season)
     return covered
+
+
+def _pff_crosswalk_columns_by_season(
+    pff_path: Path,
+    cache_path: Path,
+    test_seasons: Iterable[int],
+    *,
+    receiving_extra_columns: set[str] | None = None,
+) -> dict[int, dict[Path, set[str]]]:
+    required_columns_by_season: dict[int, dict[Path, set[str]]] = {}
+    for season in test_seasons:
+        required_columns_by_season[season] = {
+            pff_path / f"receiving_summary_{season}.parquet": (
+                PFF_CROSSWALK_COLUMNS | (receiving_extra_columns or set())
+            ),
+            pff_path / f"rushing_summary_{season}.parquet": PFF_CROSSWALK_COLUMNS,
+            pff_path / f"passing_summary_{season}.parquet": PFF_CROSSWALK_COLUMNS,
+            cache_path / f"rosters_weekly_{season}.parquet": set(),
+        }
+    return required_columns_by_season
 
 
 def _build_signal(
@@ -802,22 +823,13 @@ def collect_signal_coverage(
         }
         for season in seasons
     }
-    td_tendency_crosswalk_paths_by_season: dict[int, list[Path]] = {
-        season: [
-            pff_path / f"receiving_summary_{season}.parquet",
-            pff_path / f"rushing_summary_{season}.parquet",
-            pff_path / f"passing_summary_{season}.parquet",
-            cache_path / f"rosters_weekly_{season}.parquet",
-        ]
-        for season in seasons
-    }
     depth_role_coverage = _covered_seasons_from_required_paths(
         seasons,
         depth_role_paths_by_season,
     )
-    td_tendency_crosswalk_coverage = _covered_seasons_from_required_paths(
+    td_tendency_crosswalk_coverage = _covered_seasons_from_required_parquet_columns_by_path(
         seasons,
-        td_tendency_crosswalk_paths_by_season,
+        _pff_crosswalk_columns_by_season(pff_path, cache_path, seasons),
     )
 
     market_history_signals = {
@@ -1044,37 +1056,15 @@ def collect_signal_coverage(
         "usage.route_rate": _build_signal(
             usage_route_rate_enabled and usage_enabled and pff_enabled,
             seasons,
-            [
-                season
-                for season in seasons
-                if season
-                in _covered_seasons_from_required_paths(
+            _covered_seasons_from_required_parquet_columns_by_path(
+                seasons,
+                _pff_crosswalk_columns_by_season(
+                    route_rate_pff_path,
+                    cache_path,
                     seasons,
-                    {
-                        season: [
-                            route_rate_pff_path / f"receiving_summary_{season}.parquet",
-                            route_rate_pff_path / f"rushing_summary_{season}.parquet",
-                            route_rate_pff_path / f"passing_summary_{season}.parquet",
-                            cache_path / f"rosters_weekly_{season}.parquet",
-                        ]
-                        for season in seasons
-                    },
-                )
-                and season
-                in _covered_seasons_from_required_parquet_columns_by_path(
-                    seasons,
-                    {
-                        season: {
-                            route_rate_pff_path / f"receiving_summary_{season}.parquet": {
-                                "player_id",
-                                "targets",
-                                "routes",
-                            }
-                        }
-                        for season in seasons
-                    },
-                )
-            ],
+                    receiving_extra_columns={"targets", "routes"},
+                ),
+            ),
             note=(
                 "Requires the PFF summary trio from the NFL processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk; "
