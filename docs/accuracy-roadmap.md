@@ -649,7 +649,7 @@ retests of the still-parked default-off levers.
 ### Not Part Of The Phase 6 Queue
 
 - `td_tendency`
-- `i5`
+- `td_tendency.i5_enabled`
 
 Reason:
 
