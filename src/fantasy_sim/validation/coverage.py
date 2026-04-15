@@ -10,7 +10,6 @@ from pathlib import Path
 import polars as pl
 
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
-DEFAULT_PFF_ROUTE_RATE_DIR = DEFAULT_PFF_DIR
 DEFAULT_PROPS_DIR = Path.home() / ".fantasy-sim" / "pff" / "props"
 DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
 DEFAULT_MARKET_HISTORY_DIR = (

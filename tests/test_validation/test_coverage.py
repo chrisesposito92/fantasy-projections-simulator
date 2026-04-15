@@ -994,10 +994,9 @@ def test_usage_nested_flags_honor_typed_config_objects(tmp_path):
 def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(tmp_path):
     pff_dir = tmp_path / "pff" / "nfl"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
 
     for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
     _write_roster_cache(cache_dir, (2024,))
 
     coverage = collect_signal_coverage(
@@ -1275,7 +1274,6 @@ def test_default_route_rate_root_matches_nfl_pff_root(monkeypatch, tmp_path):
     cache_dir = tmp_path / "cache"
 
     monkeypatch.setattr(coverage_module, "DEFAULT_PFF_DIR", pff_root)
-    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", pff_root)
 
     _write_default_pff_stack(pff_root, (2023, 2024))
     _write_roster_cache(cache_dir, (2023, 2024))
@@ -1317,7 +1315,6 @@ def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
 
     monkeypatch.setattr(coverage_module, "DEFAULT_PFF_DIR", tmp_path / "wrong" / "nfl")
-    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", tmp_path / "wrong" / "processed")
     monkeypatch.setattr(coverage_module, "DEFAULT_PROPS_DIR", tmp_path / "wrong" / "props")
 
     engine_configs = _default_engine_configs()
