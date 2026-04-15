@@ -687,7 +687,7 @@ Reason:
   - `weekly_mae delta: -0.006`
   - `season_mae delta: -0.037`
 - verdict:
-  - keep `usage.ngs.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering
+  - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
 
 ## Accuracy Config Families
 
@@ -739,7 +739,7 @@ The roadmap is successful if future phases produce:
 
 1. Phase 6 Slice B3: `goal_line_concentration` marginal retest
 2. Phase 6 Slice B4: `usage.route_rate` marginal retest
-3. Phase 6 Slice B5+: remaining parked-lever retests one at a time
+3. No additional parked-lever retests remain in the current Phase 6 queue after B3 and B4
 
 ## Research Anchors
 

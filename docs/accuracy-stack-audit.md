@@ -573,7 +573,7 @@ Slice A is now the current baseline:
   - `weekly_mae delta: -0.006`
   - `season_mae delta: -0.037`
 - verdict:
-  - keep `usage.ngs.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering
+  - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
 
 ## What The Current Ledgers Actually Tell Us
 
