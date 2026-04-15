@@ -284,6 +284,23 @@ def _covered_seasons_from_required_parquet_columns(
     return covered
 
 
+def _covered_seasons_from_required_parquet_columns_by_path(
+    test_seasons: Iterable[int],
+    required_columns_by_season: Mapping[int, Mapping[Path, set[str]]],
+) -> list[int]:
+    covered: list[int] = []
+    for season in test_seasons:
+        required_columns_by_path = required_columns_by_season.get(season)
+        if not required_columns_by_path:
+            continue
+        if all(
+            path.exists() and required_columns.issubset(_parquet_columns(path))
+            for path, required_columns in required_columns_by_path.items()
+        ):
+            covered.append(season)
+    return covered
+
+
 def _build_signal(
     enabled: bool,
     test_seasons: Iterable[int],
@@ -703,7 +720,7 @@ def collect_signal_coverage(
             pff_path / f"rushing_summary_{season}.parquet",
             pff_path / f"passing_summary_{season}.parquet",
             cache_path / f"rosters_weekly_{season}.parquet",
-        ]
+            ]
         for season in seasons
     }
     td_tendency_paths_by_season: dict[int, list[Path]] = {
@@ -711,6 +728,23 @@ def collect_signal_coverage(
             pff_path / f"fantasy_receiving_{season}.parquet",
             pff_path / f"fantasy_passing_{season}.parquet",
         ]
+        for season in seasons
+    }
+    td_tendency_columns_by_season: dict[int, dict[Path, set[str]]] = {
+        season: {
+            pff_path / f"fantasy_receiving_{season}.parquet": {
+                "player_id",
+                "rz_rec_targ",
+                "rz_rec_tds",
+                "rz_rush_carries",
+                "rz_rush_tds",
+            },
+            pff_path / f"fantasy_passing_{season}.parquet": {
+                "player_id",
+                "rz_rush_carries",
+                "rz_rush_tds",
+            },
+        }
         for season in seasons
     }
     td_tendency_i5_columns = {"i5_rush_carries", "i5_rush_tds"}
@@ -967,10 +1001,14 @@ def collect_signal_coverage(
         "td_tendency": _build_signal(
             td_tendency_enabled,
             seasons,
-            _covered_seasons_from_required_paths(seasons, td_tendency_paths_by_season),
+            _covered_seasons_from_required_parquet_columns_by_path(
+                seasons,
+                td_tendency_columns_by_season,
+            ),
             note=(
-                "Requires fantasy_receiving and fantasy_passing parquet for the "
-                "tested season; PBP fallback remains a runtime backstop"
+                "Requires fantasy_receiving and fantasy_passing parquet with "
+                "red-zone TD columns for the tested season; PBP fallback "
+                "remains a runtime backstop"
             ),
         ),
         "td_tendency.i5": _build_signal(

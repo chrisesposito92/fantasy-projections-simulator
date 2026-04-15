@@ -634,8 +634,9 @@ def test_td_tendency_and_i5_report_full_when_red_zone_inputs_exist(tmp_path):
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet for the "
-            "tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "red-zone TD columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
     assert coverage["td_tendency.i5"] == SignalCoverage(
@@ -762,8 +763,83 @@ def test_td_tendency_reports_partial_when_one_season_lacks_required_data(tmp_pat
         covered_seasons=[2023],
         missing_seasons=[2024],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet for the "
-            "tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "red-zone TD columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_reports_partial_when_files_exist_but_red_zone_columns_do_not(tmp_path):
+    pff_dir = tmp_path / "pff"
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "red-zone TD columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
+            "columns for the tested season; PBP fallback remains a runtime backstop"
         ),
     )
 
@@ -828,8 +904,9 @@ def test_td_tendency_i5_reports_partial_when_columns_are_missing_for_one_season(
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet for the "
-            "tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "red-zone TD columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
     assert coverage["td_tendency.i5"] == SignalCoverage(
