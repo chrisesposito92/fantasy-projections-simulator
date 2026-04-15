@@ -16,6 +16,9 @@ DEFAULT_MARKET_HISTORY_DIR = (
     Path.home() / ".fantasy-sim" / "market-history" / "processed"
 )
 PFF_CROSSWALK_COLUMNS = {"player_id", "player", "team"}
+TEAM_CONTEXT_OL_COLUMNS = {"team", "grades_run_block", "snap_counts_run_block"}
+TEAM_CONTEXT_QB_COLUMNS = {"team", "grades_pass", "passing_snaps"}
+TEAM_CONTEXT_PASS_RATE_PBP_COLUMNS = {"play_type", "posteam", "season"}
 
 
 @dataclass
@@ -322,6 +325,36 @@ def _pff_crosswalk_columns_by_season(
             pff_path / f"passing_summary_{season}.parquet": PFF_CROSSWALK_COLUMNS,
             cache_path / f"rosters_weekly_{season}.parquet": set(),
         }
+    return required_columns_by_season
+
+
+def _team_context_columns_by_season(
+    pff_path: Path,
+    cache_path: Path,
+    test_seasons: Iterable[int],
+    *,
+    min_games: int,
+    pass_rate_sensitivity: float,
+) -> dict[int, dict[Path, set[str]]]:
+    required_columns_by_season: dict[int, dict[Path, set[str]]] = {}
+    for season in test_seasons:
+        required_columns_by_season[season] = {
+            pff_path / f"offense_run_blocking_{season}.parquet": TEAM_CONTEXT_OL_COLUMNS,
+            pff_path / f"passing_summary_{season}.parquet": TEAM_CONTEXT_QB_COLUMNS,
+        }
+        if min_games > 0:
+            required_columns_by_season[season] |= {
+                pff_path / f"offense_run_blocking_{season - 1}.parquet": TEAM_CONTEXT_OL_COLUMNS,
+                pff_path / f"passing_summary_{season - 1}.parquet": TEAM_CONTEXT_QB_COLUMNS,
+            }
+        if pass_rate_sensitivity != 0.0:
+            required_columns_by_season[season][
+                cache_path / f"pbp_{season}.parquet"
+            ] = TEAM_CONTEXT_PASS_RATE_PBP_COLUMNS
+            if min_games > 0:
+                required_columns_by_season[season][
+                    cache_path / f"pbp_{season - 1}.parquet"
+                ] = TEAM_CONTEXT_PASS_RATE_PBP_COLUMNS
     return required_columns_by_season
 
 
@@ -770,6 +803,13 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    team_context_columns_by_season = _team_context_columns_by_season(
+        pff_path,
+        cache_path,
+        seasons,
+        min_games=team_context_min_games,
+        pass_rate_sensitivity=team_context_pass_rate_sensitivity,
+    )
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
         season: [
             pff_path / f"receiving_depth_{season}.parquet",
@@ -1000,11 +1040,16 @@ def collect_signal_coverage(
         "pff.team_context": _build_signal(
             pff_enabled and team_context_enabled,
             seasons,
-            _covered_seasons_from_required_paths(seasons, team_context_paths_by_season),
+            _covered_seasons_from_required_parquet_columns_by_path(
+                seasons,
+                team_context_columns_by_season,
+            ),
             note=(
-                "Requires offense_run_blocking and passing_summary parquet for the tested "
-                "season plus target_season-1 fallback coverage; season PBP parquet is "
-                "also required for the tested season and fallback season when "
+                "Requires offense_run_blocking(team, grades_run_block, "
+                "snap_counts_run_block) and passing_summary(team, grades_pass, "
+                "passing_snaps) parquet for the tested season plus target_season-1 "
+                "fallback coverage; season PBP parquet must include play_type, "
+                "posteam, and season for the tested season and fallback season when "
                 "team_context.pass_rate_sensitivity is nonzero"
             ),
         ),
@@ -1062,13 +1107,14 @@ def collect_signal_coverage(
                     route_rate_pff_path,
                     cache_path,
                     seasons,
-                    receiving_extra_columns={"targets", "routes"},
+                    receiving_extra_columns={"targets", "routes", "week"},
                 ),
             ),
             note=(
                 "Requires the PFF summary trio from the NFL processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk; "
-                "receiving_summary must also include player_id, targets, and routes"
+                "receiving_summary must also include player_id, targets, routes, "
+                "and week for the strict temporal leak guard"
             ),
         ),
         "goal_line_concentration": _build_signal(

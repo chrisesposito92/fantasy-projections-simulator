@@ -670,7 +670,7 @@ Reason:
 - label: `phase-6-pff-team-context-v1`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
-- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before fallback-aware coverage accounting
+- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before schema-aware fallback coverage accounting
 - result:
   - `rank_corr delta:  -0.0000`
   - `weekly_mae delta: -0.001`
@@ -709,7 +709,7 @@ Reason:
 - label: `phase-6-usage-route-rate-v1`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
-- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before schema-aware route-rate coverage accounting
+- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before stricter runtime-aligned route-rate coverage accounting
 - result:
   - `rank_corr delta:  +0.0000`
   - `weekly_mae delta: -0.003`

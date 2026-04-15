@@ -551,15 +551,15 @@ Slice A is now the current baseline:
 - explicit coverage signals now exist for `pff.team_context`
 - explicit coverage signals now exist for `goal_line_concentration`
 - explicit coverage signals now exist for `td_tendency` and nested `td_tendency.i5`
-- `pff.team_context` coverage now reflects target-season fallback dependencies
-- `usage.route_rate` now points at the NFL processed PFF root used by runtime and requires the runtime route-rate columns
+- `pff.team_context` coverage now reflects target-season fallback dependencies and the OL/QB schema columns runtime actually uses
+- `usage.route_rate` now points at the NFL processed PFF root used by runtime and requires the runtime route-rate columns plus `week` for the strict temporal guard
 
 ### `pff.team_context` Retest Artifact
 
 - label: `phase-6-pff-team-context-v1`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
-- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before fallback-aware coverage accounting
+- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before schema-aware fallback coverage accounting
 - result:
   - `rank_corr delta:  -0.0000`
   - `weekly_mae delta: -0.001`
@@ -598,7 +598,7 @@ Slice A is now the current baseline:
 - label: `phase-6-usage-route-rate-v1`
 - baseline: `defaults`
 - comparison mode: `marginal_lift`
-- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before schema-aware route-rate coverage accounting
+- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before stricter runtime-aligned route-rate coverage accounting
 - result:
   - `rank_corr delta:  +0.0000`
   - `weekly_mae delta: -0.003`
