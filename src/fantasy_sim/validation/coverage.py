@@ -279,6 +279,21 @@ def _covered_seasons_from_required_paths(
     return covered
 
 
+def _covered_seasons_from_required_parquet_columns(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Iterable[Path]],
+    required_columns: set[str],
+) -> list[int]:
+    covered: list[int] = []
+    for season in test_seasons:
+        paths = list(paths_by_season.get(season, []))
+        if not paths or not all(path.exists() for path in paths):
+            continue
+        if all(required_columns.issubset(_parquet_columns(path)) for path in paths):
+            covered.append(season)
+    return covered
+
+
 def _build_signal(
     enabled: bool,
     test_seasons: Iterable[int],
@@ -709,6 +724,7 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    td_tendency_i5_columns = {"i5_rush_carries", "i5_rush_tds"}
     depth_role_coverage = _covered_seasons_from_required_paths(
         seasons,
         depth_role_paths_by_season,
@@ -971,7 +987,11 @@ def collect_signal_coverage(
         "td_tendency.i5": _build_signal(
             td_tendency_i5_enabled,
             seasons,
-            _covered_seasons_from_required_paths(seasons, td_tendency_paths_by_season),
+            _covered_seasons_from_required_parquet_columns(
+                seasons,
+                td_tendency_paths_by_season,
+                td_tendency_i5_columns,
+            ),
             note=(
                 "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
                 "columns for the tested season; PBP fallback remains a runtime backstop"
