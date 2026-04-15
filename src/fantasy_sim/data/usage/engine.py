@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 import numpy as np
 import polars as pl
@@ -71,9 +72,15 @@ class UsageEngine:
 
     SKILL_POSITIONS = frozenset({"WR", "RB", "TE", "QB", "FB"})
 
-    def __init__(self, config: UsageConfig, loader: DataLoader) -> None:
+    def __init__(
+        self,
+        config: UsageConfig,
+        loader: DataLoader,
+        pff_dir: Path | None = None,
+    ) -> None:
         self._config = config
         self._loader = loader
+        self._pff_dir = pff_dir
         # Caches keyed by season (int)
         self._snap_cache: dict[int, pl.DataFrame] = {}
         self._crosswalk_cache: dict[int, dict[str, str]] = {}  # season -> {pfr_player_id: gsis_id}
@@ -610,7 +617,7 @@ class UsageEngine:
 
         min_week = max(1, week - self._config.snap.min_games)
 
-        raw = self._loader.load_pff_facet("receiving_summary", [season])
+        raw = self._loader.load_pff_facet("receiving_summary", [season], pff_dir=self._pff_dir)
         if raw.is_empty():
             return pl.DataFrame(
                 schema={"gsis_id": pl.Utf8, "targets_per_route": pl.Float64, "routes": pl.Int64}
