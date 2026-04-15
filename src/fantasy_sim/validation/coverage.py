@@ -211,7 +211,10 @@ def _config_value(
 def _parquet_columns(path: Path) -> set[str]:
     if not path.exists():
         return set()
-    return set(pl.read_parquet_schema(path).keys())
+    try:
+        return set(pl.read_parquet_schema(path).keys())
+    except Exception:
+        return set()
 
 
 def _parquet_unique_values(path: Path, column: str) -> set[str]:
@@ -404,6 +407,15 @@ def collect_signal_coverage(
             ("pff", "team_context", "pass_rate_sensitivity"),
             nested_path=("team_context", "pass_rate_sensitivity"),
             default=0.08,
+        )
+    )
+    team_context_min_games = int(
+        _config_value(
+            config,
+            ("pff_config", "pff"),
+            ("pff", "team_context", "min_games"),
+            nested_path=("team_context", "min_games"),
+            default=4,
         )
     )
     matchup_enabled = _signal_enabled(
@@ -715,17 +727,26 @@ def collect_signal_coverage(
         for season in seasons
     }
     team_context_paths_by_season: dict[int, list[Path]] = {
-        season: (
-            (  # PBP is only required when the pass-rate subfactor is active.
-                [cache_path / f"pbp_{season}.parquet"]
+        season: [
+            pff_path / f"offense_run_blocking_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            *(
+                [
+                    pff_path / f"offense_run_blocking_{season - 1}.parquet",
+                    pff_path / f"passing_summary_{season - 1}.parquet",
+                ]
+                if team_context_min_games > 0
+                else []
+            ),
+            *(
+                [
+                    cache_path / f"pbp_{season}.parquet",
+                    *([cache_path / f"pbp_{season - 1}.parquet"] if team_context_min_games > 0 else []),
+                ]
                 if team_context_pass_rate_sensitivity != 0.0
                 else []
-            )
-            + [
-                pff_path / f"offense_run_blocking_{season}.parquet",
-                pff_path / f"passing_summary_{season}.parquet",
-            ]
-        )
+            ),
+        ]
         for season in seasons
     }
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
@@ -970,7 +991,8 @@ def collect_signal_coverage(
             _covered_seasons_from_required_paths(seasons, team_context_paths_by_season),
             note=(
                 "Requires offense_run_blocking and passing_summary parquet for the tested "
-                "season; season PBP parquet is also required when "
+                "season plus target_season-1 fallback coverage; season PBP parquet is "
+                "also required for the tested season and fallback season when "
                 "team_context.pass_rate_sensitivity is nonzero"
             ),
         ),
@@ -1022,21 +1044,41 @@ def collect_signal_coverage(
         "usage.route_rate": _build_signal(
             usage_route_rate_enabled and usage_enabled and pff_enabled,
             seasons,
-            _covered_seasons_from_required_paths(
-                seasons,
-                {
-                    season: [
-                        route_rate_pff_path / f"receiving_summary_{season}.parquet",
-                        route_rate_pff_path / f"rushing_summary_{season}.parquet",
-                        route_rate_pff_path / f"passing_summary_{season}.parquet",
-                        cache_path / f"rosters_weekly_{season}.parquet",
-                    ]
-                    for season in seasons
-                },
-            ),
+            [
+                season
+                for season in seasons
+                if season
+                in _covered_seasons_from_required_paths(
+                    seasons,
+                    {
+                        season: [
+                            route_rate_pff_path / f"receiving_summary_{season}.parquet",
+                            route_rate_pff_path / f"rushing_summary_{season}.parquet",
+                            route_rate_pff_path / f"passing_summary_{season}.parquet",
+                            cache_path / f"rosters_weekly_{season}.parquet",
+                        ]
+                        for season in seasons
+                    },
+                )
+                and season
+                in _covered_seasons_from_required_parquet_columns_by_path(
+                    seasons,
+                    {
+                        season: {
+                            route_rate_pff_path / f"receiving_summary_{season}.parquet": {
+                                "player_id",
+                                "targets",
+                                "routes",
+                            }
+                        }
+                        for season in seasons
+                    },
+                )
+            ],
             note=(
                 "Requires the PFF summary trio from the NFL processed PFF root "
-                "plus rosters_weekly cache to build the crosswalk"
+                "plus rosters_weekly cache to build the crosswalk; "
+                "receiving_summary must also include player_id, targets, and routes"
             ),
         ),
         "goal_line_concentration": _build_signal(
