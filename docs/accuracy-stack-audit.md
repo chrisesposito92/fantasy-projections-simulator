@@ -683,6 +683,13 @@ Still caveats:
 
 ## Remaining Evaluation Caveats
 
+### Phase 6 Interpretation Rule
+
+- treat each Phase 6 artifact as isolated marginal evidence
+- do not infer bundle value from multiple flat isolated results
+- if route-rate coverage is fixed, retire the old route-rate path caveat
+- keep any non-winning lever parked by default until a narrower redesign exists
+
 ### 1. Market-history evidence is still covered-only in Phase 3 v2
 
 The current market-history implementation has processed season parquet for

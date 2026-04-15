@@ -761,10 +761,14 @@ The roadmap is successful if future phases produce:
   - no-data neutral behavior
   - and apples-to-oranges comparisons
 
-## Immediate Next Planning Targets
+### Next Priority
 
-1. Phase 6 final reconciliation of the parked-lever retest artifacts against the current defaults baseline
-2. Phase 6 wrap-up documenting that no parked default-off lever earned promotion in this pass
+- if none of the isolated Phase 6 retests produce a clear marginal win, keep the
+  parked levers off and move the next planning priority to a narrower redesign
+  rather than a bundle retry
+- if exactly one lever produces a clear marginal win, promote only that lever
+  and keep the rest parked
+- do not run a Phase 6 bundle unless an isolated winner first exists
 
 ## Research Anchors
 
