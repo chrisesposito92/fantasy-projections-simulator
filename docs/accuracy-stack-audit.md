@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 5D rb-scheme-fit validation result.
+Research snapshot updated through the Phase 6 measurement-cleanup pass.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -525,6 +525,27 @@ Observed run caveat from the receiver/QB slices:
 - none currently recorded; `RB scheme-fit engine` is now implemented,
   validated, and parked
 
+## Phase 6 Current Priority
+
+Phase 6 now targets only the still-parked default-off levers:
+
+- `pff.team_context`
+- `usage.ngs`
+- `goal_line_concentration`
+- `usage.route_rate`
+
+Not part of the parked queue anymore:
+
+- `td_tendency`
+- `td_tendency.i5_enabled`
+
+Slice A is now the current baseline:
+
+- explicit coverage signals now exist for `pff.team_context`
+- explicit coverage signals now exist for `goal_line_concentration`
+- explicit coverage signals now exist for `td_tendency` and nested `td_tendency.i5`
+- `usage.route_rate` now points at the NFL processed PFF root used by runtime
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
@@ -650,8 +671,8 @@ Examples:
 - `goal-line-concentration-400` differs from `game-script-trailing-control-400`
   not only by `goal_line_concentration.enabled=true`, but also by the tighter
   `game_script.leading_late_rb.rb_rank_factor_clamp`
-- `baseline-new` predates later defaults that include `td_tendency` and
-  `game_script`
+- `baseline-new` predates later defaults that include `td_tendency`,
+  nested `td_tendency.i5`, and `game_script`
 
 Use these runs as directional evidence, not clean causal proof.
 

@@ -632,34 +632,35 @@ Superseded pre-fix artifact:
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 
-### Why This Phase Exists
+### Status
 
-Some current disabled features were tested under:
+In progress.
 
-- older defaults
-- weaker data coverage
-- weaker measurement discipline
+Slice A measurement cleanup is complete. The next work is isolated marginal
+retests of the still-parked default-off levers.
 
-They should be treated as parked, not dead.
+### Phase 6 Queue
 
-### Re-test Queue
+- `pff.team_context`
+- `usage.ngs`
+- `goal_line_concentration`
+- `usage.route_rate`
+
+### Not Part Of The Phase 6 Queue
 
 - `td_tendency`
 - `i5`
-- `goal_line_concentration`
-- `usage.route_rate`
-- `usage.ngs`
-- `pff.team_context`
-- coverage v2 ideas
 
-### Rule
+Reason:
 
-Do not re-open these until:
+- `td_tendency.enabled: true`
+- `td_tendency.i5_enabled: true`
 
-- phase 0 is complete
-- and at least one richer input phase has landed
+### Execution Rule
 
-That keeps the retest from becoming a noisy rerun of earlier sweeps.
+- finish the Phase 6 measurement cleanup first
+- then retest one parked lever at a time against `baseline=defaults`
+- do not bundle Phase 6 levers before an isolated retest wins
 
 ## Accuracy Config Families
 
@@ -712,11 +713,9 @@ The roadmap is successful if future phases produce:
 
 ## Immediate Next Planning Targets
 
-If only one or two follow-up planning sessions are opened next, the best order is:
-
-1. Phase 5: PFF granularity V2
-2. Phase 3 follow-on: `2022` market-history backfill and re-validation
-3. Phase 4 follow-on: redesign one tracking slice at a time before any bundle retry
+1. Phase 6 Slice B1: `pff.team_context` marginal retest
+2. Phase 6 Slice B2: `usage.ngs` marginal retest
+3. Phase 6 Slice B3+: remaining parked-lever retests one at a time
 
 ## Research Anchors
 
