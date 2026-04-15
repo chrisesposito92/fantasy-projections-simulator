@@ -702,6 +702,19 @@ Reason:
 - verdict:
   - keep `goal_line_concentration.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
 
+### `usage.route_rate` Retest Artifact
+
+- label: `phase-6-usage-route-rate-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `usage.route_rate=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.064`
+- verdict:
+  - keep `usage.route_rate.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+
 ## Accuracy Config Families
 
 Accuracy work is now split across explicit top-level families instead of
