@@ -517,13 +517,11 @@ def test_pff_rb_scheme_fit_disabled_when_parent_pff_is_disabled(tmp_path):
     )
 
 
-def test_pff_team_context_reports_full_when_pbp_and_pff_inputs_exist(tmp_path):
+def test_pff_team_context_reports_full_when_pff_inputs_exist_and_pass_rate_is_neutral(tmp_path):
     pff_dir = tmp_path / "pff"
-    cache_dir = tmp_path / "cache"
     for season in (2023, 2024):
         _write_parquet_placeholder(pff_dir / f"offense_run_blocking_{season}.parquet")
         _write_parquet_placeholder(pff_dir / f"passing_summary_{season}.parquet")
-        _write_parquet_placeholder(cache_dir / f"pbp_{season}.parquet")
 
     engine_configs = _default_engine_configs()
     engine_configs["pff_config"].team_context.enabled = True
@@ -532,7 +530,6 @@ def test_pff_team_context_reports_full_when_pbp_and_pff_inputs_exist(tmp_path):
         engine_configs,
         [2023, 2024],
         pff_dir=pff_dir,
-        cache_dir=cache_dir,
     )
 
     assert coverage["pff.team_context"] == SignalCoverage(
@@ -541,24 +538,25 @@ def test_pff_team_context_reports_full_when_pbp_and_pff_inputs_exist(tmp_path):
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires season PBP parquet plus offense_run_blocking and "
-            "passing_summary parquet for the tested season"
+            "Requires offense_run_blocking and passing_summary parquet for the tested "
+            "season; season PBP parquet is also required when "
+            "team_context.pass_rate_sensitivity is nonzero"
         ),
     )
 
 
-def test_pff_team_context_reports_partial_when_one_season_is_missing_an_input(tmp_path):
+def test_pff_team_context_reports_partial_when_pbp_is_missing_and_pass_rate_is_nonzero(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
-    for season in (2023,):
+    for season in (2023, 2024):
         _write_parquet_placeholder(pff_dir / f"offense_run_blocking_{season}.parquet")
         _write_parquet_placeholder(pff_dir / f"passing_summary_{season}.parquet")
+    for season in (2023,):
         _write_parquet_placeholder(cache_dir / f"pbp_{season}.parquet")
-    _write_parquet_placeholder(pff_dir / "offense_run_blocking_2024.parquet")
-    _write_parquet_placeholder(cache_dir / "pbp_2024.parquet")
 
     engine_configs = _default_engine_configs()
     engine_configs["pff_config"].team_context.enabled = True
+    engine_configs["pff_config"].team_context.pass_rate_sensitivity = 0.08
 
     coverage = collect_signal_coverage(
         engine_configs,
@@ -573,8 +571,9 @@ def test_pff_team_context_reports_partial_when_one_season_is_missing_an_input(tm
         covered_seasons=[2023],
         missing_seasons=[2024],
         note=(
-            "Requires season PBP parquet plus offense_run_blocking and "
-            "passing_summary parquet for the tested season"
+            "Requires offense_run_blocking and passing_summary parquet for the tested "
+            "season; season PBP parquet is also required when "
+            "team_context.pass_rate_sensitivity is nonzero"
         ),
     )
 
@@ -645,8 +644,9 @@ def test_td_tendency_and_i5_report_full_when_red_zone_inputs_exist(tmp_path):
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
-            "columns for the tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
 
@@ -838,13 +838,14 @@ def test_td_tendency_reports_partial_when_files_exist_but_red_zone_columns_do_no
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
-            "columns for the tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
 
 
-def test_td_tendency_requires_week_columns_but_i5_does_not(tmp_path):
+def test_td_tendency_i5_requires_week_columns_as_well(tmp_path):
     pff_dir = tmp_path / "pff"
     _write_parquet(
         pff_dir / "fantasy_receiving_2023.parquet",
@@ -912,12 +913,13 @@ def test_td_tendency_requires_week_columns_but_i5_does_not(tmp_path):
     )
     assert coverage["td_tendency.i5"] == SignalCoverage(
         enabled=True,
-        status="full",
-        covered_seasons=[2023, 2024],
-        missing_seasons=[],
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
-            "columns for the tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
 
@@ -993,8 +995,9 @@ def test_td_tendency_i5_reports_partial_when_columns_are_missing_for_one_season(
         covered_seasons=[2023],
         missing_seasons=[2024],
         note=(
-            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
-            "columns for the tested season; PBP fallback remains a runtime backstop"
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns for the tested season; PBP fallback remains "
+            "a runtime backstop"
         ),
     )
 

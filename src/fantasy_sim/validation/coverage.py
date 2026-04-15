@@ -397,6 +397,15 @@ def collect_signal_coverage(
         ("pff", "team_context"),
         nested_path=("team_context",),
     )
+    team_context_pass_rate_sensitivity = float(
+        _config_value(
+            config,
+            ("pff_config", "pff"),
+            ("pff", "team_context", "pass_rate_sensitivity"),
+            nested_path=("team_context", "pass_rate_sensitivity"),
+            default=0.08,
+        )
+    )
     matchup_enabled = _signal_enabled(
         config,
         ("pff_config", "pff"),
@@ -706,11 +715,17 @@ def collect_signal_coverage(
         for season in seasons
     }
     team_context_paths_by_season: dict[int, list[Path]] = {
-        season: [
-            cache_path / f"pbp_{season}.parquet",
-            pff_path / f"offense_run_blocking_{season}.parquet",
-            pff_path / f"passing_summary_{season}.parquet",
-        ]
+        season: (
+            (  # PBP is only required when the pass-rate subfactor is active.
+                [cache_path / f"pbp_{season}.parquet"]
+                if team_context_pass_rate_sensitivity != 0.0
+                else []
+            )
+            + [
+                pff_path / f"offense_run_blocking_{season}.parquet",
+                pff_path / f"passing_summary_{season}.parquet",
+            ]
+        )
         for season in seasons
     }
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
@@ -749,7 +764,23 @@ def collect_signal_coverage(
         }
         for season in seasons
     }
-    td_tendency_i5_columns = {"i5_rush_carries", "i5_rush_tds"}
+    td_tendency_i5_columns_by_season: dict[int, dict[Path, set[str]]] = {
+        season: {
+            pff_path / f"fantasy_receiving_{season}.parquet": {
+                "player_id",
+                "week",
+                "i5_rush_carries",
+                "i5_rush_tds",
+            },
+            pff_path / f"fantasy_passing_{season}.parquet": {
+                "player_id",
+                "week",
+                "i5_rush_carries",
+                "i5_rush_tds",
+            },
+        }
+        for season in seasons
+    }
     depth_role_coverage = _covered_seasons_from_required_paths(
         seasons,
         depth_role_paths_by_season,
@@ -925,8 +956,9 @@ def collect_signal_coverage(
             seasons,
             _covered_seasons_from_required_paths(seasons, team_context_paths_by_season),
             note=(
-                "Requires season PBP parquet plus offense_run_blocking and "
-                "passing_summary parquet for the tested season"
+                "Requires offense_run_blocking and passing_summary parquet for the tested "
+                "season; season PBP parquet is also required when "
+                "team_context.pass_rate_sensitivity is nonzero"
             ),
         ),
         "pff.depth_role.wr": _build_signal(
@@ -1016,14 +1048,14 @@ def collect_signal_coverage(
         "td_tendency.i5": _build_signal(
             td_tendency_i5_enabled,
             seasons,
-            _covered_seasons_from_required_parquet_columns(
+            _covered_seasons_from_required_parquet_columns_by_path(
                 seasons,
-                td_tendency_paths_by_season,
-                td_tendency_i5_columns,
+                td_tendency_i5_columns_by_season,
             ),
             note=(
-                "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
-                "columns for the tested season; PBP fallback remains a runtime backstop"
+                "Requires fantasy_receiving and fantasy_passing parquet with "
+                "week plus inside-5 columns for the tested season; PBP fallback remains "
+                "a runtime backstop"
             ),
         ),
         "availability": _build_signal(
