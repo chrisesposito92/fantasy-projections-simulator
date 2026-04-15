@@ -512,6 +512,85 @@ def test_pff_rb_scheme_fit_disabled_when_parent_pff_is_disabled(tmp_path):
     )
 
 
+def test_pff_team_context_reports_full_when_pbp_and_pff_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"offense_run_blocking_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"passing_summary_{season}.parquet")
+        _write_parquet_placeholder(cache_dir / f"pbp_{season}.parquet")
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].team_context.enabled = True
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.team_context"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires season PBP parquet plus offense_run_blocking and "
+            "passing_summary parquet for the tested season"
+        ),
+    )
+
+
+def test_goal_line_concentration_reports_full_without_external_inputs():
+    coverage = collect_signal_coverage(
+        {"goal_line_concentration": {"enabled": True}},
+        [2023, 2024],
+    )
+
+    assert coverage["goal_line_concentration"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Uses existing roster-share ordering only; no external historical store required",
+    )
+
+
+def test_td_tendency_and_i5_report_full_when_red_zone_inputs_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    for season in (2023, 2024):
+        _write_parquet_placeholder(pff_dir / f"fantasy_receiving_{season}.parquet")
+        _write_parquet_placeholder(pff_dir / f"fantasy_passing_{season}.parquet")
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet for the "
+            "tested season; PBP fallback remains a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
+            "columns for the tested season; PBP fallback remains a runtime backstop"
+        ),
+    )
+
+
 def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
@@ -570,6 +649,22 @@ def test_pff_qb_split_disabled_when_matchup_is_disabled(tmp_path):
             "and rosters_weekly cache to build the PFF QB crosswalk"
         ),
     )
+
+
+def test_phase6_signals_report_disabled_explicitly():
+    coverage = collect_signal_coverage(
+        {
+            "pff": {"enabled": False, "team_context": {"enabled": True}},
+            "goal_line_concentration": {"enabled": False},
+            "td_tendency": {"enabled": False, "i5_enabled": False},
+        },
+        [2024],
+    )
+
+    assert coverage["pff.team_context"].status == "disabled"
+    assert coverage["goal_line_concentration"].status == "disabled"
+    assert coverage["td_tendency"].status == "disabled"
+    assert coverage["td_tendency.i5"].status == "disabled"
 
 
 def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):

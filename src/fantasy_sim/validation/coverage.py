@@ -370,6 +370,12 @@ def collect_signal_coverage(
         ("pff", "qb_split"),
         nested_path=("qb_split",),
     )
+    team_context_enabled = _signal_enabled(
+        config,
+        ("pff_config", "pff"),
+        ("pff", "team_context"),
+        nested_path=("team_context",),
+    )
     matchup_enabled = _signal_enabled(
         config,
         ("pff_config", "pff"),
@@ -439,6 +445,26 @@ def collect_signal_coverage(
         ("usage_config", "usage"),
         ("usage", "route_rate"),
         nested_path=("route_rate",),
+    )
+    goal_line_concentration_enabled = _signal_enabled(
+        config,
+        ("goal_line_concentration_config", "goal_line_concentration"),
+        ("goal_line_concentration",),
+    )
+    td_tendency_enabled = _signal_enabled(
+        config,
+        ("td_tendency_config", "td_tendency"),
+        ("td_tendency",),
+    )
+    td_tendency_i5_enabled = (
+        td_tendency_enabled
+        and _config_flag(
+            config,
+            ("td_tendency_config", "td_tendency"),
+            ("td_tendency", "i5_enabled"),
+            nested_path=("i5_enabled",),
+            default=False,
+        )
     )
     availability_enabled = _signal_enabled(
         config,
@@ -658,6 +684,14 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
+    team_context_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            cache_path / f"pbp_{season}.parquet",
+            pff_path / f"offense_run_blocking_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+        ]
+        for season in seasons
+    }
     depth_role_efficiency_paths_by_season: dict[int, list[Path]] = {
         season: [
             pff_path / f"receiving_depth_{season}.parquet",
@@ -665,6 +699,13 @@ def collect_signal_coverage(
             pff_path / f"rushing_summary_{season}.parquet",
             pff_path / f"passing_summary_{season}.parquet",
             cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
+    td_tendency_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"fantasy_receiving_{season}.parquet",
+            pff_path / f"fantasy_passing_{season}.parquet",
         ]
         for season in seasons
     }
@@ -838,6 +879,15 @@ def collect_signal_coverage(
                 "rushing_summary parquet, and rosters_weekly cache to build the RB scheme-fit signal"
             ),
         ),
+        "pff.team_context": _build_signal(
+            pff_enabled and team_context_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, team_context_paths_by_season),
+            note=(
+                "Requires season PBP parquet plus offense_run_blocking and "
+                "passing_summary parquet for the tested season"
+            ),
+        ),
         "pff.depth_role.wr": _build_signal(
             pff_enabled and depth_role_enabled and "WR" in depth_role_positions,
             seasons,
@@ -901,6 +951,30 @@ def collect_signal_coverage(
             note=(
                 "Requires the PFF summary trio from the processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk"
+            ),
+        ),
+        "goal_line_concentration": _build_signal(
+            goal_line_concentration_enabled,
+            seasons,
+            seasons,
+            note="Uses existing roster-share ordering only; no external historical store required",
+        ),
+        "td_tendency": _build_signal(
+            td_tendency_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, td_tendency_paths_by_season),
+            note=(
+                "Requires fantasy_receiving and fantasy_passing parquet for the "
+                "tested season; PBP fallback remains a runtime backstop"
+            ),
+        ),
+        "td_tendency.i5": _build_signal(
+            td_tendency_i5_enabled,
+            seasons,
+            _covered_seasons_from_required_paths(seasons, td_tendency_paths_by_season),
+            note=(
+                "Requires fantasy_receiving and fantasy_passing parquet with inside-5 "
+                "columns for the tested season; PBP fallback remains a runtime backstop"
             ),
         ),
         "availability": _build_signal(
