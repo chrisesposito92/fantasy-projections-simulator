@@ -674,7 +674,7 @@ Reason:
   - `weekly_mae delta: -0.001`
   - `season_mae delta: -0.082`
 - verdict:
-  - keep `pff.team_context.enabled: false` unless the isolated retest clearly improves weekly QB/WR ordering and avoids material season regression
+  - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
 
 ## Accuracy Config Families
 
@@ -724,9 +724,9 @@ The roadmap is successful if future phases produce:
 
 ## Immediate Next Planning Targets
 
-1. Phase 6 Slice B1: `pff.team_context` marginal retest
-2. Phase 6 Slice B2: `usage.ngs` marginal retest
-3. Phase 6 Slice B3+: remaining parked-lever retests one at a time
+1. Phase 6 Slice B2: `usage.ngs` marginal retest
+2. Phase 6 Slice B3: `goal_line_concentration` marginal retest
+3. Phase 6 Slice B4+: remaining parked-lever retests one at a time
 
 ## Research Anchors
 

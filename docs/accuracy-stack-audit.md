@@ -560,7 +560,7 @@ Slice A is now the current baseline:
   - `weekly_mae delta: -0.001`
   - `season_mae delta: -0.082`
 - verdict:
-  - keep `pff.team_context.enabled: false` unless the isolated retest clearly improves weekly QB/WR ordering and avoids material season regression
+  - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
 
 ## What The Current Ledgers Actually Tell Us
 
