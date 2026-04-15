@@ -663,6 +663,19 @@ Reason:
 - then retest one parked lever at a time against `baseline=defaults`
 - do not bundle Phase 6 levers before an isolated retest wins
 
+### `pff.team_context` Retest Artifact
+
+- label: `phase-6-pff-team-context-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `pff.team_context=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0000`
+  - `weekly_mae delta: -0.001`
+  - `season_mae delta: -0.082`
+- verdict:
+  - keep `pff.team_context.enabled: false` unless the isolated retest clearly improves weekly QB/WR ordering and avoids material season regression
+
 ## Accuracy Config Families
 
 Accuracy work is now split across explicit top-level families instead of

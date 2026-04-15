@@ -549,6 +549,19 @@ Slice A is now the current baseline:
 - explicit coverage signals now exist for `td_tendency` and nested `td_tendency.i5`
 - `usage.route_rate` now points at the NFL processed PFF root used by runtime
 
+### `pff.team_context` Retest Artifact
+
+- built state: `pff.team_context` remains built but parked behind `pff.team_context.enabled: false`
+- label: `phase-6-pff-team-context-v1`
+- coverage: `pff.team_context=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0000`
+  - `weekly_mae delta: -0.001`
+  - `season_mae delta: -0.082`
+- verdict:
+  - keep `pff.team_context.enabled: false`
+  - inferred from the run: weekly QB/WR ordering did not improve clearly enough to justify promotion
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
