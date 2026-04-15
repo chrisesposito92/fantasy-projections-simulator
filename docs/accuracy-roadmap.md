@@ -676,6 +676,19 @@ Reason:
 - verdict:
   - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
 
+### `usage.ngs` Retest Artifact
+
+- label: `phase-6-usage-ngs-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `usage.ngs=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0001`
+  - `weekly_mae delta: -0.006`
+  - `season_mae delta: -0.037`
+- verdict:
+  - keep `usage.ngs.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering
+
 ## Accuracy Config Families
 
 Accuracy work is now split across explicit top-level families instead of
@@ -724,9 +737,9 @@ The roadmap is successful if future phases produce:
 
 ## Immediate Next Planning Targets
 
-1. Phase 6 Slice B2: `usage.ngs` marginal retest
-2. Phase 6 Slice B3: `goal_line_concentration` marginal retest
-3. Phase 6 Slice B4+: remaining parked-lever retests one at a time
+1. Phase 6 Slice B3: `goal_line_concentration` marginal retest
+2. Phase 6 Slice B4: `usage.route_rate` marginal retest
+3. Phase 6 Slice B5+: remaining parked-lever retests one at a time
 
 ## Research Anchors
 

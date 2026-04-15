@@ -562,6 +562,19 @@ Slice A is now the current baseline:
 - verdict:
   - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
 
+### `usage.ngs` Retest Artifact
+
+- label: `phase-6-usage-ngs-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `usage.ngs=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0001`
+  - `weekly_mae delta: -0.006`
+  - `season_mae delta: -0.037`
+- verdict:
+  - keep `usage.ngs.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
