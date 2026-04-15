@@ -180,11 +180,10 @@ def test_pff_reports_full_when_default_stack_is_present_for_all_test_seasons(tmp
 def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
     _write_default_pff_stack(pff_dir, (2023,))
     for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2023.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
     _write_roster_cache(cache_dir, (2023, 2024))
 
     engine_configs = _default_engine_configs()
@@ -213,7 +212,7 @@ def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_p
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
+            "Requires the PFF summary trio from the NFL processed PFF root "
             "plus rosters_weekly cache to build the crosswalk"
         ),
     )
@@ -222,11 +221,10 @@ def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_p
 def test_usage_route_rate_reports_partial_when_crosswalk_inputs_are_missing_for_one_season(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
     _write_default_pff_stack(pff_dir, (2023, 2024))
     for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2023.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
     _write_roster_cache(cache_dir, (2023,))
 
     engine_configs = _default_engine_configs()
@@ -245,7 +243,7 @@ def test_usage_route_rate_reports_partial_when_crosswalk_inputs_are_missing_for_
         covered_seasons=[2023],
         missing_seasons=[2024],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
+            "Requires the PFF summary trio from the NFL processed PFF root "
             "plus rosters_weekly cache to build the crosswalk"
         ),
     )
@@ -1272,18 +1270,15 @@ def test_availability_and_role_trend_report_partial_when_explicit_inputs_are_spa
     )
 
 
-def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
+def test_default_route_rate_root_matches_nfl_pff_root(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
-    route_rate_root = tmp_path / "pff_processed"
     cache_dir = tmp_path / "cache"
 
     monkeypatch.setattr(coverage_module, "DEFAULT_PFF_DIR", pff_root)
-    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", route_rate_root)
+    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", pff_root)
 
     _write_default_pff_stack(pff_root, (2023, 2024))
-    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-    _write_roster_cache(cache_dir, (2023,))
+    _write_roster_cache(cache_dir, (2023, 2024))
 
     engine_configs = _default_engine_configs()
     engine_configs["usage_config"] = UsageConfig()
@@ -1306,11 +1301,11 @@ def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_p
     )
     assert coverage["usage.route_rate"] == SignalCoverage(
         enabled=True,
-        status="partial",
-        covered_seasons=[2023],
-        missing_seasons=[2024],
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
+            "Requires the PFF summary trio from the NFL processed PFF root "
             "plus rosters_weekly cache to build the crosswalk"
         ),
     )
@@ -1318,7 +1313,6 @@ def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_p
 
 def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
     pff_root = tmp_path / "custom" / "processed" / "nfl"
-    route_rate_root = pff_root.parent
     props_root = tmp_path / "custom" / "props"
     cache_dir = tmp_path / "cache"
 
@@ -1333,8 +1327,8 @@ def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
 
     _write_default_pff_stack(pff_root, (2023, 2024))
     for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+        _write_parquet_placeholder(pff_root / f"{facet}_2023.parquet")
+        _write_parquet_placeholder(pff_root / f"{facet}_2024.parquet")
     _write_roster_cache(cache_dir, (2023, 2024))
     for season in (2023, 2024):
         _write_parquet_placeholder(props_root / f"props_{season}_week01.parquet")
@@ -1368,7 +1362,7 @@ def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
+            "Requires the PFF summary trio from the NFL processed PFF root "
             "plus rosters_weekly cache to build the crosswalk"
         ),
     )

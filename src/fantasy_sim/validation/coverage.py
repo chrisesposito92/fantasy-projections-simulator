@@ -10,7 +10,7 @@ from pathlib import Path
 import polars as pl
 
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
-DEFAULT_PFF_ROUTE_RATE_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed"
+DEFAULT_PFF_ROUTE_RATE_DIR = DEFAULT_PFF_DIR
 DEFAULT_PROPS_DIR = Path.home() / ".fantasy-sim" / "pff" / "props"
 DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
 DEFAULT_MARKET_HISTORY_DIR = (
@@ -109,16 +109,7 @@ def _resolve_pff_path(config: object, pff_dir: str | Path | None) -> Path:
 
 
 def _resolve_route_rate_pff_path(config: object, pff_dir: str | Path | None) -> Path:
-    if pff_dir is not None:
-        return _path_or_default(pff_dir, DEFAULT_PFF_ROUTE_RATE_DIR).parent
-
-    pff_config = _config_section(config, "pff_config")
-    if pff_config is None:
-        pff_config = _config_section(config, "pff")
-    data_dir = _config_get(pff_config, "data_dir", default=None) if pff_config is not None else None
-    if data_dir is not None:
-        return _path_or_default(data_dir, DEFAULT_PFF_DIR).parent
-    return DEFAULT_PFF_ROUTE_RATE_DIR
+    return _resolve_pff_path(config, pff_dir)
 
 
 def _resolve_props_path(config: object, props_dir: str | Path | None) -> Path:
@@ -344,9 +335,8 @@ def collect_signal_coverage(
     Path precedence is explicit kwargs first, then typed config path fields,
     then module defaults.
 
-    Route-rate follows the runtime processed-root convention:
-    `pff_dir` is treated as the NFL root for top-level PFF coverage, while
-    route-rate derives its processed-root parent from that same override.
+    Route-rate follows the same NFL processed PFF root as the runtime PFF
+    feature set.
     """
 
     seasons = list(test_seasons)
@@ -965,7 +955,7 @@ def collect_signal_coverage(
                 },
             ),
             note=(
-                "Requires the PFF summary trio from the processed PFF root "
+                "Requires the PFF summary trio from the NFL processed PFF root "
                 "plus rosters_weekly cache to build the crosswalk"
             ),
         ),
