@@ -689,6 +689,19 @@ Reason:
 - verdict:
   - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
 
+### `goal_line_concentration` Retest Artifact
+
+- label: `phase-6-goal-line-concentration-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `goal_line_concentration=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0019`
+  - `weekly_mae delta: -0.015`
+  - `season_mae delta: -0.041`
+- verdict:
+  - keep `goal_line_concentration.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+
 ## Accuracy Config Families
 
 Accuracy work is now split across explicit top-level families instead of
@@ -737,9 +750,8 @@ The roadmap is successful if future phases produce:
 
 ## Immediate Next Planning Targets
 
-1. Phase 6 Slice B3: `goal_line_concentration` marginal retest
-2. Phase 6 Slice B4: `usage.route_rate` marginal retest
-3. No additional parked-lever retests remain in the current Phase 6 queue after B3 and B4
+1. Phase 6 Slice B4: `usage.route_rate` marginal retest
+2. No additional parked-lever retests remain in the current Phase 6 queue after B4
 
 ## Research Anchors
 

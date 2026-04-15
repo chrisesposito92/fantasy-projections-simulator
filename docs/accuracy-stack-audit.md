@@ -575,6 +575,19 @@ Slice A is now the current baseline:
 - verdict:
   - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
 
+### `goal_line_concentration` Retest Artifact
+
+- label: `phase-6-goal-line-concentration-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `goal_line_concentration=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0019`
+  - `weekly_mae delta: -0.015`
+  - `season_mae delta: -0.041`
+- verdict:
+  - keep `goal_line_concentration.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+
 ## What The Current Ledgers Actually Tell Us
 
 ### Unified ledger
