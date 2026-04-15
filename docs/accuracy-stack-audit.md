@@ -500,7 +500,10 @@ Observed run caveat from the receiver/QB slices:
   - `weekly_mae delta: +0.002`
   - `season_mae delta: +0.013`
 
-### Immediate Next Phase 5 Decision
+### Phase 5 Decision Record
+
+Historical note: this decision block is preserved for context, but Phase 6 is
+now the active priority.
 
 - decide whether to retune `WR/TE efficiency v2`
 - or retune `RB scheme-fit engine`

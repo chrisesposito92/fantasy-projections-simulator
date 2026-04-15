@@ -658,7 +658,8 @@ Reason:
 
 ### Execution Rule
 
-- finish the Phase 6 measurement cleanup first
+- Slice A measurement cleanup is complete
+- the repo is ready for isolated retests against `baseline=defaults`
 - then retest one parked lever at a time against `baseline=defaults`
 - do not bundle Phase 6 levers before an isolated retest wins
 
@@ -691,13 +692,10 @@ Reason:
 
 ### Then
 
+- Phase 6 retests of parked levers under the new regime
 - Phase 3 if historical market data can be acquired cleanly
 - Phase 5 as the deeper PFF granularity track
 - Phase 4 follow-on only if a narrower tracking slice is redesigned and re-validated cleanly
-
-### Last
-
-- Phase 6 retests of parked levers under the new regime
 
 ## Success Definition
 
