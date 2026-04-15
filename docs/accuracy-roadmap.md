@@ -634,10 +634,11 @@ Superseded pre-fix artifact:
 
 ### Status
 
-Parked-lever retest queue complete. Final reconciliation and wrap-up remain.
+Parked-lever retest queue complete. All four isolated retests are recorded,
+none produced a clear marginal win, and the parked levers remain off.
 
-Slice A measurement cleanup is complete, and the isolated marginal retests of
-the still-parked default-off levers have now been recorded.
+Slice A measurement cleanup is complete, and the completed isolated marginal
+retests of the default-off levers are now part of the final handoff record.
 
 ### Completed Phase 6 Retest Queue
 
@@ -744,7 +745,8 @@ Reason:
 
 ### Then
 
-- Phase 6 retests of parked levers under the new regime
+- Phase 6 retest queue complete; move to a narrower redesign or different
+  planning path instead of a bundle retry
 - Phase 3 if historical market data can be acquired cleanly
 - Phase 5 as the deeper PFF granularity track
 - Phase 4 follow-on only if a narrower tracking slice is redesigned and re-validated cleanly

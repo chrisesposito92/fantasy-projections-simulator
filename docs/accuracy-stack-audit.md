@@ -528,10 +528,11 @@ now the active priority.
 - none currently recorded; `RB scheme-fit engine` is now implemented,
   validated, and parked
 
-## Phase 6 Current Priority
+## Phase 6 Closeout And Outcome
 
-The Phase 6 parked-lever retest queue is complete. The remaining Phase 6 work
-is final reconciliation and wrap-up against the current defaults baseline.
+The Phase 6 parked-lever retest queue is complete. All four isolated retests
+are recorded, none produced a clear marginal win, and the parked levers remain
+off against the current defaults baseline.
 
 Completed parked-lever retests:
 
