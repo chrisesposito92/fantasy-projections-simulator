@@ -650,7 +650,7 @@ retests of the default-off levers are now part of the final handoff record.
 ### Not Part Of The Phase 6 Queue
 
 - `td_tendency`
-- `td_tendency.i5_enabled`
+- `td_tendency.i5`
 
 Reason:
 

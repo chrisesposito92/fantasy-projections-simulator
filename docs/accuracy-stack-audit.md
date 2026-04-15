@@ -544,7 +544,7 @@ Completed parked-lever retests:
 Not part of the parked queue anymore:
 
 - `td_tendency`
-- `td_tendency.i5_enabled`
+- `td_tendency.i5`
 
 Slice A is now the current baseline:
 

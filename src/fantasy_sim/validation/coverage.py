@@ -781,9 +781,22 @@ def collect_signal_coverage(
         }
         for season in seasons
     }
+    td_tendency_crosswalk_paths_by_season: dict[int, list[Path]] = {
+        season: [
+            pff_path / f"receiving_summary_{season}.parquet",
+            pff_path / f"rushing_summary_{season}.parquet",
+            pff_path / f"passing_summary_{season}.parquet",
+            cache_path / f"rosters_weekly_{season}.parquet",
+        ]
+        for season in seasons
+    }
     depth_role_coverage = _covered_seasons_from_required_paths(
         seasons,
         depth_role_paths_by_season,
+    )
+    td_tendency_crosswalk_coverage = _covered_seasons_from_required_paths(
+        seasons,
+        td_tendency_crosswalk_paths_by_season,
     )
 
     market_history_signals = {
@@ -1035,26 +1048,36 @@ def collect_signal_coverage(
         "td_tendency": _build_signal(
             td_tendency_enabled,
             seasons,
-            _covered_seasons_from_required_parquet_columns_by_path(
-                seasons,
-                td_tendency_columns_by_season,
-            ),
+            [
+                season
+                for season in _covered_seasons_from_required_parquet_columns_by_path(
+                    seasons,
+                    td_tendency_columns_by_season,
+                )
+                if season in td_tendency_crosswalk_coverage
+            ],
             note=(
                 "Requires fantasy_receiving and fantasy_passing parquet with "
-                "week plus red-zone TD columns for the tested season; PBP fallback "
-                "remains a runtime backstop"
+                "week plus red-zone TD columns, the PFF summary trio, and "
+                "rosters_weekly cache for the tested season; PBP fallback remains "
+                "a runtime backstop"
             ),
         ),
         "td_tendency.i5": _build_signal(
             td_tendency_i5_enabled,
             seasons,
-            _covered_seasons_from_required_parquet_columns_by_path(
-                seasons,
-                td_tendency_i5_columns_by_season,
-            ),
+            [
+                season
+                for season in _covered_seasons_from_required_parquet_columns_by_path(
+                    seasons,
+                    td_tendency_i5_columns_by_season,
+                )
+                if season in td_tendency_crosswalk_coverage
+            ],
             note=(
                 "Requires fantasy_receiving and fantasy_passing parquet with "
-                "week plus inside-5 columns for the tested season; PBP fallback remains "
+                "week plus inside-5 columns, the PFF summary trio, and "
+                "rosters_weekly cache for the tested season; PBP fallback remains "
                 "a runtime backstop"
             ),
         ),
