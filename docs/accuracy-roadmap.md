@@ -660,9 +660,10 @@ Reason:
 ### Execution Rule
 
 - Slice A measurement cleanup is complete
-- the repo is ready for isolated retests against `baseline=defaults`
-- then retest one parked lever at a time against `baseline=defaults`
-- do not bundle Phase 6 levers before an isolated retest wins
+- the Phase 6 retest queue is closed
+- the completed isolated retests serve as the final handoff record for the
+  parked default-off levers
+- any future work should start from a narrower redesign, not a Phase 6 retry
 
 ### `pff.team_context` Retest Artifact
 
