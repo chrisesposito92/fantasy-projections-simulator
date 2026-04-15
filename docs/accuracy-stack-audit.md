@@ -551,16 +551,16 @@ Slice A is now the current baseline:
 
 ### `pff.team_context` Retest Artifact
 
-- built state: `pff.team_context` remains built but parked behind `pff.team_context.enabled: false`
 - label: `phase-6-pff-team-context-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
 - coverage: `pff.team_context=full(2022,2023,2024)`
 - result:
   - `rank_corr delta:  -0.0000`
   - `weekly_mae delta: -0.001`
   - `season_mae delta: -0.082`
 - verdict:
-  - keep `pff.team_context.enabled: false`
-  - inferred from the run: weekly QB/WR ordering did not improve clearly enough to justify promotion
+  - keep `pff.team_context.enabled: false` unless the isolated retest clearly improves weekly QB/WR ordering and avoids material season regression
 
 ## What The Current Ledgers Actually Tell Us
 
