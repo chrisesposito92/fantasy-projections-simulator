@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import os
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
 DEFAULT_PROPS_DIR = Path.home() / ".fantasy-sim" / "pff" / "props"
@@ -217,7 +220,8 @@ def _parquet_columns(path: Path) -> set[str]:
         return set()
     try:
         return set(pl.read_parquet_schema(path).keys())
-    except Exception:
+    except pl.exceptions.PolarsError as exc:
+        logger.warning("Unable to read parquet schema for %s: %s", path, exc)
         return set()
 
 
@@ -780,29 +784,6 @@ def collect_signal_coverage(
         ]
         for season in seasons
     }
-    team_context_paths_by_season: dict[int, list[Path]] = {
-        season: [
-            pff_path / f"offense_run_blocking_{season}.parquet",
-            pff_path / f"passing_summary_{season}.parquet",
-            *(
-                [
-                    pff_path / f"offense_run_blocking_{season - 1}.parquet",
-                    pff_path / f"passing_summary_{season - 1}.parquet",
-                ]
-                if team_context_min_games > 0
-                else []
-            ),
-            *(
-                [
-                    cache_path / f"pbp_{season}.parquet",
-                    *([cache_path / f"pbp_{season - 1}.parquet"] if team_context_min_games > 0 else []),
-                ]
-                if team_context_pass_rate_sensitivity != 0.0
-                else []
-            ),
-        ]
-        for season in seasons
-    }
     team_context_columns_by_season = _team_context_columns_by_season(
         pff_path,
         cache_path,
@@ -818,13 +799,6 @@ def collect_signal_coverage(
             pff_path / f"passing_summary_{season}.parquet",
             cache_path / f"rosters_weekly_{season}.parquet",
             ]
-        for season in seasons
-    }
-    td_tendency_paths_by_season: dict[int, list[Path]] = {
-        season: [
-            pff_path / f"fantasy_receiving_{season}.parquet",
-            pff_path / f"fantasy_passing_{season}.parquet",
-        ]
         for season in seasons
     }
     td_tendency_columns_by_season: dict[int, dict[Path, set[str]]] = {

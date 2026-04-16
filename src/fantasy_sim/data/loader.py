@@ -133,7 +133,7 @@ class DataLoader:
         seasons: list[int],
         pff_dir: Path | None = None,
     ) -> pl.DataFrame:
-        """Load a PFF processed facet from the NFL parquet cache."""
+        """Load a processed PFF facet from `pff_dir` or, by default, `DEFAULT_PFF_DIR`."""
         target_dir = pff_dir or DEFAULT_PFF_DIR
         frames: list[pl.DataFrame] = []
         for season in seasons:

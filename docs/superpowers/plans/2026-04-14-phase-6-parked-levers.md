@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the runtime surface narrow. Slice A changes only validation coverage, route-rate data-path resolution, and canonical docs; it does not change default projection behavior. Slice B reuses the existing `scripts/validate.py` marginal-lift path for four isolated levers (`pff.team_context`, `usage.ngs`, `goal_line_concentration`, and `usage.route_rate`), with the roadmap and audit updated from the exact run output after each artifact.
 
-**Tech Stack:** Python 3.14, polars, pathlib, pytest, YAML config, Click validation CLI
+**Tech Stack:** Python >=3.12, polars, pathlib, pytest, YAML config, Click validation CLI
 
 **Spec:** `docs/superpowers/specs/2026-04-14-phase-6-parked-levers-design.md`
 
