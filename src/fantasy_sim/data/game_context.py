@@ -227,7 +227,8 @@ class GameContextBuilder:
         self._usage_config = usage_config or UsageConfig(enabled=False)
         if self._usage_config.enabled:
             from fantasy_sim.data.usage.engine import UsageEngine
-            self._usage_engine = UsageEngine(self._usage_config, self.loader)
+            pff_dir = Path(self._pff_config.data_dir) if self._pff_config.data_dir else None
+            self._usage_engine = UsageEngine(self._usage_config, self.loader, pff_dir=pff_dir)
             logger.info("Usage engine enabled")
 
         self._tracking_engine = None

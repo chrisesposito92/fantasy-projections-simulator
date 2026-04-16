@@ -632,34 +632,90 @@ Superseded pre-fix artifact:
 
 ## Phase 6: Re-open Parked Levers Under The New Data Regime
 
-### Why This Phase Exists
+### Status
 
-Some current disabled features were tested under:
+Parked-lever retest queue complete. All four isolated retests are recorded,
+none produced a clear marginal win, and the parked levers remain off.
 
-- older defaults
-- weaker data coverage
-- weaker measurement discipline
+Slice A measurement cleanup is complete, and the completed isolated marginal
+retests of the default-off levers are now part of the final handoff record.
 
-They should be treated as parked, not dead.
+### Completed Phase 6 Retest Queue
 
-### Re-test Queue
-
-- `td_tendency`
-- `i5`
+- `pff.team_context`
+- `usage.ngs`
 - `goal_line_concentration`
 - `usage.route_rate`
-- `usage.ngs`
-- `pff.team_context`
-- coverage v2 ideas
 
-### Rule
+### Not Part Of The Phase 6 Queue
 
-Do not re-open these until:
+- `td_tendency`
+- `td_tendency.i5`
 
-- phase 0 is complete
-- and at least one richer input phase has landed
+Reason:
 
-That keeps the retest from becoming a noisy rerun of earlier sweeps.
+- `td_tendency.enabled: true`
+- `td_tendency.i5_enabled: true`
+
+### Execution Rule
+
+- Slice A measurement cleanup is complete
+- the Phase 6 retest queue is closed
+- the completed isolated retests serve as the final handoff record for the
+  parked default-off levers
+- any future work should start from a narrower redesign, not a Phase 6 retry
+
+### `pff.team_context` Retest Artifact
+
+- label: `phase-6-pff-team-context-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before schema-aware fallback coverage accounting
+- result:
+  - `rank_corr delta:  -0.0000`
+  - `weekly_mae delta: -0.001`
+  - `season_mae delta: -0.082`
+- verdict:
+  - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
+
+### `usage.ngs` Retest Artifact
+
+- label: `phase-6-usage-ngs-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `usage.ngs=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0001`
+  - `weekly_mae delta: -0.006`
+  - `season_mae delta: -0.037`
+- verdict:
+  - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
+
+### `goal_line_concentration` Retest Artifact
+
+- label: `phase-6-goal-line-concentration-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `goal_line_concentration=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0019`
+  - `weekly_mae delta: -0.015`
+  - `season_mae delta: -0.041`
+- verdict:
+  - keep `goal_line_concentration.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+
+### `usage.route_rate` Retest Artifact
+
+- label: `phase-6-usage-route-rate-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before stricter runtime-aligned route-rate coverage accounting
+- result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.064`
+- verdict:
+  - keep `usage.route_rate.enabled: false` because the isolated retest produced no rank-correlation lift and only negligible top-line MAE movement, which is not meaningful promotable lift
 
 ## Accuracy Config Families
 
@@ -690,13 +746,11 @@ Reason:
 
 ### Then
 
+- Phase 6 retest queue complete; move to a narrower redesign or different
+  planning path instead of a bundle retry
 - Phase 3 if historical market data can be acquired cleanly
 - Phase 5 as the deeper PFF granularity track
 - Phase 4 follow-on only if a narrower tracking slice is redesigned and re-validated cleanly
-
-### Last
-
-- Phase 6 retests of parked levers under the new regime
 
 ## Success Definition
 
@@ -710,13 +764,14 @@ The roadmap is successful if future phases produce:
   - no-data neutral behavior
   - and apples-to-oranges comparisons
 
-## Immediate Next Planning Targets
+### Next Priority
 
-If only one or two follow-up planning sessions are opened next, the best order is:
-
-1. Phase 5: PFF granularity V2
-2. Phase 3 follow-on: `2022` market-history backfill and re-validation
-3. Phase 4 follow-on: redesign one tracking slice at a time before any bundle retry
+- the isolated Phase 6 retests did not produce a promotable winner, so the
+  parked levers stay off at handoff
+- the next planning priority is a narrower redesign rather than a Phase 6
+  bundle retry
+- do not run a Phase 6 bundle unless a future isolated redesign first produces
+  a clear winner
 
 ## Research Anchors
 

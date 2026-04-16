@@ -94,6 +94,25 @@ def test_game_context_builder_with_enabled_usage_creates_engine():
     assert builder._usage_engine is not None
 
 
+def test_game_context_builder_passes_custom_pff_root_to_usage_engine(tmp_path):
+    """GameContextBuilder forwards pff_config.data_dir into UsageEngine."""
+    from fantasy_sim.data.game_context import GameContextBuilder
+    from fantasy_sim.data.pff.models import PffConfig
+
+    usage_config = UsageConfig(enabled=True)
+    pff_root = tmp_path / "custom" / "processed" / "nfl"
+    pff_config = PffConfig(enabled=True, data_dir=str(pff_root))
+
+    with patch("fantasy_sim.data.pff.loader.PffLoader") as MockPffLoader, patch(
+        "fantasy_sim.data.usage.engine.UsageEngine"
+    ) as MockUsageEngine:
+        MockPffLoader.return_value.is_available.return_value = False
+        MockUsageEngine.return_value = MagicMock()
+        GameContextBuilder(usage_config=usage_config, pff_config=pff_config)
+
+    assert MockUsageEngine.call_args.kwargs["pff_dir"] == pff_root
+
+
 def test_game_context_builder_with_none_usage_no_engine():
     """GameContextBuilder with usage_config=None has _usage_engine=None."""
     from fantasy_sim.data.game_context import GameContextBuilder

@@ -1,6 +1,6 @@
 # Accuracy Stack Audit
 
-Research snapshot updated through the Phase 5D rb-scheme-fit validation result.
+Research snapshot updated through the Phase 6 measurement-cleanup pass.
 
 This document is meant to be the durable "current state" companion to
 [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md). It captures what is
@@ -500,7 +500,10 @@ Observed run caveat from the receiver/QB slices:
   - `weekly_mae delta: +0.002`
   - `season_mae delta: +0.013`
 
-### Immediate Next Phase 5 Decision
+### Phase 5 Decision Record
+
+Historical note: this decision block is preserved for context. The later Phase
+6 retest queue is complete, so this is no longer an active priority block.
 
 - decide whether to retune `WR/TE efficiency v2`
 - or retune `RB scheme-fit engine`
@@ -524,6 +527,84 @@ Observed run caveat from the receiver/QB slices:
 
 - none currently recorded; `RB scheme-fit engine` is now implemented,
   validated, and parked
+
+## Phase 6 Closeout And Outcome
+
+The Phase 6 parked-lever retest queue is complete. All four isolated retests
+are recorded, none produced a clear marginal win, and the parked levers remain
+off against the current defaults baseline.
+
+Completed parked-lever retests:
+
+- `pff.team_context`
+- `usage.ngs`
+- `goal_line_concentration`
+- `usage.route_rate`
+
+Not part of the parked queue anymore:
+
+- `td_tendency`
+- `td_tendency.i5`
+
+Slice A is now the current baseline:
+
+- explicit coverage signals now exist for `pff.team_context`
+- explicit coverage signals now exist for `goal_line_concentration`
+- explicit coverage signals now exist for `td_tendency` and nested `td_tendency.i5`
+- `pff.team_context` coverage now reflects target-season fallback dependencies and the OL/QB schema columns runtime actually uses
+- `usage.route_rate` now points at the NFL processed PFF root used by runtime and requires the runtime route-rate columns plus `week` for the strict temporal guard
+
+### `pff.team_context` Retest Artifact
+
+- label: `phase-6-pff-team-context-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage at retest time: `pff.team_context=full(2022,2023,2024)` before schema-aware fallback coverage accounting
+- result:
+  - `rank_corr delta:  -0.0000`
+  - `weekly_mae delta: -0.001`
+  - `season_mae delta: -0.082`
+- verdict:
+  - keep `pff.team_context.enabled: false` because the isolated retest did not show clear weekly QB/WR improvement or meaningful top-line lift
+
+### `usage.ngs` Retest Artifact
+
+- label: `phase-6-usage-ngs-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `usage.ngs=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0001`
+  - `weekly_mae delta: -0.006`
+  - `season_mae delta: -0.037`
+- verdict:
+  - keep `usage.ngs.enabled: false` because the isolated retest did not produce meaningful promotable top-line lift
+
+### `goal_line_concentration` Retest Artifact
+
+- label: `phase-6-goal-line-concentration-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage: `goal_line_concentration=full(2022,2023,2024)`
+- result:
+  - `rank_corr delta:  -0.0019`
+  - `weekly_mae delta: -0.015`
+  - `season_mae delta: -0.041`
+- verdict:
+  - keep `goal_line_concentration.enabled: false` because the isolated retest did not clearly improve weekly QB/WR ordering enough to justify promotion
+
+### `usage.route_rate` Retest Artifact
+
+- label: `phase-6-usage-route-rate-v1`
+- baseline: `defaults`
+- comparison mode: `marginal_lift`
+- coverage at retest time: `usage.route_rate=full(2022,2023,2024)` before stricter runtime-aligned route-rate coverage accounting
+- result:
+  - `rank_corr delta:  +0.0000`
+  - `weekly_mae delta: -0.003`
+  - `season_mae delta: -0.064`
+- verdict:
+  - keep `usage.route_rate.enabled: false` because the isolated retest produced no rank-correlation lift and only negligible top-line MAE movement, which is not meaningful promotable lift
 
 ## What The Current Ledgers Actually Tell Us
 
@@ -604,6 +685,14 @@ Still caveats:
 
 ## Remaining Evaluation Caveats
 
+### Phase 6 Interpretation Rule
+
+- treat each Phase 6 artifact as isolated marginal evidence
+- do not infer bundle value from multiple flat isolated results
+- the old route-rate path caveat is resolved; coverage is now explicitly
+  reported and no longer blocks interpretation
+- keep any non-winning lever parked by default until a narrower redesign exists
+
 ### 1. Market-history evidence is still covered-only in Phase 3 v2
 
 The current market-history implementation has processed season parquet for
@@ -650,8 +739,8 @@ Examples:
 - `goal-line-concentration-400` differs from `game-script-trailing-control-400`
   not only by `goal_line_concentration.enabled=true`, but also by the tighter
   `game_script.leading_late_rb.rb_rank_factor_clamp`
-- `baseline-new` predates later defaults that include `td_tendency` and
-  `game_script`
+- `baseline-new` predates later defaults that include `td_tendency`,
+  nested `td_tendency.i5`, and `game_script`
 
 Use these runs as directional evidence, not clean causal proof.
 

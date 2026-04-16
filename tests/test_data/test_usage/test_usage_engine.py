@@ -1259,6 +1259,29 @@ class TestApplyRouteRate:
         # Player 101: (8+9)/(30+32)=17/62 per-row avg, or aggregate
         assert len(result) > 0
 
+    def test_load_pff_route_rate_uses_configured_pff_root(self, mock_pff_route_df, tmp_path):
+        """_load_pff_route_rate() forwards the configured NFL PFF root to DataLoader."""
+        from fantasy_sim.data.loader import DataLoader
+        from fantasy_sim.data.usage.engine import UsageEngine
+
+        loader = MagicMock(spec=DataLoader)
+        loader.load_pff_facet.return_value = mock_pff_route_df
+        custom_pff_dir = tmp_path / "custom" / "processed" / "nfl"
+
+        engine = UsageEngine(
+            config=UsageConfig(),
+            loader=loader,
+            pff_dir=custom_pff_dir,
+        )
+
+        engine._load_pff_route_rate(2024, 5, self.PFF_CROSSWALK)
+
+        loader.load_pff_facet.assert_called_once_with(
+            "receiving_summary",
+            [2024],
+            pff_dir=custom_pff_dir,
+        )
+
     def test_load_pff_route_rate_excludes_zero_routes(self, ngs_engine, mock_pff_route_df):
         """_load_pff_route_rate() filters out rows where routes=0 (divide-by-zero guard)."""
         ngs_engine._loader.load_pff_facet.return_value = mock_pff_route_df

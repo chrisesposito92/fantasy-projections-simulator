@@ -4,6 +4,7 @@ import nflreadpy
 
 
 DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
+DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
 
 
 class DataLoader:
@@ -132,20 +133,7 @@ class DataLoader:
         seasons: list[int],
         pff_dir: Path | None = None,
     ) -> pl.DataFrame:
-        """Load a PFF processed facet from local parquet cache.
-
-        Reads from ``~/.fantasy-sim/pff/processed/`` (or ``pff_dir`` override).
-        Returns empty DataFrame if no files are found.
-
-        Args:
-            facet: PFF facet name (e.g. ``"receiving_summary"``).
-            seasons: List of seasons to load.
-            pff_dir: Override directory; defaults to ``~/.fantasy-sim/pff/processed/``.
-
-        Returns:
-            Concatenated DataFrame, or empty DataFrame if no data found.
-        """
-        DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed"
+        """Load a processed PFF facet from `pff_dir` or, by default, `DEFAULT_PFF_DIR`."""
         target_dir = pff_dir or DEFAULT_PFF_DIR
         frames: list[pl.DataFrame] = []
         for season in seasons:

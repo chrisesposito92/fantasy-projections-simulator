@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 from fantasy_sim.data.loader import DataLoader
+import fantasy_sim.data.loader as loader_module
 
 
 @pytest.fixture
@@ -70,6 +71,19 @@ class TestDataLoaderCaching:
 
 
 class TestDataLoaderMethods:
+    def test_load_pff_facet_defaults_to_nfl_processed_root(self, loader, monkeypatch, tmp_path):
+        pff_root = tmp_path / "pff" / "processed" / "nfl"
+        pff_root.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({"player_id": [101], "targets": [8]}).write_parquet(
+            pff_root / "receiving_summary_2024.parquet"
+        )
+        monkeypatch.setattr(loader_module, "DEFAULT_PFF_DIR", pff_root)
+
+        result = loader.load_pff_facet("receiving_summary", [2024])
+
+        assert result.shape == (1, 2)
+        assert result["player_id"].to_list() == [101]
+
     @patch("fantasy_sim.data.loader.nflreadpy")
     def test_load_schedules(self, mock_nfl, loader):
         mock_df = pl.DataFrame({"game_id": ["g1"], "home_team": ["KC"]})

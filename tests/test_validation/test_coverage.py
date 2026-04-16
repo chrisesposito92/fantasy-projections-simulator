@@ -21,6 +21,13 @@ def _write_parquet_placeholder(path: Path) -> None:
     path.write_bytes(b"")
 
 
+def _write_parquet(path: Path, data: dict[str, list[object]]) -> None:
+    import polars as pl
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(data).write_parquet(path)
+
+
 def _base_config(
     *,
     props_enabled: bool = True,
@@ -76,10 +83,156 @@ def _write_roster_cache(cache_dir: Path, seasons: tuple[int, ...]) -> None:
         _write_parquet_placeholder(cache_dir / f"rosters_weekly_{season}.parquet")
 
 
-def _write_pff_summary_trio(pff_dir: Path, seasons: tuple[int, ...]) -> None:
+def _write_pff_summary_trio(
+    pff_dir: Path,
+    seasons: tuple[int, ...],
+    *,
+    columns_by_facet: dict[str, tuple[str, ...]] | None = None,
+) -> None:
     for season in seasons:
         for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-            _write_parquet_placeholder(pff_dir / f"{facet}_{season}.parquet")
+            columns = (
+                columns_by_facet.get(facet)
+                if columns_by_facet is not None and facet in columns_by_facet
+                else ("player_id", "player", "team")
+            )
+            data: dict[str, list[object]] = {}
+            for column in columns:
+                if column == "player_id":
+                    data[column] = [f"pff-{season}-{facet}"]
+                elif column == "player":
+                    data[column] = [f"Player {season}"]
+                elif column == "team":
+                    data[column] = ["BUF"]
+                else:
+                    data[column] = [1]
+            _write_parquet(pff_dir / f"{facet}_{season}.parquet", data)
+
+
+def _write_route_rate_crosswalk_inputs(
+    pff_dir: Path,
+    cache_dir: Path,
+    seasons: tuple[int, ...],
+    *,
+    receiving_summary_columns: tuple[str, ...] = (
+        "player_id",
+        "player",
+        "team",
+        "targets",
+        "routes",
+        "week",
+    ),
+    rushing_summary_columns: tuple[str, ...] = ("player_id", "player", "team"),
+    passing_summary_columns: tuple[str, ...] = ("player_id", "player", "team"),
+) -> None:
+    for season in seasons:
+        receiving_data: dict[str, list[object]] = {}
+        for column in receiving_summary_columns:
+            if column == "player_id":
+                receiving_data[column] = [f"pff-{season}"]
+            elif column == "player":
+                receiving_data[column] = [f"Player {season}"]
+            elif column == "team":
+                receiving_data[column] = ["BUF"]
+            elif column == "targets":
+                receiving_data[column] = [4]
+            elif column == "routes":
+                receiving_data[column] = [20]
+            elif column == "week":
+                receiving_data[column] = [1]
+            else:
+                receiving_data[column] = [1]
+        _write_parquet(pff_dir / f"receiving_summary_{season}.parquet", receiving_data)
+        _write_parquet(
+            pff_dir / f"rushing_summary_{season}.parquet",
+            {
+                column: [f"pff-{season}" if column == "player_id" else f"Player {season}" if column == "player" else "BUF" if column == "team" else 1]
+                for column in rushing_summary_columns
+            },
+        )
+        _write_parquet(
+            pff_dir / f"passing_summary_{season}.parquet",
+            {
+                column: [f"pff-{season}" if column == "player_id" else f"Player {season}" if column == "player" else "BUF" if column == "team" else 1]
+                for column in passing_summary_columns
+            },
+        )
+    _write_roster_cache(cache_dir, seasons)
+
+
+def _write_team_context_inputs(
+    pff_dir: Path,
+    seasons: tuple[int, ...],
+    *,
+    offense_run_blocking_columns: tuple[str, ...] = (
+        "team",
+        "grades_run_block",
+        "snap_counts_run_block",
+        "week",
+    ),
+    passing_summary_columns: tuple[str, ...] = (
+        "team",
+        "grades_pass",
+        "passing_snaps",
+        "week",
+    ),
+) -> None:
+    for season in seasons:
+        offense_run_blocking_data: dict[str, list[object]] = {}
+        for column in offense_run_blocking_columns:
+            if column == "team":
+                offense_run_blocking_data[column] = ["BUF"]
+            elif column == "grades_run_block":
+                offense_run_blocking_data[column] = [72.5]
+            elif column == "snap_counts_run_block":
+                offense_run_blocking_data[column] = [30]
+            elif column == "week":
+                offense_run_blocking_data[column] = [1]
+            else:
+                offense_run_blocking_data[column] = [1]
+        _write_parquet(
+            pff_dir / f"offense_run_blocking_{season}.parquet",
+            offense_run_blocking_data,
+        )
+
+        passing_summary_data: dict[str, list[object]] = {}
+        for column in passing_summary_columns:
+            if column == "team":
+                passing_summary_data[column] = ["BUF"]
+            elif column == "grades_pass":
+                passing_summary_data[column] = [75.0]
+            elif column == "passing_snaps":
+                passing_summary_data[column] = [35]
+            elif column == "week":
+                passing_summary_data[column] = [1]
+            else:
+                passing_summary_data[column] = [1]
+        _write_parquet(
+            pff_dir / f"passing_summary_{season}.parquet",
+            passing_summary_data,
+        )
+
+
+def _write_team_context_pbp(
+    cache_dir: Path,
+    seasons: tuple[int, ...],
+    *,
+    columns: tuple[str, ...] = ("season", "posteam", "play_type", "week"),
+) -> None:
+    for season in seasons:
+        pbp_data: dict[str, list[object]] = {}
+        for column in columns:
+            if column == "season":
+                pbp_data[column] = [season, season]
+            elif column == "posteam":
+                pbp_data[column] = ["BUF", "KC"]
+            elif column == "play_type":
+                pbp_data[column] = ["pass", "run"]
+            elif column == "week":
+                pbp_data[column] = [1, 1]
+            else:
+                pbp_data[column] = [1, 1]
+        _write_parquet(cache_dir / f"pbp_{season}.parquet", pbp_data)
 
 
 def _write_market_history_player_markets(
@@ -173,12 +326,8 @@ def test_pff_reports_full_when_default_stack_is_present_for_all_test_seasons(tmp
 def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
     _write_default_pff_stack(pff_dir, (2023,))
-    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
-    _write_roster_cache(cache_dir, (2023, 2024))
+    _write_route_rate_crosswalk_inputs(pff_dir, cache_dir, (2023, 2024))
 
     engine_configs = _default_engine_configs()
     engine_configs["usage_config"] = UsageConfig()
@@ -206,8 +355,10 @@ def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_p
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
-            "plus rosters_weekly cache to build the crosswalk"
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
         ),
     )
 
@@ -215,12 +366,9 @@ def test_pff_and_route_rate_report_with_default_stack_and_crosswalk_inputs(tmp_p
 def test_usage_route_rate_reports_partial_when_crosswalk_inputs_are_missing_for_one_season(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
     _write_default_pff_stack(pff_dir, (2023, 2024))
-    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
-    _write_roster_cache(cache_dir, (2023,))
+    _write_route_rate_crosswalk_inputs(pff_dir, cache_dir, (2023, 2024))
+    (cache_dir / "rosters_weekly_2024.parquet").unlink()
 
     engine_configs = _default_engine_configs()
     engine_configs["usage_config"] = UsageConfig()
@@ -238,8 +386,117 @@ def test_usage_route_rate_reports_partial_when_crosswalk_inputs_are_missing_for_
         covered_seasons=[2023],
         missing_seasons=[2024],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
-            "plus rosters_weekly cache to build the crosswalk"
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
+        ),
+    )
+
+
+def test_usage_route_rate_requires_receiving_summary_route_rate_columns(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_default_pff_stack(pff_dir, (2024,))
+    _write_route_rate_crosswalk_inputs(
+        pff_dir,
+        cache_dir,
+        (2024,),
+        receiving_summary_columns=("player_id",),
+    )
+
+    engine_configs = _default_engine_configs()
+    engine_configs["usage_config"] = UsageConfig()
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        cache_dir=cache_dir,
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["usage.route_rate"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
+        ),
+    )
+
+
+def test_usage_route_rate_requires_receiving_summary_week_for_strict_runtime_alignment(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_default_pff_stack(pff_dir, (2024,))
+    _write_route_rate_crosswalk_inputs(
+        pff_dir,
+        cache_dir,
+        (2024,),
+        receiving_summary_columns=("player_id", "player", "team", "targets", "routes"),
+    )
+
+    engine_configs = _default_engine_configs()
+    engine_configs["usage_config"] = UsageConfig()
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        cache_dir=cache_dir,
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["usage.route_rate"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
+        ),
+    )
+
+
+def test_usage_route_rate_reports_none_when_summary_trio_lacks_crosswalk_columns(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_default_pff_stack(pff_dir, (2024,))
+    _write_route_rate_crosswalk_inputs(
+        pff_dir,
+        cache_dir,
+        (2024,),
+        receiving_summary_columns=("player_id", "targets", "routes"),
+        rushing_summary_columns=("player_id",),
+        passing_summary_columns=("player_id",),
+    )
+
+    engine_configs = _default_engine_configs()
+    engine_configs["usage_config"] = UsageConfig()
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        cache_dir=cache_dir,
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["usage.route_rate"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
         ),
     )
 
@@ -512,6 +769,273 @@ def test_pff_rb_scheme_fit_disabled_when_parent_pff_is_disabled(tmp_path):
     )
 
 
+def test_pff_team_context_requires_previous_season_fallback_inputs(tmp_path):
+    pff_dir = tmp_path / "pff"
+    _write_team_context_inputs(pff_dir, (2022, 2023, 2024))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].team_context.enabled = True
+    engine_configs["pff_config"].team_context.pass_rate_sensitivity = 0.0
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["pff.team_context"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires offense_run_blocking(team, grades_run_block, "
+            "snap_counts_run_block) and passing_summary(team, grades_pass, "
+            "passing_snaps) parquet for the tested season plus target_season-1 "
+            "fallback coverage; season PBP parquet must include play_type, "
+            "posteam, and season for the tested season and fallback season when "
+            "team_context.pass_rate_sensitivity is nonzero"
+        ),
+    )
+
+
+def test_pff_team_context_reports_partial_when_previous_season_fallback_is_missing(tmp_path):
+    pff_dir = tmp_path / "pff"
+    _write_team_context_inputs(pff_dir, (2023, 2024))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].team_context.enabled = True
+    engine_configs["pff_config"].team_context.pass_rate_sensitivity = 0.0
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["pff.team_context"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2024],
+        missing_seasons=[2023],
+        note=(
+            "Requires offense_run_blocking(team, grades_run_block, "
+            "snap_counts_run_block) and passing_summary(team, grades_pass, "
+            "passing_snaps) parquet for the tested season plus target_season-1 "
+            "fallback coverage; season PBP parquet must include play_type, "
+            "posteam, and season for the tested season and fallback season when "
+            "team_context.pass_rate_sensitivity is nonzero"
+        ),
+    )
+
+
+def test_pff_team_context_reports_partial_when_pbp_fallback_is_missing_and_pass_rate_is_nonzero(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_team_context_inputs(pff_dir, (2022, 2023, 2024))
+    _write_team_context_pbp(cache_dir, (2022, 2023))
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].team_context.enabled = True
+    engine_configs["pff_config"].team_context.pass_rate_sensitivity = 0.08
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["pff.team_context"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires offense_run_blocking(team, grades_run_block, "
+            "snap_counts_run_block) and passing_summary(team, grades_pass, "
+            "passing_snaps) parquet for the tested season plus target_season-1 "
+            "fallback coverage; season PBP parquet must include play_type, "
+            "posteam, and season for the tested season and fallback season when "
+            "team_context.pass_rate_sensitivity is nonzero"
+        ),
+    )
+
+
+def test_pff_team_context_requires_runtime_schema_columns(tmp_path):
+    pff_dir = tmp_path / "pff"
+    _write_team_context_inputs(
+        pff_dir,
+        (2024,),
+        offense_run_blocking_columns=("team", "snap_counts_run_block"),
+    )
+
+    engine_configs = _default_engine_configs()
+    engine_configs["pff_config"].team_context.enabled = True
+    engine_configs["pff_config"].team_context.min_games = 0
+    engine_configs["pff_config"].team_context.pass_rate_sensitivity = 0.0
+
+    coverage = collect_signal_coverage(
+        engine_configs,
+        [2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["pff.team_context"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires offense_run_blocking(team, grades_run_block, "
+            "snap_counts_run_block) and passing_summary(team, grades_pass, "
+            "passing_snaps) parquet for the tested season plus target_season-1 "
+            "fallback coverage; season PBP parquet must include play_type, "
+            "posteam, and season for the tested season and fallback season when "
+            "team_context.pass_rate_sensitivity is nonzero"
+        ),
+    )
+
+
+def test_goal_line_concentration_reports_full_without_external_inputs():
+    coverage = collect_signal_coverage(
+        {"goal_line_concentration": {"enabled": True}},
+        [2023, 2024],
+    )
+
+    assert coverage["goal_line_concentration"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note="Uses existing roster-share ordering only; no external historical store required",
+    )
+
+
+def test_td_tendency_and_i5_report_full_when_red_zone_inputs_and_crosswalk_exist(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023, 2024):
+        _write_parquet(
+            pff_dir / f"fantasy_receiving_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rec_targ": [1],
+                "rz_rec_tds": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+        _write_parquet(
+            pff_dir / f"fantasy_passing_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+    _write_roster_cache(cache_dir, (2023, 2024))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_and_i5_report_none_without_crosswalk_inputs(tmp_path):
+    pff_dir = tmp_path / "pff"
+    for season in (2023, 2024):
+        _write_parquet(
+            pff_dir / f"fantasy_receiving_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rec_targ": [1],
+                "rz_rec_tds": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+        _write_parquet(
+            pff_dir / f"fantasy_passing_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2023, 2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2023, 2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
 def test_pff_qb_split_disabled_when_parent_pff_is_disabled(tmp_path):
     pff_dir = tmp_path / "pff"
     cache_dir = tmp_path / "cache"
@@ -570,6 +1094,408 @@ def test_pff_qb_split_disabled_when_matchup_is_disabled(tmp_path):
             "and rosters_weekly cache to build the PFF QB crosswalk"
         ),
     )
+
+
+def test_td_tendency_reports_partial_when_one_season_lacks_required_data(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+    _write_roster_cache(cache_dir, (2023, 2024))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_and_i5_report_none_when_summary_trio_lacks_crosswalk_columns(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2024,):
+        _write_parquet(
+            pff_dir / f"fantasy_receiving_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rec_targ": [1],
+                "rz_rec_tds": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+        _write_parquet(
+            pff_dir / f"fantasy_passing_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+    _write_pff_summary_trio(
+        pff_dir,
+        (2024,),
+        columns_by_facet={
+            "receiving_summary": ("player_id",),
+            "rushing_summary": ("player_id",),
+            "passing_summary": ("player_id",),
+        },
+    )
+    _write_roster_cache(cache_dir, (2024,))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_reports_partial_when_files_exist_but_red_zone_columns_do_not(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+    _write_roster_cache(cache_dir, (2023, 2024))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_i5_requires_week_columns_as_well(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2023.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+            "i5_rush_carries": [1],
+            "i5_rush_tds": [1],
+        },
+    )
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+    _write_roster_cache(cache_dir, (2023, 2024))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_td_tendency_i5_reports_partial_when_columns_are_missing_for_one_season(tmp_path):
+    pff_dir = tmp_path / "pff"
+    cache_dir = tmp_path / "cache"
+    for season in (2023,):
+        _write_parquet(
+            pff_dir / f"fantasy_receiving_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rec_targ": [1],
+                "rz_rec_tds": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+        _write_parquet(
+            pff_dir / f"fantasy_passing_{season}.parquet",
+            {
+                "player_id": ["p1"],
+                "week": [1],
+                "rz_rush_carries": [1],
+                "rz_rush_tds": [1],
+                "i5_rush_carries": [1],
+                "i5_rush_tds": [1],
+            },
+        )
+    _write_parquet(
+        pff_dir / "fantasy_receiving_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rec_targ": [1],
+            "rz_rec_tds": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+        },
+    )
+    _write_parquet(
+        pff_dir / "fantasy_passing_2024.parquet",
+        {
+            "player_id": ["p1"],
+            "week": [1],
+            "rz_rush_carries": [1],
+            "rz_rush_tds": [1],
+        },
+    )
+    _write_pff_summary_trio(pff_dir, (2023, 2024))
+    _write_roster_cache(cache_dir, (2023, 2024))
+
+    coverage = collect_signal_coverage(
+        {"td_tendency": {"enabled": True, "i5_enabled": True}},
+        [2023, 2024],
+        pff_dir=pff_dir,
+        cache_dir=cache_dir,
+    )
+
+    assert coverage["td_tendency"] == SignalCoverage(
+        enabled=True,
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus red-zone TD columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+    assert coverage["td_tendency.i5"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2023],
+        missing_seasons=[2024],
+        note=(
+            "Requires fantasy_receiving and fantasy_passing parquet with "
+            "week plus inside-5 columns, the PFF summary trio, and "
+            "rosters_weekly cache for the tested season; PBP fallback remains "
+            "a runtime backstop"
+        ),
+    )
+
+
+def test_phase6_signals_report_disabled_explicitly():
+    coverage = collect_signal_coverage(
+        {
+            "pff": {"enabled": False, "team_context": {"enabled": True}},
+            "goal_line_concentration": {"enabled": False},
+            "td_tendency": {"enabled": False, "i5_enabled": False},
+        },
+        [2024],
+    )
+
+    assert coverage["pff.team_context"].status == "disabled"
+    assert coverage["goal_line_concentration"].status == "disabled"
+    assert coverage["td_tendency"].status == "disabled"
+    assert coverage["td_tendency.i5"].status == "disabled"
 
 
 def test_pff_depth_role_efficiency_reports_full_when_inputs_exist(tmp_path):
@@ -706,10 +1632,9 @@ def test_usage_nested_flags_honor_typed_config_objects(tmp_path):
 def test_usage_route_rate_is_disabled_when_pff_is_disabled_even_if_inputs_exist(tmp_path):
     pff_dir = tmp_path / "pff" / "nfl"
     cache_dir = tmp_path / "cache"
-    route_rate_root = pff_dir.parent
 
     for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
+        _write_parquet_placeholder(pff_dir / f"{facet}_2024.parquet")
     _write_roster_cache(cache_dir, (2024,))
 
     coverage = collect_signal_coverage(
@@ -982,18 +1907,14 @@ def test_availability_and_role_trend_report_partial_when_explicit_inputs_are_spa
     )
 
 
-def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_path):
+def test_default_route_rate_root_matches_nfl_pff_root(monkeypatch, tmp_path):
     pff_root = tmp_path / "pff_processed_nfl"
-    route_rate_root = tmp_path / "pff_processed"
     cache_dir = tmp_path / "cache"
 
     monkeypatch.setattr(coverage_module, "DEFAULT_PFF_DIR", pff_root)
-    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", route_rate_root)
 
     _write_default_pff_stack(pff_root, (2023, 2024))
-    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-    _write_roster_cache(cache_dir, (2023,))
+    _write_route_rate_crosswalk_inputs(pff_root, cache_dir, (2023, 2024))
 
     engine_configs = _default_engine_configs()
     engine_configs["usage_config"] = UsageConfig()
@@ -1016,24 +1937,24 @@ def test_default_roots_for_pff_and_route_rate_remain_separate(monkeypatch, tmp_p
     )
     assert coverage["usage.route_rate"] == SignalCoverage(
         enabled=True,
-        status="partial",
-        covered_seasons=[2023],
-        missing_seasons=[2024],
+        status="full",
+        covered_seasons=[2023, 2024],
+        missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
-            "plus rosters_weekly cache to build the crosswalk"
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
         ),
     )
 
 
 def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
     pff_root = tmp_path / "custom" / "processed" / "nfl"
-    route_rate_root = pff_root.parent
     props_root = tmp_path / "custom" / "props"
     cache_dir = tmp_path / "cache"
 
     monkeypatch.setattr(coverage_module, "DEFAULT_PFF_DIR", tmp_path / "wrong" / "nfl")
-    monkeypatch.setattr(coverage_module, "DEFAULT_PFF_ROUTE_RATE_DIR", tmp_path / "wrong" / "processed")
     monkeypatch.setattr(coverage_module, "DEFAULT_PROPS_DIR", tmp_path / "wrong" / "props")
 
     engine_configs = _default_engine_configs()
@@ -1042,10 +1963,7 @@ def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
     engine_configs["props_config"].cache_dir = str(props_root)
 
     _write_default_pff_stack(pff_root, (2023, 2024))
-    for facet in ("receiving_summary", "rushing_summary", "passing_summary"):
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2023.parquet")
-        _write_parquet_placeholder(route_rate_root / f"{facet}_2024.parquet")
-    _write_roster_cache(cache_dir, (2023, 2024))
+    _write_route_rate_crosswalk_inputs(pff_root, cache_dir, (2023, 2024))
     for season in (2023, 2024):
         _write_parquet_placeholder(props_root / f"props_{season}_week01.parquet")
 
@@ -1078,8 +1996,10 @@ def test_typed_config_paths_override_module_defaults(tmp_path, monkeypatch):
         covered_seasons=[2023, 2024],
         missing_seasons=[],
         note=(
-            "Requires the PFF summary trio from the processed PFF root "
-            "plus rosters_weekly cache to build the crosswalk"
+            "Requires the PFF summary trio from the NFL processed PFF root "
+            "plus rosters_weekly cache to build the crosswalk; "
+            "receiving_summary must also include player_id, targets, routes, "
+            "and week for the strict temporal leak guard"
         ),
     )
 
