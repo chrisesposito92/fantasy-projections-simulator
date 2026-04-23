@@ -173,6 +173,36 @@ class TestBuildEngineConfigs:
 
         assert configs["market_history_config"] is None
 
+    def test_dynamic_blend_override_propagates_through_ensemble_config(self):
+        from fantasy_sim.data.ensemble.config import load_ensemble_config
+
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "ensemble.dynamic_blend.enabled=true",
+                "ensemble.dynamic_blend.weights_dir=results/dynamic_blend/test",
+                "ensemble.dynamic_blend.grid_step=0.1",
+            ],
+        )
+
+        config = load_ensemble_config(overridden)
+
+        assert config.dynamic_blend.enabled is True
+        assert config.dynamic_blend.weights_dir == "results/dynamic_blend/test"
+        assert config.dynamic_blend.grid_step == 0.1
+
+    def test_defaults_enable_promoted_dynamic_blend(self):
+        from fantasy_sim.data.ensemble.config import load_ensemble_config
+
+        defaults = load_defaults()
+
+        config = load_ensemble_config(defaults)
+
+        assert config.enabled is True
+        assert config.dynamic_blend.enabled is True
+        assert config.dynamic_blend.weights_dir is None
+
     def test_disabled_engine_returns_none(self):
         defaults = load_defaults()
         overridden = apply_overrides(defaults, ["pff.enabled=false"])

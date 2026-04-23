@@ -40,7 +40,8 @@ class MarketHistoryProjectionAdjuster:
         self.scoring_config = scoring_config
         self._prior_cache: dict[int, pl.DataFrame] = {}
 
-    def _season_priors(self, season: int) -> pl.DataFrame:
+    def season_priors(self, season: int) -> pl.DataFrame:
+        """Load and cache normalized market priors for a season."""
         cached = self._prior_cache.get(season)
         if cached is not None:
             return cached
@@ -52,6 +53,9 @@ class MarketHistoryProjectionAdjuster:
         normalized = normalize_market_history(raw, self.config)
         self._prior_cache[season] = normalized
         return normalized
+
+    def _season_priors(self, season: int) -> pl.DataFrame:
+        return self.season_priors(season)
 
     @staticmethod
     def _mark_uncovered(row: dict) -> dict:
@@ -95,7 +99,8 @@ class MarketHistoryProjectionAdjuster:
         clipped = min(max(probability, 0.0), 1.0 - 1e-9)
         return -math.log1p(-clipped)
 
-    def _market_target(self, row: dict, prior: dict) -> tuple[float, list[str]]:
+    def market_target(self, row: dict, prior: dict) -> tuple[float, list[str]]:
+        """Return market-implied fantasy target and markets usable for this row."""
         current_fpts = float(row["fpts"])
         markets_used: list[str] = []
         delta_fpts = 0.0
@@ -155,7 +160,11 @@ class MarketHistoryProjectionAdjuster:
 
         return current_fpts + delta_fpts, markets_used
 
-    def _blend_supported_stats(self, row: dict, prior: dict, weight: float) -> None:
+    def _market_target(self, row: dict, prior: dict) -> tuple[float, list[str]]:
+        return self.market_target(row, prior)
+
+    def blend_supported_stats(self, row: dict, prior: dict, weight: float) -> None:
+        """Blend stat columns that have compatible market lines."""
         stat_columns = (
             ("pass_attempts_line", "pass_attempts"),
             ("pass_yards_line", "pass_yards"),
@@ -177,6 +186,9 @@ class MarketHistoryProjectionAdjuster:
                 1,
             )
 
+    def _blend_supported_stats(self, row: dict, prior: dict, weight: float) -> None:
+        self.blend_supported_stats(row, prior, weight)
+
     def adjust_week(
         self,
         projections: list[dict],
@@ -193,7 +205,7 @@ class MarketHistoryProjectionAdjuster:
                 uncovered_rows=total_rows,
             )
 
-        priors = self._season_priors(season).filter(pl.col("week") == week)
+        priors = self.season_priors(season).filter(pl.col("week") == week)
         prior_map = {
             prior["player_id"]: prior
             for prior in priors.iter_rows(named=True)
@@ -223,14 +235,14 @@ class MarketHistoryProjectionAdjuster:
                 adjusted.append(row)
                 continue
 
-            prior_fpts, markets_used = self._market_target(row, prior)
+            prior_fpts, markets_used = self.market_target(row, prior)
             if not markets_used:
                 self._mark_uncovered(row)
                 uncovered_rows += 1
                 adjusted.append(row)
                 continue
 
-            self._blend_supported_stats(row, prior, effective_weight)
+            self.blend_supported_stats(row, prior, effective_weight)
             row["market_history_source"] = "market_history"
             row["market_history_weight"] = effective_weight
             row["market_history_covered"] = True

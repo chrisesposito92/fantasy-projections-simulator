@@ -17,6 +17,7 @@ from fantasy_sim.data.weather.models import WeatherConfig
 from fantasy_sim.data.vegas.models import PropsConfig, VegasConfig
 from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.actuals import load_actual_scores
+from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
@@ -191,11 +192,24 @@ class Backtester:
         # --- Phase 3: Aggregate results ---
         projected_by_player_week = defaultdict(dict)
         all_weekly_errors = []
+        dynamic_blender = None
+        if (
+            self._ensemble_config is not None
+            and self._ensemble_config.enabled
+            and self._ensemble_config.dynamic_blend.enabled
+        ):
+            dynamic_blender = DynamicBlendProjectionBlender(
+                self._ensemble_config,
+                market_history_config=self._market_history_config,
+                scoring_config=scoring_config,
+                scoring=self.scoring_format,
+            )
         ensembler = None
         if (
             self._ensemble_config is not None
             and self._ensemble_config.enabled
             and self._ensemble_config.ff_opportunity.enabled
+            and dynamic_blender is None
         ):
             ensembler = FfOpportunityProjectionEnsembler(self._ensemble_config)
         role_trend_adjuster = None
@@ -205,6 +219,7 @@ class Backtester:
         if (
             self._market_history_config is not None
             and self._market_history_config.enabled
+            and dynamic_blender is None
         ):
             market_history_adjuster = MarketHistoryProjectionAdjuster(
                 self._market_history_config,
@@ -223,6 +238,7 @@ class Backtester:
                 role_trend_adjuster=role_trend_adjuster,
                 market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
+                dynamic_blender=dynamic_blender,
             )
             for proj in projections:
                 pid = proj["player_id"]

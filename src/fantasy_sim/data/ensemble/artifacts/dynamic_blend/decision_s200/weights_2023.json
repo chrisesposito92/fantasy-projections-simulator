@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "test_season": 2023,
+  "source_seasons": [
+    2022
+  ],
+  "sims": 200,
+  "scoring": "ppr",
+  "week_buckets": [
+    "1-4",
+    "5-12",
+    "13-18"
+  ],
+  "grid_step": 0.05,
+  "min_bucket_rows": 200,
+  "min_bucket_weeks": 6,
+  "fallback": "fixed_defaults",
+  "buckets": {
+    "QB|5-12|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.2,
+        "ff_opportunity": 0.8,
+        "market_history": 0.0
+      },
+      "n_rows": 227,
+      "n_weeks": 8,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 4.864088,
+      "fixed_mae": 5.302566,
+      "mae_delta": -0.438478
+    },
+    "RB|13-18|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.0,
+        "ff_opportunity": 1.0,
+        "market_history": 0.0
+      },
+      "n_rows": 508,
+      "n_weeks": 6,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 2.758976,
+      "fixed_mae": 4.291551,
+      "mae_delta": -1.532575
+    },
+    "RB|5-12|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.0,
+        "ff_opportunity": 1.0,
+        "market_history": 0.0
+      },
+      "n_rows": 605,
+      "n_weeks": 8,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 2.851587,
+      "fixed_mae": 4.638755,
+      "mae_delta": -1.787168
+    },
+    "TE|13-18|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.0,
+        "ff_opportunity": 1.0,
+        "market_history": 0.0
+      },
+      "n_rows": 369,
+      "n_weeks": 6,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 2.495799,
+      "fixed_mae": 3.682497,
+      "mae_delta": -1.186698
+    },
+    "TE|5-12|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.05,
+        "ff_opportunity": 0.95,
+        "market_history": 0.0
+      },
+      "n_rows": 477,
+      "n_weeks": 8,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 2.264328,
+      "fixed_mae": 3.202458,
+      "mae_delta": -0.93813
+    },
+    "WR|13-18|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.05,
+        "ff_opportunity": 0.95,
+        "market_history": 0.0
+      },
+      "n_rows": 712,
+      "n_weeks": 6,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 3.217342,
+      "fixed_mae": 4.272454,
+      "mae_delta": -1.055112
+    },
+    "WR|5-12|simulator+ff_opportunity|none": {
+      "weights": {
+        "simulator": 0.05,
+        "ff_opportunity": 0.95,
+        "market_history": 0.0
+      },
+      "n_rows": 914,
+      "n_weeks": 8,
+      "source_mask": "simulator+ff_opportunity",
+      "training_mae": 3.229164,
+      "fixed_mae": 4.185342,
+      "mae_delta": -0.956178
+    }
+  },
+  "fallback_buckets": {
+    "QB|1-4|simulator+ff_opportunity|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 128,
+      "n_weeks": 4
+    },
+    "QB|13-18|simulator+ff_opportunity|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 187,
+      "n_weeks": 6
+    },
+    "RB|1-4|simulator+ff_opportunity|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 325,
+      "n_weeks": 4
+    },
+    "RB|1-4|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 57,
+      "n_weeks": 4
+    },
+    "RB|13-18|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 66,
+      "n_weeks": 6
+    },
+    "RB|5-12|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 104,
+      "n_weeks": 8
+    },
+    "TE|1-4|simulator+ff_opportunity|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 255,
+      "n_weeks": 4
+    },
+    "TE|1-4|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 25,
+      "n_weeks": 4
+    },
+    "TE|13-18|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 42,
+      "n_weeks": 6
+    },
+    "TE|5-12|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 49,
+      "n_weeks": 7
+    },
+    "WR|1-4|simulator+ff_opportunity|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 506,
+      "n_weeks": 4
+    },
+    "WR|1-4|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 61,
+      "n_weeks": 4
+    },
+    "WR|13-18|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 90,
+      "n_weeks": 6
+    },
+    "WR|5-12|simulator|none": {
+      "reason": "sparse_bucket",
+      "n_rows": 113,
+      "n_weeks": 8
+    }
+  }
+}
