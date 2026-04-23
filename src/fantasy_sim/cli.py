@@ -25,6 +25,7 @@ from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
@@ -165,6 +166,8 @@ def _make_builder(
 def _make_ensembler(defaults: dict) -> FfOpportunityProjectionEnsembler | None:
     """Create the FF Opportunity ensembler when the signal is enabled."""
     ensemble_config = load_ensemble_config(defaults)
+    if ensemble_config.enabled and ensemble_config.dynamic_blend.enabled:
+        return None
     if not ensemble_config.enabled or not ensemble_config.ff_opportunity.enabled:
         return None
     return FfOpportunityProjectionEnsembler(ensemble_config)
@@ -183,6 +186,9 @@ def _make_market_history_adjuster(
     scoring_config: dict | None = None,
 ) -> MarketHistoryProjectionAdjuster | None:
     """Create the market-history adjuster when the signal is enabled."""
+    ensemble_config = load_ensemble_config(defaults)
+    if ensemble_config.enabled and ensemble_config.dynamic_blend.enabled:
+        return None
     market_history_config = load_market_history_config(defaults)
     if not market_history_config.enabled:
         return None
@@ -192,12 +198,33 @@ def _make_market_history_adjuster(
     )
 
 
+def _make_dynamic_blender(
+    defaults: dict,
+    scoring_config: dict | None = None,
+    scoring: str = "ppr",
+) -> DynamicBlendProjectionBlender | None:
+    """Create the dynamic post-sim blender when enabled."""
+    ensemble_config = load_ensemble_config(defaults)
+    if not ensemble_config.enabled or not ensemble_config.dynamic_blend.enabled:
+        return None
+    market_history_config = load_market_history_config(defaults)
+    if not market_history_config.enabled:
+        market_history_config = None
+    return DynamicBlendProjectionBlender(
+        ensemble_config,
+        market_history_config=market_history_config,
+        scoring_config=scoring_config,
+        scoring=scoring,
+    )
+
+
 def _maybe_blend_player_projs(
     player_projs: list[dict],
     *,
     role_trend_adjuster: RoleTrendProjectionAdjuster | None = None,
     market_history_adjuster: MarketHistoryProjectionAdjuster | None = None,
     ensembler: FfOpportunityProjectionEnsembler | None,
+    dynamic_blender: DynamicBlendProjectionBlender | None = None,
     season: int,
     week: int,
 ) -> list[dict]:
@@ -209,6 +236,7 @@ def _maybe_blend_player_projs(
         role_trend_adjuster=role_trend_adjuster,
         market_history_adjuster=market_history_adjuster,
         ensembler=ensembler,
+        dynamic_blender=dynamic_blender,
     )
 
 
@@ -654,6 +682,15 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
+    dynamic_blender = (
+        None
+        if detail
+        else _make_dynamic_blender(
+            defaults,
+            scoring_config,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
     market_history_adjuster = None if detail else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail else _make_ensembler(defaults)
 
@@ -739,6 +776,7 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                     role_trend_adjuster=role_trend_adjuster,
                     market_history_adjuster=market_history_adjuster,
                     ensembler=ensembler,
+                    dynamic_blender=dynamic_blender,
                     season=season,
                     week=week_num,
                 )
@@ -812,6 +850,15 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         defaults=defaults,
     )
     role_trend_adjuster = None if detail else _make_role_trend_adjuster(defaults)
+    dynamic_blender = (
+        None
+        if detail
+        else _make_dynamic_blender(
+            defaults,
+            scoring_config,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
     market_history_adjuster = None if detail else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail else _make_ensembler(defaults)
 
@@ -905,6 +952,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                         role_trend_adjuster=role_trend_adjuster,
                         market_history_adjuster=market_history_adjuster,
                         ensembler=ensembler,
+                        dynamic_blender=dynamic_blender,
                         season=season_year,
                         week=wk,
                     )
@@ -1016,7 +1064,17 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
         season_yaml_path=effective_config_path,
         defaults=defaults,
     )
+    effective_scoring = _effective_scoring_name(scoring, effective_config_path)
     role_trend_adjuster = None if detail or demo else _make_role_trend_adjuster(defaults)
+    dynamic_blender = (
+        None
+        if detail or demo
+        else _make_dynamic_blender(
+            defaults,
+            scoring_config,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
     market_history_adjuster = None if detail or demo else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail or demo else _make_ensembler(defaults)
 
@@ -1089,6 +1147,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
             role_trend_adjuster=role_trend_adjuster,
             market_history_adjuster=market_history_adjuster,
             ensembler=ensembler,
+            dynamic_blender=dynamic_blender,
             season=season,
             week=week_num,
         )

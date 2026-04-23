@@ -330,6 +330,14 @@ ensemble:
     min_coverage_weeks: 1
   ff_rankings:
     enabled: false
+  dynamic_blend:
+    enabled: true
+    weights_dir: null
+    week_buckets: ["1-4", "5-12", "13-18"]
+    min_bucket_rows: 200
+    min_bucket_weeks: 6
+    grid_step: 0.05
+    fallback: fixed_defaults
 
 market_history:
   enabled: true

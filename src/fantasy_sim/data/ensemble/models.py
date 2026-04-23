@@ -32,9 +32,23 @@ class FfRankingsConfig:
 
 
 @dataclass
+class DynamicBlendConfig:
+    """Configuration for learned post-simulation source blending."""
+
+    enabled: bool = False
+    weights_dir: str | None = None
+    week_buckets: tuple[str, ...] = ("1-4", "5-12", "13-18")
+    min_bucket_rows: int = 200
+    min_bucket_weeks: int = 6
+    grid_step: float = 0.05
+    fallback: str = "fixed_defaults"
+
+
+@dataclass
 class EnsembleConfig:
     """Top-level ensemble configuration."""
 
     enabled: bool = False
     ff_opportunity: FfOpportunityConfig = field(default_factory=FfOpportunityConfig)
     ff_rankings: FfRankingsConfig = field(default_factory=FfRankingsConfig)
+    dynamic_blend: DynamicBlendConfig = field(default_factory=DynamicBlendConfig)

@@ -28,6 +28,7 @@ from fantasy_sim.config.loader import load_defaults, resolve_scoring
 from fantasy_sim.data.ensemble import EnsembleConfig, load_ensemble_config
 from fantasy_sim.data.actuals import load_actual_scores
 from fantasy_sim.data.loader import DataLoader
+from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
@@ -90,6 +91,10 @@ def _filter_matchup_factors(position: str, ctx: object) -> dict[str, float]:
 
 def _comparison_mode(baseline: str) -> str:
     return "marginal_lift" if baseline == "defaults" else "total_lift"
+
+
+def _dynamic_blend_enabled(config: EnsembleConfig | None) -> bool:
+    return bool(config is not None and config.enabled and config.dynamic_blend.enabled)
 
 
 def _format_coverage_line(
@@ -180,6 +185,7 @@ def run_season(
     positions: list[str] | None = None,
     max_workers: int = 1,
     cached_arm_a: dict | None = None,
+    scoring: str = "ppr",
 ) -> dict:
     """Run A/B comparison for one season.
 
@@ -194,12 +200,33 @@ def run_season(
     """
     training_seasons = list(range(test_season - num_training_seasons, test_season))
     positions = positions or list(POSITIONS)
+    arm_a_dynamic_blender = (
+        DynamicBlendProjectionBlender(
+            arm_a_ensemble_config,
+            market_history_config=arm_a_configs.get("market_history_config"),
+            scoring_config=scoring_config,
+            scoring=scoring,
+        )
+        if _dynamic_blend_enabled(arm_a_ensemble_config)
+        else None
+    )
+    arm_b_dynamic_blender = (
+        DynamicBlendProjectionBlender(
+            arm_b_ensemble_config,
+            market_history_config=arm_b_configs.get("market_history_config"),
+            scoring_config=scoring_config,
+            scoring=scoring,
+        )
+        if _dynamic_blend_enabled(arm_b_ensemble_config)
+        else None
+    )
     arm_a_ensembler = (
         FfOpportunityProjectionEnsembler(arm_a_ensemble_config)
         if (
             arm_a_ensemble_config is not None
             and arm_a_ensemble_config.enabled
             and arm_a_ensemble_config.ff_opportunity.enabled
+            and arm_a_dynamic_blender is None
         )
         else None
     )
@@ -209,6 +236,7 @@ def run_season(
             arm_b_ensemble_config is not None
             and arm_b_ensemble_config.enabled
             and arm_b_ensemble_config.ff_opportunity.enabled
+            and arm_b_dynamic_blender is None
         )
         else None
     )
@@ -228,6 +256,7 @@ def run_season(
             scoring_config=scoring_config,
         )
         if arm_a_configs.get("market_history_config") is not None
+        and arm_a_dynamic_blender is None
         else None
     )
     arm_b_market_history = (
@@ -236,6 +265,7 @@ def run_season(
             scoring_config=scoring_config,
         )
         if arm_b_configs.get("market_history_config") is not None
+        and arm_b_dynamic_blender is None
         else None
     )
 
@@ -329,6 +359,7 @@ def run_season(
                 role_trend_adjuster=arm_b_role_trend,
                 market_history_adjuster=arm_b_market_history,
                 ensembler=arm_b_ensembler,
+                dynamic_blender=arm_b_dynamic_blender,
             )
             for proj in projections:
                 pid = proj["player_id"]
@@ -453,6 +484,9 @@ def run_season(
             market_history_adjuster = (
                 arm_a_market_history if is_arm_a else arm_b_market_history
             )
+            dynamic_blender = (
+                arm_a_dynamic_blender if is_arm_a else arm_b_dynamic_blender
+            )
             projections = apply_projection_layers(
                 result.projections,
                 season=test_season,
@@ -460,6 +494,7 @@ def run_season(
                 role_trend_adjuster=role_trend_adjuster,
                 market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
+                dynamic_blender=dynamic_blender,
             )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
             meta_dict = arm_a_meta if is_arm_a else arm_b_meta
@@ -768,7 +803,10 @@ def main() -> int:
         arm_a_ensemble_config = load_ensemble_config(defaults)
         if not (
             arm_a_ensemble_config.enabled
-            and arm_a_ensemble_config.ff_opportunity.enabled
+            and (
+                arm_a_ensemble_config.ff_opportunity.enabled
+                or arm_a_ensemble_config.dynamic_blend.enabled
+            )
         ):
             arm_a_ensemble_config = None
 
@@ -780,7 +818,10 @@ def main() -> int:
     arm_b_ensemble_config = load_ensemble_config(arm_b_dict)
     if not (
         arm_b_ensemble_config.enabled
-        and arm_b_ensemble_config.ff_opportunity.enabled
+        and (
+            arm_b_ensemble_config.ff_opportunity.enabled
+            or arm_b_ensemble_config.dynamic_blend.enabled
+        )
     ):
         arm_b_ensemble_config = None
     coverage_summary = collect_signal_coverage(arm_b_dict, args.seasons)
@@ -833,6 +874,7 @@ def main() -> int:
                     test_season=season,
                     n_sims=args.sims,
                     scoring_config=scoring_config,
+                    scoring=args.scoring,
                     num_training_seasons=args.training_years,
                     arm_a_configs=arm_a_configs,
                     arm_b_configs=arm_b_configs,
@@ -861,6 +903,7 @@ def main() -> int:
                 test_season=season,
                 n_sims=args.sims,
                 scoring_config=scoring_config,
+                scoring=args.scoring,
                 num_training_seasons=args.training_years,
                 arm_a_configs=arm_a_configs,
                 arm_b_configs=arm_b_configs,

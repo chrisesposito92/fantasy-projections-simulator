@@ -6,11 +6,30 @@ The stable simulator is already strong versus bare, but recent marginal levers a
 
 The main conclusion: stop trying broad “turn on another adjustment layer” experiments. The next 7-10 shots should either improve trusted external priors or replace high-leverage simulation decision nodes.
 
+## Validated Results
+
+### Dynamic Blend Weights
+
+Status: **PROMOTED**. The dynamic blender learned coarse convex weights for simulator, `ff_opportunity`, and `market_history` by position, week bucket, source mask, and market-confidence bucket. It runs after simulation and suppresses the fixed `market_history -> ff_opportunity` post-sim layers when enabled, avoiding double blending.
+
+Validation used `baseline=defaults` with artifacts from `results/dynamic_blend/decision_s200`; the promoted artifacts are bundled under `src/fantasy_sim/data/ensemble/artifacts/dynamic_blend/decision_s200`. `props=none`; the market input was the existing `market_history` close-core8 prior. Season 2022 had no learned artifact because the fit used `--min-source-season 2022`, so it correctly ran as fallback-only and is not counted as learned-market evidence.
+
+| Run | Sims | Ledger | Scope | Rank Corr Delta | Weekly MAE Delta | Season MAE Delta | Verdict |
+|---|---:|---:|---|---:|---:|---:|---|
+| `dynamic-blend-s50` | 50 | #72 | all seasons 2022-2024 | +0.0055 | -0.233 | -2.349 | smoke pass |
+| `dynamic-blend-s50` | 50 | #72 | covered seasons 2023-2024 | +0.0091 | -0.344 | -3.503 | smoke pass |
+| `dynamic-blend-s200` | 200 | #73 | all seasons 2022-2024 | +0.0062 | -0.221 | -2.393 | gate pass |
+| `dynamic-blend-s200` | 200 | #73 | covered seasons 2023-2024 | +0.0088 | -0.328 | -3.559 | gate pass |
+| `dynamic-blend-s200-postfix` | 200 | #74 | all seasons 2022-2024 | +0.0069 | -0.226 | -2.505 | gate pass |
+| `dynamic-blend-s200-postfix` | 200 | #74 | covered seasons 2023-2024 | +0.0099 | -0.338 | -3.765 | gate pass |
+
+Post-review decision-run weekly position deltas were all positive on rank correlation and non-worse on weekly MAE: QB `+0.0102` / `-0.097`, RB `+0.0378` / `-0.406`, WR `+0.0213` / `-0.225`, TE `+0.0065` / `-0.095`. This clears the promotion gate: covered-season average rank-correlation lift is above `+0.0050`, covered weekly MAE improves by more than `-0.025`, QB+WR improve on both priority metrics, and no position regresses.
+
 ## Hypotheses
 
 | # | Hypothesis | Why It Has Sound Logic |
 |---:|---|---|
-| 1 | **Learn dynamic blend weights for simulator vs `ff_opportunity` vs `market_history` by position/week/source coverage.** | Fixed blend weights already produced the biggest modern lift, so learned or backtested weights should be a high-probability incremental win without changing football logic. |
+| 1 | **Learn dynamic blend weights for simulator vs `ff_opportunity` vs `market_history` by position/week/source coverage.** | Promoted at `sims=200`: post-review `rank_corr +0.0069`, weekly MAE `-0.226` overall; covered-season readout `rank_corr +0.0099`, weekly MAE `-0.338`. |
 | 2 | **Backfill and expand historical market/props coverage, especially missing 2022 and richer prop markets.** | Market history is one of the few promoted marginal wins, but validation is covered-only and props coverage is absent historically. More complete market data should improve QB/WR role, TD, and volume estimates. |
 | 3 | **Replace empirical pass/run choice with a learned play-call model.** | Current play calling is bucketed historical rate plus Vegas default adjustment. A model can learn score, time, down, distance, team, opponent, spread, total, and QB context interactions directly. |
 | 4 | **Replace receiver selection with a learned target-share/candidate model.** | WR accuracy is a priority, and current receiver choice is mostly normalized historical target share plus red-zone/game-script tweaks. A candidate model can combine depth chart, recent usage, routes, market, defense, and game state. |
