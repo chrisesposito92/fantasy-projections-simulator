@@ -1,8 +1,12 @@
 # Dynamic Blend Weights Plan
 
+## Status
+
+**Promoted.** The post-review decision run `dynamic-blend-s200-postfix` cleared the promotion gate and dynamic blend is now enabled by default. Bundled artifacts live under `src/fantasy_sim/data/ensemble/artifacts/dynamic_blend/decision_s200`; `weights_dir: null` uses those artifacts at runtime. The accepted decision readout was all-season `rank_corr +0.0069`, weekly MAE `-0.226`, season MAE `-2.505`; covered-season readout was `rank_corr +0.0099`, weekly MAE `-0.338`, season MAE `-3.765`.
+
 ## Summary
 
-Implement a disabled-by-default post-simulation dynamic blender that replaces the current fixed sequential `market_history -> ensemble.ff_opportunity` weights when enabled. It will learn convex weights for `simulator`, `ff_opportunity`, and `market_history` by position, week bucket, and source coverage/confidence, then test the learned blender against `baseline=defaults`.
+Implement a post-simulation dynamic blender that replaces the fixed sequential `market_history -> ensemble.ff_opportunity` weights when enabled. It learns convex weights for `simulator`, `ff_opportunity`, and `market_history` by position, week bucket, and source coverage/confidence, then tests the learned blender against `baseline=defaults`.
 
 Why this should help: the promoted priors are the strongest recent signals: `ff_opportunity` is full-covered for 2022-2024 and had the largest marginal lift, while `market_history` is positive on covered seasons 2023-2024. Fixed weights apply the same trust level to every player-week; learned weights should reduce overuse in weak/noisy cases and increase prior weight where history says it helps.
 
@@ -19,7 +23,7 @@ Why this should help: the promoted priors are the strongest recent signals: `ff_
 
 ## Implementation Changes
 
-- Add config under [config/defaults.yaml](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml): `ensemble.dynamic_blend.enabled=false`, `weights_dir=null`, `week_buckets=[1-4,5-12,13-18]`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `grid_step=0.05`, and `fallback=fixed_defaults`.
+- Add config under [config/defaults.yaml](../../config/defaults.yaml): `ensemble.dynamic_blend.enabled=true`, `weights_dir=null`, `week_buckets=[1-4,5-12,13-18]`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `grid_step=0.05`, and `fallback=fixed_defaults`.
 - Add typed config/models beside the existing ensemble config. Public behavior: `load_ensemble_config()` returns `dynamic_blend` config, and CLI `--set ensemble.dynamic_blend.*=...` works through existing override parsing.
 - Add a dynamic blender in scoring that:
   - builds available sources per player-week
@@ -32,7 +36,7 @@ Why this should help: the promoted priors are the strongest recent signals: `ff_
   - It joins actuals, FF priors, and market priors.
   - It fits small grid-searched convex weights per bucket, shrinking/falling back to current fixed-equivalent weights when bucket data is sparse or fails to beat the fixed baseline on training MAE.
   - It writes one artifact per test season under `results/dynamic_blend/<run>/weights_<season>.json`, with schema version, source seasons, sims, scoring, bucket rows, learned weights, and training deltas.
-- Keep current defaults unchanged unless validation passes. If promoted, enable `ensemble.dynamic_blend` and point it at the approved artifact directory; leave existing `market_history` and `ff_opportunity` configs available as fallback inputs.
+- After promotion, keep `ensemble.dynamic_blend.enabled=true` and `weights_dir=null` so runtime uses the bundled decision artifacts; leave existing `market_history` and `ff_opportunity` configs available as fallback inputs.
 
 ## Validation And Gate
 
@@ -67,7 +71,7 @@ Required tests:
 - weight fitting on small synthetic data where the known best source wins
 - fallback to fixed-equivalent weights on sparse buckets and missing artifact
 - validation path proves dynamic mode suppresses fixed market/FF layers and avoids double blending
-- focused regression suite: `uv run pytest tests/test_data/test_ensemble tests/test_scoring/test_ensemble.py tests/test_scoring/test_market_history.py tests/test_validation/test_config.py tests/test_validation/test_validate_script.py -v`
+- focused regression suite: `uv run pytest tests/test_data/test_ensemble/test_config.py tests/test_scoring/test_dynamic_blend.py tests/test_scoring/test_market_history.py tests/test_validation/test_config.py tests/test_validation/test_validate_script.py -v`
 
 ## Risks And Defaults
 

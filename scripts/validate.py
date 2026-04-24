@@ -32,6 +32,7 @@ from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
+from fantasy_sim.scoring.residual_calibration import ResidualCalibrationProjectionAdjuster
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_coverage
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
@@ -95,6 +96,14 @@ def _comparison_mode(baseline: str) -> str:
 
 def _dynamic_blend_enabled(config: EnsembleConfig | None) -> bool:
     return bool(config is not None and config.enabled and config.dynamic_blend.enabled)
+
+
+def _residual_calibration_enabled(config: EnsembleConfig | None) -> bool:
+    return bool(
+        config is not None
+        and config.enabled
+        and config.residual_calibration.enabled
+    )
 
 
 def _format_coverage_line(
@@ -218,6 +227,22 @@ def run_season(
             scoring=scoring,
         )
         if _dynamic_blend_enabled(arm_b_ensemble_config)
+        else None
+    )
+    arm_a_residual_calibrator = (
+        ResidualCalibrationProjectionAdjuster(
+            arm_a_ensemble_config.residual_calibration,
+            scoring=scoring,
+        )
+        if _residual_calibration_enabled(arm_a_ensemble_config)
+        else None
+    )
+    arm_b_residual_calibrator = (
+        ResidualCalibrationProjectionAdjuster(
+            arm_b_ensemble_config.residual_calibration,
+            scoring=scoring,
+        )
+        if _residual_calibration_enabled(arm_b_ensemble_config)
         else None
     )
     arm_a_ensembler = (
@@ -360,6 +385,7 @@ def run_season(
                 market_history_adjuster=arm_b_market_history,
                 ensembler=arm_b_ensembler,
                 dynamic_blender=arm_b_dynamic_blender,
+                residual_calibrator=arm_b_residual_calibrator,
             )
             for proj in projections:
                 pid = proj["player_id"]
@@ -487,6 +513,9 @@ def run_season(
             dynamic_blender = (
                 arm_a_dynamic_blender if is_arm_a else arm_b_dynamic_blender
             )
+            residual_calibrator = (
+                arm_a_residual_calibrator if is_arm_a else arm_b_residual_calibrator
+            )
             projections = apply_projection_layers(
                 result.projections,
                 season=test_season,
@@ -495,6 +524,7 @@ def run_season(
                 market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
                 dynamic_blender=dynamic_blender,
+                residual_calibrator=residual_calibrator,
             )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
             meta_dict = arm_a_meta if is_arm_a else arm_b_meta
@@ -806,6 +836,7 @@ def main() -> int:
             and (
                 arm_a_ensemble_config.ff_opportunity.enabled
                 or arm_a_ensemble_config.dynamic_blend.enabled
+                or arm_a_ensemble_config.residual_calibration.enabled
             )
         ):
             arm_a_ensemble_config = None
@@ -821,6 +852,7 @@ def main() -> int:
         and (
             arm_b_ensemble_config.ff_opportunity.enabled
             or arm_b_ensemble_config.dynamic_blend.enabled
+            or arm_b_ensemble_config.residual_calibration.enabled
         )
     ):
         arm_b_ensemble_config = None

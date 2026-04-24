@@ -94,9 +94,9 @@ uv run fantasy-sim week 1 --season 2025 --config config/season.2025.yaml
 
 ```yaml
 # config/season.2025.yaml
-season: 2025              # Documentation only (not parsed)
-weeks: all                # Documentation only (not parsed)
-scoring_format: half_ppr  # Parsed — overrides CLI --scoring
+season: 2025              # Used as default when --season is omitted
+weeks: all                # Used as default when --weeks is omitted
+scoring_format: half_ppr  # Overrides CLI --scoring
 
 teams:
   KC:
@@ -455,12 +455,77 @@ positions:
 
 ---
 
+## Post-Simulation Projection Stack
+
+These settings control final non-detail player projection rows after Monte Carlo simulation. The promoted default order is:
+
+```
+role_trend -> dynamic_blend -> residual_calibration
+```
+
+When `ensemble.dynamic_blend.enabled=false`, the fixed fallback order is:
+
+```
+role_trend -> market_history -> ensemble.ff_opportunity -> residual_calibration
+```
+
+`dynamic_blend` learns convex weights for simulator, FF Opportunity, and market-history priors. `residual_calibration` then applies a small additive correction to final `fpts` only; it does not alter stat columns.
+
+```yaml
+ensemble:
+  enabled: true
+
+  ff_opportunity:
+    enabled: true
+    cache_dir: null
+    positions: [QB, RB, WR, TE]
+    feature: total_fantasy_points_exp
+    weights:
+      QB: 0.35
+      RB: 0.15
+      WR: 0.25
+      TE: 0.15
+    min_coverage_weeks: 1
+
+  dynamic_blend:
+    enabled: true
+    weights_dir: null          # null uses bundled decision_s200 artifacts
+    week_buckets: ["1-4", "5-12", "13-18"]
+    min_bucket_rows: 200
+    min_bucket_weeks: 6
+    grid_step: 0.05
+    fallback: fixed_defaults
+
+  residual_calibration:
+    enabled: true
+    artifacts_dir: null        # null uses bundled decision_s200 artifacts
+    positions: [QB, RB, WR, TE]
+    min_bucket_rows: 200
+    min_bucket_weeks: 6
+    shrinkage_prior_rows: 200
+    max_abs_adjustment: 1.5
+    min_training_mae_delta: -0.01
+    fallback: zero
+
+market_history:
+  enabled: true
+  data_dir: null
+  snapshot_label: close_core8
+  positions: [QB, RB, WR, TE]
+```
+
+### Runtime Fallbacks
+
+- Missing dynamic-blend artifacts fall back to the fixed-equivalent market/FF blend.
+- Missing residual-calibration artifacts or buckets fall back to zero adjustment.
+- Current bundled learned artifacts cover 2023 and 2024. 2022 is intentionally fallback-only because the fit uses only prior source seasons.
+- Override artifact directories with `--set ensemble.dynamic_blend.weights_dir=...` and `--set ensemble.residual_calibration.artifacts_dir=...` during experiments.
+
+---
+
 ## PFF Intelligence Layer
 
-The simulator can optionally use PFF (Pro Football Focus) data to improve projections through two independent layers:
-
-1. **Matchup Engine** — Adjusts offensive parameters per-game based on the opposing defense's quality (coverage grades, pass rush, run defense) and the team's own OL quality.
-2. **Talent Stabilizer** — Identifies players whose PBP stats likely misrepresent their true talent using PFF process metrics (route grades, drop rates, yards after contact). Applies Bayesian blending weighted by sample size.
+The simulator can use PFF (Pro Football Focus) data through several independently configurable engines. The default-on production PFF stack is conservative: tier engine, matchup, coverage, kicker, and DST baseline remain enabled; experimental depth/efficiency, RB scheme-fit, QB split, and team-context layers remain disabled unless explicitly tested.
 
 ### Enabling PFF
 
@@ -480,43 +545,22 @@ uv run fantasy-sim week 1 --season 2024 --no-pff  # override config
 
 ### PFF Configuration
 
-The full configuration with default values (set `enabled: true` to activate):
+Important PFF config families:
 
-```yaml
-pff:
-  enabled: false
-  data_dir: null  # defaults to ~/.fantasy-sim/pff/processed/nfl/
+| Config family | Default | Purpose |
+|---|---:|---|
+| `pff.tier_engine` | on | Grade-based player tier blending and NCAA rookie bridge |
+| `pff.matchup` | on | Defensive/OL matchup factors |
+| `pff.coverage` | on | WR coverage matchup modifiers |
+| `pff.kicker` | on | Per-kicker FG accuracy with Bayesian shrinkage |
+| `pff.dst_baseline` | on | Defensive fumble/TD baseline rates |
+| `pff.team_context` | off | Team pass/run/QB-quality context |
+| `pff.depth_role` | off | WR/TE route-depth role modifiers |
+| `pff.depth_role.efficiency` | off | WR/TE route-depth efficiency modifiers |
+| `pff.rb_scheme_fit` | off | RB rushing-direction and blocking-alignment fit |
+| `pff.qb_split` | off | QB pressure-split receiver efficiency modifiers |
 
-  matchup:
-    enabled: true
-    # Sensitivity per z-score unit (higher = more matchup impact)
-    pass_defense_sensitivity: 0.08
-    pass_rush_sensitivity: 0.10
-    run_defense_sensitivity: 0.08
-    int_rate_sensitivity: 0.06
-    ol_pass_sensitivity: 0.08
-    ol_run_sensitivity: 0.06
-    # Maximum adjustment bounds
-    factor_clamp: [0.80, 1.20]
-    # Minimum games for stat-based factors (below this, uses grade fallback)
-    min_games: 4
-
-  talent:
-    enabled: true
-    prior_strength: 40       # PFF grade = equivalent of N PBP observations
-    min_divergence: 0.03     # minimum PBP-PFF gap before adjusting
-    # Regression coefficients for computing PFF priors
-    catch_rate_coefficients:
-      drop_rate: -0.15
-      contested_catch_rate: 0.10
-      qb_accuracy: 0.08
-    rushing_yards_coefficients:
-      yco_attempt: 0.6
-      elusive_rating: 0.008
-    receiving_yards_coefficients:
-      yprr: 0.5
-      avg_depth_of_target: 0.03
-```
+Use `config/defaults.yaml` as the source of truth for exact sensitivities and clamps.
 
 ### Override Interaction
 
@@ -524,16 +568,15 @@ PFF adjustments are applied **before** user overrides. User overrides always win
 
 ```
 Base model (nflverse PBP)
-  → PFF matchup adjustments (per-game, based on opponent)
-  → PFF talent stabilization (season-level, based on process metrics)
+  → active PFF engines
   → Share re-normalization
   → User overrides (season.yaml + CLI --override) ← always last
   → Share re-normalization
 ```
 
-If you override a parameter (e.g., `catch_rate=0.68`), that exact value is used regardless of PFF. PFF matchup adjustments on that parameter are effectively bypassed for that player.
+If you override a parameter (e.g., `catch_rate=0.68`), that exact value is used regardless of upstream PFF adjustments on that field.
 
-**Migration note**: When enabling PFF for the first time, review existing season.yaml overrides. Many schedule-strength and talent-based adjustments may now be redundant.
+**Migration note**: When enabling a disabled PFF sub-engine for experimentation, validate it with `scripts/validate.py --baseline defaults` before changing defaults.
 
 ---
 

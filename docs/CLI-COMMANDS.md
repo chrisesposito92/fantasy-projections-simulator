@@ -248,58 +248,71 @@ fantasy-sim backtest --season 2024 --training-years 5
 
 ## Standalone Validation Scripts
 
-These are standalone Python scripts (not `fantasy-sim` subcommands). They require network access and PFF data.
+These are standalone Python scripts, not `fantasy-sim` subcommands.
 
-### Season-Level A/B Validation
+### Unified A/B Validation
 
-Compares PFF-on vs PFF-off projections at season-level granularity. See `scripts/validate_pff_signal.py`.
-
-```bash
-# Run A/B test for all PFF layers
-uv run python scripts/validate_pff_signal.py --mode all --sims 50
-
-# Test specific layer combination
-uv run python scripts/validate_pff_signal.py --mode coverage+tier --sims 50
-
-# Record result in the ledger
-uv run python scripts/validate_pff_signal.py --mode all --sims 50 --label "baseline-v1"
-
-# View progression across runs
-uv run python scripts/validate_pff_signal.py --show-ledger
-
-# Override PFF config for sweep testing
-uv run python scripts/validate_pff_signal.py --mode tier --config-override '{"tier_engine": {"reliability_floor": 0.30}}'
-```
-
-### Weekly A/B Validation
-
-Per-week, per-player PFF signal evaluation. Retains weekly granularity instead of aggregating to season-level. Measures per-position rank correlation, MAE, MAE by matchup difficulty, and WR directional accuracy. See `scripts/validate_weekly_signal.py`.
+`scripts/validate.py` is the canonical validation entrypoint. It supports total-lift tests against `bare` and marginal-lift tests against current `defaults`.
 
 ```bash
-# Run weekly validation for all positions
-uv run python scripts/validate_weekly_signal.py --mode all --sims 50
+# Current defaults versus bare baseline
+uv run python scripts/validate.py --sims 50 --label "defaults-smoke"
 
-# Test specific PFF layers on WR only
-uv run python scripts/validate_weekly_signal.py --mode coverage+tier --positions WR --sims 50
+# Marginal test against current defaults
+uv run python scripts/validate.py --baseline defaults \
+  --set pff.qb_split.enabled=true \
+  --sims 50 \
+  --label "qb-split-smoke"
 
-# Record result in the weekly ledger
-uv run python scripts/validate_weekly_signal.py --mode all --sims 50 --label "weekly-baseline"
+# Decision-grade marginal run
+uv run python scripts/validate.py --baseline defaults \
+  --seasons 2022 2023 2024 \
+  --sims 200 \
+  --label "candidate-s200"
 
-# View weekly ledger progression
-uv run python scripts/validate_weekly_signal.py --show-ledger
+# View canonical ledger
+uv run python scripts/validate.py --show-ledger
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--mode MODE` | all | PFF layer(s) to enable: `matchup`, `tier`, `matchup+tier`, `coverage+tier`, `coverage+tier+matchup`, `team_context+tier`, `team_context+tier+matchup`, `ncaa_rookie+tier`, `ncaa_rookie+tier+matchup`, `talent`, `all` |
-| `--sims N` | 50 | Simulations per game |
-| `--seasons YEAR [YEAR...]` | 2023 2024 | Test seasons to backtest |
-| `--training-years N` | 2 | Number of prior seasons for model fitting |
-| `--scoring FORMAT` | ppr | Scoring format |
-| `--positions POS [POS...]` | QB RB WR TE | Positions to evaluate |
-| `--label TEXT` | — | Label for ledger entry (required for recording) |
-| `--show-ledger` | — | Print ledger progression table and exit |
-| `--config-override JSON` | — | PFF config overrides as JSON |
+| `--baseline bare|defaults` | `bare` | Arm A baseline. Use `defaults` for marginal promotion decisions. |
+| `--set KEY=VALUE` | none | Dot-path config override for Arm B. Repeatable. |
+| `--sims N` | 50 | Simulations per game. |
+| `--seasons YEAR [YEAR...]` | 2022 2023 2024 | Test seasons to backtest. |
+| `--training-years N` | 4 | Number of prior seasons for model fitting. |
+| `--scoring FORMAT` | ppr | Scoring format. |
+| `--positions POS [POS...]` | QB RB WR TE | Positions to evaluate. |
+| `--label TEXT` | none | Label for ledger entry. Required for recording. |
+| `--show-ledger` | false | Print canonical ledger and exit. |
+
+### Learned Post-Sim Artifact Fitters
+
+The promoted post-sim learned layers are fit offline and then loaded by runtime code. With `weights_dir: null` or `artifacts_dir: null`, defaults use bundled artifacts under `src/fantasy_sim/data/ensemble/artifacts/`.
+
+```bash
+# Fit dynamic source-blend weights
+uv run python scripts/fit_dynamic_blend_weights.py \
+  --test-seasons 2022 2023 2024 \
+  --min-source-season 2022 \
+  --sims 200 \
+  --training-years 4 \
+  --scoring ppr \
+  --output-dir results/dynamic_blend/decision_s200
+
+# Fit residual-calibration buckets
+uv run python scripts/fit_residual_calibration.py \
+  --test-seasons 2022 2023 2024 \
+  --min-source-season 2022 \
+  --sims 200 \
+  --training-years 4 \
+  --scoring ppr \
+  --output-dir results/residual_calibration/decision_s200
+```
+
+### Legacy PFF Validation
+
+`scripts/validate_pff_signal.py` and `scripts/validate_weekly_signal.py` are preserved for historical comparisons only. Use `scripts/validate.py` for new promotion decisions.
 
 ---
 

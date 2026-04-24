@@ -192,7 +192,26 @@ class TestBuildEngineConfigs:
         assert config.dynamic_blend.weights_dir == "results/dynamic_blend/test"
         assert config.dynamic_blend.grid_step == 0.1
 
-    def test_defaults_enable_promoted_dynamic_blend(self):
+    def test_residual_calibration_override_propagates_through_ensemble_config(self):
+        from fantasy_sim.data.ensemble.config import load_ensemble_config
+
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "ensemble.residual_calibration.enabled=true",
+                "ensemble.residual_calibration.artifacts_dir=results/residual_calibration/test",
+                "ensemble.residual_calibration.max_abs_adjustment=1.25",
+            ],
+        )
+
+        config = load_ensemble_config(overridden)
+
+        assert config.residual_calibration.enabled is True
+        assert config.residual_calibration.artifacts_dir == "results/residual_calibration/test"
+        assert config.residual_calibration.max_abs_adjustment == 1.25
+
+    def test_defaults_enable_promoted_ensemble_layers(self):
         from fantasy_sim.data.ensemble.config import load_ensemble_config
 
         defaults = load_defaults()
@@ -202,6 +221,8 @@ class TestBuildEngineConfigs:
         assert config.enabled is True
         assert config.dynamic_blend.enabled is True
         assert config.dynamic_blend.weights_dir is None
+        assert config.residual_calibration.enabled is True
+        assert config.residual_calibration.artifacts_dir is None
 
     def test_disabled_engine_returns_none(self):
         defaults = load_defaults()

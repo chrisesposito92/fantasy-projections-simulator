@@ -1,0 +1,432 @@
+{
+  "schema_version": 1,
+  "test_season": 2024,
+  "source_seasons": [
+    2022,
+    2023
+  ],
+  "sims": 200,
+  "scoring": "ppr",
+  "positions": [
+    "QB",
+    "RB",
+    "WR",
+    "TE"
+  ],
+  "min_bucket_rows": 200,
+  "min_bucket_weeks": 6,
+  "shrinkage_prior_rows": 200,
+  "max_abs_adjustment": 1.5,
+  "min_training_mae_delta": -0.01,
+  "fallback": "zero",
+  "usage_tier_thresholds": {
+    "QB": {
+      "high": 18.0,
+      "mid": 12.0
+    },
+    "RB": {
+      "high": 14.0,
+      "mid": 7.0
+    },
+    "WR": {
+      "high": 12.0,
+      "mid": 6.0
+    },
+    "TE": {
+      "high": 9.0,
+      "mid": 4.0
+    }
+  },
+  "buckets": {
+    "QB|mid|external_no_market": {
+      "position": "QB",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -1.178645,
+      "median_residual": -2.0,
+      "n_rows": 287,
+      "n_weeks": 22,
+      "training_mae": 4.666814,
+      "uncorrected_mae": 4.913937,
+      "mae_delta": -0.247123
+    },
+    "QB|mid|market_medium": {
+      "position": "QB",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": -0.872385,
+      "median_residual": -1.5,
+      "n_rows": 278,
+      "n_weeks": 18,
+      "training_mae": 4.902062,
+      "uncorrected_mae": 5.053237,
+      "mae_delta": -0.151175
+    },
+    "RB|high|external_no_market": {
+      "position": "RB",
+      "usage_tier": "high",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -0.995238,
+      "median_residual": -1.9,
+      "n_rows": 220,
+      "n_weeks": 18,
+      "training_mae": 7.123074,
+      "uncorrected_mae": 7.23,
+      "mae_delta": -0.106926
+    },
+    "RB|low|external_no_market": {
+      "position": "RB",
+      "usage_tier": "low",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -0.788136,
+      "median_residual": -1.0,
+      "n_rows": 744,
+      "n_weeks": 26,
+      "training_mae": 2.8421,
+      "uncorrected_mae": 2.976882,
+      "mae_delta": -0.134782
+    },
+    "RB|low|market_high": {
+      "position": "RB",
+      "usage_tier": "low",
+      "source_confidence_bucket": "market_high",
+      "correction_fpts": -1.115385,
+      "median_residual": -1.5,
+      "n_rows": 580,
+      "n_weeks": 18,
+      "training_mae": 2.162029,
+      "uncorrected_mae": 2.548103,
+      "mae_delta": -0.386074
+    },
+    "RB|low|simulator_only": {
+      "position": "RB",
+      "usage_tier": "low",
+      "source_confidence_bucket": "simulator_only",
+      "correction_fpts": -1.460794,
+      "median_residual": -2.9,
+      "n_rows": 203,
+      "n_weeks": 19,
+      "training_mae": 1.754633,
+      "uncorrected_mae": 3.088177,
+      "mae_delta": -1.333544
+    },
+    "RB|mid|market_medium": {
+      "position": "RB",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": 0.408,
+      "median_residual": 0.6,
+      "n_rows": 425,
+      "n_weeks": 18,
+      "training_mae": 5.895275,
+      "uncorrected_mae": 5.906118,
+      "mae_delta": -0.010842
+    },
+    "TE|low|external_no_market": {
+      "position": "TE",
+      "usage_tier": "low",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -0.49351,
+      "median_residual": -0.7,
+      "n_rows": 478,
+      "n_weeks": 20,
+      "training_mae": 2.185171,
+      "uncorrected_mae": 2.262762,
+      "mae_delta": -0.077591
+    },
+    "TE|low|market_high": {
+      "position": "TE",
+      "usage_tier": "low",
+      "source_confidence_bucket": "market_high",
+      "correction_fpts": -0.838554,
+      "median_residual": -1.2,
+      "n_rows": 464,
+      "n_weeks": 18,
+      "training_mae": 1.693438,
+      "uncorrected_mae": 1.966164,
+      "mae_delta": -0.272725
+    },
+    "TE|mid|external_no_market": {
+      "position": "TE",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -0.290561,
+      "median_residual": -0.4,
+      "n_rows": 531,
+      "n_weeks": 18,
+      "training_mae": 3.923889,
+      "uncorrected_mae": 3.935217,
+      "mae_delta": -0.011328
+    },
+    "TE|mid|market_medium": {
+      "position": "TE",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": 0.599499,
+      "median_residual": 0.9,
+      "n_rows": 399,
+      "n_weeks": 18,
+      "training_mae": 4.125092,
+      "uncorrected_mae": 4.187719,
+      "mae_delta": -0.062628
+    },
+    "WR|high|external_no_market": {
+      "position": "WR",
+      "usage_tier": "high",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": 1.433402,
+      "median_residual": 2.45,
+      "n_rows": 282,
+      "n_weeks": 18,
+      "training_mae": 6.738529,
+      "uncorrected_mae": 6.92695,
+      "mae_delta": -0.188421
+    },
+    "WR|high|market_medium": {
+      "position": "WR",
+      "usage_tier": "high",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": 1.116495,
+      "median_residual": 1.9,
+      "n_rows": 285,
+      "n_weeks": 18,
+      "training_mae": 6.966149,
+      "uncorrected_mae": 7.085263,
+      "mae_delta": -0.119114
+    },
+    "WR|low|external_no_market": {
+      "position": "WR",
+      "usage_tier": "low",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": -0.587188,
+      "median_residual": -0.7,
+      "n_rows": 1041,
+      "n_weeks": 20,
+      "training_mae": 2.734468,
+      "uncorrected_mae": 2.815946,
+      "mae_delta": -0.081478
+    },
+    "WR|low|market_high": {
+      "position": "WR",
+      "usage_tier": "low",
+      "source_confidence_bucket": "market_high",
+      "correction_fpts": -1.289622,
+      "median_residual": -1.6,
+      "n_rows": 831,
+      "n_weeks": 18,
+      "training_mae": 2.09808,
+      "uncorrected_mae": 2.524549,
+      "mae_delta": -0.426468
+    },
+    "WR|low|market_medium": {
+      "position": "WR",
+      "usage_tier": "low",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": -0.358156,
+      "median_residual": -0.5,
+      "n_rows": 505,
+      "n_weeks": 18,
+      "training_mae": 2.798834,
+      "uncorrected_mae": 2.823564,
+      "mae_delta": -0.02473
+    },
+    "WR|low|simulator_only": {
+      "position": "WR",
+      "usage_tier": "low",
+      "source_confidence_bucket": "simulator_only",
+      "correction_fpts": -1.349672,
+      "median_residual": -2.4,
+      "n_rows": 257,
+      "n_weeks": 26,
+      "training_mae": 1.395355,
+      "uncorrected_mae": 2.614786,
+      "mae_delta": -1.219431
+    },
+    "WR|mid|external_no_market": {
+      "position": "WR",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "external_no_market",
+      "correction_fpts": 0.962611,
+      "median_residual": 1.2,
+      "n_rows": 811,
+      "n_weeks": 18,
+      "training_mae": 5.100257,
+      "uncorrected_mae": 5.194081,
+      "mae_delta": -0.093824
+    },
+    "WR|mid|market_medium": {
+      "position": "WR",
+      "usage_tier": "mid",
+      "source_confidence_bucket": "market_medium",
+      "correction_fpts": 0.771167,
+      "median_residual": 1.0,
+      "n_rows": 674,
+      "n_weeks": 18,
+      "training_mae": 5.116857,
+      "uncorrected_mae": 5.166024,
+      "mae_delta": -0.049167
+    }
+  },
+  "fallback_buckets": {
+    "QB|high|external_no_market": {
+      "reason": "sparse_bucket",
+      "n_rows": 183,
+      "n_weeks": 18
+    },
+    "QB|high|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 8,
+      "n_weeks": 6
+    },
+    "QB|high|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 1,
+      "n_weeks": 1
+    },
+    "QB|high|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 158,
+      "n_weeks": 18
+    },
+    "QB|low|external_no_market": {
+      "reason": "sparse_bucket",
+      "n_rows": 109,
+      "n_weeks": 34
+    },
+    "QB|low|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 5,
+      "n_weeks": 4
+    },
+    "QB|low|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 2,
+      "n_weeks": 2
+    },
+    "QB|low|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 64,
+      "n_weeks": 17
+    },
+    "QB|mid|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 9,
+      "n_weeks": 6
+    },
+    "QB|mid|simulator_only": {
+      "reason": "sparse_bucket",
+      "n_rows": 1,
+      "n_weeks": 1
+    },
+    "RB|high|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 6,
+      "n_weeks": 5
+    },
+    "RB|high|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 10,
+      "n_weeks": 8
+    },
+    "RB|high|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 164,
+      "n_weeks": 18
+    },
+    "RB|low|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 12,
+      "n_weeks": 8
+    },
+    "RB|low|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 180,
+      "n_weeks": 18
+    },
+    "RB|mid|external_no_market": {
+      "reason": "no_training_lift",
+      "n_rows": 486,
+      "n_weeks": 20,
+      "median_residual": 0.1,
+      "correction_fpts": 0.070845,
+      "training_mae": 5.434688,
+      "uncorrected_mae": 5.434979,
+      "mae_delta": -0.000292
+    },
+    "RB|mid|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 127,
+      "n_weeks": 18
+    },
+    "RB|mid|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 28,
+      "n_weeks": 16
+    },
+    "RB|mid|simulator_only": {
+      "reason": "sparse_bucket",
+      "n_rows": 25,
+      "n_weeks": 11
+    },
+    "TE|high|external_no_market": {
+      "reason": "sparse_bucket",
+      "n_rows": 94,
+      "n_weeks": 18
+    },
+    "TE|high|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 8,
+      "n_weeks": 6
+    },
+    "TE|high|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 107,
+      "n_weeks": 18
+    },
+    "TE|low|market_medium": {
+      "reason": "sparse_bucket",
+      "n_rows": 72,
+      "n_weeks": 18
+    },
+    "TE|low|simulator_only": {
+      "reason": "sparse_bucket",
+      "n_rows": 110,
+      "n_weeks": 23
+    },
+    "TE|mid|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 133,
+      "n_weeks": 18
+    },
+    "TE|mid|simulator_only": {
+      "reason": "sparse_bucket",
+      "n_rows": 13,
+      "n_weeks": 8
+    },
+    "WR|high|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 23,
+      "n_weeks": 12
+    },
+    "WR|high|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 7,
+      "n_weeks": 6
+    },
+    "WR|mid|market_high": {
+      "reason": "sparse_bucket",
+      "n_rows": 135,
+      "n_weeks": 18
+    },
+    "WR|mid|market_low": {
+      "reason": "sparse_bucket",
+      "n_rows": 5,
+      "n_weeks": 5
+    },
+    "WR|mid|simulator_only": {
+      "reason": "sparse_bucket",
+      "n_rows": 15,
+      "n_weeks": 10
+    }
+  }
+}

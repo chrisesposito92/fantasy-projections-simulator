@@ -33,6 +33,15 @@ The script runs two arms in parallel and compares their projection accuracy agai
 | `bare` (default) | All engines off | Measuring total lift of your config |
 | `defaults` | Your current defaults.yaml | Isolating marginal impact of a single change |
 
+Current defaults include the promoted post-sim projection stack:
+
+- `ensemble.ff_opportunity.enabled=true`
+- `market_history.enabled=true`
+- `ensemble.dynamic_blend.enabled=true`
+- `ensemble.residual_calibration.enabled=true`
+
+Dynamic blend and residual calibration use bundled `decision_s200` artifacts when their artifact directory config is `null`. Seasons without a matching artifact fall back neutrally.
+
 The validation header now makes that explicit:
 
 - `comparison: total_lift` for `--baseline bare`
@@ -137,6 +146,32 @@ Recommended workflow:
 1. Run a low-sim smoke test to confirm plumbing and coverage.
 2. If the signal is historically covered and the result looks interesting, rerun at higher sims.
 3. Do not over-interpret results for signals that show `none` or `partial` coverage.
+
+## Learned Post-Sim Artifacts
+
+The promoted dynamic-blend and residual-calibration layers are fit offline, then consumed at runtime by `scripts/validate.py`, the CLI, and `Backtester`.
+
+```bash
+# Refit dynamic source weights
+uv run python scripts/fit_dynamic_blend_weights.py \
+  --test-seasons 2022 2023 2024 \
+  --min-source-season 2022 \
+  --sims 200 \
+  --training-years 4 \
+  --scoring ppr \
+  --output-dir results/dynamic_blend/decision_s200
+
+# Refit residual calibration buckets
+uv run python scripts/fit_residual_calibration.py \
+  --test-seasons 2022 2023 2024 \
+  --min-source-season 2022 \
+  --sims 200 \
+  --training-years 4 \
+  --scoring ppr \
+  --output-dir results/residual_calibration/decision_s200
+```
+
+Use `--set ensemble.dynamic_blend.weights_dir=...` or `--set ensemble.residual_calibration.artifacts_dir=...` to validate an experimental artifact directory without changing bundled defaults.
 
 ## Ledger
 

@@ -48,8 +48,8 @@ verified upstream source is already a trusted local historical input.
   - fallback-only coverage
   - neutral/no-data behavior
 - update the source-of-truth docs as part of the phase:
-  - [`docs/accuracy-roadmap.md`](../../../docs/accuracy-roadmap.md)
-  - [`docs/accuracy-stack-audit.md`](../../../docs/accuracy-stack-audit.md)
+  - [`docs/archive/accuracy-roadmap.md`](../../../docs/archive/accuracy-roadmap.md)
+  - [`docs/archive/accuracy-stack-audit.md`](../../../docs/archive/accuracy-stack-audit.md)
 
 ## Non-Goals
 

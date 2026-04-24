@@ -1240,6 +1240,157 @@ def test_run_season_dynamic_blend_suppresses_fixed_market_and_ensemble_layers():
     assert result["weekly_records"][0].projected_fpts_on == 13.5
 
 
+def test_run_season_residual_calibration_runs_after_dynamic_blend():
+    validate = _load_validate_module()
+    from fantasy_sim.data.ensemble.models import (
+        DynamicBlendConfig,
+        EnsembleConfig,
+        FfOpportunityConfig,
+        ResidualCalibrationConfig,
+    )
+    from fantasy_sim.data.market_history.models import MarketHistoryConfig
+
+    build_b = [{
+        "status": "ok",
+        "game_id": "2024_01_KC_BUF",
+        "seed": 7,
+        "week": 1,
+        "home": "KC",
+        "away": "BUF",
+        "home_dists": object(),
+        "away_dists": object(),
+        "home_roster": object(),
+        "away_roster": object(),
+    }]
+    arm_b_projection = {
+        "player_id": "player-1",
+        "fpts": 12.0,
+        "position": "QB",
+        "team": "KC",
+        "name": "Patrick Example",
+    }
+    dynamic_projection = dict(arm_b_projection, fpts=13.0)
+    calibrated_projection = dict(arm_b_projection, fpts=14.0)
+    actual = SimpleNamespace(
+        player_id="player-1",
+        week=1,
+        fpts=14.0,
+        position="QB",
+        team="KC",
+        name="Patrick Example",
+    )
+    cached_arm_a = {
+        "projections": {"player-1": {1: 10.0}},
+        "player_meta": {
+            "player-1": {
+                "position": "QB",
+                "team": "KC",
+                "name": "Patrick Example",
+            }
+        },
+    }
+
+    with patch.object(validate, "build_games_parallel", return_value=build_b), \
+         patch.object(
+             validate,
+             "simulate_games_parallel",
+             return_value=[
+                 SimpleNamespace(
+                     game_id="2024_01_KC_BUF",
+                     metadata={},
+                     projections=[arm_b_projection],
+                 )
+             ],
+         ), \
+         patch.object(validate, "DynamicBlendProjectionBlender") as mock_dynamic_cls, \
+         patch.object(validate, "ResidualCalibrationProjectionAdjuster") as mock_residual_cls, \
+         patch.object(validate, "FfOpportunityProjectionEnsembler") as mock_ensembler_cls, \
+         patch.object(validate, "MarketHistoryProjectionAdjuster") as mock_market_cls, \
+         patch.object(validate, "load_actual_scores", return_value=[actual]), \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_dynamic = mock_dynamic_cls.return_value
+        mock_dynamic.blend_week.return_value = (
+            [dynamic_projection],
+            SimpleNamespace(total_rows=1, learned_rows=1, fallback_rows=0),
+        )
+        mock_residual = mock_residual_cls.return_value
+        mock_residual.adjust_week.return_value = (
+            [calibrated_projection],
+            SimpleNamespace(total_rows=1, adjusted_rows=1, fallback_rows=0),
+        )
+
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        result = validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs={
+                "pff_config": None,
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "tracking_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+                "market_history_config": None,
+            },
+            arm_b_configs={
+                "pff_config": object(),
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "tracking_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+                "market_history_config": MarketHistoryConfig(enabled=True),
+            },
+            arm_a_ensemble_config=None,
+            arm_b_ensemble_config=EnsembleConfig(
+                enabled=True,
+                ff_opportunity=FfOpportunityConfig(enabled=True),
+                dynamic_blend=DynamicBlendConfig(enabled=True),
+                residual_calibration=ResidualCalibrationConfig(enabled=True),
+            ),
+            positions=["QB"],
+            max_workers=1,
+            cached_arm_a=cached_arm_a,
+        )
+
+    mock_dynamic.blend_week.assert_called_once_with(
+        [arm_b_projection],
+        season=2024,
+        week=1,
+    )
+    mock_residual.adjust_week.assert_called_once_with(
+        [dynamic_projection],
+        season=2024,
+        week=1,
+    )
+    mock_ensembler_cls.assert_not_called()
+    mock_market_cls.assert_not_called()
+    assert result["season_metrics"].arm_b_weekly_mae == 0.0
+    assert result["weekly_records"][0].projected_fpts_on == 14.0
+
+
 def test_run_season_skips_ensembler_when_ff_opportunity_subsignal_is_disabled():
     validate = _load_validate_module()
 
