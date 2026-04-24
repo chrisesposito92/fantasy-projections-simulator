@@ -42,18 +42,18 @@ Decision-run weekly position deltas were: QB `+0.0030` / `-0.019`, RB `+0.0017` 
 
 ## Hypotheses
 
-| # | Hypothesis | Why It Has Sound Logic |
-|---:|---|---|
-| 1 | **Learn dynamic blend weights for simulator vs `ff_opportunity` vs `market_history` by position/week/source coverage.** | **Promoted.** Post-review `rank_corr +0.0069`, weekly MAE `-0.226` overall; covered-season readout `rank_corr +0.0099`, weekly MAE `-0.338`. |
-| 2 | **Add residual calibration by position, usage tier, and projection source confidence.** | **Promoted.** Decision run `rank_corr +0.0020`, weekly MAE `-0.043` overall; covered-season readout `rank_corr +0.0027`, weekly MAE `-0.068`. |
-| 3 | **Backfill and expand historical market/props coverage, especially missing 2022 and richer prop markets.** | Market history is one of the few promoted marginal wins, but validation is covered-only and props coverage is absent historically. More complete market data should improve QB/WR role, TD, and volume estimates. |
-| 4 | **Replace empirical pass/run choice with a learned play-call model.** | Current play calling is bucketed historical rate plus Vegas default adjustment. A model can learn score, time, down, distance, team, opponent, spread, total, and QB context interactions directly. |
-| 5 | **Replace receiver selection with a learned target-share/candidate model.** | WR accuracy is a priority, and current receiver choice is mostly normalized historical target share plus red-zone/game-script tweaks. A candidate model can combine depth chart, recent usage, routes, market, defense, and game state. |
-| 6 | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
-| 7 | **Build a QB rushing model for scramble probability, designed-run selection, and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and current scramble logic is a global QB rate checked before sack/INT. Mobile QB fantasy value is high-leverage and context-dependent. |
-| 8 | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
-| 9 | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
-| 10 | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
+| # | Status | Hypothesis | Why It Has Sound Logic |
+|---:|---|---|---|
+| 1 | Done | **Learn dynamic blend weights for simulator vs `ff_opportunity` vs `market_history` by position/week/source coverage.** | **Promoted.** Post-review `rank_corr +0.0069`, weekly MAE `-0.226` overall; covered-season readout `rank_corr +0.0099`, weekly MAE `-0.338`. |
+| 2 | Done | **Add residual calibration by position, usage tier, and projection source confidence.** | **Promoted.** Decision run `rank_corr +0.0020`, weekly MAE `-0.043` overall; covered-season readout `rank_corr +0.0027`, weekly MAE `-0.068`. |
+| 3 | Open | **Backfill and expand historical market/props coverage, especially missing 2022 and richer prop markets.** | Market history is one of the few promoted marginal wins, but validation is covered-only and props coverage is absent historically. More complete market data should improve QB/WR role, TD, and volume estimates. |
+| 4 | Open | **Replace empirical pass/run choice with a learned play-call model.** | Current play calling is bucketed historical rate plus Vegas default adjustment. A model can learn score, time, down, distance, team, opponent, spread, total, and QB context interactions directly. |
+| 5 | Open | **Replace receiver selection with a learned target-share/candidate model.** | WR accuracy is a priority, and current receiver choice is mostly normalized historical target share plus red-zone/game-script tweaks. A candidate model can combine depth chart, recent usage, routes, market, defense, and game state. |
+| 6 | Open | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
+| 7 | Open | **Build a QB rushing model for scramble probability, designed-run selection, and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and current scramble logic is a global QB rate checked before sack/INT. Mobile QB fantasy value is high-leverage and context-dependent. |
+| 8 | Open | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
+| 9 | Open | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
+| 10 | Open | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
 
 ## Prioritization
 
@@ -64,18 +64,18 @@ Recommended scoring scale:
 - **Data availability:** 5 = current local data is enough; 1 = missing/paid/manual data dependency.
 - **Validation clarity:** 5 = clean `baseline=defaults` A/B with low attribution ambiguity; 1 = hard to isolate.
 
-| Priority | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
-|---:|---|---:|---:|---:|---:|---:|---|
-| 1 | **Replace receiver selection with a learned target model** | 5 | 2 | 4 | 4 | 15 | First major in-sim learned node. High WR upside, clean runtime boundary, and strong tie to the biggest accuracy priority. |
-| 2 | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Strong simulator-wide leverage with a clean decision point, but effects will be broader and need careful sanity checks on team play volume. |
-| 3 | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
-| 4 | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside, but this is a larger multi-node pass-chain project. Do after target/play-call boundaries are established. |
-| 5 | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but scope should be split into scramble probability first, then designed runs/gain tails. |
-| 6 | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work, but likely lower top-line lift than target selection or QB rushing. |
-| 7 | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
-| 8 | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
-| done | **Learn dynamic blend weights** | 5 | 4 | 4 | 5 | 18 | Promoted; keep as part of defaults and use as the source stack for future residual/model tests. |
-| done | **Add residual calibration** | 4 | 4 | 5 | 5 | 18 | Promoted; monitor TE rank-corr sensitivity in future decision runs. |
+| Priority | Status | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
+|---:|---|---|---:|---:|---:|---:|---:|---|
+| 1 | Open | **Replace receiver selection with a learned target model** | 5 | 2 | 4 | 4 | 15 | First major in-sim learned node. High WR upside, clean runtime boundary, and strong tie to the biggest accuracy priority. |
+| 2 | Open | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Strong simulator-wide leverage with a clean decision point, but effects will be broader and need careful sanity checks on team play volume. |
+| 3 | Open | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
+| 4 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside, but this is a larger multi-node pass-chain project. Do after target/play-call boundaries are established. |
+| 5 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but scope should be split into scramble probability first, then designed runs/gain tails. |
+| 6 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work, but likely lower top-line lift than target selection or QB rushing. |
+| 7 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
+| 8 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
+| - | Done | **Learn dynamic blend weights** | 5 | 4 | 4 | 5 | 18 | Promoted; keep as part of defaults and use as the source stack for future residual/model tests. |
+| - | Done | **Add residual calibration** | 4 | 4 | 5 | 5 | 18 | Promoted; monitor TE rank-corr sensitivity in future decision runs. |
 
 Recommended execution order:
 
