@@ -27,6 +27,7 @@ from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
+from fantasy_sim.data.target_selection import TargetSelectionConfig, TargetSelectionModel
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.distributions import (
@@ -73,6 +74,7 @@ class GameContextBuilder:
         game_script_config: GameScriptConfig | None = None,
         goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
+        target_selection_config: TargetSelectionConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -266,6 +268,14 @@ class GameContextBuilder:
                 self._td_tendency_config, self._pff_loader,
             )
             logger.info("TD tendency engine enabled")
+
+        self._target_selection_config = (
+            target_selection_config or TargetSelectionConfig(enabled=False)
+        )
+        self._target_selection_model = None
+        if self._target_selection_config.enabled:
+            self._target_selection_model = TargetSelectionModel(self._target_selection_config)
+            logger.info("Target-selection model enabled")
 
     def _is_goal_line_concentration_enabled(self) -> bool:
         """Return the runtime feature flag for built team distributions."""
@@ -1188,6 +1198,19 @@ class GameContextBuilder:
                 target_season=target_season,
                 week=week,
                 rosters=profile_rosters,
+            )
+
+        if self._target_selection_model is not None and target_season is not None:
+            runtime_week = int(week or 0)
+            home_dists.target_selection_context = self._target_selection_model.build_context(
+                home_roster,
+                target_season,
+                runtime_week,
+            )
+            away_dists.target_selection_context = self._target_selection_model.build_context(
+                away_roster,
+                target_season,
+                runtime_week,
             )
 
         return home_dists, away_dists, home_roster, away_roster

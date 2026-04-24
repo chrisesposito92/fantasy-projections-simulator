@@ -2023,3 +2023,30 @@ def test_disabled_signals_report_disabled_explicitly():
     assert coverage["usage"].status == "disabled"
     assert coverage["usage.ngs"].status == "disabled"
     assert coverage["usage.route_rate"].status == "disabled"
+    assert coverage["target_selection"].status == "disabled"
+
+
+def test_target_selection_reports_artifact_coverage(tmp_path):
+    (tmp_path / "target_selection_2024.json").write_text("{}")
+
+    coverage = collect_signal_coverage(
+        {
+            "target_selection": {
+                "enabled": True,
+                "artifacts_dir": str(tmp_path),
+            }
+        },
+        [2023, 2024],
+    )
+
+    assert coverage["target_selection"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2024],
+        missing_seasons=[2023],
+        note=(
+            "Requires target_selection_<season>.json artifacts fitted from "
+            "prior-season PBP target labels; runtime falls back to legacy "
+            "selection when an artifact is missing or invalid"
+        ),
+    )

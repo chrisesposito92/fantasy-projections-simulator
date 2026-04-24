@@ -10,6 +10,8 @@ from pathlib import Path
 
 import polars as pl
 
+from fantasy_sim.data.target_selection.models import DEFAULT_ARTIFACT_DIR
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PFF_DIR = Path.home() / ".fantasy-sim" / "pff" / "processed" / "nfl"
@@ -155,6 +157,20 @@ def _resolve_market_history_path(
     if data_dir is not None:
         return _path_or_default(data_dir, DEFAULT_MARKET_HISTORY_DIR)
     return DEFAULT_MARKET_HISTORY_DIR
+
+
+def _resolve_target_selection_artifacts_path(config: object) -> Path:
+    target_selection_config = _config_section(config, "target_selection_config")
+    if target_selection_config is None:
+        target_selection_config = _config_section(config, "target_selection")
+    artifacts_dir = (
+        _config_get(target_selection_config, "artifacts_dir", default=None)
+        if target_selection_config is not None
+        else None
+    )
+    if artifacts_dir is not None:
+        return _path_or_default(artifacts_dir, DEFAULT_ARTIFACT_DIR)
+    return DEFAULT_ARTIFACT_DIR
 
 
 def _resolve_market_history_snapshot_label(config: object) -> str:
@@ -422,6 +438,7 @@ def collect_signal_coverage(
     route_rate_pff_path = _resolve_route_rate_pff_path(config, pff_dir)
     props_path = _resolve_props_path(config, props_dir)
     market_history_path = _resolve_market_history_path(config, market_history_dir)
+    target_selection_artifacts_path = _resolve_target_selection_artifacts_path(config)
     market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
@@ -594,6 +611,11 @@ def collect_signal_coverage(
         ("role_trend_config", "role_trend"),
         ("role_trend",),
     )
+    target_selection_enabled = _signal_enabled(
+        config,
+        ("target_selection_config", "target_selection"),
+        ("target_selection",),
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -631,6 +653,10 @@ def collect_signal_coverage(
     }
     market_history_paths: dict[int, Path] = {
         season: market_history_path / f"player_markets_{season}_{market_history_snapshot_label}.parquet"
+        for season in seasons
+    }
+    target_selection_artifact_paths: dict[int, Path] = {
+        season: target_selection_artifacts_path / f"target_selection_{season}.json"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
@@ -1202,6 +1228,16 @@ def collect_signal_coverage(
                 },
             ),
             note="Role trend uses weekly player_stats coverage; snap_counts can augment but do not create hard decisions",
+        ),
+        "target_selection": _build_signal(
+            target_selection_enabled,
+            seasons,
+            _covered_seasons_from_any_paths(seasons, target_selection_artifact_paths),
+            note=(
+                "Requires target_selection_<season>.json artifacts fitted from "
+                "prior-season PBP target labels; runtime falls back to legacy "
+                "selection when an artifact is missing or invalid"
+            ),
         ),
         "ensemble.ff_opportunity": _build_signal(
             ensemble_enabled and ff_opp_enabled,

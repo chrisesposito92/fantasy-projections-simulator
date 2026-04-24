@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
     from fantasy_sim.data.game_script import GameScriptConfig
     from fantasy_sim.data.pff.models import PffConfig
+    from fantasy_sim.data.target_selection import TargetSelectionConfig
     from fantasy_sim.data.td_tendency import TdTendencyConfig
     from fantasy_sim.data.tracking.models import TrackingConfig
     from fantasy_sim.data.usage.models import UsageConfig
@@ -185,6 +186,7 @@ def _init_build_worker_single(
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
+    target_selection_config: "TargetSelectionConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
     global _worker_builders
@@ -202,6 +204,7 @@ def _init_build_worker_single(
         game_script_config=game_script_config,
         goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
+        target_selection_config=target_selection_config,
     )
     _worker_builders = {"single": builder}
 
@@ -259,6 +262,7 @@ def _init_build_worker_dual(
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
+    target_selection_config: "TargetSelectionConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create off+on builders per worker."""
     global _worker_builders
@@ -280,6 +284,7 @@ def _init_build_worker_dual(
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,
             td_tendency_config=td_tendency_config,
+            target_selection_config=target_selection_config,
         ),
     }
 
@@ -377,6 +382,7 @@ def _build_games_sequential(
     game_script_config: "GameScriptConfig | None" = None,
     goal_line_concentration_config: "GoalLineConcentrationConfig | None" = None,
     td_tendency_config: "TdTendencyConfig | None" = None,
+    target_selection_config: "TargetSelectionConfig | None" = None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
     global _worker_builders
@@ -398,6 +404,7 @@ def _build_games_sequential(
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
+                target_selection_config=target_selection_config,
             ),
         }
     else:
@@ -414,6 +421,7 @@ def _build_games_sequential(
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
+                target_selection_config=target_selection_config,
             ),
         }
 
@@ -442,6 +450,7 @@ def _create_builders(
     availability_config=None,
     td_tendency_config=None,
     goal_line_concentration_config=None,
+    target_selection_config=None,
     dual_arm: bool = False,
 ) -> dict:
     """Create GameContextBuilder instances for the build phase.
@@ -466,6 +475,7 @@ def _create_builders(
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
+                target_selection_config=target_selection_config,
             ),
         }
     return {
@@ -481,6 +491,7 @@ def _create_builders(
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,
             td_tendency_config=td_tendency_config,
+            target_selection_config=target_selection_config,
         ),
     }
 
@@ -586,6 +597,7 @@ def build_games_parallel(
     game_script_config=None,
     goal_line_concentration_config=None,
     td_tendency_config=None,
+    target_selection_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
     on_complete: "Callable[[int, int], None] | None" = None,
@@ -635,6 +647,7 @@ def build_games_parallel(
                 game_script_config=game_script_config,
                 goal_line_concentration_config=goal_line_concentration_config,
                 td_tendency_config=td_tendency_config,
+                target_selection_config=target_selection_config,
             )
         else:
             from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
@@ -663,6 +676,7 @@ def build_games_parallel(
                     game_script_config,
                     goal_line_concentration_config,
                     td_tendency_config,
+                    target_selection_config,
                 ),
             ) as pool:
                 futures = {
@@ -712,6 +726,7 @@ def build_games_parallel(
             game_script_config=game_script_config,
             goal_line_concentration_config=goal_line_concentration_config,
             td_tendency_config=td_tendency_config,
+            target_selection_config=target_selection_config,
             dual_arm=dual_arm,
         )
         warm_results = _warm_builders(builders, game_args, dual_arm)

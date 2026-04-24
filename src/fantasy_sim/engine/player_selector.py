@@ -9,6 +9,11 @@ from fantasy_sim.engine.game_script import RuntimeGameScript
 from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.player import PlayerModel, TeamRoster
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fantasy_sim.data.target_selection import TargetSelectionContext
+
 
 def _filter_available(roster: TeamRoster, state: GameState) -> TeamRoster:
     """Return a filtered roster excluding players who have the current week
@@ -65,8 +70,35 @@ def select_receiver(
     rng: np.random.Generator,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
+    target_selection_context: "TargetSelectionContext | None" = None,
 ) -> PlayerModel:
     """Select a receiver weighted by target share, filtering out missed-week players."""
+    eligible, weights = receiver_candidates_and_legacy_weights(
+        roster,
+        state,
+        goal_line_concentration_enabled=goal_line_concentration_enabled,
+        script=script,
+    )
+    if target_selection_context is not None:
+        learned_weights = target_selection_context.probabilities(
+            eligible,
+            weights,
+            state,
+            script=script,
+        )
+        if learned_weights is not None:
+            weights = learned_weights
+    return eligible[rng.choice(len(eligible), p=weights)]
+
+
+def receiver_candidates_and_legacy_weights(
+    roster: TeamRoster,
+    state: GameState,
+    *,
+    goal_line_concentration_enabled: bool = False,
+    script: RuntimeGameScript | None = None,
+) -> tuple[list[PlayerModel], np.ndarray]:
+    """Return the receiver pool and normalized legacy selection weights."""
     filtered = _filter_available(roster, state)
     eligible = [player for player in filtered.players if player.usage.target_share > 0]
     if not eligible:
@@ -99,7 +131,7 @@ def select_receiver(
     if weights.sum() == 0:
         weights = np.ones(len(eligible), dtype=float)
     weights = weights / weights.sum()
-    return eligible[rng.choice(len(eligible), p=weights)]
+    return eligible, weights
 
 
 def _receiver_rank_factor(rank: int, script: RuntimeGameScript | None) -> float:

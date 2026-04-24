@@ -593,6 +593,7 @@ def run_season(
                     "goal_line_concentration_config"
                 ),
                 td_tendency_config=arm_b_configs.get("td_tendency_config"),
+                target_selection_config=arm_b_configs.get("target_selection_config"),
             )
 
             specs_a: list[GameSpec] = []

@@ -28,6 +28,7 @@ class TeamDistributions:
     defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
     game_script_config: GameScriptConfig | None = None
     game_script_profile: GameScriptProfile | None = None
+    target_selection_context: object | None = None
 
 
 @dataclass
