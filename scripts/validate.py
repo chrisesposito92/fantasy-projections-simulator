@@ -155,7 +155,10 @@ def _store_projection_row(
     pid = str(proj["player_id"])
     fpts = _numeric_value(proj.get("fpts"))
     if fpts is None:
-        return
+        raise ValueError(
+            f"Invalid projection fpts for player_id={pid!r} week={week}: "
+            f"{proj.get('fpts')!r}"
+        )
     row = dict(proj)
     row["fpts"] = fpts
     proj_by_pw[pid][week] = fpts
@@ -225,9 +228,9 @@ def _compute_distribution_ks(
     fpts_summary = ks_distribution_summary(fpts_a, fpts_b, fpts_actual)
     weekly_fpts_ks = (
         {
-            "arm_a": fpts_summary["arm_a_ks"],
-            "arm_b": fpts_summary["arm_b_ks"],
-            "delta": fpts_summary["ks_delta"],
+            "arm_a_ks": fpts_summary["arm_a_ks"],
+            "arm_b_ks": fpts_summary["arm_b_ks"],
+            "ks_delta": fpts_summary["ks_delta"],
             "n": fpts_summary["n"],
         }
         if fpts_summary
@@ -902,8 +905,8 @@ def print_distribution_ks_results(season_results: list[SeasonMetrics]) -> None:
         if fpts:
             print(
                 "    fpts KS "
-                f"{float(fpts['arm_a']):.2f} -> {float(fpts['arm_b']):.2f} "
-                f"({float(fpts['delta']):+.2f}), n={int(fpts['n'])}"
+                f"{float(fpts['arm_a_ks']):.2f} -> {float(fpts['arm_b_ks']):.2f} "
+                f"({float(fpts['ks_delta']):+.2f}), n={int(fpts['n'])}"
             )
         else:
             print("    fpts KS n/a")

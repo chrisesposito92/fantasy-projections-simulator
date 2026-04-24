@@ -107,9 +107,9 @@ class LedgerEntry:
     @property
     def avg_weekly_fpts_ks_delta(self) -> float | None:
         values = [
-            result.weekly_fpts_ks["delta"]
+            result.weekly_fpts_ks["ks_delta"]
             for result in self.season_results
-            if isinstance(result.weekly_fpts_ks.get("delta"), (int, float))
+            if isinstance(result.weekly_fpts_ks.get("ks_delta"), (int, float))
         ]
         if not values:
             return None
@@ -124,7 +124,13 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
         raw = json.load(f)
     entries = []
     for item in raw:
-        season_results = [SeasonMetrics(**sr) for sr in item.get("season_results", [])]
+        season_results = []
+        for sr in item.get("season_results", []):
+            sr = dict(sr)
+            sr["weekly_fpts_ks"] = _normalize_weekly_fpts_ks(
+                sr.get("weekly_fpts_ks", {})
+            )
+            season_results.append(SeasonMetrics(**sr))
         ws_raw = item.get("weekly_summaries")
         weekly_summaries = (
             [WeeklyPositionSummary(**ws) for ws in ws_raw] if ws_raw else None
@@ -151,6 +157,21 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
         item["coverage_summary"] = coverage_summary
         entries.append(LedgerEntry(**item))
     return entries
+
+
+def _normalize_weekly_fpts_ks(value: object) -> dict[str, float | int]:
+    if not isinstance(value, dict):
+        return {}
+    if "ks_delta" in value:
+        return dict(value)
+    if not {"arm_a", "arm_b", "delta"}.issubset(value):
+        return dict(value)
+    return {
+        "arm_a_ks": value["arm_a"],
+        "arm_b_ks": value["arm_b"],
+        "ks_delta": value["delta"],
+        "n": value.get("n", 0),
+    }
 
 
 def save_ledger(path: Path, entries: list[LedgerEntry]) -> None:

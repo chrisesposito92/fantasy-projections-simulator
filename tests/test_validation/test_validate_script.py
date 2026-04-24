@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import polars as pl
+import pytest
 
 from fantasy_sim.validation.coverage import SignalCoverage
 
@@ -948,14 +949,37 @@ def test_run_season_computes_distribution_ks_from_matched_rows():
         )
 
     season_metrics = result["season_metrics"]
-    assert season_metrics.weekly_fpts_ks["arm_a"] == 1.0
-    assert season_metrics.weekly_fpts_ks["arm_b"] == 0.0
-    assert season_metrics.weekly_fpts_ks["delta"] == -1.0
+    assert season_metrics.weekly_fpts_ks["arm_a_ks"] == 1.0
+    assert season_metrics.weekly_fpts_ks["arm_b_ks"] == 0.0
+    assert season_metrics.weekly_fpts_ks["ks_delta"] == -1.0
     assert season_metrics.weekly_fpts_ks["n"] == 1
     assert season_metrics.stat_ks["QB"]["pass_yards"]["arm_a_ks"] == 1.0
     assert season_metrics.stat_ks["QB"]["pass_yards"]["arm_b_mean"] == 300.0
     assert season_metrics.stat_ks["QB"]["pass_yards"]["mean_delta_b"] == 0.0
     assert result["arm_a_projection_rows"]["player-1"][1]["pass_yards"] == 240.0
+
+
+def test_store_projection_row_rejects_invalid_fpts():
+    validate = _load_validate_module()
+    projection = {
+        "player_id": "player-1",
+        "fpts": float("nan"),
+        "position": "QB",
+        "team": "KC",
+        "name": "Patrick Example",
+    }
+
+    with pytest.raises(ValueError, match="Invalid projection fpts"):
+        validate._store_projection_row(
+            projection,
+            1,
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+        )
 
 
 def test_run_season_blends_arm_b_with_ensemble_when_enabled():
