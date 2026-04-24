@@ -6,7 +6,7 @@ NFL fantasy football projections simulator. Simulates games play-by-play using h
 
 ## Tech Stack
 
-- Python 3.12+ (currently running 3.14), uv for package management
+- Python 3.12+ with uv for package management
 - polars for DataFrames (NOT pandas), numpy for numerical simulation
 - nflreadpy for NFL data from nflverse, httpx for PFF/weather APIs
 - pytest (with pytest-xdist, hypothesis), YAML for configuration
@@ -27,6 +27,8 @@ uv run python scripts/validate.py --sims 50 --label "run-name"
 uv run python scripts/validate.py --set usage.ngs.enabled=true --sims 50 --label "test-ngs"
 uv run python scripts/validate.py --baseline defaults --set usage.ngs.enabled=true --sims 50
 uv run python scripts/validate.py --show-ledger
+uv run python scripts/fit_dynamic_blend_weights.py --test-seasons 2022 2023 2024 --min-source-season 2022 --sims 200 --training-years 4 --scoring ppr --output-dir results/dynamic_blend/decision_s200
+uv run python scripts/fit_residual_calibration.py --test-seasons 2022 2023 2024 --min-source-season 2022 --sims 200 --training-years 4 --scoring ppr --output-dir results/residual_calibration/decision_s200
 # Legacy (deprecated — use scripts/validate.py):
 uv run python scripts/validate_pff_signal.py --mode all --sims 50
 uv run python scripts/validate_weekly_signal.py --mode all --sims 50
@@ -74,7 +76,13 @@ base PBP model → vegas (pace + pass rate) → availability → normalize → u
 
 Post-sim projection order:
 
-role_trend → market_history → ensemble.ff_opportunity
+role_trend → dynamic_blend → residual_calibration
+
+When `ensemble.dynamic_blend.enabled=false`, the fallback post-sim order is:
+
+role_trend → market_history → ensemble.ff_opportunity → residual_calibration
+
+`residual_calibration` adjusts final `fpts` only, leaves stat columns unchanged, clamps final `fpts >= 0`, and falls back to zero adjustment when a season artifact or bucket is missing.
 
 ### Three-Layer Cache
 
@@ -129,7 +137,7 @@ Multiple active layers in `data/pff/`, configured in `defaults.yaml` under `pff:
 - Fixtures in `tests/conftest.py` provide sample PBP data (20 plays, KC/BUF)
 - `unittest.mock.patch` to mock nflreadpy (no network in unit tests)
 - Markers: `@pytest.mark.integration`, `@pytest.mark.statistical`
-- **1248 tests** across all phases
+- **1200+ tests** across all phases
 
 ## Vegas Engine
 
@@ -164,6 +172,8 @@ All development phases complete through the current Phase 5 accuracy initiative 
 - Phase 1 promoted: post-sim `ff_opportunity` ensemble for QB/RB/WR/TE
 - Phase 2 promoted: `availability.enabled=true` with `availability.injuries.enabled=false`
 - Phase 3 promoted: `market_history.enabled=true` with `snapshot_label=close_core8`
+- Dynamic blend promoted: `ensemble.dynamic_blend.enabled=true` with bundled `decision_s200` artifacts for 2023-2024
+- Residual calibration promoted: `ensemble.residual_calibration.enabled=true` with bundled `decision_s200` artifacts for 2023-2024 and zero fallback for missing seasons/buckets
 - Phase 2 kept off: `role_trend.enabled=false`
 - Phase 4 kept off: `tracking.enabled=false`
 - Phase 5 slices implemented and kept off: `pff.depth_role.enabled=false`, `pff.depth_role.efficiency.enabled=false`, `pff.rb_scheme_fit.enabled=false`, `pff.qb_split.enabled=false`
@@ -196,7 +206,7 @@ Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-
 
 **Fantasy Projections Simulator — Accuracy Initiative**
 
-**Core Value:** Projection accuracy that beats current best A/B results (run #44: rank_corr +0.0517) and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) — with WR and QB accuracy as highest-priority positions.
+**Core Value:** Projection accuracy that beats the current promoted defaults and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) — with WR and QB accuracy as highest-priority positions.
 
 ### Constraints
 

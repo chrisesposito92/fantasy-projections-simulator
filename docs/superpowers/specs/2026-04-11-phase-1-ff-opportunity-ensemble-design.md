@@ -40,8 +40,8 @@ That means Phase 1 v1 must avoid:
   - `baseline=defaults`
   - versus `defaults + ensemble`
 - update the source-of-truth docs as part of the phase:
-  - [`docs/accuracy-roadmap.md`](../../../docs/accuracy-roadmap.md)
-  - [`docs/accuracy-stack-audit.md`](../../../docs/accuracy-stack-audit.md)
+  - [`docs/archive/accuracy-roadmap.md`](../../../docs/archive/accuracy-roadmap.md)
+  - [`docs/archive/accuracy-stack-audit.md`](../../../docs/archive/accuracy-stack-audit.md)
 
 ## Non-Goals
 

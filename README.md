@@ -8,6 +8,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Runs Monte Carlo simulations (1,000+ per game) to produce statistical distributions — not just point estimates
 - Outputs full stat lines (passing yards, rushing yards, receptions, TDs, etc.) alongside fantasy points
 - Supports any scoring format (PPR, half-PPR, standard, custom) via YAML config
+- Applies a promoted post-simulation projection stack: market-history priors, FF Opportunity priors, dynamic source blending, and residual calibration
 - Enables "what if" analysis via player and team overrides (`--override`, `--config`) with fuzzy name matching and automatic share redistribution
 
 ## Project Status
@@ -119,6 +120,14 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Includes weekly outputs such as per-position weekly rank correlation, weekly MAE, MAE by difficulty tercile, and WR directional accuracy
 - Older weekly-only artifacts are preserved as historical references, but they are no longer the canonical validation path
 
+**Promoted Post-Sim Accuracy Stack** — Complete
+
+- `ensemble.ff_opportunity.enabled=true`: blends nflverse FF Opportunity expected fantasy points into QB/RB/WR/TE projections
+- `market_history.enabled=true`: blends The Odds API close-core8 player-market priors where historical coverage exists
+- `ensemble.dynamic_blend.enabled=true`: replaces fixed sequential market/FF blending with learned source weights by position, week bucket, source mask, and market confidence
+- `ensemble.residual_calibration.enabled=true`: applies small learned residual corrections by position, usage tier, and projection-source confidence
+- Bundled artifacts live under `src/fantasy_sim/data/ensemble/artifacts/`; 2022 market-dependent learned artifacts intentionally fall back because the current local market-history coverage starts in 2023
+
 **PFF Kicker/DST Baseline** — Complete (29 tests, 1068 total)
 
 - Per-kicker FG accuracy from PFF `field_goal_summary` with Bayesian shrinkage toward league average by distance bucket (20+30yd → 0_39, 40yd → 40_49, 50+ → 50_plus)
@@ -163,6 +172,8 @@ src/fantasy_sim/
 │   ├── player_builder.py   # Build PlayerModels from PBP + roster data
 │   ├── rookie_builder.py   # Rookie archetypes by draft capital
 │   ├── game_context.py     # GameContextBuilder — real data → sim engine
+│   ├── ensemble/           # FF Opportunity config/loading/artifacts
+│   ├── market_history/     # Historical player-market cache models
 │   └── actuals.py          # Load + score actual player stats for backtesting
 ├── models/
 │   ├── game_state.py       # GameStateBucket + bucketing functions
@@ -181,7 +192,10 @@ src/fantasy_sim/
 │   └── loader.py           # YAML config loading with _inherit inheritance
 ├── scoring/
 │   ├── engine.py           # score_player(), score_dst(), score_kicker()
-│   └── projections.py      # Aggregate sim results into ranked projections
+│   ├── projections.py      # Aggregate sim results into ranked projections
+│   ├── projection_layers.py # Post-sim role/market/ensemble/calibration order
+│   ├── dynamic_blend.py    # Learned source weighting
+│   └── residual_calibration.py # Learned additive residual corrections
 ├── output/
 │   ├── tables.py           # Rich terminal tables (QB/RB/WR/TE/K/DST)
 │   └── export.py           # CSV and JSON file export
@@ -288,8 +302,12 @@ uv run python scripts/scrape_pff.py --league ncaa --season 2025 --weeks 0-8
 
 - [Configuration Reference](docs/CONFIG.md) — Every override field, scoring key, and config option
 - [CLI Commands](docs/CLI-COMMANDS.md) — Full command reference
-- [Accuracy Roadmap](docs/accuracy-roadmap.md) — Canonical phase ordering, promotion rules, and current validation verdicts
-- [Accuracy Stack Audit](docs/accuracy-stack-audit.md) — Current defaults, runtime order, local data coverage, and evidence caveats
+- [A/B Testing Guide](docs/AB-TESTING.md) — Canonical validation workflow and ledger interpretation
+- [Accuracy Hypotheses](docs/hypotheses-list.md) — Current promoted results and next hypothesis shortlist
+- [Dynamic Blend Plan](docs/hypothesis-plans/dynamic-blend-weights-plan.md) — Plan and validation record for the promoted dynamic source blender
+- [Residual Calibration Plan](docs/hypothesis-plans/residual-calibration-plan.md) — Plan and validation record for the promoted residual calibration layer
+- [Historical Accuracy Roadmap](docs/archive/accuracy-roadmap.md) — Archived phase ordering and historical validation notes
+- [Historical Accuracy Stack Audit](docs/archive/accuracy-stack-audit.md) — Archived stack audit
 - [Design Spec](docs/superpowers/specs/2026-03-29-fantasy-projections-simulator-design.md)
 - [Phase 1 Plan](docs/superpowers/plans/2026-03-29-phase1-data-pipeline.md)
 - [Phase 2 Plan](docs/superpowers/plans/2026-03-29-phase2-game-state-machine.md)

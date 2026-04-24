@@ -45,6 +45,21 @@ class DynamicBlendConfig:
 
 
 @dataclass
+class ResidualCalibrationConfig:
+    """Configuration for post-simulation residual calibration."""
+
+    enabled: bool = False
+    artifacts_dir: str | None = None
+    positions: tuple[str, ...] = ("QB", "RB", "WR", "TE")
+    min_bucket_rows: int = 200
+    min_bucket_weeks: int = 6
+    shrinkage_prior_rows: int = 200
+    max_abs_adjustment: float = 1.5
+    min_training_mae_delta: float = -0.01
+    fallback: str = "zero"
+
+
+@dataclass
 class EnsembleConfig:
     """Top-level ensemble configuration."""
 
@@ -52,3 +67,6 @@ class EnsembleConfig:
     ff_opportunity: FfOpportunityConfig = field(default_factory=FfOpportunityConfig)
     ff_rankings: FfRankingsConfig = field(default_factory=FfRankingsConfig)
     dynamic_blend: DynamicBlendConfig = field(default_factory=DynamicBlendConfig)
+    residual_calibration: ResidualCalibrationConfig = field(
+        default_factory=ResidualCalibrationConfig
+    )

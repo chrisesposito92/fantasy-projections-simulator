@@ -21,6 +21,7 @@ from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
+from fantasy_sim.scoring.residual_calibration import ResidualCalibrationProjectionAdjuster
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
@@ -204,6 +205,16 @@ class Backtester:
                 scoring_config=scoring_config,
                 scoring=self.scoring_format,
             )
+        residual_calibrator = None
+        if (
+            self._ensemble_config is not None
+            and self._ensemble_config.enabled
+            and self._ensemble_config.residual_calibration.enabled
+        ):
+            residual_calibrator = ResidualCalibrationProjectionAdjuster(
+                self._ensemble_config.residual_calibration,
+                scoring=self.scoring_format,
+            )
         ensembler = None
         if (
             self._ensemble_config is not None
@@ -239,6 +250,7 @@ class Backtester:
                 market_history_adjuster=market_history_adjuster,
                 ensembler=ensembler,
                 dynamic_blender=dynamic_blender,
+                residual_calibrator=residual_calibrator,
             )
             for proj in projections:
                 pid = proj["player_id"]

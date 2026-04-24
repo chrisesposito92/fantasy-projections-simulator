@@ -856,8 +856,8 @@ In `docs/accuracy-roadmap.md`, replace the current Phase 0 deliverables block wi
   - sim count
   - coverage summary
 - Update both source-of-truth docs as part of the phase deliverables:
-  - [`docs/accuracy-roadmap.md`](./accuracy-roadmap.md)
-  - [`docs/accuracy-stack-audit.md`](./accuracy-stack-audit.md)
+  - [`docs/archive/accuracy-roadmap.md`](../../archive/accuracy-roadmap.md)
+  - [`docs/archive/accuracy-stack-audit.md`](../../archive/accuracy-stack-audit.md)
 
 ### Deferred From This Phase
 

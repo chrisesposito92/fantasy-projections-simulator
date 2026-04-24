@@ -24,6 +24,15 @@ def test_load_ensemble_config_defaults_when_missing():
     assert cfg.dynamic_blend.min_bucket_weeks == 6
     assert cfg.dynamic_blend.grid_step == 0.05
     assert cfg.dynamic_blend.fallback == "fixed_defaults"
+    assert cfg.residual_calibration.enabled is False
+    assert cfg.residual_calibration.artifacts_dir is None
+    assert cfg.residual_calibration.positions == ("QB", "RB", "WR", "TE")
+    assert cfg.residual_calibration.min_bucket_rows == 200
+    assert cfg.residual_calibration.min_bucket_weeks == 6
+    assert cfg.residual_calibration.shrinkage_prior_rows == 200
+    assert cfg.residual_calibration.max_abs_adjustment == 1.5
+    assert cfg.residual_calibration.min_training_mae_delta == -0.01
+    assert cfg.residual_calibration.fallback == "zero"
 
 
 def test_load_ensemble_config_reads_nested_values():
@@ -56,6 +65,17 @@ def test_load_ensemble_config_reads_nested_values():
                     "grid_step": 0.1,
                     "fallback": "simulator_only",
                 },
+                "residual_calibration": {
+                    "enabled": True,
+                    "artifacts_dir": "results/residual_calibration/test",
+                    "positions": ["QB", "WR"],
+                    "min_bucket_rows": 120,
+                    "min_bucket_weeks": 5,
+                    "shrinkage_prior_rows": 80,
+                    "max_abs_adjustment": 1.25,
+                    "min_training_mae_delta": -0.02,
+                    "fallback": "zero",
+                },
             }
         }
     )
@@ -80,6 +100,15 @@ def test_load_ensemble_config_reads_nested_values():
     assert cfg.dynamic_blend.min_bucket_weeks == 4
     assert cfg.dynamic_blend.grid_step == 0.1
     assert cfg.dynamic_blend.fallback == "simulator_only"
+    assert cfg.residual_calibration.enabled is True
+    assert cfg.residual_calibration.artifacts_dir == "results/residual_calibration/test"
+    assert cfg.residual_calibration.positions == ("QB", "WR")
+    assert cfg.residual_calibration.min_bucket_rows == 120
+    assert cfg.residual_calibration.min_bucket_weeks == 5
+    assert cfg.residual_calibration.shrinkage_prior_rows == 80
+    assert cfg.residual_calibration.max_abs_adjustment == 1.25
+    assert cfg.residual_calibration.min_training_mae_delta == -0.02
+    assert cfg.residual_calibration.fallback == "zero"
 
 
 def test_load_ensemble_config_top_level_enabled_with_nested_sections_omitted():
@@ -100,6 +129,8 @@ def test_load_ensemble_config_top_level_enabled_with_nested_sections_omitted():
     assert cfg.ff_rankings.enabled is False
     assert cfg.dynamic_blend.enabled is False
     assert cfg.dynamic_blend.weights_dir is None
+    assert cfg.residual_calibration.enabled is False
+    assert cfg.residual_calibration.artifacts_dir is None
 
 
 def test_load_ensemble_config_partial_ff_opportunity_override_uses_fallbacks():

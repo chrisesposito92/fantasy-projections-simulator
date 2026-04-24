@@ -1,8 +1,12 @@
 # Residual Calibration Plan
 
+## Status
+
+**Promoted.** The `residual-calibration-s200` decision run was accepted for promotion. Residual calibration is now enabled by default, with bundled artifacts under `src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200`; `artifacts_dir: null` uses those artifacts at runtime. The decision readout was all-season `rank_corr +0.0020`, weekly MAE `-0.043`, season MAE `-1.384`; artifact-covered 2023-2024 readout was `rank_corr +0.0027`, weekly MAE `-0.068`, season MAE `-2.066`.
+
 ## Summary
 
-Add a disabled-by-default post-simulation residual calibration layer that runs after the current promoted projection stack, including dynamic blend. It learns small additive fantasy-point corrections from historical residuals grouped by `position + usage_tier + projection_source_confidence`.
+Add a post-simulation residual calibration layer that runs after the current promoted projection stack, including dynamic blend. It learns small additive fantasy-point corrections from historical residuals grouped by `position + usage_tier + projection_source_confidence`.
 
 Why it should help: [results/ab_ledger.json](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/results/ab_ledger.json) shows dynamic blend improved the stack materially, but it can still leave systematic over/under-shoots by position and player tier. A bucketed median residual correction directly targets weekly MAE while leaving simulation mechanics, priors, market ingestion, and source blending unchanged.
 
@@ -15,7 +19,7 @@ Why it should help: [results/ab_ledger.json](/Users/chrisesposito/Documents/gith
 
 ## Implementation Changes
 
-- Add `ensemble.residual_calibration` config in [config/defaults.yaml](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml), default `enabled=false`, with `artifacts_dir=null`, positions `QB/RB/WR/TE`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `shrinkage_prior_rows=200`, `max_abs_adjustment=1.5`, `min_training_mae_delta=-0.01`, and `fallback=zero`.
+- Add `ensemble.residual_calibration` config in [config/defaults.yaml](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml), default `enabled=true`, with `artifacts_dir=null`, positions `QB/RB/WR/TE`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `shrinkage_prior_rows=200`, `max_abs_adjustment=1.5`, `min_training_mae_delta=-0.01`, and `fallback=zero`.
 - Usage tiers are fixed from pre-calibration projected `fpts`: QB high `>=18`, mid `>=12`; RB high `>=14`, mid `>=7`; WR high `>=12`, mid `>=6`; TE high `>=9`, mid `>=4`; otherwise low.
 - Source-confidence buckets: `market_high`, `market_medium`, `market_low` from market confidence thresholds `>=0.85`, `>=0.50`, `<0.50`; `external_no_market` when FF Opportunity is present without market; `simulator_only` otherwise.
 - Add a scoring adjuster, likely `src/fantasy_sim/scoring/residual_calibration.py`, that loads `calibration_<season>.json`, applies the bucket correction to `fpts`, clamps final `fpts >= 0.0`, stamps metadata, and re-ranks. It does not alter stat columns.
@@ -41,9 +45,11 @@ uv run python scripts/validate.py --baseline defaults --seasons 2022 2023 2024 -
 
 Promotion gate at `sims=200`: artifact-covered seasons 2023-2024 must average `weekly_mae_delta <= -0.025`; all-season weekly MAE must improve; covered average rank-corr delta must be no worse than `-0.0015`; QB+WR combined rank-corr delta must be no worse than `-0.001`; no position may regress weekly MAE by more than `+0.030` or rank corr by more than `-0.004`.
 
+Promotion note: the decision run cleared the MAE, covered-rank, and QB+WR gates. TE weekly rank correlation was borderline at `-0.0043`, missing the strict weekly-position guardrail by roughly `0.0003`, and was accepted as promotion-worthy because the covered-season and priority-position readouts were positive.
+
 ## Tests And Risks
 
 - Required tests: config loading/override propagation, tier and source-confidence classification, artifact schema/scoring mismatch fallback, sparse/no-lift bucket fallback, shrunken median correction/clamping, projection-layer ordering after dynamic blend, validation/CLI wiring.
-- Focused regression command: `uv run pytest tests/test_data/test_ensemble/test_config.py tests/test_scoring/test_dynamic_blend.py tests/test_scoring/test_market_history.py tests/test_validation/test_config.py tests/test_validation/test_validate_script.py -v`, plus new residual-calibration tests.
+- Focused regression command: `uv run pytest tests/test_data/test_ensemble/test_config.py tests/test_scoring/test_residual_calibration.py tests/test_scoring/test_dynamic_blend.py tests/test_scoring/test_market_history.py tests/test_validation/test_config.py tests/test_validation/test_validate_script.py -v`.
 - Main risks: overfitting small buckets, improving MAE while harming rank ordering, and fpts/stat inconsistency. The coarse buckets, zero fallback, correction clamp, and rank-corr gate are the guardrails.
-- Promotion default: keep disabled until the decision run passes. If promoted, bundle `decision_s200` artifacts under the package artifact tree and enable the config by default.
+- Promotion default: enabled after the accepted decision run, with `decision_s200` artifacts bundled under the package artifact tree.

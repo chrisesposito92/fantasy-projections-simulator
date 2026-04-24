@@ -57,8 +57,8 @@ This is the smallest approach that fully fixes the verified trust and comparabil
 - a small helper for external-signal coverage accounting
 - terminal reporting improvements for comparability and coverage
 - updates to:
-  - [`docs/accuracy-roadmap.md`](../../../docs/accuracy-roadmap.md)
-  - [`docs/accuracy-stack-audit.md`](../../../docs/accuracy-stack-audit.md)
+  - [`docs/archive/accuracy-roadmap.md`](../../../docs/archive/accuracy-roadmap.md)
+  - [`docs/archive/accuracy-stack-audit.md`](../../../docs/archive/accuracy-stack-audit.md)
 
 ### Out of scope
 
@@ -258,8 +258,8 @@ Avoid broad simulation regression work unless a validation test needs a narrow f
 - terminal output makes historical coverage gaps explicit
 - old ledger entries remain readable
 - Phase 0 closes with updates to:
-  - [`docs/accuracy-roadmap.md`](../../../docs/accuracy-roadmap.md)
-  - [`docs/accuracy-stack-audit.md`](../../../docs/accuracy-stack-audit.md)
+  - [`docs/archive/accuracy-roadmap.md`](../../../docs/archive/accuracy-roadmap.md)
+  - [`docs/archive/accuracy-stack-audit.md`](../../../docs/archive/accuracy-stack-audit.md)
 
 ## Deliverables
 

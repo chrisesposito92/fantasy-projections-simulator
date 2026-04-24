@@ -30,6 +30,7 @@ from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.projections import build_player_projections, build_dst_projections, build_kicker_projections
+from fantasy_sim.scoring.residual_calibration import ResidualCalibrationProjectionAdjuster
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.output.tables import (
     format_qb_table, format_rb_table, format_wr_table,
@@ -218,6 +219,23 @@ def _make_dynamic_blender(
     )
 
 
+def _make_residual_calibrator(
+    defaults: dict,
+    scoring: str = "ppr",
+) -> ResidualCalibrationProjectionAdjuster | None:
+    """Create the residual calibration adjuster when enabled."""
+    ensemble_config = load_ensemble_config(defaults)
+    if (
+        not ensemble_config.enabled
+        or not ensemble_config.residual_calibration.enabled
+    ):
+        return None
+    return ResidualCalibrationProjectionAdjuster(
+        ensemble_config.residual_calibration,
+        scoring=scoring,
+    )
+
+
 def _maybe_blend_player_projs(
     player_projs: list[dict],
     *,
@@ -225,6 +243,7 @@ def _maybe_blend_player_projs(
     market_history_adjuster: MarketHistoryProjectionAdjuster | None = None,
     ensembler: FfOpportunityProjectionEnsembler | None,
     dynamic_blender: DynamicBlendProjectionBlender | None = None,
+    residual_calibrator: ResidualCalibrationProjectionAdjuster | None = None,
     season: int,
     week: int,
 ) -> list[dict]:
@@ -237,6 +256,7 @@ def _maybe_blend_player_projs(
         market_history_adjuster=market_history_adjuster,
         ensembler=ensembler,
         dynamic_blender=dynamic_blender,
+        residual_calibrator=residual_calibrator,
     )
 
 
@@ -691,6 +711,14 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
             scoring="custom" if scoring_config_path else effective_scoring,
         )
     )
+    residual_calibrator = (
+        None
+        if detail
+        else _make_residual_calibrator(
+            defaults,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
     market_history_adjuster = None if detail else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail else _make_ensembler(defaults)
 
@@ -774,12 +802,13 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                 player_batch = _maybe_blend_player_projs(
                     player_batch,
                     role_trend_adjuster=role_trend_adjuster,
-                    market_history_adjuster=market_history_adjuster,
-                    ensembler=ensembler,
-                    dynamic_blender=dynamic_blender,
-                    season=season,
-                    week=week_num,
-                )
+                        market_history_adjuster=market_history_adjuster,
+                        ensembler=ensembler,
+                        dynamic_blender=dynamic_blender,
+                        residual_calibrator=residual_calibrator,
+                        season=season,
+                        week=week_num,
+                    )
             all_player_projs.extend(player_batch)
 
             all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))
@@ -856,6 +885,14 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
         else _make_dynamic_blender(
             defaults,
             scoring_config,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
+    residual_calibrator = (
+        None
+        if detail
+        else _make_residual_calibrator(
+            defaults,
             scoring="custom" if scoring_config_path else effective_scoring,
         )
     )
@@ -953,6 +990,7 @@ def season(ctx, season_year, weeks, sims, scoring, output_format, output_path, o
                         market_history_adjuster=market_history_adjuster,
                         ensembler=ensembler,
                         dynamic_blender=dynamic_blender,
+                        residual_calibrator=residual_calibrator,
                         season=season_year,
                         week=wk,
                     )
@@ -1075,6 +1113,14 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
             scoring="custom" if scoring_config_path else effective_scoring,
         )
     )
+    residual_calibrator = (
+        None
+        if detail or demo
+        else _make_residual_calibrator(
+            defaults,
+            scoring="custom" if scoring_config_path else effective_scoring,
+        )
+    )
     market_history_adjuster = None if detail or demo else _make_market_history_adjuster(defaults, scoring_config)
     ensembler = None if detail or demo else _make_ensembler(defaults)
 
@@ -1148,6 +1194,7 @@ def game(ctx, home_team, away_team, week_num, season, sims, scoring, scoring_con
             market_history_adjuster=market_history_adjuster,
             ensembler=ensembler,
             dynamic_blender=dynamic_blender,
+            residual_calibrator=residual_calibrator,
             season=season,
             week=week_num,
         )

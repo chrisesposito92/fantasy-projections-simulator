@@ -338,6 +338,16 @@ ensemble:
     min_bucket_weeks: 6
     grid_step: 0.05
     fallback: fixed_defaults
+  residual_calibration:
+    enabled: true
+    artifacts_dir: null
+    positions: [QB, RB, WR, TE]
+    min_bucket_rows: 200
+    min_bucket_weeks: 6
+    shrinkage_prior_rows: 200
+    max_abs_adjustment: 1.5
+    min_training_mae_delta: -0.01
+    fallback: zero
 
 market_history:
   enabled: true
