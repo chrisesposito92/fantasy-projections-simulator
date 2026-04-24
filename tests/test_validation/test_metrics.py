@@ -6,6 +6,7 @@ from fantasy_sim.validation.metrics import (
     mean_absolute_error,
     season_total_mae,
     boom_bust_calibration,
+    ks_distribution_summary,
 )
 
 
@@ -80,3 +81,47 @@ class TestBoomBustCalibration:
         actual = {"P1": 0.20, "P2": 0.40}
         cal = boom_bust_calibration(predicted, actual)
         assert cal == pytest.approx(0.10, abs=0.01)
+
+
+class TestKsDistributionSummary:
+    def test_identical_distributions_have_zero_ks(self):
+        summary = ks_distribution_summary(
+            [10.0, 20.0, 30.0],
+            [10.0, 20.0, 30.0],
+            [10.0, 20.0, 30.0],
+        )
+
+        assert summary["arm_a_ks"] == pytest.approx(0.0)
+        assert summary["arm_b_ks"] == pytest.approx(0.0)
+        assert summary["ks_delta"] == pytest.approx(0.0)
+        assert summary["n"] == 3
+
+    def test_shifted_distribution_tracks_ks_and_mean_deltas(self):
+        summary = ks_distribution_summary(
+            [10.0, 20.0, 30.0, 40.0],
+            [5.0, 10.0, 15.0, 20.0],
+            [10.0, 20.0, 30.0, 40.0],
+        )
+
+        assert summary["arm_a_ks"] == pytest.approx(0.0)
+        assert summary["arm_b_ks"] == pytest.approx(0.5)
+        assert summary["ks_delta"] == pytest.approx(0.5)
+        assert summary["arm_b_mean"] == pytest.approx(12.5)
+        assert summary["actual_mean"] == pytest.approx(25.0)
+        assert summary["mean_delta_b"] == pytest.approx(-12.5)
+        assert summary["n"] == 4
+
+    def test_filters_non_finite_triplets(self):
+        summary = ks_distribution_summary(
+            [1.0, np.nan, 3.0],
+            [1.0, 2.0, 3.0],
+            [1.0, 2.0, np.inf],
+        )
+
+        assert summary["n"] == 1
+        assert summary["arm_a_mean"] == pytest.approx(1.0)
+        assert summary["arm_b_mean"] == pytest.approx(1.0)
+        assert summary["actual_mean"] == pytest.approx(1.0)
+
+    def test_empty_after_filtering_returns_empty_dict(self):
+        assert ks_distribution_summary([np.nan], [1.0], [1.0]) == {}

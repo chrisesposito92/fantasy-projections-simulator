@@ -64,7 +64,7 @@ Pipeline: Data → Models → Engine → Scoring → Output
 4. **Config** (`config/`) — YAML config with `_inherit` scoring preset chains (PPR → half_ppr → standard)
 5. **Scoring** (`scoring/`) — Fantasy point calculation for players/DST/kickers; projection aggregation
 6. **Output** (`output/`) — Rich terminal tables, CSV/JSON export
-7. **Validation** (`validation/`) — A/B backtesting with config resolution (`config.py`), bare baseline caching (`cache.py`), unified ledger (`ledger.py`), Spearman/MAE/boom-bust metrics, hold-out backtesting
+7. **Validation** (`validation/`) — A/B backtesting with config resolution (`config.py`), bare baseline caching (`cache.py`), unified ledger (`ledger.py`), Spearman/MAE/boom-bust/KS distribution metrics, hold-out backtesting
 8. **Overrides** (`overrides/`) — Player/team override engine with share redistribution, fuzzy name matching
 9. **CLI** (`cli.py`) — Click-based with `demo`, `week`, `season`, `game`, `player`, `backtest` commands
 
@@ -177,7 +177,7 @@ All development phases complete through the current Phase 5 accuracy initiative 
 - Phase 2 kept off: `role_trend.enabled=false`
 - Phase 4 kept off: `tracking.enabled=false`
 - Phase 5 slices implemented and kept off: `pff.depth_role.enabled=false`, `pff.depth_role.efficiency.enabled=false`, `pff.rb_scheme_fit.enabled=false`, `pff.qb_split.enabled=false`
-- Weekly + season A/B validation harnesses with persistent ledgers
+- Weekly + season A/B validation harnesses with persistent ledgers and KS distribution diagnostics for compressed/deflated stat outputs
 
 ## Style
 
@@ -206,7 +206,7 @@ Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-
 
 **Fantasy Projections Simulator — Accuracy Initiative**
 
-**Core Value:** Projection accuracy that beats the current promoted defaults and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) — with WR and QB accuracy as highest-priority positions.
+**Core Value:** Projection accuracy that beats the current promoted defaults and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) while preserving realistic stat distributions — with WR and QB accuracy as highest-priority positions.
 
 ### Constraints
 

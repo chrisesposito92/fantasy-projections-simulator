@@ -7,7 +7,7 @@ results/ab_ledger.json file.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from fantasy_sim.validation.coverage import SignalCoverage
@@ -17,7 +17,7 @@ from fantasy_sim.validation.weekly import (
 )
 
 DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[3] / "results" / "ab_ledger.json"
-CURRENT_LEDGER_SCHEMA_VERSION = 3
+CURRENT_LEDGER_SCHEMA_VERSION = 4
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -35,6 +35,8 @@ class SeasonMetrics:
     arm_b_season_mae: float
     arm_a_calibration: float
     arm_b_calibration: float
+    weekly_fpts_ks: dict[str, float | int] = field(default_factory=dict)
+    stat_ks: dict[str, dict[str, dict[str, float | int]]] = field(default_factory=dict)
 
     @property
     def rank_corr_delta(self) -> float:
@@ -102,6 +104,17 @@ class LedgerEntry:
             self.season_results
         )
 
+    @property
+    def avg_weekly_fpts_ks_delta(self) -> float | None:
+        values = [
+            result.weekly_fpts_ks["delta"]
+            for result in self.season_results
+            if isinstance(result.weekly_fpts_ks.get("delta"), (int, float))
+        ]
+        if not values:
+            return None
+        return float(sum(values) / len(values))
+
 
 def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
     """Load ledger entries from JSON. Returns empty list if file doesn't exist."""
@@ -155,7 +168,7 @@ def format_ledger_table(entries: list[LedgerEntry]) -> str:
 
     header = (
         f"{'#':>3}  {'Label':<22}  {'baseline':<9}  {'mode':<11}  "
-        f"{'overrides':<30}  {'rank_corr':>9}  {'wk_mae':>7}  {'szn_mae':>7}"
+        f"{'overrides':<30}  {'rank_corr':>9}  {'wk_mae':>7}  {'szn_mae':>7}  {'fpts_ks':>7}"
     )
     sep = "=" * len(header)
     lines = [sep, header, "-" * len(header)]
@@ -169,9 +182,16 @@ def format_ledger_table(entries: list[LedgerEntry]) -> str:
             f"{i:>3}  {e.label:<22}  {e.baseline:<9}  {mode:<11}  {overrides_str:<30}  "
             f"{e.avg_rank_corr_delta:>+.4f}    "
             f"{e.avg_weekly_mae_delta:>+.3f}  "
-            f"{e.avg_season_mae_delta:>+.3f}"
+            f"{e.avg_season_mae_delta:>+.3f}  "
+            f"{_format_optional_delta(e.avg_weekly_fpts_ks_delta):>7}"
         )
         lines.append(row)
 
     lines.append(sep)
     return "\n".join(lines)
+
+
+def _format_optional_delta(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:+.3f}"

@@ -47,6 +47,22 @@ def _make_entry(label: str = "test-run") -> LedgerEntry:
                 arm_b_season_mae=2.3,
                 arm_a_calibration=0.12,
                 arm_b_calibration=0.10,
+                weekly_fpts_ks={"arm_a": 0.22, "arm_b": 0.18, "delta": -0.04, "n": 100},
+                stat_ks={
+                    "WR": {
+                        "receiving_yards": {
+                            "arm_a_ks": 0.21,
+                            "arm_b_ks": 0.18,
+                            "ks_delta": -0.03,
+                            "arm_a_mean": 40.0,
+                            "arm_b_mean": 38.2,
+                            "actual_mean": 47.9,
+                            "mean_delta_a": -7.9,
+                            "mean_delta_b": -9.7,
+                            "n": 25,
+                        }
+                    }
+                },
             ),
         ],
         weekly_summaries=None,
@@ -62,6 +78,8 @@ def test_ledger_roundtrip(tmp_path):
     assert len(loaded) == 2
     assert loaded[0].label == "run-1"
     assert loaded[1].label == "run-2"
+    assert loaded[0].season_results[0].weekly_fpts_ks["delta"] == -0.04
+    assert loaded[0].season_results[0].stat_ks["WR"]["receiving_yards"]["n"] == 25
 
 
 def test_load_ledger_missing_file(tmp_path):
@@ -84,7 +102,19 @@ def test_load_legacy_ledger_entry_uses_safe_defaults(tmp_path):
                     "baseline": "bare",
                     "overrides": [],
                     "config_snapshot": {},
-                    "season_results": [],
+                    "season_results": [
+                        {
+                            "test_season": 2024,
+                            "arm_a_rank_corr": {"QB": 0.40},
+                            "arm_b_rank_corr": {"QB": 0.42},
+                            "arm_a_weekly_mae": 7.0,
+                            "arm_b_weekly_mae": 6.8,
+                            "arm_a_season_mae": 2.5,
+                            "arm_b_season_mae": 2.3,
+                            "arm_a_calibration": 0.12,
+                            "arm_b_calibration": 0.10,
+                        }
+                    ],
                 }
             ]
         )
@@ -95,6 +125,8 @@ def test_load_legacy_ledger_entry_uses_safe_defaults(tmp_path):
     assert entry.comparison_mode is None
     assert entry.seed_mode is None
     assert entry.coverage_summary is None
+    assert entry.season_results[0].weekly_fpts_ks == {}
+    assert entry.season_results[0].stat_ks == {}
 
 
 def test_format_ledger_table_renders_legacy_for_old_entries(tmp_path):
@@ -121,6 +153,7 @@ def test_format_ledger_table_renders_legacy_for_old_entries(tmp_path):
     table = format_ledger_table(load_ledger(path))
     assert "legacy-run" in table
     assert "legacy" in table
+    assert "n/a" in table
 
 
 def test_season_metrics_rank_corr_delta():
@@ -152,6 +185,8 @@ def test_format_ledger_table_with_entries():
     assert "bare" in table
     assert "total_lift" in table
     assert "usage.ngs.enabled=true" in table
+    assert "fpts_ks" in table
+    assert "-0.040" in table
 
 
 def test_ledger_roundtrip_preserves_promotion_evidence_scope(tmp_path):

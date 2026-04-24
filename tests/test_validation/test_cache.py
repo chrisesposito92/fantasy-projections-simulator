@@ -47,3 +47,39 @@ def test_cache_roundtrip_preserves_week_int_keys(tmp_path):
     assert 10 in loaded["projections"]["p1"]
     assert 18 in loaded["projections"]["p1"]
     assert isinstance(list(loaded["projections"]["p1"].keys())[0], int)
+
+
+def test_cache_roundtrip_preserves_projection_rows(tmp_path):
+    projections = {"p1": {1: 15.2}}
+    projection_rows = {
+        "p1": {
+            1: {
+                "player_id": "p1",
+                "fpts": 15.2,
+                "position": "WR",
+                "receiving_yards": 72.5,
+            }
+        }
+    }
+    meta = {"p1": {"position": "WR", "team": "KC", "name": "WR1"}}
+    p = tmp_path / "test_cache.json"
+
+    save_cache(p, projections, meta, projection_rows=projection_rows)
+    loaded = load_cache(p)
+
+    assert loaded is not None
+    assert loaded["projection_rows"]["p1"][1]["receiving_yards"] == 72.5
+    assert isinstance(list(loaded["projection_rows"]["p1"].keys())[0], int)
+
+
+def test_legacy_cache_without_projection_rows_still_loads(tmp_path):
+    projections = {"p1": {1: 15.2}}
+    meta = {"p1": {"position": "WR", "team": "KC", "name": "WR1"}}
+    p = tmp_path / "legacy_cache.json"
+
+    save_cache(p, projections, meta)
+    loaded = load_cache(p)
+
+    assert loaded is not None
+    assert loaded["projections"]["p1"][1] == 15.2
+    assert "projection_rows" not in loaded

@@ -59,7 +59,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - GameContextBuilder: bridges real nflverse data to the simulation engine
 - New CLI commands: `fantasy-sim week 1 --season 2024` and `fantasy-sim season --season 2024`
 - Actual results loader: scores real player stats with config for backtest comparisons
-- Accuracy metrics: Spearman rank correlation, MAE (weekly + season total), boom/bust calibration
+- Accuracy metrics: Spearman rank correlation, MAE (weekly + season total), boom/bust calibration, and KS distribution diagnostics
 - Backtesting framework: hold-out validation using only prior-season data (no leakage)
 - Validation report with pass/fail indicators per metric against spec targets
 - CLI: `fantasy-sim backtest --season 2024` runs full historical validation
@@ -118,6 +118,7 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - Prints comparison metadata, seed mode, and signal coverage in the run header
 - Writes new labeled runs to `results/ab_ledger.json`
 - Includes weekly outputs such as per-position weekly rank correlation, weekly MAE, MAE by difficulty tercile, and WR directional accuracy
+- Tracks weekly fantasy-points KS and major position/stat KS to catch compressed or deflated stat distributions that rank correlation and MAE can miss
 - Older weekly-only artifacts are preserved as historical references, but they are no longer the canonical validation path
 
 **Promoted Post-Sim Accuracy Stack** — Complete
@@ -205,7 +206,7 @@ src/fantasy_sim/
 │   └── parser.py           # OverrideSet, parse_override_config(), parse_cli_override()
 ├── cli.py                  # Click CLI entry point (demo, week, season, game, player, backtest)
 └── validation/
-    ├── metrics.py          # Spearman correlation, MAE, boom/bust calibration
+    ├── metrics.py          # Spearman correlation, MAE, calibration, KS diagnostics
     ├── backtester.py       # Hold-out backtest runner (no data leakage)
     ├── weekly.py           # Per-week validation metrics (rank_corr, MAE, directional accuracy)
     └── report.py           # Rich-formatted validation report
