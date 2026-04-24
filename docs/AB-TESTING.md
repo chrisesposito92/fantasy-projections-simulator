@@ -115,6 +115,9 @@ When `--baseline defaults`, both arms are full feature-rich builds, so those run
 - **weekly_mae**: Mean absolute error of weekly projections
 - **season_mae**: Mean absolute error of season totals
 - **calibration**: Boom/bust prediction accuracy
+- **distribution KS**: Kolmogorov-Smirnov distance between projected and actual weekly distributions. Lower is better; negative delta means Arm B is closer to actuals.
+
+Distribution KS is a shape metric, not an error-size metric. It catches cases where rank correlation and MAE look acceptable while the simulated stat distribution is compressed or deflated, such as WR receiving yards clustering below actual weekly outcomes. The validation output prints aggregate weekly fantasy-points KS plus a concise set of high-signal position/stat rows with projected and actual means.
 
 ### Weekly
 
@@ -183,5 +186,7 @@ New rows can now carry:
 - `comparison_mode`
 - `seed_mode`
 - `coverage_summary`
+- `weekly_fpts_ks`
+- `stat_ks`
 
 Older ledgers such as `results/pff_ab_ledger.json` and `results/weekly_ab_ledger.json` are preserved as historical references only. They are not the primary source of truth for the current validation path.

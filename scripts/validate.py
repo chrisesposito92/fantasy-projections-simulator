@@ -50,7 +50,11 @@ from fantasy_sim.validation.ledger import (
     load_ledger,
     save_ledger,
 )
-from fantasy_sim.validation.metrics import boom_bust_calibration, spearman_rank_correlation
+from fantasy_sim.validation.metrics import (
+    boom_bust_calibration,
+    ks_distribution_summary,
+    spearman_rank_correlation,
+)
 from fantasy_sim.validation.parallel import (
     GameSpec,
     build_games_parallel,
@@ -82,6 +86,169 @@ POSITION_MATCHUP_FACTORS: dict[str, tuple[str, ...]] = {
     "WR": ("catch_rate_factor", "pass_yards_factor"),
     "TE": ("catch_rate_factor", "pass_yards_factor"),
 }
+
+STAT_KS_BY_POSITION: dict[str, tuple[str, ...]] = {
+    "QB": (
+        "pass_yards",
+        "pass_tds",
+        "interceptions",
+        "rush_yards",
+        "rush_tds",
+        "fumbles_lost",
+    ),
+    "RB": (
+        "rush_yards",
+        "rush_tds",
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "fumbles_lost",
+    ),
+    "WR": (
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "rush_yards",
+        "rush_tds",
+        "fumbles_lost",
+    ),
+    "TE": (
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "fumbles_lost",
+    ),
+}
+
+STAT_KS_DISPLAY_ROWS: tuple[tuple[str, str], ...] = (
+    ("QB", "pass_yards"),
+    ("QB", "rush_yards"),
+    ("RB", "rush_yards"),
+    ("RB", "receiving_yards"),
+    ("WR", "receptions"),
+    ("WR", "receiving_yards"),
+    ("TE", "receptions"),
+    ("TE", "receiving_yards"),
+)
+
+
+def _numeric_value(value: object) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(result):
+        return None
+    return result
+
+
+def _store_projection_row(
+    proj: Mapping[str, object],
+    week: int,
+    proj_by_pw: dict[str, dict[int, float]],
+    rows_by_pw: dict[str, dict[int, dict]],
+    meta_by_pid: dict[str, dict],
+    actual_pos: Mapping[str, str],
+    actual_team: Mapping[str, str],
+    actual_name: Mapping[str, str],
+) -> None:
+    pid = str(proj["player_id"])
+    fpts = _numeric_value(proj.get("fpts"))
+    if fpts is None:
+        raise ValueError(
+            f"Invalid projection fpts for player_id={pid!r} week={week}: "
+            f"{proj.get('fpts')!r}"
+        )
+    row = dict(proj)
+    row["fpts"] = fpts
+    proj_by_pw[pid][week] = fpts
+    rows_by_pw[pid][week] = row
+    if pid not in meta_by_pid:
+        meta_by_pid[pid] = {
+            "position": row.get("position", actual_pos.get(pid, "")),
+            "team": row.get("team", actual_team.get(pid, "")),
+            "name": row.get("name", actual_name.get(pid, "")),
+        }
+
+
+def _plain_nested_dict(mapping: Mapping[str, Mapping[int, object]]) -> dict:
+    return {pid: dict(weeks) for pid, weeks in mapping.items()}
+
+
+def _compute_distribution_ks(
+    arm_a_rows: Mapping[str, Mapping[int, Mapping[str, object]]],
+    arm_b_rows: Mapping[str, Mapping[int, Mapping[str, object]]],
+    actual_by_pw: Mapping[str, Mapping[int, object]],
+    actual_pos: Mapping[str, str],
+    positions: list[str],
+) -> tuple[dict[str, float | int], dict[str, dict[str, dict[str, float | int]]]]:
+    positions_set = set(positions)
+    fpts_a: list[float] = []
+    fpts_b: list[float] = []
+    fpts_actual: list[float] = []
+    stat_samples: dict[str, dict[str, dict[str, list[float]]]] = {
+        pos: {
+            stat: {"a": [], "b": [], "actual": []}
+            for stat in STAT_KS_BY_POSITION.get(pos, ())
+        }
+        for pos in POSITIONS
+    }
+
+    for pid in set(arm_a_rows) & set(arm_b_rows):
+        pos = actual_pos.get(pid, "")
+        if pos not in positions_set:
+            continue
+        for week in set(arm_a_rows[pid]) & set(arm_b_rows[pid]):
+            actual = actual_by_pw.get(pid, {}).get(week)
+            if actual is None:
+                continue
+            arm_a_row = arm_a_rows[pid][week]
+            arm_b_row = arm_b_rows[pid][week]
+            a_fpts = _numeric_value(arm_a_row.get("fpts"))
+            b_fpts = _numeric_value(arm_b_row.get("fpts"))
+            actual_fpts = _numeric_value(getattr(actual, "fpts", None))
+            if a_fpts is not None and b_fpts is not None and actual_fpts is not None:
+                fpts_a.append(a_fpts)
+                fpts_b.append(b_fpts)
+                fpts_actual.append(actual_fpts)
+
+            for stat in STAT_KS_BY_POSITION.get(pos, ()):
+                if stat not in arm_a_row or stat not in arm_b_row or not hasattr(actual, stat):
+                    continue
+                a_value = _numeric_value(arm_a_row.get(stat))
+                b_value = _numeric_value(arm_b_row.get(stat))
+                actual_value = _numeric_value(getattr(actual, stat))
+                if a_value is None or b_value is None or actual_value is None:
+                    continue
+                samples = stat_samples[pos][stat]
+                samples["a"].append(a_value)
+                samples["b"].append(b_value)
+                samples["actual"].append(actual_value)
+
+    fpts_summary = ks_distribution_summary(fpts_a, fpts_b, fpts_actual)
+    weekly_fpts_ks = (
+        {
+            "arm_a_ks": fpts_summary["arm_a_ks"],
+            "arm_b_ks": fpts_summary["arm_b_ks"],
+            "ks_delta": fpts_summary["ks_delta"],
+            "n": fpts_summary["n"],
+        }
+        if fpts_summary
+        else {}
+    )
+
+    stat_ks: dict[str, dict[str, dict[str, float | int]]] = {}
+    for pos, stat_map in stat_samples.items():
+        for stat, samples in stat_map.items():
+            summary = ks_distribution_summary(
+                samples["a"],
+                samples["b"],
+                samples["actual"],
+            )
+            if not summary:
+                continue
+            stat_ks.setdefault(pos, {})[stat] = summary
+    return weekly_fpts_ks, stat_ks
 
 
 def _filter_matchup_factors(position: str, ctx: object) -> dict[str, float]:
@@ -312,11 +479,13 @@ def run_season(
 
     # Index actuals
     actual_by_pw: dict[str, dict[int, float]] = defaultdict(dict)
+    actual_row_by_pw: dict[str, dict[int, object]] = defaultdict(dict)
     actual_pos: dict[str, str] = {}
     actual_team: dict[str, str] = {}
     actual_name: dict[str, str] = {}
     for a in actuals:
         actual_by_pw[a.player_id][a.week] = a.fpts
+        actual_row_by_pw[a.player_id][a.week] = a
         actual_pos[a.player_id] = a.position
         actual_team[a.player_id] = a.team
         actual_name[a.player_id] = a.name
@@ -339,6 +508,7 @@ def run_season(
 
     # --- Build + simulate ---
     arm_a_proj: dict[str, dict[int, float]] = {}
+    arm_a_rows: dict[str, dict[int, dict]] = {}
     arm_a_meta: dict[str, dict] = {}
     specs_b: list[GameSpec] = []
     # matchup_data: (team, week) -> {matchup_ctx, coverage} — populated by dual-arm builds only
@@ -347,6 +517,7 @@ def run_season(
     if cached_arm_a is not None:
         # Arm A from cache -- only build and simulate Arm B
         arm_a_proj = cached_arm_a["projections"]
+        arm_a_rows = cached_arm_a.get("projection_rows", {})
         arm_a_meta = cached_arm_a["player_meta"]
         print(f"  [{test_season}] Arm A loaded from cache", flush=True)
 
@@ -373,6 +544,7 @@ def run_season(
 
         # Index Arm B projections
         arm_b_proj: dict[str, dict[int, float]] = defaultdict(dict)
+        arm_b_rows: dict[str, dict[int, dict]] = defaultdict(dict)
         arm_b_meta: dict[str, dict] = {}
         spec_by_id_b = {s.game_id: s for s in specs_b}
         for result in sim_b:
@@ -388,14 +560,16 @@ def run_season(
                 residual_calibrator=arm_b_residual_calibrator,
             )
             for proj in projections:
-                pid = proj["player_id"]
-                arm_b_proj[pid][spec.week] = proj["fpts"]
-                if pid not in arm_b_meta:
-                    arm_b_meta[pid] = {
-                        "position": proj.get("position", actual_pos.get(pid, "")),
-                        "team": proj.get("team", actual_team.get(pid, "")),
-                        "name": proj.get("name", actual_name.get(pid, "")),
-                    }
+                _store_projection_row(
+                    proj,
+                    spec.week,
+                    arm_b_proj,
+                    arm_b_rows,
+                    arm_b_meta,
+                    actual_pos,
+                    actual_team,
+                    actual_name,
+                )
 
     else:
         # No cache -- determine build strategy
@@ -496,6 +670,8 @@ def run_season(
         # Split results by arm
         arm_a_proj = defaultdict(dict)
         arm_b_proj = defaultdict(dict)
+        arm_a_rows = defaultdict(dict)
+        arm_b_rows = defaultdict(dict)
         arm_a_meta = {}
         arm_b_meta = {}
 
@@ -527,16 +703,19 @@ def run_season(
                 residual_calibrator=residual_calibrator,
             )
             proj_dict = arm_a_proj if is_arm_a else arm_b_proj
+            row_dict = arm_a_rows if is_arm_a else arm_b_rows
             meta_dict = arm_a_meta if is_arm_a else arm_b_meta
             for proj in projections:
-                pid = proj["player_id"]
-                proj_dict[pid][spec.week] = proj["fpts"]
-                if pid not in meta_dict:
-                    meta_dict[pid] = {
-                        "position": proj.get("position", actual_pos.get(pid, "")),
-                        "team": proj.get("team", actual_team.get(pid, "")),
-                        "name": proj.get("name", actual_name.get(pid, "")),
-                    }
+                _store_projection_row(
+                    proj,
+                    spec.week,
+                    proj_dict,
+                    row_dict,
+                    meta_dict,
+                    actual_pos,
+                    actual_team,
+                    actual_name,
+                )
 
     if arm_b_configs.get("game_script_config") is not None:
         profiles = collect_game_script_profiles(specs_b)
@@ -585,6 +764,13 @@ def run_season(
 
     a_wm, a_sm, a_rc, a_cal = _compute_arm_metrics(dict(arm_a_proj))
     b_wm, b_sm, b_rc, b_cal = _compute_arm_metrics(dict(arm_b_proj))
+    weekly_fpts_ks, stat_ks = _compute_distribution_ks(
+        arm_a_rows,
+        arm_b_rows,
+        actual_row_by_pw,
+        actual_pos,
+        positions,
+    )
 
     season_metrics = SeasonMetrics(
         test_season=test_season,
@@ -592,6 +778,8 @@ def run_season(
         arm_a_weekly_mae=a_wm, arm_b_weekly_mae=b_wm,
         arm_a_season_mae=a_sm, arm_b_season_mae=b_sm,
         arm_a_calibration=a_cal, arm_b_calibration=b_cal,
+        weekly_fpts_ks=weekly_fpts_ks,
+        stat_ks=stat_ks,
     )
 
     # --- Compute weekly records ---
@@ -627,7 +815,8 @@ def run_season(
     return {
         "season_metrics": season_metrics,
         "weekly_records": weekly_records,
-        "arm_a_projections": dict(arm_a_proj) if cached_arm_a is None else None,
+        "arm_a_projections": _plain_nested_dict(arm_a_proj) if cached_arm_a is None else None,
+        "arm_a_projection_rows": _plain_nested_dict(arm_a_rows) if cached_arm_a is None else None,
         "arm_a_meta": arm_a_meta if cached_arm_a is None else None,
     }
 
@@ -703,6 +892,38 @@ def print_season_results(season_results: list[SeasonMetrics]) -> None:
         print(f"    rank_corr delta:  {avg_rc:+.4f}")
         print(f"    weekly_mae delta: {avg_wm:+.3f}")
         print(f"    season_mae delta: {avg_sm:+.3f}")
+
+
+def print_distribution_ks_results(season_results: list[SeasonMetrics]) -> None:
+    print("\n" + "=" * 68)
+    print("  DISTRIBUTION KS")
+    print("=" * 68)
+
+    for sm in season_results:
+        print(f"\n  Season {sm.test_season}:")
+        fpts = sm.weekly_fpts_ks
+        if fpts:
+            print(
+                "    fpts KS "
+                f"{float(fpts['arm_a_ks']):.2f} -> {float(fpts['arm_b_ks']):.2f} "
+                f"({float(fpts['ks_delta']):+.2f}), n={int(fpts['n'])}"
+            )
+        else:
+            print("    fpts KS n/a")
+
+        for pos, stat in STAT_KS_DISPLAY_ROWS:
+            row = sm.stat_ks.get(pos, {}).get(stat)
+            if not row:
+                continue
+            print(
+                f"    {pos} {stat} KS "
+                f"{float(row['arm_a_ks']):.2f} -> {float(row['arm_b_ks']):.2f} "
+                f"({float(row['ks_delta']):+.2f}), "
+                f"mean proj B {float(row['arm_b_mean']):.1f} "
+                f"vs actual {float(row['actual_mean']):.1f} "
+                f"({float(row['mean_delta_b']):+.1f}), "
+                f"n={int(row['n'])}"
+            )
 
 
 def print_market_history_results(
@@ -865,6 +1086,8 @@ def main() -> int:
         if args.baseline == "bare" and not args.no_cache:
             cp = cache_path(season, args.sims, args.scoring, args.training_years)
             cached = load_cache(cp)
+            if cached is not None and "projection_rows" not in cached:
+                cached = None
             cache_status[season] = cached is not None
             cached_results[season] = cached
         else:
@@ -893,7 +1116,7 @@ def main() -> int:
     total_start = time.time()
     all_season_metrics: list[SeasonMetrics] = []
     all_weekly_records: list[WeeklyPlayerRecord] = []
-    cache_to_save: list[tuple[int, dict, dict]] = []  # (season, projections, meta)
+    cache_to_save: list[tuple[int, dict, dict, dict | None]] = []
 
     if len(args.seasons) > 1:
         from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -926,7 +1149,10 @@ def main() -> int:
                     all_weekly_records.extend(result["weekly_records"])
                 if result["arm_a_projections"] is not None:
                     cache_to_save.append((
-                        season, result["arm_a_projections"], result["arm_a_meta"],
+                        season,
+                        result["arm_a_projections"],
+                        result["arm_a_meta"],
+                        result.get("arm_a_projection_rows"),
                     ))
                 print(f"  Season {season} complete.")
     else:
@@ -950,7 +1176,10 @@ def main() -> int:
                 all_weekly_records.extend(result["weekly_records"])
             if result["arm_a_projections"] is not None:
                 cache_to_save.append((
-                    season, result["arm_a_projections"], result["arm_a_meta"],
+                    season,
+                    result["arm_a_projections"],
+                    result["arm_a_meta"],
+                    result.get("arm_a_projection_rows"),
                 ))
 
     # Sort season results
@@ -961,6 +1190,7 @@ def main() -> int:
 
     # Print results
     print_season_results(all_season_metrics)
+    print_distribution_ks_results(all_season_metrics)
     print_market_history_results(all_season_metrics, coverage_summary)
 
     weekly_summaries: list[WeeklyPositionSummary] | None = None
@@ -974,9 +1204,9 @@ def main() -> int:
 
     # Save cache
     if args.baseline == "bare" and not args.no_cache:
-        for season, proj, meta in cache_to_save:
+        for season, proj, meta, projection_rows in cache_to_save:
             cp = cache_path(season, args.sims, args.scoring, args.training_years)
-            save_cache(cp, proj, meta)
+            save_cache(cp, proj, meta, projection_rows=projection_rows)
             print(f"  Cached bare baseline for {season}")
 
     # Save to ledger

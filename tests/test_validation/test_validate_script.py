@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import polars as pl
+import pytest
 
 from fantasy_sim.validation.coverage import SignalCoverage
 
@@ -836,6 +837,149 @@ def test_print_header_renders_phase_two_coverage_families():
     assert "partial" in printed
     assert "none" in printed
     assert "coverage notes" in printed
+
+
+def test_run_season_computes_distribution_ks_from_matched_rows():
+    validate = _load_validate_module()
+
+    build_results = [{
+        "status": "ok",
+        "game_id": "2024_01_KC_BUF",
+        "seed": 7,
+        "week": 1,
+        "home": "KC",
+        "away": "BUF",
+        "results": {
+            "off": (object(), object(), object(), object()),
+            "on": (object(), object(), object(), object()),
+        },
+    }]
+    arm_a_projection = {
+        "player_id": "player-1",
+        "fpts": 10.0,
+        "position": "QB",
+        "team": "KC",
+        "name": "Patrick Example",
+        "pass_yards": 240.0,
+        "rush_yards": 12.0,
+    }
+    arm_b_projection = {
+        "player_id": "player-1",
+        "fpts": 14.0,
+        "position": "QB",
+        "team": "KC",
+        "name": "Patrick Example",
+        "pass_yards": 300.0,
+        "rush_yards": 18.0,
+    }
+    actual = SimpleNamespace(
+        player_id="player-1",
+        week=1,
+        fpts=14.0,
+        position="QB",
+        team="KC",
+        name="Patrick Example",
+        pass_yards=300.0,
+        rush_yards=18.0,
+    )
+
+    with patch.object(validate, "build_games_parallel", return_value=build_results), \
+         patch.object(
+             validate,
+             "simulate_games_parallel",
+             return_value=[
+                 SimpleNamespace(
+                     game_id="2024_01_KC_BUF",
+                     metadata={"arm": "a"},
+                     projections=[arm_a_projection],
+                 ),
+                 SimpleNamespace(
+                     game_id="2024_01_KC_BUF",
+                     metadata={"arm": "b"},
+                     projections=[arm_b_projection],
+                 ),
+             ],
+         ), \
+         patch.object(validate, "load_actual_scores", return_value=[actual]), \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        result = validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs={
+                "pff_config": None,
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "tracking_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            arm_b_configs={
+                "pff_config": None,
+                "weather_config": None,
+                "vegas_config": None,
+                "props_config": None,
+                "usage_config": None,
+                "tracking_config": None,
+                "game_script_config": None,
+                "goal_line_concentration_config": None,
+                "td_tendency_config": None,
+            },
+            positions=["QB"],
+            max_workers=1,
+        )
+
+    season_metrics = result["season_metrics"]
+    assert season_metrics.weekly_fpts_ks["arm_a_ks"] == 1.0
+    assert season_metrics.weekly_fpts_ks["arm_b_ks"] == 0.0
+    assert season_metrics.weekly_fpts_ks["ks_delta"] == -1.0
+    assert season_metrics.weekly_fpts_ks["n"] == 1
+    assert season_metrics.stat_ks["QB"]["pass_yards"]["arm_a_ks"] == 1.0
+    assert season_metrics.stat_ks["QB"]["pass_yards"]["arm_b_mean"] == 300.0
+    assert season_metrics.stat_ks["QB"]["pass_yards"]["mean_delta_b"] == 0.0
+    assert result["arm_a_projection_rows"]["player-1"][1]["pass_yards"] == 240.0
+
+
+def test_store_projection_row_rejects_invalid_fpts():
+    validate = _load_validate_module()
+    projection = {
+        "player_id": "player-1",
+        "fpts": float("nan"),
+        "position": "QB",
+        "team": "KC",
+        "name": "Patrick Example",
+    }
+
+    with pytest.raises(ValueError, match="Invalid projection fpts"):
+        validate._store_projection_row(
+            projection,
+            1,
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+        )
 
 
 def test_run_season_blends_arm_b_with_ensemble_when_enabled():
