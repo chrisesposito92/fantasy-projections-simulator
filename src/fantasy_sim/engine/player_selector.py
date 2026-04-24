@@ -6,13 +6,8 @@ game-state awareness (e.g., red zone detection, week-based availability).
 
 import numpy as np
 from fantasy_sim.engine.game_script import RuntimeGameScript
-from fantasy_sim.engine.types import GameState
+from fantasy_sim.engine.types import GameState, TargetSelectionContextProtocol
 from fantasy_sim.models.player import PlayerModel, TeamRoster
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from fantasy_sim.data.target_selection import TargetSelectionContext
 
 
 def _filter_available(roster: TeamRoster, state: GameState) -> TeamRoster:
@@ -70,7 +65,7 @@ def select_receiver(
     rng: np.random.Generator,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
-    target_selection_context: "TargetSelectionContext | None" = None,
+    target_selection_context: TargetSelectionContextProtocol | None = None,
 ) -> PlayerModel:
     """Select a receiver weighted by target share, filtering out missed-week players."""
     eligible, weights = receiver_candidates_and_legacy_weights(

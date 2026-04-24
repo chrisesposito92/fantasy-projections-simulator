@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults
+from fantasy_sim.data.target_selection.models import (
+    TARGET_SELECTION_MODEL_TYPE,
+    TARGET_SELECTION_SCHEMA_VERSION,
+)
 from fantasy_sim.validation.config import build_engine_configs
 import fantasy_sim.validation.coverage as coverage_module
 from fantasy_sim.validation.coverage import (
@@ -26,6 +31,27 @@ def _write_parquet(path: Path, data: dict[str, list[object]]) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     pl.DataFrame(data).write_parquet(path)
+
+
+def _write_target_selection_artifact(
+    path: Path,
+    *,
+    schema_version: int = TARGET_SELECTION_SCHEMA_VERSION,
+    model_type: str = TARGET_SELECTION_MODEL_TYPE,
+    coefficients: dict[str, object] | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": schema_version,
+                "model_type": model_type,
+                "target_season": 2024,
+                "feature_names": ["is_te"],
+                "coefficients": coefficients if coefficients is not None else {"is_te": 1.0},
+            }
+        )
+    )
 
 
 def _base_config(
@@ -2027,7 +2053,7 @@ def test_disabled_signals_report_disabled_explicitly():
 
 
 def test_target_selection_reports_artifact_coverage(tmp_path):
-    (tmp_path / "target_selection_2024.json").write_text("{}")
+    _write_target_selection_artifact(tmp_path / "target_selection_2024.json")
 
     coverage = collect_signal_coverage(
         {
@@ -2044,6 +2070,35 @@ def test_target_selection_reports_artifact_coverage(tmp_path):
         status="partial",
         covered_seasons=[2024],
         missing_seasons=[2023],
+        note=(
+            "Requires target_selection_<season>.json artifacts fitted from "
+            "prior-season PBP target labels; runtime falls back to legacy "
+            "selection when an artifact is missing or invalid"
+        ),
+    )
+
+
+def test_target_selection_ignores_invalid_artifact_coverage(tmp_path):
+    _write_target_selection_artifact(
+        tmp_path / "target_selection_2024.json",
+        coefficients={"is_te": None},
+    )
+
+    coverage = collect_signal_coverage(
+        {
+            "target_selection": {
+                "enabled": True,
+                "artifacts_dir": str(tmp_path),
+            }
+        },
+        [2024],
+    )
+
+    assert coverage["target_selection"] == SignalCoverage(
+        enabled=True,
+        status="none",
+        covered_seasons=[],
+        missing_seasons=[2024],
         note=(
             "Requires target_selection_<season>.json artifacts fitted from "
             "prior-season PBP target labels; runtime falls back to legacy "

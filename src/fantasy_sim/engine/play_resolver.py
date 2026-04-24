@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from fantasy_sim.engine.types import GameState, PlayResult
+from fantasy_sim.engine.types import GameState, PlayResult, TargetSelectionContextProtocol
 from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates, PenaltyRates
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 
@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fantasy_sim.engine.game_script import RuntimeGameScript
     from fantasy_sim.models.player import TeamRoster
-    from fantasy_sim.data.target_selection import TargetSelectionContext
 
 # Average clock runoff in seconds — calibrated for ~65 plays/team/game
 CLOCK_RUN = 35
@@ -105,7 +104,7 @@ def resolve_play(
     pace_factor: float = 1.0,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
-    target_selection_context: "TargetSelectionContext | None" = None,
+    target_selection_context: TargetSelectionContextProtocol | None = None,
 ) -> PlayResult:
     if play_type == "pass":
         return _resolve_pass(
@@ -145,7 +144,7 @@ def _resolve_pass(
     pace_factor: float = 1.0,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
-    target_selection_context: "TargetSelectionContext | None" = None,
+    target_selection_context: TargetSelectionContextProtocol | None = None,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
     from fantasy_sim.engine.player_selector import select_passer, select_receiver

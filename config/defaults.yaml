@@ -294,7 +294,6 @@ target_selection:
   positions: [RB, WR, TE, FB]
   probability_floor: 0.001
   max_logit_delta: 3.0
-  fallback: legacy
 
 tracking:
   enabled: false

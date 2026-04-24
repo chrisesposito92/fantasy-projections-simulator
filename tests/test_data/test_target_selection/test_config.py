@@ -18,7 +18,6 @@ def test_loads_enabled_config_values():
                 "positions": ["WR", "TE"],
                 "probability_floor": 0.002,
                 "max_logit_delta": 2.5,
-                "fallback": "legacy",
             }
         }
     )
@@ -28,7 +27,6 @@ def test_loads_enabled_config_values():
     assert config.positions == ("WR", "TE")
     assert config.probability_floor == 0.002
     assert config.max_logit_delta == 2.5
-    assert config.fallback == "legacy"
 
 
 def test_invalid_position_raises():
@@ -39,7 +37,7 @@ def test_invalid_position_raises():
 
 
 def test_invalid_fallback_raises():
-    with pytest.raises(ValueError, match="target_selection\\.fallback"):
+    with pytest.raises(ValueError, match="fallback is not supported"):
         load_target_selection_config(
-            {"target_selection": {"enabled": True, "fallback": "uniform"}}
+            {"target_selection": {"enabled": True, "fallback": "legacy"}}
         )

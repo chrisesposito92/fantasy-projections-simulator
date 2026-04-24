@@ -95,16 +95,20 @@ def _state_from_row(row: dict) -> GameState | None:
             home_score = 0
             away_score = score_diff
 
-        quarter = int(row.get("qtr") or row.get("quarter") or 1)
+        quarter = max(1, min(5, int(row.get("qtr") or row.get("quarter") or 1)))
         if "quarter_seconds_remaining" in row and row["quarter_seconds_remaining"] is not None:
             clock = int(row["quarter_seconds_remaining"])
         elif "game_seconds_remaining" in row and row["game_seconds_remaining"] is not None:
-            clock = int(row["game_seconds_remaining"]) % 900
+            game_seconds_remaining = int(row["game_seconds_remaining"])
+            if quarter <= 4:
+                clock = game_seconds_remaining - ((4 - quarter) * 900)
+            else:
+                clock = game_seconds_remaining
         else:
             clock = 900
 
         return GameState(
-            quarter=max(1, min(5, quarter)),
+            quarter=quarter,
             clock=max(0, min(900, clock)),
             possession=possession,
             down=max(1, min(4, int(row.get("down") or 1))),

@@ -5,7 +5,6 @@ from __future__ import annotations
 from fantasy_sim.data.target_selection.models import TargetSelectionConfig
 
 _VALID_POSITIONS = {"RB", "WR", "TE", "FB"}
-_VALID_FALLBACKS = {"legacy"}
 
 
 def load_target_selection_config(defaults: dict) -> TargetSelectionConfig:
@@ -22,11 +21,10 @@ def load_target_selection_config(defaults: dict) -> TargetSelectionConfig:
             f"{invalid_positions}; allowed={sorted(_VALID_POSITIONS)}"
         )
 
-    fallback = str(raw.get("fallback", "legacy"))
-    if fallback not in _VALID_FALLBACKS:
+    if "fallback" in raw:
         raise ValueError(
-            "Invalid target_selection.fallback config: "
-            f"{fallback!r}; allowed={sorted(_VALID_FALLBACKS)}"
+            "target_selection.fallback is not supported; invalid artifacts "
+            "always fall back to legacy receiver selection"
         )
 
     return TargetSelectionConfig(
@@ -35,5 +33,4 @@ def load_target_selection_config(defaults: dict) -> TargetSelectionConfig:
         positions=positions,
         probability_floor=float(raw.get("probability_floor", 0.001)),
         max_logit_delta=float(raw.get("max_logit_delta", 3.0)),
-        fallback=fallback,
     )

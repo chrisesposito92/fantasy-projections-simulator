@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import logging
 from collections.abc import Iterable, Mapping
@@ -10,7 +11,11 @@ from pathlib import Path
 
 import polars as pl
 
-from fantasy_sim.data.target_selection.models import DEFAULT_ARTIFACT_DIR
+from fantasy_sim.data.target_selection.models import (
+    DEFAULT_ARTIFACT_DIR,
+    TARGET_SELECTION_MODEL_TYPE,
+    TARGET_SELECTION_SCHEMA_VERSION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +299,50 @@ def _covered_seasons_from_required_paths(
         if paths and all(path.exists() for path in paths):
             covered.append(season)
     return covered
+
+
+def _target_selection_artifact_is_valid(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(artifact, Mapping):
+        return False
+    if artifact.get("schema_version") != TARGET_SELECTION_SCHEMA_VERSION:
+        return False
+    if artifact.get("model_type") != TARGET_SELECTION_MODEL_TYPE:
+        return False
+    feature_names = artifact.get("feature_names")
+    coefficients = artifact.get("coefficients")
+    if not isinstance(feature_names, (list, tuple)) or not feature_names:
+        return False
+    try:
+        if isinstance(coefficients, list):
+            parsed = [
+                float(value)
+                for _, value in zip(feature_names, coefficients, strict=False)
+            ]
+        elif isinstance(coefficients, Mapping):
+            parsed = [float(value) for value in coefficients.values()]
+        else:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return bool(parsed)
+
+
+def _covered_seasons_from_target_selection_artifacts(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Path],
+) -> list[int]:
+    return [
+        season
+        for season in test_seasons
+        if (path := paths_by_season.get(season)) is not None
+        and _target_selection_artifact_is_valid(path)
+    ]
 
 
 def _covered_seasons_from_required_parquet_columns(
@@ -1232,7 +1281,10 @@ def collect_signal_coverage(
         "target_selection": _build_signal(
             target_selection_enabled,
             seasons,
-            _covered_seasons_from_any_paths(seasons, target_selection_artifact_paths),
+            _covered_seasons_from_target_selection_artifacts(
+                seasons,
+                target_selection_artifact_paths,
+            ),
             note=(
                 "Requires target_selection_<season>.json artifacts fitted from "
                 "prior-season PBP target labels; runtime falls back to legacy "

@@ -73,7 +73,6 @@ class TargetSelectionConfig:
     positions: tuple[str, ...] = ("RB", "WR", "TE", "FB")
     probability_floor: float = 0.001
     max_logit_delta: float = 3.0
-    fallback: str = "legacy"
 
 
 @dataclass(frozen=True)
@@ -85,7 +84,6 @@ class TargetSelectionContext:
     player_features: dict[str, dict[str, float]]
     probability_floor: float = 0.001
     max_logit_delta: float = 3.0
-    fallback: str = "legacy"
     candidate_positions: tuple[str, ...] = ("RB", "WR", "TE", "FB")
 
     def probabilities(
@@ -104,7 +102,7 @@ class TargetSelectionContext:
         if len(players) < 2:
             return None
         allowed_positions = set(self.candidate_positions)
-        if any(player.position not in allowed_positions for player in players):
+        if not any(player.position in allowed_positions for player in players):
             return None
 
         base = np.asarray(legacy_weights, dtype=float)
@@ -124,6 +122,8 @@ class TargetSelectionContext:
 
         logits = np.log(np.maximum(base, 1e-12))
         for idx, player in enumerate(players):
+            if player.position not in allowed_positions:
+                continue
             static = self.player_features.get(player.player_id)
             if static is None:
                 static = build_player_static_features(player)
