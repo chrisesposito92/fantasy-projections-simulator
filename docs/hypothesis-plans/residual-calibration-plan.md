@@ -8,7 +8,7 @@
 
 Add a post-simulation residual calibration layer that runs after the current promoted projection stack, including dynamic blend. It learns small additive fantasy-point corrections from historical residuals grouped by `position + usage_tier + projection_source_confidence`.
 
-Why it should help: [results/ab_ledger.json](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/results/ab_ledger.json) shows dynamic blend improved the stack materially, but it can still leave systematic over/under-shoots by position and player tier. A bucketed median residual correction directly targets weekly MAE while leaving simulation mechanics, priors, market ingestion, and source blending unchanged.
+Why it should help: local `results/ab_ledger.json` evidence shows dynamic blend improved the stack materially, but it can still leave systematic over/under-shoots by position and player tier. A bucketed median residual correction directly targets weekly MAE while leaving simulation mechanics, priors, market ingestion, and source blending unchanged.
 
 ## Runtime And Data Boundary
 
@@ -19,7 +19,7 @@ Why it should help: [results/ab_ledger.json](/Users/chrisesposito/Documents/gith
 
 ## Implementation Changes
 
-- Add `ensemble.residual_calibration` config in [config/defaults.yaml](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml), default `enabled=true`, with `artifacts_dir=null`, positions `QB/RB/WR/TE`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `shrinkage_prior_rows=200`, `max_abs_adjustment=1.5`, `min_training_mae_delta=-0.01`, and `fallback=zero`.
+- Add `ensemble.residual_calibration` config in [config/defaults.yaml](../../config/defaults.yaml), default `enabled=true`, with `artifacts_dir=null`, positions `QB/RB/WR/TE`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `shrinkage_prior_rows=200`, `max_abs_adjustment=1.5`, `min_training_mae_delta=-0.01`, and `fallback=zero`.
 - Usage tiers are fixed from pre-calibration projected `fpts`: QB high `>=18`, mid `>=12`; RB high `>=14`, mid `>=7`; WR high `>=12`, mid `>=6`; TE high `>=9`, mid `>=4`; otherwise low.
 - Source-confidence buckets: `market_high`, `market_medium`, `market_low` from market confidence thresholds `>=0.85`, `>=0.50`, `<0.50`; `external_no_market` when FF Opportunity is present without market; `simulator_only` otherwise.
 - Add a scoring adjuster, likely `src/fantasy_sim/scoring/residual_calibration.py`, that loads `calibration_<season>.json`, applies the bucket correction to `fpts`, clamps final `fpts >= 0.0`, stamps metadata, and re-ranks. It does not alter stat columns.

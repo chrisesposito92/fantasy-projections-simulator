@@ -23,7 +23,7 @@ Why this should help: the promoted priors are the strongest recent signals: `ff_
 
 ## Implementation Changes
 
-- Add config under [config/defaults.yaml](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/config/defaults.yaml): `ensemble.dynamic_blend.enabled=true`, `weights_dir=null`, `week_buckets=[1-4,5-12,13-18]`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `grid_step=0.05`, and `fallback=fixed_defaults`.
+- Add config under [config/defaults.yaml](../../config/defaults.yaml): `ensemble.dynamic_blend.enabled=true`, `weights_dir=null`, `week_buckets=[1-4,5-12,13-18]`, `min_bucket_rows=200`, `min_bucket_weeks=6`, `grid_step=0.05`, and `fallback=fixed_defaults`.
 - Add typed config/models beside the existing ensemble config. Public behavior: `load_ensemble_config()` returns `dynamic_blend` config, and CLI `--set ensemble.dynamic_blend.*=...` works through existing override parsing.
 - Add a dynamic blender in scoring that:
   - builds available sources per player-week

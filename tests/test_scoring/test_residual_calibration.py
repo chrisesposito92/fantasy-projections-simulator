@@ -206,6 +206,41 @@ def test_fit_residual_calibration_artifact_falls_back_without_training_lift(tmp_
     )
 
 
+def test_fit_residual_calibration_artifact_falls_back_on_malformed_bucket_key(tmp_path):
+    rows = [
+        {
+            "season": 2022,
+            "week": 1,
+            "player_id": "QB1",
+            "position": "QB",
+            "bucket_key": "QB|high",
+            "projected_fpts": 20.0,
+            "actual_fpts": 21.0,
+        },
+        {
+            "season": 2022,
+            "week": 2,
+            "player_id": "QB1",
+            "position": "QB",
+            "bucket_key": "QB|high",
+            "projected_fpts": 19.0,
+            "actual_fpts": 20.0,
+        },
+    ]
+
+    artifact = fit_residual_calibration_artifact(
+        rows,
+        test_season=2023,
+        source_seasons=[2022],
+        sims=50,
+        scoring="ppr",
+        config=_config(tmp_path),
+    )
+
+    assert artifact["buckets"] == {}
+    assert artifact["fallback_buckets"]["QB|high"]["reason"] == "malformed_bucket_key"
+
+
 def test_bundled_decision_artifacts_are_available():
     seasons = [2023, 2024]
 

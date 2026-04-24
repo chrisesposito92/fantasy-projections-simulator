@@ -802,13 +802,13 @@ def week(ctx, week_num, season, sims, scoring, output_format, output_path, overr
                 player_batch = _maybe_blend_player_projs(
                     player_batch,
                     role_trend_adjuster=role_trend_adjuster,
-                        market_history_adjuster=market_history_adjuster,
-                        ensembler=ensembler,
-                        dynamic_blender=dynamic_blender,
-                        residual_calibrator=residual_calibrator,
-                        season=season,
-                        week=week_num,
-                    )
+                    market_history_adjuster=market_history_adjuster,
+                    ensembler=ensembler,
+                    dynamic_blender=dynamic_blender,
+                    residual_calibrator=residual_calibrator,
+                    season=season,
+                    week=week_num,
+                )
             all_player_projs.extend(player_batch)
 
             all_dst_projs.extend(build_dst_projections(results.games, scoring_config, team_map=team_map))

@@ -178,6 +178,14 @@ def _mae_for_correction(rows: list[Mapping[str, object]], correction: float) -> 
     return float(np.mean(errors)) if errors else 99.0
 
 
+def _bucket_key_parts(key: str) -> tuple[str, str, str] | None:
+    parts = key.split("|")
+    if len(parts) != 3 or any(part == "" for part in parts):
+        return None
+    position, tier, confidence = parts
+    return position, tier, confidence
+
+
 def fit_residual_calibration_artifact(
     source_rows: list[Mapping[str, object]],
     *,
@@ -206,6 +214,15 @@ def fit_residual_calibration_artifact(
     fallback_buckets: dict[str, dict] = {}
     for key, rows in sorted(grouped.items()):
         week_count = len({(int(row["season"]), int(row["week"])) for row in rows})
+        parts = _bucket_key_parts(key)
+        if parts is None:
+            fallback_buckets[key] = {
+                "reason": "malformed_bucket_key",
+                "n_rows": len(rows),
+                "n_weeks": week_count,
+            }
+            continue
+
         if len(rows) < config.min_bucket_rows or week_count < config.min_bucket_weeks:
             fallback_buckets[key] = {
                 "reason": "sparse_bucket",
@@ -241,7 +258,7 @@ def fit_residual_calibration_artifact(
             }
             continue
 
-        position, tier, confidence = key.split("|", 2)
+        position, tier, confidence = parts
         buckets[key] = {
             "position": position,
             "usage_tier": tier,
