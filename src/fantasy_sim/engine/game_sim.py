@@ -100,6 +100,7 @@ def simulate_game(
             pace_factor=effective_pace_factor(off_dists.pace_factor, script),
             goal_line_concentration_enabled=off_dists.goal_line_concentration_enabled,
             script=script,
+            target_selection_context=off_dists.target_selection_context,
         )
         total_plays += 1
 

@@ -288,6 +288,13 @@ usage:
     sensitivity: 0.5
     min_routes: 10
 
+target_selection:
+  enabled: false
+  artifacts_dir: null
+  positions: [RB, WR, TE, FB]
+  probability_floor: 0.001
+  max_logit_delta: 3.0
+
 tracking:
   enabled: false
   window_weeks: 4

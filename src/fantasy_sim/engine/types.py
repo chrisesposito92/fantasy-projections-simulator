@@ -1,11 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol
 
 from fantasy_sim.data.game_script import GameScriptConfig, GameScriptProfile
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from fantasy_sim.engine.game_script import RuntimeGameScript
+    from fantasy_sim.models.player import PlayerModel
+
+
+class TargetSelectionContextProtocol(Protocol):
+    """Receiver target-selection interface used by the engine."""
+
+    def probabilities(
+        self,
+        players: list["PlayerModel"],
+        legacy_weights: "np.ndarray",
+        state: "GameState",
+        script: "RuntimeGameScript | None" = None,
+    ) -> "np.ndarray | None":
+        ...
 
 
 @dataclass
@@ -28,6 +48,7 @@ class TeamDistributions:
     defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
     game_script_config: GameScriptConfig | None = None
     game_script_profile: GameScriptProfile | None = None
+    target_selection_context: TargetSelectionContextProtocol | None = None
 
 
 @dataclass

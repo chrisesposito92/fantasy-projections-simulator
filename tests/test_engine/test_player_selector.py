@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from fantasy_sim.data.target_selection import TargetSelectionContext
 from fantasy_sim.engine.player_selector import select_passer, select_receiver, select_rusher
 from fantasy_sim.engine.types import GameState
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
@@ -168,6 +169,56 @@ class TestSelectReceiver:
         ids = [select_receiver(roster, state, rng).player_id for _ in range(200)]
         assert ids.count("WR1") > ids.count("TE1")
         assert ids.count("WR1") > ids.count("RB1")
+
+    def test_target_selection_context_can_tilt_receiver_pool(self):
+        rng = np.random.default_rng(42)
+        roster = make_roster()
+        state = make_state()
+        context = TargetSelectionContext(
+            coefficients={"is_te": 4.0},
+            feature_names=("is_te",),
+            player_features={},
+            probability_floor=0.0,
+            max_logit_delta=4.0,
+        )
+
+        ids = [
+            select_receiver(
+                roster,
+                state,
+                rng,
+                target_selection_context=context,
+            ).player_id
+            for _ in range(500)
+        ]
+
+        assert ids.count("TE1") > ids.count("WR1")
+
+    def test_target_selection_none_fallback_preserves_legacy_sequence(self):
+        class NullContext:
+            def probabilities(self, players, legacy_weights, state, script=None):
+                return None
+
+        roster = make_roster()
+        state = make_state()
+        baseline_rng = np.random.default_rng(42)
+        learned_rng = np.random.default_rng(42)
+
+        baseline = [
+            select_receiver(roster, state, baseline_rng).player_id
+            for _ in range(250)
+        ]
+        fallback = [
+            select_receiver(
+                roster,
+                state,
+                learned_rng,
+                target_selection_context=NullContext(),
+            ).player_id
+            for _ in range(250)
+        ]
+
+        assert fallback == baseline
 
 
 class TestSelectRusher:

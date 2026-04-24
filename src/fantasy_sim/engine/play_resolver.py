@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from fantasy_sim.engine.types import GameState, PlayResult
+from fantasy_sim.engine.types import GameState, PlayResult, TargetSelectionContextProtocol
 from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates, PenaltyRates
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 
@@ -104,6 +104,7 @@ def resolve_play(
     pace_factor: float = 1.0,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
+    target_selection_context: TargetSelectionContextProtocol | None = None,
 ) -> PlayResult:
     if play_type == "pass":
         return _resolve_pass(
@@ -116,6 +117,7 @@ def resolve_play(
             pace_factor,
             goal_line_concentration_enabled,
             script,
+            target_selection_context,
         )
     if play_type == "run":
         return _resolve_run(
@@ -142,6 +144,7 @@ def _resolve_pass(
     pace_factor: float = 1.0,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
+    target_selection_context: TargetSelectionContextProtocol | None = None,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
     from fantasy_sim.engine.player_selector import select_passer, select_receiver
@@ -220,6 +223,7 @@ def _resolve_pass(
             rng,
             goal_line_concentration_enabled=goal_line_concentration_enabled,
             script=script,
+            target_selection_context=target_selection_context,
         )
         receiver_id = receiver.player_id
 

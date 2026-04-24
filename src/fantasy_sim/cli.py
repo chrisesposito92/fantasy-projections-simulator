@@ -18,6 +18,7 @@ from fantasy_sim.data.availability.config import load_availability_config
 from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
+from fantasy_sim.data.target_selection import load_target_selection_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.engine.monte_carlo import run_simulations
@@ -148,6 +149,7 @@ def _make_builder(
     game_script_config = load_game_script_config(defaults)
     goal_line_concentration_config = load_goal_line_concentration_config(defaults)
     td_tendency_config = load_td_tendency_config(defaults)
+    target_selection_config = load_target_selection_config(defaults)
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
@@ -161,6 +163,7 @@ def _make_builder(
         game_script_config=game_script_config,
         goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
+        target_selection_config=target_selection_config,
     )
 
 
@@ -1478,6 +1481,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
     if usage is not None:
         usage_config.enabled = usage
     tracking_config = load_tracking_config(defaults)
+    target_selection_config = load_target_selection_config(defaults)
 
     click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
     click.echo(f"Training data: {season - training_years}-{season - 1}\n")
@@ -1495,6 +1499,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         role_trend_config=role_trend_config,
         market_history_config=market_history_config,
         ensemble_config=ensemble_config,
+        target_selection_config=target_selection_config,
     )
     result = bt.run(scoring_config)
 

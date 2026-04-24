@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import logging
 from collections.abc import Iterable, Mapping
@@ -9,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
+
+from fantasy_sim.data.target_selection.models import (
+    DEFAULT_ARTIFACT_DIR,
+    TARGET_SELECTION_MODEL_TYPE,
+    TARGET_SELECTION_SCHEMA_VERSION,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +164,20 @@ def _resolve_market_history_path(
     return DEFAULT_MARKET_HISTORY_DIR
 
 
+def _resolve_target_selection_artifacts_path(config: object) -> Path:
+    target_selection_config = _config_section(config, "target_selection_config")
+    if target_selection_config is None:
+        target_selection_config = _config_section(config, "target_selection")
+    artifacts_dir = (
+        _config_get(target_selection_config, "artifacts_dir", default=None)
+        if target_selection_config is not None
+        else None
+    )
+    if artifacts_dir is not None:
+        return _path_or_default(artifacts_dir, DEFAULT_ARTIFACT_DIR)
+    return DEFAULT_ARTIFACT_DIR
+
+
 def _resolve_market_history_snapshot_label(config: object) -> str:
     market_history_config = _config_section(config, "market_history_config")
     if market_history_config is None:
@@ -278,6 +299,50 @@ def _covered_seasons_from_required_paths(
         if paths and all(path.exists() for path in paths):
             covered.append(season)
     return covered
+
+
+def _target_selection_artifact_is_valid(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(artifact, Mapping):
+        return False
+    if artifact.get("schema_version") != TARGET_SELECTION_SCHEMA_VERSION:
+        return False
+    if artifact.get("model_type") != TARGET_SELECTION_MODEL_TYPE:
+        return False
+    feature_names = artifact.get("feature_names")
+    coefficients = artifact.get("coefficients")
+    if not isinstance(feature_names, (list, tuple)) or not feature_names:
+        return False
+    try:
+        if isinstance(coefficients, list):
+            parsed = [
+                float(value)
+                for _, value in zip(feature_names, coefficients, strict=False)
+            ]
+        elif isinstance(coefficients, Mapping):
+            parsed = [float(value) for value in coefficients.values()]
+        else:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return bool(parsed)
+
+
+def _covered_seasons_from_target_selection_artifacts(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Path],
+) -> list[int]:
+    return [
+        season
+        for season in test_seasons
+        if (path := paths_by_season.get(season)) is not None
+        and _target_selection_artifact_is_valid(path)
+    ]
 
 
 def _covered_seasons_from_required_parquet_columns(
@@ -422,6 +487,7 @@ def collect_signal_coverage(
     route_rate_pff_path = _resolve_route_rate_pff_path(config, pff_dir)
     props_path = _resolve_props_path(config, props_dir)
     market_history_path = _resolve_market_history_path(config, market_history_dir)
+    target_selection_artifacts_path = _resolve_target_selection_artifacts_path(config)
     market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
@@ -594,6 +660,11 @@ def collect_signal_coverage(
         ("role_trend_config", "role_trend"),
         ("role_trend",),
     )
+    target_selection_enabled = _signal_enabled(
+        config,
+        ("target_selection_config", "target_selection"),
+        ("target_selection",),
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -631,6 +702,10 @@ def collect_signal_coverage(
     }
     market_history_paths: dict[int, Path] = {
         season: market_history_path / f"player_markets_{season}_{market_history_snapshot_label}.parquet"
+        for season in seasons
+    }
+    target_selection_artifact_paths: dict[int, Path] = {
+        season: target_selection_artifacts_path / f"target_selection_{season}.json"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
@@ -1202,6 +1277,19 @@ def collect_signal_coverage(
                 },
             ),
             note="Role trend uses weekly player_stats coverage; snap_counts can augment but do not create hard decisions",
+        ),
+        "target_selection": _build_signal(
+            target_selection_enabled,
+            seasons,
+            _covered_seasons_from_target_selection_artifacts(
+                seasons,
+                target_selection_artifact_paths,
+            ),
+            note=(
+                "Requires target_selection_<season>.json artifacts fitted from "
+                "prior-season PBP target labels; runtime falls back to legacy "
+                "selection when an artifact is missing or invalid"
+            ),
         ),
         "ensemble.ff_opportunity": _build_signal(
             ensemble_enabled and ff_opp_enabled,

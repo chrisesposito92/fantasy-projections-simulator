@@ -8,7 +8,7 @@ Use a conditional softmax candidate model, not a post-sim adjuster. It should re
 
 ## Key Changes
 
-- Add a disabled-by-default `target_selection` config with `enabled=false`, `artifacts_dir=null`, `fallback=legacy`, candidate positions `RB/WR/TE/FB`, probability floor, and artifact schema version.
+- Add a disabled-by-default `target_selection` config with `enabled=false`, `artifacts_dir=null`, candidate positions `RB/WR/TE/FB`, probability floor, and artifact schema version. Invalid or missing artifacts always fall back to legacy receiver selection.
 - Add a runtime `TargetSelectionContext` attached during [GameContextBuilder.build_game()](/Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/game_context.py) after all default roster adjustments are applied. It precomputes per-player static features once per game.
 - Extend the pass path so `simulate_game -> resolve_play -> select_receiver` passes the target-selection context. If disabled, missing, invalid, or empty, use the existing selector exactly.
 - Fit one JSON artifact per test season with a conditional multinomial logit/softmax model implemented with `numpy`/`scipy`, avoiding new ML dependencies.

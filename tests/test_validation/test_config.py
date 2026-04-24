@@ -148,6 +148,31 @@ class TestBuildEngineConfigs:
         assert "tracking_config" in configs
         assert configs["tracking_config"] is None
 
+    def test_defaults_keep_target_selection_disabled(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "target_selection_config" in configs
+        assert configs["target_selection_config"] is None
+
+    def test_enabled_target_selection_config_is_built(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "target_selection.enabled=true",
+                "target_selection.artifacts_dir=results/target_selection/test",
+                "target_selection.max_logit_delta=2.25",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["target_selection_config"] is not None
+        assert configs["target_selection_config"].artifacts_dir == "results/target_selection/test"
+        assert configs["target_selection_config"].max_logit_delta == 2.25
+
     def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
         defaults = load_defaults()
         overridden = apply_overrides(
@@ -332,3 +357,4 @@ class TestBuildBareEngineConfigs:
         assert configs["role_trend_config"] is None
         assert configs["market_history_config"] is None
         assert configs["game_script_config"] is None
+        assert configs["target_selection_config"] is None
