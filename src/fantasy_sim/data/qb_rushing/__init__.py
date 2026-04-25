@@ -11,6 +11,7 @@ from fantasy_sim.data.qb_rushing.models import (
     QbScrambleModelConfig,
     qb_scramble_feature_values,
 )
+from fantasy_sim.data.qb_rushing.runtime import QbScrambleModel
 from fantasy_sim.data.qb_rushing.training import (
     QbScrambleFitResult,
     QbScramblePriors,
@@ -29,6 +30,7 @@ __all__ = [
     "QbRushingConfig",
     "QbScrambleContext",
     "QbScrambleFitResult",
+    "QbScrambleModel",
     "QbScrambleModelConfig",
     "QbScramblePriors",
     "QbScrambleTrainingExample",
