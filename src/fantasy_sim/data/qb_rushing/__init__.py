@@ -20,7 +20,7 @@ from fantasy_sim.data.qb_rushing.models import (
     qb_designed_run_tail_key,
     qb_scramble_feature_values,
 )
-from fantasy_sim.data.qb_rushing.runtime import QbScrambleModel
+from fantasy_sim.data.qb_rushing.runtime import QbDesignedRunModel, QbScrambleModel
 from fantasy_sim.data.qb_rushing.training import (
     QbDesignedRunFitResult,
     QbDesignedRunPriors,
@@ -48,6 +48,7 @@ __all__ = [
     "QB_DESIGNED_RUN_SCHEMA_VERSION",
     "QbDesignedRunContext",
     "QbDesignedRunFitResult",
+    "QbDesignedRunModel",
     "QbDesignedRunModelConfig",
     "QbDesignedRunPriors",
     "QbDesignedRunTrainingExample",
