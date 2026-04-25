@@ -13,6 +13,7 @@ from pathlib import Path
 import polars as pl
 
 from fantasy_sim.data.qb_rushing import (
+    DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR,
     DEFAULT_QB_DESIGNED_RUN_FEATURES,
     QB_DESIGNED_RUN_MODEL_TYPE,
     QB_DESIGNED_RUN_SCHEMA_VERSION,
@@ -43,9 +44,7 @@ DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
 DEFAULT_MARKET_HISTORY_DIR = (
     Path.home() / ".fantasy-sim" / "market-history" / "processed"
 )
-QB_DESIGNED_RUN_DEFAULT_ARTIFACT_DIR = Path(
-    "results/qb_rushing/designed_runs/smoke_v1"
-)
+QB_DESIGNED_RUN_DEFAULT_ARTIFACT_DIR = DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR
 PFF_CROSSWALK_COLUMNS = {"player_id", "player", "team"}
 TEAM_CONTEXT_OL_COLUMNS = {"team", "grades_run_block", "snap_counts_run_block"}
 TEAM_CONTEXT_QB_COLUMNS = {"team", "grades_pass", "passing_snaps"}

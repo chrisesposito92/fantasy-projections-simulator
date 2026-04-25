@@ -227,6 +227,26 @@ class TestBuildEngineConfigs:
         assert configs["qb_rushing_config"].scramble.factor_clamp == (0.75, 1.40)
         assert configs["qb_rushing_config"].scramble.probability_clamp == (0.01, 0.20)
 
+    def test_enabled_qb_designed_run_config_is_built_without_scramble(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "qb_rushing.designed_runs.enabled=true",
+                "qb_rushing.designed_runs.artifacts_dir=results/qb_rushing/designed/test",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["qb_rushing_config"] is not None
+        assert configs["qb_rushing_config"].scramble.enabled is False
+        assert configs["qb_rushing_config"].designed_runs.enabled is True
+        assert (
+            configs["qb_rushing_config"].designed_runs.artifacts_dir
+            == "results/qb_rushing/designed/test"
+        )
+
     def test_build_game_config_kwargs_omits_post_sim_configs(self, tmp_path):
         defaults = load_defaults()
         configs = build_engine_configs(defaults)

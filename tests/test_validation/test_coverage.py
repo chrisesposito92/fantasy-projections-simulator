@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults
 from fantasy_sim.data.qb_rushing import (
+    DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR,
     QB_DESIGNED_RUN_MODEL_TYPE,
     QB_DESIGNED_RUN_SCHEMA_VERSION,
     QB_SCRAMBLE_MODEL_TYPE,
@@ -2317,6 +2318,13 @@ def test_qb_designed_run_coverage_disabled_by_default(tmp_path):
 
     assert coverage["qb_rushing.designed_runs"].enabled is False
     assert coverage["qb_rushing.designed_runs"].status == "disabled"
+
+
+def test_qb_designed_run_coverage_uses_runtime_default_artifact_path():
+    assert (
+        coverage_module._resolve_qb_designed_run_artifacts_path({})
+        == DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR
+    )
 
 
 def test_qb_designed_run_coverage_requires_valid_artifact(tmp_path):
