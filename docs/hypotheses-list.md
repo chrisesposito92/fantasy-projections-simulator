@@ -2,9 +2,9 @@
 
 ## State Readout
 
-The stable simulator is already strong versus bare, but recent marginal levers are mostly at the noise floor. The clear wins have come from external priors and role/market signals: `ff_opportunity`, availability without injuries, `market_history`, dynamic source blending, and residual calibration. The flat or parked areas are mostly heuristic micro-layers or narrowly scoped in-simulation replacements: tracking slices, PFF depth/efficiency, QB split, RB scheme-fit, NGS, route-rate, team context, goal-line concentration, and the first learned receiver target-selection node.
+The stable simulator is already strong versus bare, but recent marginal levers are mostly at the noise floor. The clear wins have come from external priors and role/market signals: `ff_opportunity`, availability without injuries, `market_history`, dynamic source blending, and residual calibration. The flat or parked areas are mostly heuristic micro-layers or narrowly scoped in-simulation replacements: tracking slices, PFF depth/efficiency, QB split, RB scheme-fit, NGS, route-rate, team context, goal-line concentration, the first learned receiver target-selection node, and the first learned play-call node.
 
-The main conclusion: stop trying broad "turn on another adjustment layer" experiments. The lightweight post-sim calibration stack has now been promoted. Replacing high-leverage simulation decision nodes is still plausible, but the learned target-selection result shows that these replacements need better labels/features or a larger structural change than a shallow legacy-anchored probability correction.
+The main conclusion: stop trying broad "turn on another adjustment layer" experiments. The lightweight post-sim calibration stack has now been promoted. Replacing high-leverage simulation decision nodes is still plausible, but the learned target-selection and learned play-call results show that these replacements need better labels/features or a larger structural change than a shallow standalone probability replacement.
 
 ## Validated Results
 
@@ -63,6 +63,28 @@ Likely reasons it did not work:
 
 The takeaway is not "learned in-sim nodes are bad"; it is that receiver selection was too narrow as a standalone v1. A future receiver/WR model should probably be coupled to passing-chain decomposition or route/air-yards/catch-probability modeling instead of only replacing the final target draw.
 
+### Learned Play-Call Model
+
+Status: **NO_PROMOTION**. This experiment replaced the empirical pass/run lookup at the `select_play_type()` boundary with an off-by-default temporal logistic model that predicts `P(pass)` from down, distance, yardline, quarter, clock, score, home/away, spread, total, implied team total, week, and prior team pass tendencies. When enabled and covered by a valid artifact, the learned node owns pass/run probability and skips the current Vegas spread pass-rate and game-script pass-rate modifiers for that team only. Vegas pace and all downstream target, rusher, scramble, sack, turnover, yards, TD, dynamic-blend, and residual-calibration behavior remain unchanged.
+
+Artifacts were fitted under `results/play_call_model/smoke_v1` with prior-season labels only (`--min-source-season 2018`, `--training-years 4`). All three artifacts converged: 2022 used 136,259 examples with pass rate `0.591`, 2023 used 138,407 examples with pass rate `0.586`, and 2024 used 140,484 examples with pass rate `0.583`. Runtime and coverage validation reject missing, invalid, non-temporal, non-finite, or schema-incompatible artifacts and fall back to empirical play calling.
+
+| Run | Sims | Artifact Dir | Rank Corr Delta | Weekly MAE Delta | Season MAE Delta | FPTS KS Delta | Verdict |
+|---|---:|---|---:|---:|---:|---:|---|
+| `play-call-model-s50` | 50 | `results/play_call_model/smoke_v1` | +0.0029 | -0.023 | +0.055 | n/a | borderline smoke; QB pass-yards KS concern |
+| `play-call-model-s200` | 200 | `results/play_call_model/smoke_v1` | +0.0026 | -0.018 | -0.006 | -0.004 | no promotion |
+
+The decision run missed the promotion gate: average rank-correlation lift was below `+0.0030`, weekly MAE improvement was short of `-0.025`, RB regressed, and QB passing-yards KS worsened in every tested season. Weekly position deltas were QB `+0.0084` / `-0.173`, RB `-0.0083` / `+0.087`, WR `+0.0091` / `-0.031`, and TE `+0.0111` / `-0.053`. QB pass-yards KS moved by roughly `+0.011`, `+0.018`, and `+0.019` for 2022, 2023, and 2024.
+
+Likely reasons it did not work:
+
+- The model improved QB, WR, and TE weekly ranking enough to show signal, but it shifted broad pass/run volume in a way that hurt RB opportunity and QB passing-yards distributions.
+- The training objective predicted historical pass/run labels, not the fantasy metric after sacks, scrambles, targets, yards, TD gates, dynamic blend, and residual calibration.
+- The feature set captured game state and market context but not personnel, formation, QB designed-run tendency, offensive coordinator style, or same-week role shocks.
+- Replacing pass/run without also decomposing the passing chain left downstream pass-yards and receiving-yard models to absorb volume changes they were not calibrated for.
+
+The path should stay parked as a standalone pass/run replacement. Revisit only if coupled to a richer passing-chain, QB-rushing, or play-volume calibration model.
+
 ## Hypotheses
 
 | # | Status | Hypothesis | Why It Has Sound Logic |
@@ -70,7 +92,7 @@ The takeaway is not "learned in-sim nodes are bad"; it is that receiver selectio
 | 1 | Done | **Learn dynamic blend weights for simulator vs `ff_opportunity` vs `market_history` by position/week/source coverage.** | **Promoted.** Post-review `rank_corr +0.0069`, weekly MAE `-0.226` overall; covered-season readout `rank_corr +0.0099`, weekly MAE `-0.338`. |
 | 2 | Done | **Add residual calibration by position, usage tier, and projection source confidence.** | **Promoted.** Decision run `rank_corr +0.0020`, weekly MAE `-0.043` overall; covered-season readout `rank_corr +0.0027`, weekly MAE `-0.068`. |
 | 3 | Open | **Backfill and expand historical market/props coverage, especially missing 2022 and richer prop markets.** | Market history is one of the few promoted marginal wins, but validation is covered-only and props coverage is absent historically. More complete market data should improve QB/WR role, TD, and volume estimates. |
-| 4 | Open | **Replace empirical pass/run choice with a learned play-call model.** | Current play calling is bucketed historical rate plus Vegas default adjustment. A model can learn score, time, down, distance, team, opponent, spread, total, and QB context interactions directly. |
+| 4 | No Promotion | **Replace empirical pass/run choice with a learned play-call model.** | **Parked after v1.** Decision run improved QB/WR/TE but missed the overall gate: rank corr `+0.0026`, weekly MAE `-0.018`, RB regressed, and QB pass-yards KS worsened in all seasons. Revisit only as part of a richer passing-chain or volume-calibration model. |
 | 5 | No Promotion | **Replace receiver selection with a learned target-share/candidate model.** | **Parked after v1.** Converged smoke artifacts regressed average rank corr `-0.0013` with neutral weekly MAE, and WR weekly rank corr moved `-0.0028`. Revisit only as part of a richer passing-chain or route/air-yards model. |
 | 6 | Open | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
 | 7 | Open | **Build a QB rushing model for scramble probability, designed-run selection, and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and current scramble logic is a global QB rate checked before sack/INT. Mobile QB fantasy value is high-leverage and context-dependent. |
@@ -89,24 +111,23 @@ Recommended scoring scale:
 
 | Priority | Status | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
 |---:|---|---|---:|---:|---:|---:|---:|---|
-| 1 | Open | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Strong simulator-wide leverage with a clean decision point, but effects will be broader and need careful sanity checks on team play volume. |
-| 2 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but scope should be split into scramble probability first, then designed runs/gain tails. |
-| 3 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
-| 4 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than play calling or QB rushing. |
-| 5 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
-| 6 | Open | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
-| 7 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
+| 1 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but scope should be split into scramble probability first, then designed runs/gain tails. |
+| 2 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
+| 3 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than QB rushing or passing-chain decomposition. |
+| 4 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
+| 5 | Open | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
+| 6 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
+| - | No Promotion | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Parked after decision run missed: rank corr `+0.0026`, weekly MAE `-0.018`, RB regression, and persistent QB pass-yards KS damage. Revisit only with richer passing-chain or volume calibration. |
 | - | No Promotion | **Replace receiver selection with a learned target model** | 5 | 2 | 4 | 4 | 15 | Parked after converged smoke run missed: average rank corr `-0.0013`, weekly MAE flat, WR rank corr `-0.0028`. Revisit only with richer pass-chain features/objective. |
 | - | Done | **Learn dynamic blend weights** | 5 | 4 | 4 | 5 | 18 | Promoted; keep as part of defaults and use as the source stack for future residual/model tests. |
 | - | Done | **Add residual calibration** | 4 | 4 | 5 | 5 | 18 | Promoted; monitor TE rank-corr sensitivity in future decision runs. |
 
 Recommended execution order:
 
-1. **Learned play-call model**: broad engine leverage with a clean decision point and less dependence on a single downstream selector.
-2. **QB rushing model**: clean QB-specific pain point; split scramble probability from designed-run and gain-tail work.
-3. **Passing-chain decomposition**: high-upside QB/WR work that can revisit receiver allocation through air yards, catch probability, and YAC rather than target draw alone.
-4. **Learned ball-carrier selection**: useful RB role-drift work with a localized selector boundary.
-5. **Market/props backfill**: run once the exact missing data and historical coverage path is defined.
+1. **QB rushing model**: clean QB-specific pain point; split scramble probability from designed-run and gain-tail work.
+2. **Passing-chain decomposition**: high-upside QB/WR work that can revisit receiver allocation through air yards, catch probability, and YAC rather than target draw alone.
+3. **Learned ball-carrier selection**: useful RB role-drift work with a localized selector boundary.
+4. **Market/props backfill**: run once the exact missing data and historical coverage path is defined.
 
 Planning recommendation:
 
