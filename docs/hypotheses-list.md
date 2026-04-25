@@ -111,11 +111,11 @@ The completed lesson is narrow: do not repeat standalone scramble-probability mo
 
 ### QB Designed-Run Chain
 
-Status: **SMOKE_PASSED** for the designed-run selection and rush-gain tail slice. The model remains off by default while decision-run evidence is pending.
+Status: **NO_PROMOTION** for the designed-run selection and rush-gain tail slice. The model remains off by default.
 
 Smoke artifacts were fitted under `results/qb_rushing/designed_runs/smoke_v1` with prior-season labels only (`--min-source-season 2018`, `--training-years 4`). The 2022, 2023, and 2024 artifacts all had nonzero examples, source seasons strictly before the target season, and nonempty global tail buckets.
 
-The 50-sim smoke run `qb-designed-run-chain-s50` covered `qb_rushing.designed_runs=full(2022,2023,2024)` and completed successfully. Average deltas were rank corr `+0.0005`, weekly MAE `-0.005`, season MAE `-0.044`, and fpts KS `-0.000`. Weekly QB metrics were effectively flat (`rank_corr -0.0008`, weekly MAE `-0.002`), while WR weekly rank corr improved `+0.0023` and TE weekly rank corr regressed `-0.0036`. A 200-sim decision run is pending before any default promotion decision.
+The post-wiring-fix 50-sim smoke run `qb-designed-run-chain-s50-postfix` covered `qb_rushing.designed_runs=full(2022,2023,2024)` and completed successfully in 1267.4s. Average deltas were rank corr `-0.0007`, weekly MAE `+0.000`, season MAE `+0.056`, and fpts KS `+0.003`. Weekly QB metrics improved slightly (`rank_corr +0.0033`, weekly MAE `-0.001`), but TE weekly metrics regressed (`rank_corr -0.0049`, weekly MAE `+0.018`) and season-level metrics did not clear the smoke gate. A 200-sim decision run is not warranted for this v1 slice, and defaults remain unchanged.
 
 ## Hypotheses
 
@@ -128,7 +128,7 @@ The 50-sim smoke run `qb-designed-run-chain-s50` covered `qb_rushing.designed_ru
 | 5 | No Promotion | **Replace receiver selection with a learned target-share/candidate model.** | **Parked after v1.** Converged smoke artifacts regressed average rank corr `-0.0013` with neutral weekly MAE, and WR weekly rank corr moved `-0.0028`. Revisit only as part of a richer passing-chain or route/air-yards model. |
 | 6 | Open | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
 | 7 | No Promotion | **Replace standalone QB scramble probability with a learned context model.** | **Completed and parked after v1.** The 50-sim smoke run regressed average rank corr `-0.0009`, barely moved QB weekly MAE, regressed RB weekly metrics, and did not improve QB rushing-yards KS. Do not repeat this slice as-is. |
-| 8 | Open | **Build the remaining QB rushing chain for designed-run selection and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and mobile QB fantasy value is high-leverage. The next version should model designed runs and rushing-yard tails instead of only changing scramble probability. |
+| 8 | No Promotion | **Build the remaining QB rushing chain for designed-run selection and rush-gain tail behavior.** | **Completed and parked after v1.** The post-wiring-fix 50-sim smoke run regressed average rank corr `-0.0007`, season MAE `+0.056`, and fpts KS `+0.003`. QB weekly rank correlation improved `+0.0033`, but the broader validation did not justify a 200-sim decision run or default promotion. |
 | 9 | Open | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
 | 10 | Open | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
 | 11 | Open | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
