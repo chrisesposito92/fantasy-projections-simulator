@@ -115,6 +115,26 @@ class TestLearnedPlayCallSelection:
 
         assert all(result == "pass" for result in results)
 
+    def test_script_pass_rate_factor_applies_when_learned_context_falls_back(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=1.0)
+        script = RuntimeGameScript(pass_rate_factor=0.0)
+        context = FixedPlayCallContext(None)
+
+        results = [
+            select_play_type(
+                state,
+                play_calling,
+                rng,
+                script=script,
+                play_call_context=context,
+            )
+            for _ in range(100)
+        ]
+
+        assert all(result == "run" for result in results)
+
     def test_empirical_fallback_when_learned_context_returns_nan(self):
         rng = np.random.default_rng(42)
         state = make_state()

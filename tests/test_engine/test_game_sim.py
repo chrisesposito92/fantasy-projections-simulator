@@ -124,14 +124,17 @@ class TestSimulateGame:
         setattr(home_dists, "goal_line_concentration_enabled", True)
         setattr(away_dists, "goal_line_concentration_enabled", True)
         target_context = object()
+        play_call_context = object()
         home_dists.target_selection_context = target_context
         away_dists.target_selection_context = target_context
+        home_dists.play_call_context = play_call_context
+        away_dists.play_call_context = play_call_context
         simulate_game(home_dists, away_dists, np.random.default_rng(42))
 
         assert seen["config"] is not None
         assert seen["profile"] is not None
         assert seen["script"] is script
-        assert seen["play_call_context"] is None
+        assert seen["play_call_context"] is play_call_context
         assert seen["resolve_script"] is script
         assert seen["target_selection_context"] is target_context
         assert seen["goal_line_concentration_enabled"] is True
