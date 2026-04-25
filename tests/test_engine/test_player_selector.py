@@ -237,6 +237,47 @@ class TestSelectRusher:
         assert rusher.position == "QB"
 
 
+class FixedQbDesignedRunContext:
+    def rusher_weights(self, players, legacy_weights, state, script=None):
+        adjusted = legacy_weights.copy()
+        for idx, player in enumerate(players):
+            if player.position == "QB":
+                adjusted[idx] = 100.0
+        return adjusted
+
+    def designed_run_yards(self, state, rusher, rng, script=None):
+        return None
+
+
+def test_qb_designed_run_context_can_tilt_rusher_pool_to_eligible_qb():
+    qb = PlayerModel(
+        "QB1",
+        "QB",
+        "QB",
+        "T",
+        PlayerUsage(snap_share=1.0, carry_share=0.12),
+        PlayerOutcomes(rushing_yards_dist=np.array([5])),
+    )
+    rb = PlayerModel(
+        "RB1",
+        "RB",
+        "RB",
+        "T",
+        PlayerUsage(carry_share=0.80),
+        PlayerOutcomes(rushing_yards_dist=np.array([4])),
+    )
+    roster = TeamRoster(team="T", players=[qb, rb])
+
+    selected = select_rusher(
+        roster,
+        make_state(),
+        np.random.default_rng(1),
+        qb_designed_run_context=FixedQbDesignedRunContext(),
+    )
+
+    assert selected.player_id == "QB1"
+
+
 class TestGoalLineConcentrationSelection:
     def test_goal_line_enabled_uses_goal_line_band_shares(self, make_goal_line_roster: TeamRoster):
         state = make_state(yard_line=3)

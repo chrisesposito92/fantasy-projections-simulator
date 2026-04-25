@@ -108,6 +108,7 @@ def simulate_game(
             script=script,
             target_selection_context=off_dists.target_selection_context,
             qb_scramble_context=off_dists.qb_scramble_context,
+            qb_designed_run_context=off_dists.qb_designed_run_context,
         )
         total_plays += 1
 
