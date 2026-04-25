@@ -109,6 +109,14 @@ Why it was not promoted:
 
 The completed lesson is narrow: do not repeat standalone scramble-probability modeling as-is. Continue QB rushing only as a broader chain that includes designed-run selection, scramble/designed-run separation, and rush-gain tails.
 
+### QB Designed-Run Chain
+
+Status: **SMOKE_PASSED** for the designed-run selection and rush-gain tail slice. The model remains off by default while decision-run evidence is pending.
+
+Smoke artifacts were fitted under `results/qb_rushing/designed_runs/smoke_v1` with prior-season labels only (`--min-source-season 2018`, `--training-years 4`). The 2022, 2023, and 2024 artifacts all had nonzero examples, source seasons strictly before the target season, and nonempty global tail buckets.
+
+The 50-sim smoke run `qb-designed-run-chain-s50` covered `qb_rushing.designed_runs=full(2022,2023,2024)` and completed successfully. Average deltas were rank corr `+0.0005`, weekly MAE `-0.005`, season MAE `-0.044`, and fpts KS `-0.000`. Weekly QB metrics were effectively flat (`rank_corr -0.0008`, weekly MAE `-0.002`), while WR weekly rank corr improved `+0.0023` and TE weekly rank corr regressed `-0.0036`. A 200-sim decision run is pending before any default promotion decision.
+
 ## Hypotheses
 
 | # | Status | Hypothesis | Why It Has Sound Logic |
