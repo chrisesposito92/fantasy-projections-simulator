@@ -1,8 +1,16 @@
+import json
+
 import pytest
 import polars as pl
 from fantasy_sim.data.game_context import GameContextBuilder
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script import GameScriptConfig
+from fantasy_sim.data.play_call_model import (
+    PLAY_CALL_MODEL_SCHEMA_VERSION,
+    PLAY_CALL_MODEL_TYPE,
+    PlayCallModelConfig,
+)
+from fantasy_sim.data.vegas.models import VegasContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.player import TeamRoster
 
@@ -77,6 +85,80 @@ class TestGameContextBuilder:
         )
 
         assert builder._game_script_engine is not None
+
+    def test_play_call_model_created_when_enabled(self, tmp_path):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            play_call_model_config=PlayCallModelConfig(
+                enabled=True,
+                artifacts_dir=str(tmp_path),
+            ),
+        )
+
+        assert builder._play_call_model is not None
+
+    def test_play_call_context_attached_when_artifact_exists(
+        self, tmp_path, expanded_pbp, sample_rosters
+    ):
+        artifact = {
+            "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
+            "model_type": PLAY_CALL_MODEL_TYPE,
+            "target_season": 2024,
+            "feature_names": ["intercept"],
+            "coefficients": {"intercept": 0.0},
+        }
+        (tmp_path / "play_call_model_2024.json").write_text(
+            json.dumps(artifact),
+            encoding="utf-8",
+        )
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            play_call_model_config=PlayCallModelConfig(
+                enabled=True,
+                artifacts_dir=str(tmp_path),
+            ),
+        )
+
+        home_dists, away_dists, _, _ = builder.build_game(
+            home_team="KC",
+            away_team="BUF",
+            pbp=expanded_pbp,
+            rosters=sample_rosters,
+            training_seasons=[2024],
+            target_season=2024,
+            week=1,
+        )
+
+        assert home_dists.play_call_context is not None
+        assert away_dists.play_call_context is not None
+
+    def test_vegas_pass_rate_is_not_skipped_when_artifact_missing(
+        self, tmp_path, expanded_pbp, sample_rosters
+    ):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            play_call_model_config=PlayCallModelConfig(
+                enabled=True,
+                artifacts_dir=str(tmp_path),
+            ),
+        )
+        dists = builder.build_team_distributions(
+            "KC",
+            pbp=expanded_pbp,
+            rosters=sample_rosters,
+            training_seasons=[2024],
+            target_season=2024,
+            week=1,
+        )
+        before = dists.play_calling.default["pass"]
+
+        builder._apply_vegas(
+            dists,
+            VegasContext(team="KC", pass_rate_factor=1.05),
+            apply_pass_rate=True,
+        )
+
+        assert dists.play_calling.default["pass"] > before
 
     def test_missing_team_gets_league_defaults(self, builder, expanded_pbp, sample_rosters):
         """A team not in PBP data should get league-average distributions."""
