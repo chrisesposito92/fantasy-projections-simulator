@@ -77,7 +77,7 @@ def test_build_game_applies_vegas_then_availability_then_usage(tmp_path):
         events.append("vegas:compute")
         return MagicMock(), MagicMock()
 
-    def apply_vegas(dists, ctx):
+    def apply_vegas(dists, ctx, *, apply_pass_rate=True):
         events.append(f"vegas:apply:{dists.play_calling.team}")
 
     def availability_apply(roster, season, week):
