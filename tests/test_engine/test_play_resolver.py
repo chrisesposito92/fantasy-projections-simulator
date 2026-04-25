@@ -180,6 +180,14 @@ class FixedQbDesignedRunYardsContext:
         return None
 
 
+class NonQbDesignedRunYardsContext:
+    def rusher_weights(self, players, legacy_weights, state, script=None):
+        return legacy_weights
+
+    def designed_run_yards(self, state, rusher, rng, script=None):
+        raise AssertionError("designed_run_yards should only be called for QB rushers")
+
+
 def test_qb_designed_run_context_supplies_yards_for_selected_qb_run():
     qb = PlayerModel(
         "QB1",
@@ -209,6 +217,29 @@ def test_qb_designed_run_context_supplies_yards_for_selected_qb_run():
 
     assert result.rusher_id == "QB1"
     assert result.yards == 15
+
+
+def test_qb_designed_run_context_does_not_supply_yards_for_non_qb_rusher():
+    rb = PlayerModel(
+        "RB1",
+        "RB",
+        "RB",
+        "T",
+        PlayerUsage(carry_share=1.0),
+        PlayerOutcomes(rushing_yards_dist=np.array([4])),
+    )
+    result = resolve_play(
+        make_state(yard_line=50),
+        "run",
+        make_outcomes(run_yards=[1]),
+        make_turnover_rates(),
+        np.random.default_rng(1),
+        roster=TeamRoster(team="T", players=[rb]),
+        qb_designed_run_context=NonQbDesignedRunYardsContext(),
+    )
+
+    assert result.rusher_id == "RB1"
+    assert result.yards == 4
 
 
 def test_qb_designed_run_context_does_not_affect_scramble_yards():

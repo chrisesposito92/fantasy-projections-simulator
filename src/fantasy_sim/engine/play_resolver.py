@@ -349,7 +349,7 @@ def _resolve_run(
         rusher_id = rusher.player_id
 
         context_yards = None
-        if qb_designed_run_context is not None:
+        if qb_designed_run_context is not None and rusher.position == "QB":
             context_yards = qb_designed_run_context.designed_run_yards(state, rusher, rng, script=script)
 
         if context_yards is not None:
