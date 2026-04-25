@@ -125,7 +125,7 @@ Recommended scoring scale:
 
 | Priority | Status | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
 |---:|---|---|---:|---:|---:|---:|---:|---|
-| 1 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but scope should be split into scramble probability first, then designed runs/gain tails. |
+| 1 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but do not repeat standalone scramble-probability v1. Continue only with designed-run selection, rush-gain tails, or a coupled QB-rushing chain. |
 | 2 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
 | 3 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than QB rushing or passing-chain decomposition. |
 | 4 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
@@ -138,7 +138,7 @@ Recommended scoring scale:
 
 Recommended execution order:
 
-1. **QB rushing model**: clean QB-specific pain point; split scramble probability from designed-run and gain-tail work.
+1. **QB rushing model**: clean QB-specific pain point; skip standalone scramble-probability v1 and continue with designed runs, gain tails, or a coupled QB-rushing chain.
 2. **Passing-chain decomposition**: high-upside QB/WR work that can revisit receiver allocation through air yards, catch probability, and YAC rather than target draw alone.
 3. **Learned ball-carrier selection**: useful RB role-drift work with a localized selector boundary.
 4. **Market/props backfill**: run once the exact missing data and historical coverage path is defined.
