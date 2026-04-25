@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from fantasy_sim.data.qb_rushing.models import (
@@ -114,3 +115,39 @@ def test_context_keeps_zero_base_rate_at_zero():
     )
 
     assert context.scramble_probability(_state(), _qb(0.0)) == 0.0
+
+
+def test_context_sanitizes_non_finite_market_inputs():
+    context = QbScrambleContext(
+        coefficients={"intercept": 0.0, "spread_norm": 1.0, "total_norm": 1.0},
+        feature_names=("intercept", "spread_norm", "total_norm"),
+        team="BUF",
+        opponent="KC",
+        home_team="KC",
+        away_team="BUF",
+        is_home=False,
+        target_season=2024,
+        week=9,
+        spread_line=float("nan"),
+        total_line=float("inf"),
+        implied_team_total="bad",
+    )
+
+    values = qb_scramble_feature_values(
+        _state(),
+        team="BUF",
+        opponent="KC",
+        home_team="KC",
+        away_team="BUF",
+        is_home=False,
+        week=9,
+        spread_line=float("nan"),
+        total_line=float("inf"),
+        implied_team_total="bad",
+        qb_prior_scramble_rate=0.10,
+        team_prior_scramble_rate=0.08,
+        opponent_prior_scramble_rate_allowed=0.07,
+    )
+
+    assert np.isfinite(list(values.values())).all()
+    assert context.scramble_probability(_state(), _qb(0.08)) == pytest.approx(0.08)

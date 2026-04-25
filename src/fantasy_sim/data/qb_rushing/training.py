@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping
 
 import numpy as np
@@ -19,6 +19,22 @@ class QbScramblePriors:
     team: dict[str, float]
     opponent_allowed: dict[str, float]
     league: float
+    qb_counts: dict[str, tuple[int, int]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    team_counts: dict[str, tuple[int, int]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    opponent_allowed_counts: dict[str, tuple[int, int]] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    league_counts: tuple[int, int] = field(default=(0, 0), repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -58,14 +74,14 @@ def build_scramble_priors(rows: list[Mapping[str, object]]) -> QbScramblePriors:
         if not _is_modeled_row(row):
             continue
         label = _scramble_label(row)
-        qb_id = row.get("passer_player_id")
+        qb_id = _qb_id_for_row(row)
         team = row.get("posteam")
         opponent = row.get("defteam")
         league_scrambles += label
         league_total += 1
         if qb_id is not None:
-            qb_counts[str(qb_id)][0] += label
-            qb_counts[str(qb_id)][1] += 1
+            qb_counts[qb_id][0] += label
+            qb_counts[qb_id][1] += 1
         if team is not None:
             team_counts[str(team)][0] += label
             team_counts[str(team)][1] += 1
@@ -79,6 +95,12 @@ def build_scramble_priors(rows: list[Mapping[str, object]]) -> QbScramblePriors:
         team={key: counts[0] / counts[1] for key, counts in team_counts.items()},
         opponent_allowed={key: counts[0] / counts[1] for key, counts in opponent_counts.items()},
         league=league,
+        qb_counts={key: (counts[0], counts[1]) for key, counts in qb_counts.items()},
+        team_counts={key: (counts[0], counts[1]) for key, counts in team_counts.items()},
+        opponent_allowed_counts={
+            key: (counts[0], counts[1]) for key, counts in opponent_counts.items()
+        },
+        league_counts=(league_scrambles, league_total),
     )
 
 
@@ -100,10 +122,31 @@ def build_example_from_row(
     defteam = str(row["defteam"])
     home_team = str(row["home_team"])
     away_team = str(row["away_team"])
-    qb_id = str(row.get("passer_player_id") or "")
-    qb_prior = priors.qb.get(qb_id, priors.team.get(posteam, priors.league))
-    team_prior = priors.team.get(posteam, priors.league)
-    opponent_prior = priors.opponent_allowed.get(defteam, priors.league)
+    label = _scramble_label(row)
+    qb_id = _qb_id_for_row(row)
+    qb_prior = _leave_one_out_rate(
+        priors.qb_counts,
+        qb_id,
+        label,
+        fallback=None,
+    )
+    team_prior = _leave_one_out_rate(
+        priors.team_counts,
+        posteam,
+        label,
+        fallback=None,
+    )
+    opponent_prior = _leave_one_out_rate(
+        priors.opponent_allowed_counts,
+        defteam,
+        label,
+        fallback=None,
+    )
+    league_prior = _leave_one_out_counts(priors.league_counts, label)
+    league_prior = 0.05 if league_prior is None else league_prior
+    team_prior = league_prior if team_prior is None else team_prior
+    opponent_prior = league_prior if opponent_prior is None else opponent_prior
+    qb_prior = team_prior if qb_prior is None else qb_prior
     total_line = _float_or_none(row.get("total_line"))
     spread_line = _float_or_none(row.get("spread_line"))
     implied_team_total = None
@@ -137,8 +180,8 @@ def build_example_from_row(
 
     return QbScrambleTrainingExample(
         features=features,
-        label=_scramble_label(row),
-        base_rate=float(np.clip(qb_prior, 1e-6, 1.0 - 1e-6)),
+        label=label,
+        base_rate=float(qb_prior),
     )
 
 
@@ -192,6 +235,39 @@ def fit_logistic_qb_scramble(
 
 def _is_modeled_row(row: Mapping[str, object]) -> bool:
     return row.get("play_type") == "pass" or _scramble_label(row) == 1
+
+
+def _qb_id_for_row(row: Mapping[str, object]) -> str | None:
+    passer_id = row.get("passer_player_id")
+    if passer_id not in (None, ""):
+        return str(passer_id)
+    if _scramble_label(row) == 1:
+        rusher_id = row.get("rusher_player_id")
+        if rusher_id not in (None, ""):
+            return str(rusher_id)
+    return None
+
+
+def _leave_one_out_rate(
+    counts_by_key: dict[str, tuple[int, int]],
+    key: str | None,
+    label: int,
+    *,
+    fallback: float | None,
+) -> float | None:
+    if key is None or key not in counts_by_key:
+        return fallback
+    rate = _leave_one_out_counts(counts_by_key[key], label)
+    return fallback if rate is None else rate
+
+
+def _leave_one_out_counts(counts: tuple[int, int], label: int) -> float | None:
+    scrambles, total = counts
+    scrambles -= label
+    total -= 1
+    if total <= 0:
+        return None
+    return scrambles / total
 
 
 def _scramble_label(row: Mapping[str, object]) -> int:

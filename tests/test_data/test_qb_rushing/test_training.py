@@ -62,7 +62,9 @@ def test_build_scramble_priors_counts_dropbacks_and_scrambles():
 
 
 def test_build_example_from_row_returns_scramble_label_and_base_rate():
-    priors = build_scramble_priors([_row(qb_scramble=1), _row(qb_scramble=0)])
+    priors = build_scramble_priors(
+        [_row(qb_scramble=1), _row(qb_scramble=1, week=6), _row(qb_scramble=0)]
+    )
 
     example = build_example_from_row(_row(qb_scramble=1), DEFAULT_QB_SCRAMBLE_FEATURES, priors)
 
@@ -84,6 +86,35 @@ def test_build_example_from_row_keeps_scramble_run_rows():
 
     assert example is not None
     assert example.label == 1
+
+
+def test_scramble_run_rows_use_rusher_id_when_passer_id_missing():
+    row = _row(
+        play_type="run",
+        qb_scramble=1,
+        passer_player_id=None,
+        rusher_player_id="QB1",
+    )
+    priors = build_scramble_priors([row, _row(passer_player_id="QB2", qb_scramble=0)])
+
+    example = build_example_from_row(row, DEFAULT_QB_SCRAMBLE_FEATURES, priors)
+
+    assert priors.qb["QB1"] == pytest.approx(1.0)
+    assert example is not None
+    assert example.label == 1
+    assert example.base_rate == pytest.approx(0.0)
+
+
+def test_build_example_from_row_uses_leave_one_out_base_rate():
+    row = _row(qb_scramble=1)
+    priors = build_scramble_priors([row])
+
+    example = build_example_from_row(row, DEFAULT_QB_SCRAMBLE_FEATURES, priors)
+
+    assert priors.qb["QB1"] == pytest.approx(1.0)
+    assert priors.league == pytest.approx(1.0)
+    assert example is not None
+    assert example.base_rate == pytest.approx(0.05)
 
 
 def test_build_example_from_row_skips_non_pass_non_scramble_rows():

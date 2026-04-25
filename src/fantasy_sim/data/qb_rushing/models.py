@@ -162,9 +162,9 @@ def qb_scramble_feature_values(
     score_diff = float(state.score_differential)
     clock = max(0, min(900, int(state.clock)))
     quarter = max(1, min(5, int(state.quarter)))
-    spread = 0.0 if spread_line is None else float(spread_line)
-    total = 44.0 if total_line is None else float(total_line)
-    implied = total / 2.0 if implied_team_total is None else float(implied_team_total)
+    spread = _finite_float(spread_line, default=0.0)
+    total = _finite_float(total_line, default=44.0)
+    implied = _finite_float(implied_team_total, default=total / 2.0)
 
     return {
         "intercept": 1.0,
@@ -199,3 +199,13 @@ def qb_scramble_feature_values(
             np.clip(opponent_prior_scramble_rate_allowed, 0.0, 1.0)
         ),
     }
+
+
+def _finite_float(value: object, *, default: float) -> float:
+    try:
+        value_f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not np.isfinite(value_f):
+        return default
+    return value_f
