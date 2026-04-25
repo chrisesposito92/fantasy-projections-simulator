@@ -22,6 +22,23 @@ from fantasy_sim.data.qb_rushing import load_qb_rushing_config
 from fantasy_sim.data.target_selection import load_target_selection_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 
+BUILD_GAME_CONFIG_EXCLUDE_KEYS = frozenset(
+    {
+        "role_trend_config",
+        "market_history_config",
+        "qb_rushing_config",
+    }
+)
+
+
+def build_game_config_kwargs(configs: dict) -> dict:
+    """Return only engine configs accepted by build_games_parallel()."""
+    return {
+        key: value
+        for key, value in configs.items()
+        if key not in BUILD_GAME_CONFIG_EXCLUDE_KEYS
+    }
+
 
 def _parse_value(s: str) -> bool | int | float | str | list:
     """Parse a CLI string value to its Python type.

@@ -34,7 +34,7 @@ from fantasy_sim.data.target_selection.training import (
 from fantasy_sim.engine.game_script import resolve_game_script
 from fantasy_sim.engine.player_selector import receiver_candidates_and_legacy_weights
 from fantasy_sim.engine.types import GameState
-from fantasy_sim.validation.config import build_engine_configs
+from fantasy_sim.validation.config import build_engine_configs, build_game_config_kwargs
 from fantasy_sim.validation.parallel import build_games_parallel, default_max_workers
 
 _HOLDOUT_SEASON = 2025
@@ -277,11 +277,7 @@ def collect_examples_for_artifact(
         "ncaa_rookie", {}
     )["enabled"] = False
     configs = build_engine_configs(runtime_defaults)
-    build_configs = {
-        key: value
-        for key, value in configs.items()
-        if key not in {"role_trend_config", "market_history_config"}
-    }
+    build_configs = build_game_config_kwargs(configs)
 
     all_examples: list[TargetSelectionExample] = []
     for source_season in source_seasons:

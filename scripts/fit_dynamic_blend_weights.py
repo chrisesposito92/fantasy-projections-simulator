@@ -27,7 +27,7 @@ from fantasy_sim.scoring.dynamic_blend import (
     fit_dynamic_blend_artifact,
 )
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
-from fantasy_sim.validation.config import build_engine_configs
+from fantasy_sim.validation.config import build_engine_configs, build_game_config_kwargs
 from fantasy_sim.validation.parallel import (
     GameSpec,
     build_games_parallel,
@@ -98,11 +98,7 @@ def collect_source_rows_for_season(
     """Run default simulator contexts and collect source rows for fitting."""
     loader = DataLoader()
     configs = build_engine_configs(defaults)
-    build_configs = {
-        key: value
-        for key, value in configs.items()
-        if key not in {"role_trend_config", "market_history_config"}
-    }
+    build_configs = build_game_config_kwargs(configs)
     role_trend = (
         RoleTrendProjectionAdjuster(configs["role_trend_config"])
         if configs.get("role_trend_config") is not None

@@ -610,6 +610,7 @@ def build_games_parallel(
     td_tendency_config=None,
     target_selection_config=None,
     play_call_model_config=None,
+    qb_rushing_config=None,
     max_workers: int | None = None,
     dual_arm: bool = False,
     on_complete: "Callable[[int, int], None] | None" = None,
@@ -632,6 +633,8 @@ def build_games_parallel(
     Returns:
         List of result dicts sorted by (week, game_id).
     """
+    del qb_rushing_config
+
     if not game_args:
         return []
 

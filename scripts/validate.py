@@ -40,6 +40,7 @@ from fantasy_sim.validation.config import (
     apply_overrides,
     build_bare_engine_configs,
     build_engine_configs,
+    build_game_config_kwargs,
 )
 from fantasy_sim.validation.ledger import (
     CURRENT_LEDGER_SCHEMA_VERSION,
@@ -461,16 +462,8 @@ def run_season(
         else None
     )
 
-    arm_a_build_configs = {
-        key: value
-        for key, value in arm_a_configs.items()
-        if key not in {"role_trend_config", "market_history_config"}
-    }
-    arm_b_build_configs = {
-        key: value
-        for key, value in arm_b_configs.items()
-        if key not in {"role_trend_config", "market_history_config"}
-    }
+    arm_a_build_configs = build_game_config_kwargs(arm_a_configs)
+    arm_b_build_configs = build_game_config_kwargs(arm_b_configs)
 
     loader = DataLoader()
     schedules = loader.load_schedules([test_season])
