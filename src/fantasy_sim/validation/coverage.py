@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import json
-import os
 import logging
+import math
+import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
 
+from fantasy_sim.data.play_call_model.models import (
+    DEFAULT_ARTIFACT_DIR as PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR,
+    DEFAULT_PLAY_CALL_FEATURES,
+    PLAY_CALL_MODEL_SCHEMA_VERSION,
+    PLAY_CALL_MODEL_TYPE,
+)
 from fantasy_sim.data.target_selection.models import (
     DEFAULT_ARTIFACT_DIR,
     TARGET_SELECTION_MODEL_TYPE,
@@ -178,6 +185,20 @@ def _resolve_target_selection_artifacts_path(config: object) -> Path:
     return DEFAULT_ARTIFACT_DIR
 
 
+def _resolve_play_call_model_artifacts_path(config: object) -> Path:
+    play_call_model_config = _config_section(config, "play_call_model_config")
+    if play_call_model_config is None:
+        play_call_model_config = _config_section(config, "play_call_model")
+    artifacts_dir = (
+        _config_get(play_call_model_config, "artifacts_dir", default=None)
+        if play_call_model_config is not None
+        else None
+    )
+    if artifacts_dir is not None:
+        return _path_or_default(artifacts_dir, PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR)
+    return PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR
+
+
 def _resolve_market_history_snapshot_label(config: object) -> str:
     market_history_config = _config_section(config, "market_history_config")
     if market_history_config is None:
@@ -333,6 +354,60 @@ def _target_selection_artifact_is_valid(path: Path) -> bool:
     return bool(parsed)
 
 
+def _play_call_source_seasons_are_safe(
+    source_seasons: object,
+    expected_season: int,
+) -> bool:
+    if not isinstance(source_seasons, list) or not source_seasons:
+        return False
+    return all(
+        isinstance(season, int)
+        and not isinstance(season, bool)
+        and math.isfinite(season)
+        and season < expected_season
+        for season in source_seasons
+    )
+
+
+def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool:
+    if not path.exists():
+        return False
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(artifact, Mapping):
+        return False
+    if artifact.get("schema_version") != PLAY_CALL_MODEL_SCHEMA_VERSION:
+        return False
+    if artifact.get("model_type") != PLAY_CALL_MODEL_TYPE:
+        return False
+    if artifact.get("target_season") != expected_season:
+        return False
+    if not _play_call_source_seasons_are_safe(
+        artifact.get("source_seasons"),
+        expected_season,
+    ):
+        return False
+    feature_names = artifact.get("feature_names")
+    coefficients = artifact.get("coefficients")
+    if not isinstance(feature_names, list) or not feature_names:
+        return False
+    if not all(isinstance(name, str) for name in feature_names):
+        return False
+    if any(name not in DEFAULT_PLAY_CALL_FEATURES for name in feature_names):
+        return False
+    if not isinstance(coefficients, Mapping):
+        return False
+    if set(coefficients) != set(feature_names):
+        return False
+    try:
+        parsed = [float(value) for value in coefficients.values()]
+    except (TypeError, ValueError):
+        return False
+    return all(math.isfinite(value) for value in parsed)
+
+
 def _covered_seasons_from_target_selection_artifacts(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Path],
@@ -342,6 +417,18 @@ def _covered_seasons_from_target_selection_artifacts(
         for season in test_seasons
         if (path := paths_by_season.get(season)) is not None
         and _target_selection_artifact_is_valid(path)
+    ]
+
+
+def _covered_seasons_from_play_call_model_artifacts(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Path],
+) -> list[int]:
+    return [
+        season
+        for season in test_seasons
+        if (path := paths_by_season.get(season)) is not None
+        and _play_call_model_artifact_is_valid(path, season)
     ]
 
 
@@ -488,6 +575,7 @@ def collect_signal_coverage(
     props_path = _resolve_props_path(config, props_dir)
     market_history_path = _resolve_market_history_path(config, market_history_dir)
     target_selection_artifacts_path = _resolve_target_selection_artifacts_path(config)
+    play_call_model_artifacts_path = _resolve_play_call_model_artifacts_path(config)
     market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
@@ -665,6 +753,11 @@ def collect_signal_coverage(
         ("target_selection_config", "target_selection"),
         ("target_selection",),
     )
+    play_call_model_enabled = _signal_enabled(
+        config,
+        ("play_call_model_config", "play_call_model"),
+        ("play_call_model",),
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -706,6 +799,10 @@ def collect_signal_coverage(
     }
     target_selection_artifact_paths: dict[int, Path] = {
         season: target_selection_artifacts_path / f"target_selection_{season}.json"
+        for season in seasons
+    }
+    play_call_model_artifact_paths: dict[int, Path] = {
+        season: play_call_model_artifacts_path / f"play_call_model_{season}.json"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
@@ -1289,6 +1386,18 @@ def collect_signal_coverage(
                 "Requires target_selection_<season>.json artifacts fitted from "
                 "prior-season PBP target labels; runtime falls back to legacy "
                 "selection when an artifact is missing or invalid"
+            ),
+        ),
+        "play_call_model": _build_signal(
+            play_call_model_enabled,
+            seasons,
+            _covered_seasons_from_play_call_model_artifacts(
+                seasons,
+                play_call_model_artifact_paths,
+            ),
+            note=(
+                "Requires play_call_model_<season>.json artifacts fitted from "
+                "prior-season PBP pass/run labels"
             ),
         ),
         "ensemble.ff_opportunity": _build_signal(

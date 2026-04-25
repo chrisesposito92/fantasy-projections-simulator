@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import math
 import threading
 from pathlib import Path
 import polars as pl
@@ -27,6 +28,7 @@ from fantasy_sim.data.usage.models import UsageConfig
 from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
+from fantasy_sim.data.play_call_model import PlayCallModel, PlayCallModelConfig
 from fantasy_sim.data.target_selection import TargetSelectionConfig, TargetSelectionModel
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
@@ -75,6 +77,7 @@ class GameContextBuilder:
         goal_line_concentration_config: GoalLineConcentrationConfig | None = None,
         td_tendency_config: TdTendencyConfig | None = None,
         target_selection_config: TargetSelectionConfig | None = None,
+        play_call_model_config: PlayCallModelConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -276,6 +279,12 @@ class GameContextBuilder:
         if self._target_selection_config.enabled:
             self._target_selection_model = TargetSelectionModel(self._target_selection_config)
             logger.info("Target-selection model enabled")
+
+        self._play_call_model_config = play_call_model_config or PlayCallModelConfig(enabled=False)
+        self._play_call_model = None
+        if self._play_call_model_config.enabled:
+            self._play_call_model = PlayCallModel(self._play_call_model_config)
+            logger.info("Play-call model enabled")
 
     def _is_goal_line_concentration_enabled(self) -> bool:
         """Return the runtime feature flag for built team distributions."""
@@ -691,6 +700,8 @@ class GameContextBuilder:
     def _apply_vegas(
         dists: TeamDistributions,
         ctx: VegasContext,
+        *,
+        apply_pass_rate: bool = True,
     ) -> None:
         """Apply VegasContext factors to TeamDistributions in-place.
 
@@ -710,11 +721,74 @@ class GameContextBuilder:
             dists.pace_factor *= ctx.volume_factor
 
         # VEG-02: pass rate (default only, NOT per-bucket distributions)
-        if ctx.pass_rate_factor != 1.0:
+        if apply_pass_rate and ctx.pass_rate_factor != 1.0:
             current_pass = dists.play_calling.default["pass"]
             new_pass = max(0.01, min(0.99, current_pass * ctx.pass_rate_factor))
             new_run = 1.0 - new_pass
             dists.play_calling.default = {"pass": new_pass, "run": new_run}
+
+    def _play_call_market_features(
+        self,
+        home_team: str,
+        away_team: str,
+        target_season: int,
+        week: int | None,
+    ) -> tuple[dict[str, float | None], dict[str, float | None]]:
+        none_features: dict[str, float | None] = {
+            "spread_line": None,
+            "total_line": None,
+            "implied_team_total": None,
+        }
+        try:
+            schedule_df = self.loader.load_schedules([target_season])
+        except Exception:
+            logger.debug("Play-call model: unable to load schedule", exc_info=True)
+            return dict(none_features), dict(none_features)
+
+        if schedule_df is None or schedule_df.is_empty():
+            return dict(none_features), dict(none_features)
+
+        try:
+            game_rows = schedule_df.filter(
+                (pl.col("home_team") == home_team)
+                & (pl.col("away_team") == away_team)
+                & (pl.col("season") == target_season)
+                & (pl.col("week") == week)
+            )
+        except Exception:
+            logger.debug("Play-call model: unable to filter schedule", exc_info=True)
+            return dict(none_features), dict(none_features)
+
+        if game_rows.is_empty():
+            return dict(none_features), dict(none_features)
+
+        row = game_rows.row(0, named=True)
+        spread_raw = row.get("spread_line")
+        total_raw = row.get("total_line")
+        try:
+            spread_line = None if spread_raw is None else float(spread_raw)
+            total_line = None if total_raw is None else float(total_raw)
+        except (TypeError, ValueError):
+            return dict(none_features), dict(none_features)
+        if spread_line is None or total_line is None:
+            return dict(none_features), dict(none_features)
+        if not math.isfinite(spread_line) or not math.isfinite(total_line):
+            return dict(none_features), dict(none_features)
+
+        home_implied = total_line / 2.0 + spread_line / 2.0
+        away_implied = total_line / 2.0 - spread_line / 2.0
+
+        home_features = {
+            "spread_line": spread_line,
+            "total_line": total_line,
+            "implied_team_total": home_implied,
+        }
+        away_features = {
+            "spread_line": -spread_line,
+            "total_line": total_line,
+            "implied_team_total": away_implied,
+        }
+        return home_features, away_features
 
     def _ensure_pff_crosswalk(
         self,
@@ -873,14 +947,55 @@ class GameContextBuilder:
             season_weights=season_weights,
         )
 
+        home_play_call_context = None
+        away_play_call_context = None
+        if self._play_call_model is not None and target_season is not None:
+            home_market, away_market = self._play_call_market_features(
+                home_team,
+                away_team,
+                target_season,
+                week,
+            )
+            context_week = week or 0
+            home_play_call_context = self._play_call_model.build_context(
+                team=home_team,
+                opponent=away_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=True,
+                **home_market,
+            )
+            away_play_call_context = self._play_call_model.build_context(
+                team=away_team,
+                opponent=home_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=False,
+                **away_market,
+            )
+            home_dists.play_call_context = home_play_call_context
+            away_dists.play_call_context = away_play_call_context
+
         # Vegas adjustments (first: base volume + game script before PFF refines)
         if self._vegas_engine is not None and target_season and week:
             home_vegas_ctx, away_vegas_ctx = self._vegas_engine.compute(
                 home_team=home_team, away_team=away_team,
                 target_season=target_season, week=week,
             )
-            self._apply_vegas(home_dists, home_vegas_ctx)
-            self._apply_vegas(away_dists, away_vegas_ctx)
+            self._apply_vegas(
+                home_dists,
+                home_vegas_ctx,
+                apply_pass_rate=home_play_call_context is None,
+            )
+            self._apply_vegas(
+                away_dists,
+                away_vegas_ctx,
+                apply_pass_rate=away_play_call_context is None,
+            )
 
         # Availability adjustments: remove or soften players before downstream usage refinement.
         if getattr(self, "_availability_engine", None) is not None and target_season and week:

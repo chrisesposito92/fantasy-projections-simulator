@@ -295,6 +295,11 @@ target_selection:
   probability_floor: 0.001
   max_logit_delta: 3.0
 
+play_call_model:
+  enabled: false
+  artifacts_dir: null
+  probability_clamp: [0.05, 0.95]
+
 tracking:
   enabled: false
   window_weeks: 4

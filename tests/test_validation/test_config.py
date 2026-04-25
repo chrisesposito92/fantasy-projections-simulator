@@ -156,6 +156,14 @@ class TestBuildEngineConfigs:
         assert "target_selection_config" in configs
         assert configs["target_selection_config"] is None
 
+    def test_defaults_keep_play_call_model_disabled(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "play_call_model_config" in configs
+        assert configs["play_call_model_config"] is None
+
     def test_enabled_target_selection_config_is_built(self):
         defaults = load_defaults()
         overridden = apply_overrides(
@@ -172,6 +180,23 @@ class TestBuildEngineConfigs:
         assert configs["target_selection_config"] is not None
         assert configs["target_selection_config"].artifacts_dir == "results/target_selection/test"
         assert configs["target_selection_config"].max_logit_delta == 2.25
+
+    def test_enabled_play_call_model_config_is_built(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "play_call_model.enabled=true",
+                "play_call_model.artifacts_dir=results/play_call_model/test",
+                "play_call_model.probability_clamp=[0.10,0.90]",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["play_call_model_config"] is not None
+        assert configs["play_call_model_config"].artifacts_dir == "results/play_call_model/test"
+        assert configs["play_call_model_config"].probability_clamp == (0.10, 0.90)
 
     def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
         defaults = load_defaults()

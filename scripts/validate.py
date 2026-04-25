@@ -594,6 +594,7 @@ def run_season(
                 ),
                 td_tendency_config=arm_b_configs.get("td_tendency_config"),
                 target_selection_config=arm_b_configs.get("target_selection_config"),
+                play_call_model_config=arm_b_configs.get("play_call_model_config"),
             )
 
             specs_a: list[GameSpec] = []
