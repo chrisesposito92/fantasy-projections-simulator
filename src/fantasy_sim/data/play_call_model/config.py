@@ -6,8 +6,6 @@ import math
 
 from fantasy_sim.data.play_call_model.models import PlayCallModelConfig
 
-_VALID_FALLBACKS = {"empirical"}
-
 
 def load_play_call_model_config(defaults: dict) -> PlayCallModelConfig:
     """Extract PlayCallModelConfig from the full defaults config dict."""
@@ -25,15 +23,8 @@ def load_play_call_model_config(defaults: dict) -> PlayCallModelConfig:
             "play_call_model.probability_clamp must satisfy 0 <= min < max <= 1"
         )
 
-    fallback = str(raw.get("fallback", "empirical"))
-    if fallback not in _VALID_FALLBACKS:
-        raise ValueError(
-            f"play_call_model.fallback must be one of {sorted(_VALID_FALLBACKS)}"
-        )
-
     return PlayCallModelConfig(
         enabled=bool(raw.get("enabled", False)),
         artifacts_dir=raw.get("artifacts_dir"),
         probability_clamp=(lo, hi),
-        fallback=fallback,
     )

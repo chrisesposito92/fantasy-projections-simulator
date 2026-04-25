@@ -81,6 +81,22 @@ def test_build_example_from_row_uses_team_perspective_spread_for_away_team():
     assert example.features[0] == pytest.approx(-3.0 / 14.0)
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"spread_line": 3.0, "total_line": None},
+        {"spread_line": None, "total_line": 48.0},
+    ],
+)
+def test_build_example_from_row_nulls_partial_market_features(overrides):
+    features = ("spread_norm", "total_norm", "implied_total_norm")
+
+    example = build_example_from_row(_row(**overrides), features)
+
+    assert example is not None
+    assert example.features.tolist() == [0.0, 0.0, 0.0]
+
+
 def test_build_example_from_row_skips_non_scrimmage_play():
     assert build_example_from_row(
         _row(play_type="punt"),

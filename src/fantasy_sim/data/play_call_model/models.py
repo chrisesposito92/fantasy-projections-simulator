@@ -56,7 +56,6 @@ class PlayCallModelConfig:
     enabled: bool = False
     artifacts_dir: str | None = None
     probability_clamp: tuple[float, float] = (0.05, 0.95)
-    fallback: str = "empirical"
 
 
 @dataclass(frozen=True)
