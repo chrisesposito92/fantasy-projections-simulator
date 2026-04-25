@@ -10,6 +10,7 @@ from fantasy_sim.data.play_call_model.models import (
     PlayCallModelConfig,
     play_call_feature_values,
 )
+from fantasy_sim.data.play_call_model.runtime import PlayCallModel
 from fantasy_sim.data.play_call_model.training import (
     PlayCallFitResult,
     PlayCallTrainingExample,
@@ -25,6 +26,7 @@ __all__ = [
     "PLAY_CALL_MODEL_TYPE",
     "PlayCallContext",
     "PlayCallFitResult",
+    "PlayCallModel",
     "PlayCallModelConfig",
     "PlayCallTrainingExample",
     "build_example_from_row",
