@@ -102,8 +102,29 @@ def test_non_finite_coefficient_returns_none(tmp_path):
     assert _build_context(model) is None
 
 
+def test_non_finite_extra_coefficient_returns_none(tmp_path):
+    _write_artifact(
+        tmp_path,
+        coefficients={"intercept": 0.0, "down_3": 0.0, "unused": "inf"},
+    )
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
 def test_missing_feature_coefficient_returns_none(tmp_path):
     _write_artifact(tmp_path, coefficients={"intercept": 0.0})
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+def test_unsupported_feature_name_returns_none(tmp_path):
+    _write_artifact(
+        tmp_path,
+        feature_names=["intercept", "unsupported_feature"],
+        coefficients={"intercept": 0.0, "unsupported_feature": 1.0},
+    )
     model = PlayCallModel(_config(tmp_path))
 
     assert _build_context(model) is None

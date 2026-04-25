@@ -10,6 +10,7 @@ from typing import Any
 
 from fantasy_sim.data.play_call_model.models import (
     DEFAULT_ARTIFACT_DIR,
+    DEFAULT_PLAY_CALL_FEATURES,
     PLAY_CALL_MODEL_SCHEMA_VERSION,
     PLAY_CALL_MODEL_TYPE,
     PlayCallContext,
@@ -90,7 +91,19 @@ class PlayCallModel:
                 target_season,
             )
             return None
-        if not all(math.isfinite(coefficients[name]) for name in parsed_features):
+        if any(name not in DEFAULT_PLAY_CALL_FEATURES for name in parsed_features):
+            logger.warning(
+                "Invalid play-call artifact for %s: unsupported feature name",
+                target_season,
+            )
+            return None
+        if set(coefficients) != set(parsed_features):
+            logger.warning(
+                "Invalid play-call artifact for %s: coefficient/feature mismatch",
+                target_season,
+            )
+            return None
+        if not all(math.isfinite(value) for value in coefficients.values()):
             logger.warning(
                 "Invalid play-call artifact for %s: non-finite coefficient",
                 target_season,
