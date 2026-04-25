@@ -2365,6 +2365,55 @@ def test_qb_designed_run_coverage_rejects_missing_tail_buckets(tmp_path):
     assert coverage["qb_rushing.designed_runs"].missing_seasons == [2024]
 
 
+def test_qb_designed_run_coverage_rejects_non_string_feature_names(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_designed_run_artifact(
+        artifact_dir / "qb_designed_run_model_2024.json",
+        feature_names=["intercept", []],
+        coefficients={"intercept": 0.0},
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "designed_runs": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.designed_runs"].covered_seasons == []
+    assert coverage["qb_rushing.designed_runs"].missing_seasons == [2024]
+
+
+def test_qb_designed_run_coverage_rejects_malformed_tail_bucket_values(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_designed_run_artifact(
+        artifact_dir / "qb_designed_run_model_2024.json",
+        tail_buckets={"global": [5, "not-a-yard"]},
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "designed_runs": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.designed_runs"].covered_seasons == []
+    assert coverage["qb_rushing.designed_runs"].missing_seasons == [2024]
+
+
 def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
     _write_play_call_model_artifact(tmp_path / "play_call_model_2024.json")
 

@@ -539,6 +539,8 @@ def _qb_designed_run_artifact_is_valid(
     coefficients = artifact.get("coefficients")
     if not isinstance(feature_names, list) or not feature_names:
         return False
+    if not all(isinstance(name, str) for name in feature_names):
+        return False
     if len(set(feature_names)) != len(feature_names):
         return False
     if any(name not in DEFAULT_QB_DESIGNED_RUN_FEATURES for name in feature_names):
@@ -554,8 +556,15 @@ def _qb_designed_run_artifact_is_valid(
     tail_buckets = artifact.get("tail_buckets")
     if not isinstance(tail_buckets, Mapping):
         return False
-    global_tail = tail_buckets.get("global")
-    return isinstance(global_tail, list) and len(global_tail) > 0
+    parsed_tail_buckets: dict[str, tuple[int, ...]] = {}
+    for key, values in tail_buckets.items():
+        if not isinstance(key, str) or not isinstance(values, list):
+            return False
+        try:
+            parsed_tail_buckets[key] = tuple(int(value) for value in values)
+        except (TypeError, ValueError):
+            return False
+    return bool(parsed_tail_buckets.get("global"))
 
 
 def _covered_seasons_from_target_selection_artifacts(
