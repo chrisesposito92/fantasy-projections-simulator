@@ -239,9 +239,91 @@ def test_build_designed_run_example_from_row_uses_qb_label_and_features():
 
     assert example is not None
     assert example.label == 1
-    assert example.base_rate == pytest.approx(0.5)
+    assert example.base_rate == pytest.approx(0.0)
     assert example.features.shape == (len(DEFAULT_QB_DESIGNED_RUN_FEATURES),)
     assert np.isfinite(example.features).all()
+
+
+def test_build_designed_run_example_uses_offense_qb_for_negative_rusher_features():
+    rows = [
+        _designed_run_row(rusher_player_id="QB1", rusher_position="QB", qb_player_id="QB1"),
+        _designed_run_row(rusher_player_id="QB1", rusher_position="QB", qb_player_id="QB1"),
+        _designed_run_row(rusher_player_id="RB1", rusher_position="RB", qb_player_id="QB1"),
+    ]
+    priors = build_designed_run_priors(rows)
+
+    example = build_designed_run_example_from_row(
+        rows[2],
+        (
+            "qb_prior_designed_run_share",
+            "mobility_high",
+            "mobility_medium",
+        ),
+        priors,
+    )
+
+    assert example is not None
+    assert example.label == 0
+    assert example.features[0] == pytest.approx(1.0)
+    assert example.features[1] == pytest.approx(1.0)
+    assert example.features[2] == pytest.approx(0.0)
+
+
+def test_build_designed_run_example_preserves_zero_leave_one_out_priors():
+    rows = [
+        _designed_run_row(
+            rusher_player_id="RB1",
+            rusher_position="RB",
+            qb_player_id="QB1",
+            posteam="BUF",
+        ),
+        _designed_run_row(
+            rusher_player_id="RB2",
+            rusher_position="RB",
+            qb_player_id="QB1",
+            posteam="BUF",
+        ),
+        _designed_run_row(
+            rusher_player_id="QB2",
+            rusher_position="QB",
+            qb_player_id="QB2",
+            posteam="KC",
+            defteam="BUF",
+        ),
+    ]
+    priors = build_designed_run_priors(rows)
+
+    example = build_designed_run_example_from_row(
+        rows[0],
+        (
+            "qb_prior_designed_run_share",
+            "team_prior_designed_qb_run_rate",
+            "opponent_prior_designed_qb_run_allowed",
+        ),
+        priors,
+    )
+
+    assert example is not None
+    assert example.features.tolist() == pytest.approx([0.0, 0.0, 0.0])
+    assert example.base_rate == pytest.approx(0.0)
+
+
+def test_build_designed_run_example_uses_leave_one_out_team_base_rate():
+    rows = [
+        _designed_run_row(rusher_player_id="QB1", rusher_position="QB", qb_player_id="QB1"),
+        _designed_run_row(rusher_player_id="RB1", rusher_position="RB", qb_player_id="QB1"),
+    ]
+    priors = build_designed_run_priors(rows)
+
+    example = build_designed_run_example_from_row(
+        rows[0],
+        DEFAULT_QB_DESIGNED_RUN_FEATURES,
+        priors,
+    )
+
+    assert example is not None
+    assert priors.team["BUF"] == pytest.approx(0.5)
+    assert example.base_rate == pytest.approx(0.0)
 
 
 def test_build_designed_run_example_skips_scrambles_and_non_run_rows():

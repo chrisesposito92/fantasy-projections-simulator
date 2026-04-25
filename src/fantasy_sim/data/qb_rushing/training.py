@@ -307,18 +307,17 @@ def build_designed_run_priors(rows: list[Mapping[str, object]]) -> QbDesignedRun
         if not _is_designed_run_row(row):
             continue
         label = _designed_qb_run_label(row)
-        rusher_id = row.get("rusher_player_id")
+        qb_id = _offense_qb_id_for_designed_run_row(row)
         team = row.get("posteam")
         opponent = row.get("defteam")
         league_qb_runs += label
         league_total += 1
-        if rusher_id not in (None, ""):
-            player_key = str(rusher_id)
+        if qb_id is not None:
+            player_key = qb_id
             qb_total_counts[player_key] += 1
             qb_designed_counts[player_key] += label
-            if label == 1:
-                qb_counts[player_key][0] += label
-                qb_counts[player_key][1] += 1
+            qb_counts[player_key][0] += label
+            qb_counts[player_key][1] += 1
         if team is not None:
             team_counts[str(team)][0] += label
             team_counts[str(team)][1] += 1
@@ -365,15 +364,16 @@ def build_designed_run_example_from_row(
         return None
 
     label = _designed_qb_run_label(row)
-    rusher_id = row.get("rusher_player_id")
-    rusher_key = None if rusher_id in (None, "") else str(rusher_id)
+    qb_key = _offense_qb_id_for_designed_run_row(row)
+    if qb_key is None:
+        return None
     posteam = str(row["posteam"])
     defteam = str(row["defteam"])
     home_team = str(row["home_team"])
     away_team = str(row["away_team"])
     league_prior = _leave_one_out_counts(priors.league_counts, label)
     league_prior = 0.05 if league_prior is None else league_prior
-    qb_prior = _leave_one_out_rate(priors.qb_counts, rusher_key, label, fallback=league_prior)
+    qb_prior = _leave_one_out_rate(priors.qb_counts, qb_key, label, fallback=league_prior)
     team_prior = _leave_one_out_rate(priors.team_counts, posteam, label, fallback=league_prior)
     opponent_prior = _leave_one_out_rate(
         priors.opponent_allowed_counts,
@@ -402,10 +402,12 @@ def build_designed_run_example_from_row(
         spread_line=team_spread_line,
         total_line=total_line,
         implied_team_total=implied_team_total,
-        qb_prior_designed_run_share=qb_prior or league_prior,
-        team_prior_designed_qb_run_rate=team_prior or league_prior,
-        opponent_prior_designed_qb_run_allowed=opponent_prior or league_prior,
-        mobility_tier=priors.mobility_tiers.get(rusher_key or "", "medium"),
+        qb_prior_designed_run_share=league_prior if qb_prior is None else qb_prior,
+        team_prior_designed_qb_run_rate=league_prior if team_prior is None else team_prior,
+        opponent_prior_designed_qb_run_allowed=(
+            league_prior if opponent_prior is None else opponent_prior
+        ),
+        mobility_tier=priors.mobility_tiers.get(qb_key, "medium"),
     )
     features = np.array([values.get(name, 0.0) for name in feature_names], dtype=float)
     if not np.all(np.isfinite(features)):
@@ -413,7 +415,7 @@ def build_designed_run_example_from_row(
     return QbDesignedRunTrainingExample(
         features=features,
         label=label,
-        base_rate=float(priors.team.get(posteam, priors.league)),
+        base_rate=float(league_prior if team_prior is None else team_prior),
     )
 
 
@@ -492,6 +494,23 @@ def _is_designed_run_row(row: Mapping[str, object]) -> bool:
 
 def _designed_qb_run_label(row: Mapping[str, object]) -> int:
     return 1 if row.get("rusher_position") == "QB" else 0
+
+
+def _offense_qb_id_for_designed_run_row(row: Mapping[str, object]) -> str | None:
+    for key in (
+        "qb_player_id",
+        "offense_qb_player_id",
+        "posteam_qb_player_id",
+        "passer_player_id",
+    ):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value)
+    if _designed_qb_run_label(row) == 1:
+        rusher_id = row.get("rusher_player_id")
+        if rusher_id not in (None, ""):
+            return str(rusher_id)
+    return None
 
 
 def _qb_id_for_row(row: Mapping[str, object]) -> str | None:
