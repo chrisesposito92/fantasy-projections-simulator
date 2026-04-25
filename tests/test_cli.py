@@ -8,6 +8,7 @@ import polars as pl
 import numpy as np
 from fantasy_sim.cli import main
 from fantasy_sim.data.play_call_model import PlayCallModelConfig
+from fantasy_sim.data.qb_rushing import QbRushingConfig, QbScrambleModelConfig
 
 
 from fantasy_sim.engine.types import TeamDistributions
@@ -546,6 +547,29 @@ class TestBacktestCommand:
             MockBacktester.call_args.kwargs["market_history_config"]
             is market_history_config
         )
+        mock_format_report.assert_called_once()
+
+    @patch("fantasy_sim.cli.format_backtest_report", return_value="backtest report")
+    @patch("fantasy_sim.cli.Backtester")
+    @patch("fantasy_sim.cli.load_qb_rushing_config")
+    def test_backtest_passes_enabled_qb_rushing_config_to_constructor(
+        self,
+        mock_load_qb_rushing_config,
+        MockBacktester,
+        mock_format_report,
+        runner,
+    ):
+        qb_rushing_config = QbRushingConfig(
+            scramble=QbScrambleModelConfig(enabled=True)
+        )
+        mock_load_qb_rushing_config.return_value = qb_rushing_config
+        MockBacktester.return_value.run.return_value = object()
+
+        result = runner.invoke(main, ["backtest", "--season", "2024", "--sims", "10"])
+
+        assert result.exit_code == 0
+        assert MockBacktester.call_args is not None
+        assert MockBacktester.call_args.kwargs["qb_rushing_config"] is qb_rushing_config
         mock_format_report.assert_called_once()
 
 

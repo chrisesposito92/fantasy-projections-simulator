@@ -9,6 +9,12 @@ scramble probability, designed-run selection, and rush-gain tail behavior."
 This slice covers scramble probability only. It is a planning artifact and does
 not change runtime behavior.
 
+Post-implementation note: the standalone v1 scramble-probability slice was
+implemented off by default and failed the 50-sim smoke promotion gate. Do not
+repeat standalone scramble-probability v1 as-is. See
+`docs/hypotheses-list.md` for validation metrics and next-step guidance. The
+rest of this spec remains the original design record.
+
 ## Context
 
 The current simulator handles QB rushing in two separate paths:

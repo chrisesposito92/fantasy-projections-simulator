@@ -29,6 +29,7 @@ from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
 from fantasy_sim.data.play_call_model import PlayCallModel, PlayCallModelConfig
+from fantasy_sim.data.qb_rushing import QbRushingConfig, QbScrambleModel
 from fantasy_sim.data.target_selection import TargetSelectionConfig, TargetSelectionModel
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
@@ -78,6 +79,7 @@ class GameContextBuilder:
         td_tendency_config: TdTendencyConfig | None = None,
         target_selection_config: TargetSelectionConfig | None = None,
         play_call_model_config: PlayCallModelConfig | None = None,
+        qb_rushing_config: QbRushingConfig | None = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.loader = DataLoader(cache_dir=self.cache_dir)
@@ -285,6 +287,12 @@ class GameContextBuilder:
         if self._play_call_model_config.enabled:
             self._play_call_model = PlayCallModel(self._play_call_model_config)
             logger.info("Play-call model enabled")
+
+        self._qb_rushing_config = qb_rushing_config or QbRushingConfig()
+        self._qb_scramble_model = None
+        if self._qb_rushing_config.scramble.enabled:
+            self._qb_scramble_model = QbScrambleModel(self._qb_rushing_config.scramble)
+            logger.info("QB scramble model enabled")
 
     def _is_goal_line_concentration_enabled(self) -> bool:
         """Return the runtime feature flag for built team distributions."""
@@ -979,6 +987,37 @@ class GameContextBuilder:
             )
             home_dists.play_call_context = home_play_call_context
             away_dists.play_call_context = away_play_call_context
+
+        if self._qb_scramble_model is not None and target_season is not None:
+            home_market, away_market = self._play_call_market_features(
+                home_team,
+                away_team,
+                target_season,
+                week,
+            )
+            context_week = week or 0
+            home_dists.qb_scramble_context = self._qb_scramble_model.build_context(
+                roster=home_roster,
+                team=home_team,
+                opponent=away_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=True,
+                **home_market,
+            )
+            away_dists.qb_scramble_context = self._qb_scramble_model.build_context(
+                roster=away_roster,
+                team=away_team,
+                opponent=home_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=False,
+                **away_market,
+            )
 
         # Vegas adjustments (first: base volume + game script before PFF refines)
         if self._vegas_engine is not None and target_season and week:

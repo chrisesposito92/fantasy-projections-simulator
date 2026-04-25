@@ -300,6 +300,14 @@ play_call_model:
   artifacts_dir: null
   probability_clamp: [0.05, 0.95]
 
+qb_rushing:
+  scramble:
+    enabled: false
+    artifacts_dir: null
+    factor_clamp: [0.50, 1.75]
+    probability_clamp: [0.0, 0.25]
+    min_examples: 500
+
 tracking:
   enabled: false
   window_weeks: 4

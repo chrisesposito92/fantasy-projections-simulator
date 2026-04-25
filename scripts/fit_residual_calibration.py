@@ -31,7 +31,7 @@ from fantasy_sim.scoring.residual_calibration import (
     source_rows_for_week,
 )
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
-from fantasy_sim.validation.config import build_engine_configs
+from fantasy_sim.validation.config import build_engine_configs, build_game_config_kwargs
 from fantasy_sim.validation.parallel import (
     GameSpec,
     build_games_parallel,
@@ -112,11 +112,7 @@ def collect_source_rows_for_season(
     loader = DataLoader()
     runtime_defaults = _defaults_with_calibration_suppressed(defaults)
     configs = build_engine_configs(runtime_defaults)
-    build_configs = {
-        key: value
-        for key, value in configs.items()
-        if key not in {"role_trend_config", "market_history_config"}
-    }
+    build_configs = build_game_config_kwargs(configs)
     ensemble_config = load_ensemble_config(runtime_defaults)
     market_history_config = configs.get("market_history_config")
 

@@ -276,6 +276,80 @@ def test_run_season_threads_tracking_config_into_bare_baseline_dual_arm_build():
     assert call_kwargs["tracking_config"] is tracking_config
 
 
+def test_run_season_threads_qb_rushing_config_into_bare_baseline_dual_arm_build():
+    validate = _load_validate_module()
+
+    with patch.object(validate, "simulate_games_parallel", return_value=[]), \
+         patch.object(validate, "build_games_parallel", return_value=[]) as mock_build_games_parallel, \
+         patch.object(validate, "load_actual_scores", return_value=[]), \
+         patch.object(validate, "DataLoader") as mock_loader_cls:
+        mock_loader = mock_loader_cls.return_value
+        mock_loader.cache_dir = Path("/tmp/test-cache")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+
+        qb_rushing_config = object()
+        arm_a_configs = {
+            "pff_config": None,
+            "weather_config": None,
+            "vegas_config": None,
+            "props_config": None,
+            "usage_config": None,
+            "tracking_config": None,
+            "availability_config": None,
+            "role_trend_config": None,
+            "market_history_config": None,
+            "game_script_config": None,
+            "goal_line_concentration_config": None,
+            "td_tendency_config": None,
+            "target_selection_config": None,
+            "play_call_model_config": None,
+            "qb_rushing_config": None,
+        }
+        arm_b_configs = {
+            "pff_config": None,
+            "weather_config": None,
+            "vegas_config": None,
+            "props_config": None,
+            "usage_config": None,
+            "tracking_config": None,
+            "availability_config": None,
+            "role_trend_config": None,
+            "market_history_config": None,
+            "game_script_config": None,
+            "goal_line_concentration_config": None,
+            "td_tendency_config": None,
+            "target_selection_config": None,
+            "play_call_model_config": None,
+            "qb_rushing_config": qb_rushing_config,
+        }
+
+        validate.run_season(
+            test_season=2024,
+            n_sims=10,
+            scoring_config={},
+            num_training_seasons=3,
+            arm_a_configs=arm_a_configs,
+            arm_b_configs=arm_b_configs,
+            positions=["QB"],
+            max_workers=1,
+        )
+
+    call_kwargs = mock_build_games_parallel.call_args.kwargs
+    assert call_kwargs["dual_arm"] is True
+    assert call_kwargs["qb_rushing_config"] is qb_rushing_config
+
+
 def test_run_season_does_not_thread_market_history_config_into_build_kwargs():
     validate = _load_validate_module()
 

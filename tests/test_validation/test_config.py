@@ -3,10 +3,12 @@ import pytest
 from fantasy_sim.validation.config import (
     _parse_value,
     apply_overrides,
+    build_game_config_kwargs,
     build_engine_configs,
     build_bare_engine_configs,
 )
 from fantasy_sim.config.loader import load_defaults
+from fantasy_sim.validation.parallel import build_games_parallel
 
 
 class TestParseValue:
@@ -164,6 +166,14 @@ class TestBuildEngineConfigs:
         assert "play_call_model_config" in configs
         assert configs["play_call_model_config"] is None
 
+    def test_defaults_keep_qb_rushing_disabled(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "qb_rushing_config" in configs
+        assert configs["qb_rushing_config"] is None
+
     def test_enabled_target_selection_config_is_built(self):
         defaults = load_defaults()
         overridden = apply_overrides(
@@ -197,6 +207,45 @@ class TestBuildEngineConfigs:
         assert configs["play_call_model_config"] is not None
         assert configs["play_call_model_config"].artifacts_dir == "results/play_call_model/test"
         assert configs["play_call_model_config"].probability_clamp == (0.10, 0.90)
+
+    def test_enabled_qb_rushing_config_is_built(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "qb_rushing.scramble.enabled=true",
+                "qb_rushing.scramble.artifacts_dir=results/qb_rushing/scramble/test",
+                "qb_rushing.scramble.factor_clamp=[0.75,1.40]",
+                "qb_rushing.scramble.probability_clamp=[0.01,0.20]",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["qb_rushing_config"] is not None
+        assert configs["qb_rushing_config"].scramble.artifacts_dir == "results/qb_rushing/scramble/test"
+        assert configs["qb_rushing_config"].scramble.factor_clamp == (0.75, 1.40)
+        assert configs["qb_rushing_config"].scramble.probability_clamp == (0.01, 0.20)
+
+    def test_build_game_config_kwargs_omits_post_sim_configs(self, tmp_path):
+        defaults = load_defaults()
+        configs = build_engine_configs(defaults)
+
+        build_configs = build_game_config_kwargs(configs)
+
+        assert "qb_rushing_config" in build_configs
+        assert build_games_parallel([], cache_dir=tmp_path, **build_configs) == []
+
+    def test_build_games_parallel_accepts_wired_qb_rushing_config(self, tmp_path):
+        defaults = load_defaults()
+        configs = build_engine_configs(defaults)
+        build_configs = {
+            key: value
+            for key, value in configs.items()
+            if key not in {"role_trend_config", "market_history_config"}
+        }
+
+        assert build_games_parallel([], cache_dir=tmp_path, **build_configs) == []
 
     def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
         defaults = load_defaults()

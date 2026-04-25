@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import numpy as np
-from fantasy_sim.engine.types import GameState, PlayResult, TargetSelectionContextProtocol
+from fantasy_sim.engine.types import (
+    GameState,
+    PlayResult,
+    QbScrambleContextProtocol,
+    TargetSelectionContextProtocol,
+)
 from fantasy_sim.models.distributions import PlayOutcomeDist, TurnoverRates, PenaltyRates
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 
@@ -105,6 +110,7 @@ def resolve_play(
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
     target_selection_context: TargetSelectionContextProtocol | None = None,
+    qb_scramble_context: QbScrambleContextProtocol | None = None,
 ) -> PlayResult:
     if play_type == "pass":
         return _resolve_pass(
@@ -118,6 +124,7 @@ def resolve_play(
             goal_line_concentration_enabled,
             script,
             target_selection_context,
+            qb_scramble_context,
         )
     if play_type == "run":
         return _resolve_run(
@@ -145,6 +152,7 @@ def _resolve_pass(
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
     target_selection_context: TargetSelectionContextProtocol | None = None,
+    qb_scramble_context: QbScrambleContextProtocol | None = None,
 ) -> PlayResult:
     # Lazy import to avoid circular dependencies
     from fantasy_sim.engine.player_selector import select_passer, select_receiver
@@ -156,8 +164,14 @@ def _resolve_pass(
         passer = select_passer(roster, state)
         passer_id = passer.player_id
 
-        # QB scramble check — before sack/int, the QB decides to run
-        if passer.usage.scramble_rate > 0 and rng.random() < passer.usage.scramble_rate:
+        scramble_rate = passer.usage.scramble_rate
+        if qb_scramble_context is not None:
+            context_rate = qb_scramble_context.scramble_probability(state, passer)
+            if context_rate is not None and np.isfinite(context_rate):
+                scramble_rate = float(np.clip(context_rate, 0.0, 1.0))
+
+        # QB scramble check: before sack/int, the QB decides to run.
+        if scramble_rate > 0 and rng.random() < scramble_rate:
             scramble_yards_dist = passer.outcomes.scramble_yards_dist
             if scramble_yards_dist is not None and len(scramble_yards_dist) > 0:
                 raw_yards = int(rng.choice(scramble_yards_dist))

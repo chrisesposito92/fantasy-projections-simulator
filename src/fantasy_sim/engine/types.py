@@ -39,6 +39,17 @@ class PlayCallContextProtocol(Protocol):
         ...
 
 
+class QbScrambleContextProtocol(Protocol):
+    """QB scramble-probability interface used by the engine."""
+
+    def scramble_probability(
+        self,
+        state: "GameState",
+        passer: "PlayerModel",
+    ) -> float | None:
+        ...
+
+
 @dataclass
 class DefensiveTdRates:
     """Team-specific defensive TD rates (replaces fixed constants in game_sim)."""
@@ -60,6 +71,7 @@ class TeamDistributions:
     game_script_config: GameScriptConfig | None = None
     game_script_profile: GameScriptProfile | None = None
     play_call_context: PlayCallContextProtocol | None = None
+    qb_scramble_context: QbScrambleContextProtocol | None = None
     target_selection_context: TargetSelectionContextProtocol | None = None
 
 
