@@ -18,6 +18,12 @@ from fantasy_sim.data.play_call_model.models import (
     PLAY_CALL_MODEL_SCHEMA_VERSION,
     PLAY_CALL_MODEL_TYPE,
 )
+from fantasy_sim.data.qb_rushing.models import (
+    DEFAULT_ARTIFACT_DIR as QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR,
+    DEFAULT_QB_SCRAMBLE_FEATURES,
+    QB_SCRAMBLE_MODEL_TYPE,
+    QB_SCRAMBLE_SCHEMA_VERSION,
+)
 from fantasy_sim.data.target_selection.models import (
     DEFAULT_ARTIFACT_DIR,
     TARGET_SELECTION_MODEL_TYPE,
@@ -197,6 +203,20 @@ def _resolve_play_call_model_artifacts_path(config: object) -> Path:
     if artifacts_dir is not None:
         return _path_or_default(artifacts_dir, PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR)
     return PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR
+
+
+def _resolve_qb_scramble_artifacts_path(config: object) -> Path:
+    qb_rushing_config = _config_section(config, "qb_rushing_config")
+    if qb_rushing_config is None:
+        qb_rushing_config = _config_section(config, "qb_rushing")
+    artifacts_dir = (
+        _config_get(qb_rushing_config, "scramble", "artifacts_dir", default=None)
+        if qb_rushing_config is not None
+        else None
+    )
+    if artifacts_dir is not None:
+        return _path_or_default(artifacts_dir, QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR)
+    return QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR
 
 
 def _resolve_market_history_snapshot_label(config: object) -> str:
@@ -408,6 +428,45 @@ def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool
     return all(math.isfinite(value) for value in parsed)
 
 
+def _qb_scramble_artifact_is_valid(path: Path, expected_season: int) -> bool:
+    if not path.exists():
+        return False
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(artifact, Mapping):
+        return False
+    if artifact.get("schema_version") != QB_SCRAMBLE_SCHEMA_VERSION:
+        return False
+    if artifact.get("model_type") != QB_SCRAMBLE_MODEL_TYPE:
+        return False
+    if artifact.get("target_season") != expected_season:
+        return False
+    if not _play_call_source_seasons_are_safe(
+        artifact.get("source_seasons"),
+        expected_season,
+    ):
+        return False
+    feature_names = artifact.get("feature_names")
+    coefficients = artifact.get("coefficients")
+    if not isinstance(feature_names, list) or not feature_names:
+        return False
+    if not all(isinstance(name, str) for name in feature_names):
+        return False
+    if any(name not in DEFAULT_QB_SCRAMBLE_FEATURES for name in feature_names):
+        return False
+    if not isinstance(coefficients, Mapping):
+        return False
+    if set(coefficients) != set(feature_names):
+        return False
+    try:
+        parsed = [float(value) for value in coefficients.values()]
+    except (TypeError, ValueError):
+        return False
+    return all(math.isfinite(value) for value in parsed)
+
+
 def _covered_seasons_from_target_selection_artifacts(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Path],
@@ -429,6 +488,18 @@ def _covered_seasons_from_play_call_model_artifacts(
         for season in test_seasons
         if (path := paths_by_season.get(season)) is not None
         and _play_call_model_artifact_is_valid(path, season)
+    ]
+
+
+def _covered_seasons_from_qb_scramble_artifacts(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Path],
+) -> list[int]:
+    return [
+        season
+        for season in test_seasons
+        if (path := paths_by_season.get(season)) is not None
+        and _qb_scramble_artifact_is_valid(path, season)
     ]
 
 
@@ -576,6 +647,7 @@ def collect_signal_coverage(
     market_history_path = _resolve_market_history_path(config, market_history_dir)
     target_selection_artifacts_path = _resolve_target_selection_artifacts_path(config)
     play_call_model_artifacts_path = _resolve_play_call_model_artifacts_path(config)
+    qb_scramble_artifacts_path = _resolve_qb_scramble_artifacts_path(config)
     market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
@@ -758,6 +830,12 @@ def collect_signal_coverage(
         ("play_call_model_config", "play_call_model"),
         ("play_call_model",),
     )
+    qb_scramble_enabled = _signal_enabled(
+        config,
+        ("qb_rushing_config", "qb_rushing"),
+        ("qb_rushing", "scramble"),
+        nested_path=("scramble",),
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -803,6 +881,10 @@ def collect_signal_coverage(
     }
     play_call_model_artifact_paths: dict[int, Path] = {
         season: play_call_model_artifacts_path / f"play_call_model_{season}.json"
+        for season in seasons
+    }
+    qb_scramble_artifact_paths: dict[int, Path] = {
+        season: qb_scramble_artifacts_path / f"qb_scramble_model_{season}.json"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
@@ -1398,6 +1480,19 @@ def collect_signal_coverage(
             note=(
                 "Requires play_call_model_<season>.json artifacts fitted from "
                 "prior-season PBP pass/run labels"
+            ),
+        ),
+        "qb_rushing.scramble": _build_signal(
+            qb_scramble_enabled,
+            seasons,
+            _covered_seasons_from_qb_scramble_artifacts(
+                seasons,
+                qb_scramble_artifact_paths,
+            ),
+            note=(
+                "Requires qb_scramble_model_<season>.json artifacts fitted from "
+                "prior-season PBP scramble labels; runtime falls back to base "
+                "QB scramble_rate when an artifact is missing or invalid"
             ),
         ),
         "ensemble.ff_opportunity": _build_signal(

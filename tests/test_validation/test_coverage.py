@@ -6,6 +6,10 @@ import json
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults
+from fantasy_sim.data.qb_rushing import (
+    QB_SCRAMBLE_MODEL_TYPE,
+    QB_SCRAMBLE_SCHEMA_VERSION,
+)
 from fantasy_sim.data.play_call_model.models import (
     PLAY_CALL_MODEL_SCHEMA_VERSION,
     PLAY_CALL_MODEL_TYPE,
@@ -2151,6 +2155,52 @@ def test_play_call_model_reports_disabled_by_default():
             "prior-season PBP pass/run labels"
         ),
     )
+
+
+def test_qb_scramble_coverage_disabled_by_default(tmp_path):
+    coverage = collect_signal_coverage(
+        config={"qb_rushing": {"scramble": {"enabled": False}}},
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.scramble"].enabled is False
+    assert coverage["qb_rushing.scramble"].status == "disabled"
+
+
+def test_qb_scramble_coverage_requires_valid_artifact(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    (artifact_dir / "qb_scramble_model_2024.json").write_text(
+        json.dumps(
+            {
+                "schema_version": QB_SCRAMBLE_SCHEMA_VERSION,
+                "model_type": QB_SCRAMBLE_MODEL_TYPE,
+                "target_season": 2024,
+                "source_seasons": [2023],
+                "feature_names": ["intercept"],
+                "coefficients": {"intercept": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "scramble": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.scramble"].enabled is True
+    assert coverage["qb_rushing.scramble"].covered_seasons == [2024]
+    assert coverage["qb_rushing.scramble"].missing_seasons == []
 
 
 def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
