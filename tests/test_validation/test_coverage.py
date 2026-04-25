@@ -6,6 +6,10 @@ import json
 from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults
+from fantasy_sim.data.play_call_model.models import (
+    PLAY_CALL_MODEL_SCHEMA_VERSION,
+    PLAY_CALL_MODEL_TYPE,
+)
 from fantasy_sim.data.target_selection.models import (
     TARGET_SELECTION_MODEL_TYPE,
     TARGET_SELECTION_SCHEMA_VERSION,
@@ -49,6 +53,21 @@ def _write_target_selection_artifact(
                 "target_season": 2024,
                 "feature_names": ["is_te"],
                 "coefficients": coefficients if coefficients is not None else {"is_te": 1.0},
+            }
+        )
+    )
+
+
+def _write_play_call_model_artifact(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
+                "model_type": PLAY_CALL_MODEL_TYPE,
+                "target_season": 2024,
+                "feature_names": ["intercept"],
+                "coefficients": {"intercept": 0.0},
             }
         )
     )
@@ -2103,5 +2122,45 @@ def test_target_selection_ignores_invalid_artifact_coverage(tmp_path):
             "Requires target_selection_<season>.json artifacts fitted from "
             "prior-season PBP target labels; runtime falls back to legacy "
             "selection when an artifact is missing or invalid"
+        ),
+    )
+
+
+def test_play_call_model_reports_disabled_by_default():
+    coverage = collect_signal_coverage(_default_engine_configs(), [2023, 2024])
+
+    assert coverage["play_call_model"] == SignalCoverage(
+        enabled=False,
+        status="disabled",
+        covered_seasons=[],
+        missing_seasons=[],
+        note=(
+            "Requires play_call_model_<season>.json artifacts fitted from "
+            "prior-season PBP pass/run labels"
+        ),
+    )
+
+
+def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
+    _write_play_call_model_artifact(tmp_path / "play_call_model_2024.json")
+
+    coverage = collect_signal_coverage(
+        {
+            "play_call_model": {
+                "enabled": True,
+                "artifacts_dir": str(tmp_path),
+            }
+        },
+        [2023, 2024],
+    )
+
+    assert coverage["play_call_model"] == SignalCoverage(
+        enabled=True,
+        status="partial",
+        covered_seasons=[2024],
+        missing_seasons=[2023],
+        note=(
+            "Requires play_call_model_<season>.json artifacts fitted from "
+            "prior-season PBP pass/run labels"
         ),
     )
