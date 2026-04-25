@@ -59,15 +59,25 @@ def _write_target_selection_artifact(
 
 
 def _write_play_call_model_artifact(path: Path) -> None:
+    _write_custom_play_call_model_artifact(path)
+
+
+def _write_custom_play_call_model_artifact(
+    path: Path,
+    *,
+    target_season: int = 2024,
+    feature_names: list[object] | None = None,
+    coefficients: dict[str, object] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
                 "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
                 "model_type": PLAY_CALL_MODEL_TYPE,
-                "target_season": 2024,
-                "feature_names": ["intercept"],
-                "coefficients": {"intercept": 0.0},
+                "target_season": target_season,
+                "feature_names": feature_names if feature_names is not None else ["intercept"],
+                "coefficients": coefficients if coefficients is not None else {"intercept": 0.0},
             }
         )
     )
@@ -2164,3 +2174,57 @@ def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
             "prior-season PBP pass/run labels"
         ),
     )
+
+
+def test_play_call_model_ignores_runtime_rejected_artifacts(tmp_path):
+    invalid_artifacts = {
+        "target_season_mismatch": {"target_season": 2023},
+        "missing_coefficient": {
+            "feature_names": ["intercept", "down_1"],
+            "coefficients": {"intercept": 0.0},
+        },
+        "extra_coefficient": {
+            "feature_names": ["intercept"],
+            "coefficients": {"intercept": 0.0, "down_1": 0.0},
+        },
+        "unsupported_feature": {
+            "feature_names": ["intercept", "not_a_play_call_feature"],
+            "coefficients": {"intercept": 0.0, "not_a_play_call_feature": 0.0},
+        },
+        "malformed_feature_name": {
+            "feature_names": ["intercept", 1],
+            "coefficients": {"intercept": 0.0, "1": 0.0},
+        },
+        "non_finite_coefficient": {
+            "feature_names": ["intercept"],
+            "coefficients": {"intercept": float("inf")},
+        },
+    }
+
+    for name, overrides in invalid_artifacts.items():
+        artifacts_dir = tmp_path / name
+        _write_custom_play_call_model_artifact(
+            artifacts_dir / "play_call_model_2024.json",
+            **overrides,
+        )
+
+        coverage = collect_signal_coverage(
+            {
+                "play_call_model": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifacts_dir),
+                }
+            },
+            [2024],
+        )
+
+        assert coverage["play_call_model"] == SignalCoverage(
+            enabled=True,
+            status="none",
+            covered_seasons=[],
+            missing_seasons=[2024],
+            note=(
+                "Requires play_call_model_<season>.json artifacts fitted from "
+                "prior-season PBP pass/run labels"
+            ),
+        ), name

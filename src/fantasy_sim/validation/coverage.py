@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import logging
+import math
+import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ import polars as pl
 
 from fantasy_sim.data.play_call_model.models import (
     DEFAULT_ARTIFACT_DIR as PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR,
+    DEFAULT_PLAY_CALL_FEATURES,
     PLAY_CALL_MODEL_SCHEMA_VERSION,
     PLAY_CALL_MODEL_TYPE,
 )
@@ -352,7 +354,7 @@ def _target_selection_artifact_is_valid(path: Path) -> bool:
     return bool(parsed)
 
 
-def _play_call_model_artifact_is_valid(path: Path) -> bool:
+def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool:
     if not path.exists():
         return False
     try:
@@ -365,11 +367,25 @@ def _play_call_model_artifact_is_valid(path: Path) -> bool:
         return False
     if artifact.get("model_type") != PLAY_CALL_MODEL_TYPE:
         return False
+    if artifact.get("target_season") != expected_season:
+        return False
     feature_names = artifact.get("feature_names")
     coefficients = artifact.get("coefficients")
     if not isinstance(feature_names, list) or not feature_names:
         return False
-    return isinstance(coefficients, Mapping)
+    if not all(isinstance(name, str) for name in feature_names):
+        return False
+    if any(name not in DEFAULT_PLAY_CALL_FEATURES for name in feature_names):
+        return False
+    if not isinstance(coefficients, Mapping):
+        return False
+    if set(coefficients) != set(feature_names):
+        return False
+    try:
+        parsed = [float(value) for value in coefficients.values()]
+    except (TypeError, ValueError):
+        return False
+    return all(math.isfinite(value) for value in parsed)
 
 
 def _covered_seasons_from_target_selection_artifacts(
@@ -392,7 +408,7 @@ def _covered_seasons_from_play_call_model_artifacts(
         season
         for season in test_seasons
         if (path := paths_by_season.get(season)) is not None
-        and _play_call_model_artifact_is_valid(path)
+        and _play_call_model_artifact_is_valid(path, season)
     ]
 
 
