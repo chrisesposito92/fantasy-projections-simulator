@@ -4,7 +4,7 @@
 
 The stable simulator is already strong versus bare, but recent marginal levers are mostly at the noise floor. The clear wins have come from external priors and role/market signals: `ff_opportunity`, availability without injuries, `market_history`, dynamic source blending, and residual calibration. The flat or parked areas are mostly heuristic micro-layers or narrowly scoped in-simulation replacements: tracking slices, PFF depth/efficiency, QB split, RB scheme-fit, NGS, route-rate, team context, goal-line concentration, the first learned receiver target-selection node, and the first learned play-call node.
 
-The main conclusion: stop trying broad "turn on another adjustment layer" experiments. The lightweight post-sim calibration stack has now been promoted. Replacing high-leverage simulation decision nodes is still plausible, but the learned target-selection and learned play-call results show that these replacements need better labels/features or a larger structural change than a shallow standalone probability replacement.
+The main conclusion: stop trying broad "turn on another adjustment layer" experiments. The lightweight post-sim calibration stack has now been promoted. Replacing high-leverage simulation decision nodes is still plausible, but the learned target-selection, learned play-call, and standalone QB scramble-probability results show that these replacements need better labels/features or a larger structural change than a shallow standalone probability replacement.
 
 ## Validated Results
 
@@ -87,7 +87,7 @@ The path should stay parked as a standalone pass/run replacement. Revisit only i
 
 ### QB Scramble Model
 
-Status: **NO_PROMOTION** for the v1 scramble-probability slice. The model is implemented off by default and loads temporal artifacts from `qb_rushing.scramble.artifacts_dir`. Missing, invalid, or incompatible artifacts fall back to the base QB `scramble_rate`.
+Status: **NO_PROMOTION** for the completed v1 scramble-probability slice. The model is implemented off by default and loads temporal artifacts from `qb_rushing.scramble.artifacts_dir`. Missing, invalid, or incompatible artifacts fall back to the base QB `scramble_rate`.
 
 Smoke artifacts were fitted under `results/qb_rushing/scramble/smoke_v1` with prior-season labels only (`--min-source-season 2018`, `--training-years 4`). All three artifacts converged: 2022 used 84,256 examples with scramble rate `0.044293581466008355`, 2023 used 84,979 examples with scramble rate `0.0456701067322515`, and 2024 used 86,088 examples with scramble rate `0.048380726698262246`.
 
@@ -99,6 +99,16 @@ Smoke artifacts were fitted under `results/qb_rushing/scramble/smoke_v1` with pr
 
 The 50-sim run covered `qb_rushing.scramble=full(2022,2023,2024)` but failed the smoke gate because average rank-correlation delta was negative. Weekly QB metrics improved slightly (`rank_corr +0.0037`, weekly MAE `-0.002`), but RB weekly MAE regressed by `+0.005`, RB weekly rank correlation moved `-0.0004`, and QB rushing-yards KS worsened in 2022 (`+0.02`), 2023 (`+0.01`), and 2024 (`+0.00`). Defaults remain unchanged.
 
+Why it was not promoted:
+
+- The average rank-correlation delta was negative, so the slice failed the first smoke gate before a 200-sim decision run.
+- The intended QB signal was too small to matter: QB weekly rank correlation improved only `+0.0037`, and QB weekly MAE improved only `-0.002`.
+- The change created collateral damage outside the target position: RB weekly rank correlation and MAE both regressed.
+- The rushing distribution did not become cleaner. QB rushing-yards KS worsened in two seasons and was flat in the third.
+- The slice only changed scramble probability. It did not model designed-run selection or rush-gain tail behavior, which are likely the higher-leverage parts of QB rushing fantasy value.
+
+The completed lesson is narrow: do not repeat standalone scramble-probability modeling as-is. Continue QB rushing only as a broader chain that includes designed-run selection, scramble/designed-run separation, and rush-gain tails.
+
 ## Hypotheses
 
 | # | Status | Hypothesis | Why It Has Sound Logic |
@@ -109,10 +119,11 @@ The 50-sim run covered `qb_rushing.scramble=full(2022,2023,2024)` but failed the
 | 4 | No Promotion | **Replace empirical pass/run choice with a learned play-call model.** | **Parked after v1.** Decision run improved QB/WR/TE but missed the overall gate: rank corr `+0.0026`, weekly MAE `-0.018`, RB regressed, and QB pass-yards KS worsened in all seasons. Revisit only as part of a richer passing-chain or volume-calibration model. |
 | 5 | No Promotion | **Replace receiver selection with a learned target-share/candidate model.** | **Parked after v1.** Converged smoke artifacts regressed average rank corr `-0.0013` with neutral weekly MAE, and WR weekly rank corr moved `-0.0028`. Revisit only as part of a richer passing-chain or route/air-yards model. |
 | 6 | Open | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
-| 7 | Open | **Build a QB rushing model for scramble probability, designed-run selection, and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and current scramble logic is a global QB rate checked before sack/INT. Mobile QB fantasy value is high-leverage and context-dependent. |
-| 8 | Open | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
-| 9 | Open | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
-| 10 | Open | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
+| 7 | No Promotion | **Replace standalone QB scramble probability with a learned context model.** | **Completed and parked after v1.** The 50-sim smoke run regressed average rank corr `-0.0009`, barely moved QB weekly MAE, regressed RB weekly metrics, and did not improve QB rushing-yards KS. Do not repeat this slice as-is. |
+| 8 | Open | **Build the remaining QB rushing chain for designed-run selection and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and mobile QB fantasy value is high-leverage. The next version should model designed runs and rushing-yard tails instead of only changing scramble probability. |
+| 9 | Open | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
+| 10 | Open | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
+| 11 | Open | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
 
 ## Prioritization
 
@@ -125,7 +136,7 @@ Recommended scoring scale:
 
 | Priority | Status | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
 |---:|---|---|---:|---:|---:|---:|---:|---|
-| 1 | Open | **Build a QB rushing model** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but do not repeat standalone scramble-probability v1. Continue only with designed-run selection, rush-gain tails, or a coupled QB-rushing chain. |
+| 1 | Open | **Build the remaining QB rushing chain** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but the standalone scramble-probability slice is done and not promoted. Continue only with designed-run selection, rush-gain tails, or a coupled QB-rushing chain. |
 | 2 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
 | 3 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than QB rushing or passing-chain decomposition. |
 | 4 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
@@ -133,6 +144,7 @@ Recommended scoring scale:
 | 6 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
 | - | No Promotion | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Parked after decision run missed: rank corr `+0.0026`, weekly MAE `-0.018`, RB regression, and persistent QB pass-yards KS damage. Revisit only with richer passing-chain or volume calibration. |
 | - | No Promotion | **Replace receiver selection with a learned target model** | 5 | 2 | 4 | 4 | 15 | Parked after converged smoke run missed: average rank corr `-0.0013`, weekly MAE flat, WR rank corr `-0.0028`. Revisit only with richer pass-chain features/objective. |
+| - | No Promotion | **Replace standalone QB scramble probability with a learned context model** | 4 | 3 | 4 | 5 | 16 | Parked after 50-sim smoke run missed: average rank corr `-0.0009`, QB lift was tiny, RB metrics regressed, and QB rushing-yards KS did not improve. Do not repeat without designed-run and rushing-tail modeling. |
 | - | Done | **Learn dynamic blend weights** | 5 | 4 | 4 | 5 | 18 | Promoted; keep as part of defaults and use as the source stack for future residual/model tests. |
 | - | Done | **Add residual calibration** | 4 | 4 | 5 | 5 | 18 | Promoted; monitor TE rank-corr sensitivity in future decision runs. |
 
