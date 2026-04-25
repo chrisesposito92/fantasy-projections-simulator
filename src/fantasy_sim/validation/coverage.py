@@ -206,16 +206,15 @@ def _resolve_play_call_model_artifacts_path(config: object) -> Path:
 
 
 def _resolve_qb_scramble_artifacts_path(config: object) -> Path:
-    qb_rushing_config = _config_section(config, "qb_rushing_config")
-    if qb_rushing_config is None:
-        qb_rushing_config = _config_section(config, "qb_rushing")
-    artifacts_dir = (
-        _config_get(qb_rushing_config, "scramble", "artifacts_dir", default=None)
-        if qb_rushing_config is not None
-        else None
-    )
-    if artifacts_dir is not None:
-        return _path_or_default(artifacts_dir, QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR)
+    for key in ("qb_rushing_config", "qb_rushing"):
+        qb_rushing_config = _config_section(config, key)
+        artifacts_dir = (
+            _config_get(qb_rushing_config, "scramble", "artifacts_dir", default=None)
+            if qb_rushing_config is not None
+            else None
+        )
+        if artifacts_dir is not None:
+            return _path_or_default(artifacts_dir, QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR)
     return QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR
 
 
@@ -453,6 +452,8 @@ def _qb_scramble_artifact_is_valid(path: Path, expected_season: int) -> bool:
     if not isinstance(feature_names, list) or not feature_names:
         return False
     if not all(isinstance(name, str) for name in feature_names):
+        return False
+    if len(set(feature_names)) != len(feature_names):
         return False
     if any(name not in DEFAULT_QB_SCRAMBLE_FEATURES for name in feature_names):
         return False

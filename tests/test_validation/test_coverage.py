@@ -89,6 +89,28 @@ def _write_custom_play_call_model_artifact(
     )
 
 
+def _write_qb_scramble_artifact(
+    path: Path,
+    *,
+    feature_names: list[object] | None = None,
+    coefficients: dict[str, object] | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": QB_SCRAMBLE_SCHEMA_VERSION,
+                "model_type": QB_SCRAMBLE_MODEL_TYPE,
+                "target_season": 2024,
+                "source_seasons": [2023],
+                "feature_names": feature_names if feature_names is not None else ["intercept"],
+                "coefficients": coefficients if coefficients is not None else {"intercept": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _base_config(
     *,
     props_enabled: bool = True,
@@ -2170,20 +2192,7 @@ def test_qb_scramble_coverage_disabled_by_default(tmp_path):
 
 def test_qb_scramble_coverage_requires_valid_artifact(tmp_path):
     artifact_dir = tmp_path / "artifacts"
-    artifact_dir.mkdir()
-    (artifact_dir / "qb_scramble_model_2024.json").write_text(
-        json.dumps(
-            {
-                "schema_version": QB_SCRAMBLE_SCHEMA_VERSION,
-                "model_type": QB_SCRAMBLE_MODEL_TYPE,
-                "target_season": 2024,
-                "source_seasons": [2023],
-                "feature_names": ["intercept"],
-                "coefficients": {"intercept": 0.0},
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_qb_scramble_artifact(artifact_dir / "qb_scramble_model_2024.json")
 
     coverage = collect_signal_coverage(
         config={
@@ -2201,6 +2210,53 @@ def test_qb_scramble_coverage_requires_valid_artifact(tmp_path):
     assert coverage["qb_rushing.scramble"].enabled is True
     assert coverage["qb_rushing.scramble"].covered_seasons == [2024]
     assert coverage["qb_rushing.scramble"].missing_seasons == []
+
+
+def test_qb_scramble_coverage_falls_back_to_raw_config_artifact_dir(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_scramble_artifact(artifact_dir / "qb_scramble_model_2024.json")
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing_config": {},
+            "qb_rushing": {
+                "scramble": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            },
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.scramble"].covered_seasons == [2024]
+    assert coverage["qb_rushing.scramble"].missing_seasons == []
+
+
+def test_qb_scramble_coverage_rejects_duplicate_feature_names(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_scramble_artifact(
+        artifact_dir / "qb_scramble_model_2024.json",
+        feature_names=["intercept", "intercept"],
+        coefficients={"intercept": 0.0},
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "scramble": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.scramble"].covered_seasons == []
+    assert coverage["qb_rushing.scramble"].missing_seasons == [2024]
 
 
 def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
