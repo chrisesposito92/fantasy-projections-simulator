@@ -3,12 +3,21 @@
 from fantasy_sim.data.qb_rushing.config import load_qb_rushing_config
 from fantasy_sim.data.qb_rushing.models import (
     DEFAULT_ARTIFACT_DIR,
+    DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR,
+    DEFAULT_QB_DESIGNED_RUN_FEATURES,
     DEFAULT_QB_SCRAMBLE_FEATURES,
+    QB_DESIGNED_RUN_MODEL_TYPE,
+    QB_DESIGNED_RUN_SCHEMA_VERSION,
+    QbDesignedRunContext,
+    QbDesignedRunModelConfig,
     QB_SCRAMBLE_MODEL_TYPE,
     QB_SCRAMBLE_SCHEMA_VERSION,
     QbRushingConfig,
     QbScrambleContext,
     QbScrambleModelConfig,
+    mobility_tier_from_rates,
+    qb_designed_run_feature_values,
+    qb_designed_run_tail_key,
     qb_scramble_feature_values,
 )
 from fantasy_sim.data.qb_rushing.runtime import QbScrambleModel
@@ -24,7 +33,13 @@ from fantasy_sim.data.qb_rushing.training import (
 
 __all__ = [
     "DEFAULT_ARTIFACT_DIR",
+    "DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR",
+    "DEFAULT_QB_DESIGNED_RUN_FEATURES",
     "DEFAULT_QB_SCRAMBLE_FEATURES",
+    "QB_DESIGNED_RUN_MODEL_TYPE",
+    "QB_DESIGNED_RUN_SCHEMA_VERSION",
+    "QbDesignedRunContext",
+    "QbDesignedRunModelConfig",
     "QB_SCRAMBLE_MODEL_TYPE",
     "QB_SCRAMBLE_SCHEMA_VERSION",
     "QbRushingConfig",
@@ -38,6 +53,9 @@ __all__ = [
     "build_scramble_priors",
     "fit_logistic_qb_scramble",
     "load_qb_rushing_config",
+    "mobility_tier_from_rates",
+    "qb_designed_run_feature_values",
+    "qb_designed_run_tail_key",
     "qb_scramble_feature_values",
     "source_seasons_for_artifact",
 ]

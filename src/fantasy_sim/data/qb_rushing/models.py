@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 QB_SCRAMBLE_SCHEMA_VERSION = 1
 QB_SCRAMBLE_MODEL_TYPE = "offset_logistic_qb_scramble_v1"
 DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts" / "decision_v1"
+QB_DESIGNED_RUN_SCHEMA_VERSION = 1
+QB_DESIGNED_RUN_MODEL_TYPE = "offset_logistic_qb_designed_run_v1"
+DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts" / "designed_run_v1"
 
 DEFAULT_QB_SCRAMBLE_FEATURES: tuple[str, ...] = (
     "intercept",
@@ -48,6 +51,41 @@ DEFAULT_QB_SCRAMBLE_FEATURES: tuple[str, ...] = (
     "opponent_prior_scramble_rate_allowed",
 )
 
+DEFAULT_QB_DESIGNED_RUN_FEATURES: tuple[str, ...] = (
+    "intercept",
+    "down_1",
+    "down_2",
+    "down_3",
+    "down_4",
+    "distance_norm",
+    "is_short",
+    "is_long",
+    "is_very_long",
+    "yard_line_norm",
+    "is_red_zone",
+    "is_goal_to_go",
+    "quarter_1",
+    "quarter_2",
+    "quarter_3",
+    "quarter_4",
+    "clock_norm",
+    "is_two_minute",
+    "score_diff_norm",
+    "is_trailing",
+    "is_leading",
+    "is_home",
+    "spread_norm",
+    "total_norm",
+    "implied_total_norm",
+    "week_norm",
+    "qb_prior_designed_run_share",
+    "team_prior_designed_qb_run_rate",
+    "opponent_prior_designed_qb_run_allowed",
+    "mobility_low",
+    "mobility_medium",
+    "mobility_high",
+)
+
 
 @dataclass(frozen=True)
 class QbScrambleModelConfig:
@@ -61,10 +99,22 @@ class QbScrambleModelConfig:
 
 
 @dataclass(frozen=True)
+class QbDesignedRunModelConfig:
+    """Configuration for learned QB designed-run selection and yard tails."""
+
+    enabled: bool = False
+    artifacts_dir: str | None = None
+    factor_clamp: tuple[float, float] = (0.50, 2.00)
+    min_examples: int = 500
+    min_tail_samples: int = 20
+
+
+@dataclass(frozen=True)
 class QbRushingConfig:
     """Configuration for QB rushing model layers."""
 
     scramble: QbScrambleModelConfig = field(default_factory=QbScrambleModelConfig)
+    designed_runs: QbDesignedRunModelConfig = field(default_factory=QbDesignedRunModelConfig)
 
 
 @dataclass(frozen=True)
@@ -129,6 +179,97 @@ class QbScrambleContext:
         if not np.isfinite(prob):
             return None
         return prob
+
+
+@dataclass(frozen=True)
+class QbDesignedRunContext:
+    """Runtime context for a team's learned QB designed-run artifact."""
+
+    coefficients: dict[str, float]
+    feature_names: tuple[str, ...]
+    tail_buckets: dict[str, tuple[int, ...]]
+    global_tail_yards: tuple[int, ...]
+    team: str
+    opponent: str
+    home_team: str
+    away_team: str
+    is_home: bool
+    target_season: int
+    week: int
+    spread_line: float | None = None
+    total_line: float | None = None
+    implied_team_total: float | None = None
+    team_prior_designed_qb_run_rate: float = 0.05
+    opponent_prior_designed_qb_run_allowed: float = 0.05
+    mobility_tiers: dict[str, str] = field(default_factory=dict)
+    factor_clamp: tuple[float, float] = (0.50, 2.00)
+    min_tail_samples: int = 20
+
+    def rusher_weights(
+        self,
+        players: list["PlayerModel"],
+        legacy_weights: np.ndarray,
+        state: "GameState",
+        script: object | None = None,
+    ) -> np.ndarray | None:
+        del script
+        weights = np.asarray(legacy_weights, dtype=float).copy()
+        if len(players) != len(weights) or not np.all(np.isfinite(weights)):
+            return None
+        for idx, player in enumerate(players):
+            if player.position != "QB" or weights[idx] <= 0.0:
+                continue
+            factor = self._factor_for_qb(state, player)
+            if factor is None:
+                continue
+            weights[idx] *= factor
+        return weights if np.all(np.isfinite(weights)) else None
+
+    def designed_run_yards(
+        self,
+        state: "GameState",
+        rusher: "PlayerModel",
+        rng: np.random.Generator,
+        script: object | None = None,
+    ) -> int | None:
+        del script
+        if rusher.position != "QB":
+            return None
+        key = qb_designed_run_tail_key(
+            state,
+            mobility_tier=self.mobility_tiers.get(rusher.player_id, "medium"),
+        )
+        yards = self.tail_buckets.get(key, ())
+        if len(yards) < self.min_tail_samples:
+            yards = self.tail_buckets.get("global", self.global_tail_yards)
+        if not yards:
+            return None
+        return int(rng.choice(np.array(yards, dtype=int)))
+
+    def _factor_for_qb(self, state: "GameState", qb: "PlayerModel") -> float | None:
+        values = qb_designed_run_feature_values(
+            state,
+            team=self.team,
+            opponent=self.opponent,
+            home_team=self.home_team,
+            away_team=self.away_team,
+            is_home=self.is_home,
+            week=self.week,
+            spread_line=self.spread_line,
+            total_line=self.total_line,
+            implied_team_total=self.implied_team_total,
+            qb_prior_designed_run_share=float(qb.usage.carry_share),
+            team_prior_designed_qb_run_rate=self.team_prior_designed_qb_run_rate,
+            opponent_prior_designed_qb_run_allowed=self.opponent_prior_designed_qb_run_allowed,
+            mobility_tier=self.mobility_tiers.get(qb.player_id, "medium"),
+        )
+        delta = 0.0
+        for name in self.feature_names:
+            delta += float(self.coefficients.get(name, 0.0)) * values.get(name, 0.0)
+        if not np.isfinite(delta):
+            return None
+        lo, hi = self.factor_clamp
+        return float(np.clip(np.exp(np.clip(delta, -4.0, 4.0)), lo, hi))
 
 
 def _logit(probability: float) -> float:
@@ -199,6 +340,81 @@ def qb_scramble_feature_values(
             np.clip(opponent_prior_scramble_rate_allowed, 0.0, 1.0)
         ),
     }
+
+
+def qb_designed_run_feature_values(
+    state: "GameState",
+    *,
+    team: str,
+    opponent: str,
+    home_team: str,
+    away_team: str,
+    is_home: bool,
+    week: int,
+    spread_line: float | None,
+    total_line: float | None,
+    implied_team_total: float | None,
+    qb_prior_designed_run_share: float,
+    team_prior_designed_qb_run_rate: float,
+    opponent_prior_designed_qb_run_allowed: float,
+    mobility_tier: str,
+) -> dict[str, float]:
+    values = qb_scramble_feature_values(
+        state,
+        team=team,
+        opponent=opponent,
+        home_team=home_team,
+        away_team=away_team,
+        is_home=is_home,
+        week=week,
+        spread_line=spread_line,
+        total_line=total_line,
+        implied_team_total=implied_team_total,
+        qb_prior_scramble_rate=0.0,
+        team_prior_scramble_rate=0.0,
+        opponent_prior_scramble_rate_allowed=0.0,
+    )
+    values.pop("qb_prior_scramble_rate", None)
+    values.pop("team_prior_scramble_rate", None)
+    values.pop("opponent_prior_scramble_rate_allowed", None)
+    tier = mobility_tier if mobility_tier in {"low", "medium", "high"} else "medium"
+    values.update(
+        {
+            "qb_prior_designed_run_share": float(np.clip(qb_prior_designed_run_share, 0.0, 1.0)),
+            "team_prior_designed_qb_run_rate": float(
+                np.clip(team_prior_designed_qb_run_rate, 0.0, 1.0)
+            ),
+            "opponent_prior_designed_qb_run_allowed": float(
+                np.clip(opponent_prior_designed_qb_run_allowed, 0.0, 1.0)
+            ),
+            "mobility_low": 1.0 if tier == "low" else 0.0,
+            "mobility_medium": 1.0 if tier == "medium" else 0.0,
+            "mobility_high": 1.0 if tier == "high" else 0.0,
+        }
+    )
+    return values
+
+
+def mobility_tier_from_rates(designed_run_share: float, scramble_rate: float) -> str:
+    score = float(designed_run_share) + float(scramble_rate)
+    if score >= 0.18:
+        return "high"
+    if score >= 0.08:
+        return "medium"
+    return "low"
+
+
+def qb_designed_run_tail_key(state: "GameState", *, mobility_tier: str) -> str:
+    tier = mobility_tier if mobility_tier in {"low", "medium", "high"} else "medium"
+    rz = "rz" if int(state.yard_line) <= 20 else "field"
+    short = "short" if int(state.distance) <= 3 else "open"
+    if state.score_differential <= -7:
+        script = "trailing"
+    elif state.score_differential >= 7:
+        script = "leading"
+    else:
+        script = "neutral"
+    return f"{tier}|{rz}|{short}|{script}"
 
 
 def _finite_float(value: object, *, default: float) -> float:
