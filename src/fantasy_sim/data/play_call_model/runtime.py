@@ -141,6 +141,8 @@ class PlayCallModel:
             logger.info("Missing play-call artifact: %s", path)
         except OSError:
             logger.warning("Unable to read play-call artifact: %s", path)
+        except UnicodeDecodeError:
+            logger.warning("Invalid play-call artifact encoding: %s", path)
         except json.JSONDecodeError:
             logger.warning("Invalid play-call artifact JSON: %s", path)
         else:

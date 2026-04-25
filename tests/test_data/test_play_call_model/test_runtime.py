@@ -149,3 +149,10 @@ def test_artifact_read_error_returns_none(tmp_path):
     model = PlayCallModel(_config(tmp_path))
 
     assert _build_context(model) is None
+
+
+def test_invalid_utf8_artifact_returns_none(tmp_path):
+    (tmp_path / "play_call_model_2024.json").write_bytes(b"\xff\xfe\x00")
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
