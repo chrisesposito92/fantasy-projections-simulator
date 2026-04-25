@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from fantasy_sim.data.game_script import GameScriptConfig
     from fantasy_sim.data.pff.models import PffConfig
     from fantasy_sim.data.play_call_model import PlayCallModelConfig
+    from fantasy_sim.data.qb_rushing import QbRushingConfig
     from fantasy_sim.data.target_selection import TargetSelectionConfig
     from fantasy_sim.data.td_tendency import TdTendencyConfig
     from fantasy_sim.data.tracking.models import TrackingConfig
@@ -189,6 +190,7 @@ def _init_build_worker_single(
     td_tendency_config: "TdTendencyConfig | None" = None,
     target_selection_config: "TargetSelectionConfig | None" = None,
     play_call_model_config: "PlayCallModelConfig | None" = None,
+    qb_rushing_config: "QbRushingConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create one GameContextBuilder per worker."""
     global _worker_builders
@@ -208,6 +210,7 @@ def _init_build_worker_single(
         td_tendency_config=td_tendency_config,
         target_selection_config=target_selection_config,
         play_call_model_config=play_call_model_config,
+        qb_rushing_config=qb_rushing_config,
     )
     _worker_builders = {"single": builder}
 
@@ -267,6 +270,7 @@ def _init_build_worker_dual(
     td_tendency_config: "TdTendencyConfig | None" = None,
     target_selection_config: "TargetSelectionConfig | None" = None,
     play_call_model_config: "PlayCallModelConfig | None" = None,
+    qb_rushing_config: "QbRushingConfig | None" = None,
 ) -> None:
     """ProcessPoolExecutor initializer: create off+on builders per worker."""
     global _worker_builders
@@ -290,6 +294,7 @@ def _init_build_worker_dual(
             td_tendency_config=td_tendency_config,
             target_selection_config=target_selection_config,
             play_call_model_config=play_call_model_config,
+            qb_rushing_config=qb_rushing_config,
         ),
     }
 
@@ -389,6 +394,7 @@ def _build_games_sequential(
     td_tendency_config: "TdTendencyConfig | None" = None,
     target_selection_config: "TargetSelectionConfig | None" = None,
     play_call_model_config: "PlayCallModelConfig | None" = None,
+    qb_rushing_config: "QbRushingConfig | None" = None,
 ) -> list[dict]:
     """Sequential fallback: build game contexts one at a time."""
     global _worker_builders
@@ -412,6 +418,7 @@ def _build_games_sequential(
                 td_tendency_config=td_tendency_config,
                 target_selection_config=target_selection_config,
                 play_call_model_config=play_call_model_config,
+                qb_rushing_config=qb_rushing_config,
             ),
         }
     else:
@@ -430,6 +437,7 @@ def _build_games_sequential(
                 td_tendency_config=td_tendency_config,
                 target_selection_config=target_selection_config,
                 play_call_model_config=play_call_model_config,
+                qb_rushing_config=qb_rushing_config,
             ),
         }
 
@@ -460,6 +468,7 @@ def _create_builders(
     goal_line_concentration_config=None,
     target_selection_config=None,
     play_call_model_config=None,
+    qb_rushing_config=None,
     dual_arm: bool = False,
 ) -> dict:
     """Create GameContextBuilder instances for the build phase.
@@ -486,6 +495,7 @@ def _create_builders(
                 td_tendency_config=td_tendency_config,
                 target_selection_config=target_selection_config,
                 play_call_model_config=play_call_model_config,
+                qb_rushing_config=qb_rushing_config,
             ),
         }
     return {
@@ -503,6 +513,7 @@ def _create_builders(
             td_tendency_config=td_tendency_config,
             target_selection_config=target_selection_config,
             play_call_model_config=play_call_model_config,
+            qb_rushing_config=qb_rushing_config,
         ),
     }
 
@@ -633,8 +644,6 @@ def build_games_parallel(
     Returns:
         List of result dicts sorted by (week, game_id).
     """
-    del qb_rushing_config
-
     if not game_args:
         return []
 
@@ -664,6 +673,7 @@ def build_games_parallel(
                 td_tendency_config=td_tendency_config,
                 target_selection_config=target_selection_config,
                 play_call_model_config=play_call_model_config,
+                qb_rushing_config=qb_rushing_config,
             )
         else:
             from concurrent.futures import BrokenExecutor, ProcessPoolExecutor, as_completed
@@ -694,6 +704,7 @@ def build_games_parallel(
                     td_tendency_config,
                     target_selection_config,
                     play_call_model_config,
+                    qb_rushing_config,
                 ),
             ) as pool:
                 futures = {
@@ -745,6 +756,7 @@ def build_games_parallel(
             td_tendency_config=td_tendency_config,
             target_selection_config=target_selection_config,
             play_call_model_config=play_call_model_config,
+            qb_rushing_config=qb_rushing_config,
             dual_arm=dual_arm,
         )
         warm_results = _warm_builders(builders, game_args, dual_arm)

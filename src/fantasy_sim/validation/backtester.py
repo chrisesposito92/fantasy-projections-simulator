@@ -12,6 +12,7 @@ from fantasy_sim.data.loader import DataLoader
 from fantasy_sim.data.market_history.models import MarketHistoryConfig
 from fantasy_sim.data.pff.models import PffConfig
 from fantasy_sim.data.play_call_model import PlayCallModelConfig
+from fantasy_sim.data.qb_rushing import QbRushingConfig
 from fantasy_sim.data.role_trend.models import RoleTrendConfig
 from fantasy_sim.data.target_selection import TargetSelectionConfig
 from fantasy_sim.data.tracking.models import TrackingConfig
@@ -86,6 +87,7 @@ class Backtester:
         ensemble_config: EnsembleConfig | None = None,
         target_selection_config: TargetSelectionConfig | None = None,
         play_call_model_config: PlayCallModelConfig | None = None,
+        qb_rushing_config: QbRushingConfig | None = None,
         max_workers: int = 1,
     ):
         if test_season >= _HOLDOUT_SEASON:
@@ -111,6 +113,7 @@ class Backtester:
         self._ensemble_config = ensemble_config
         self._target_selection_config = target_selection_config
         self._play_call_model_config = play_call_model_config
+        self._qb_rushing_config = qb_rushing_config
         self.max_workers = max_workers
 
     def run(self, scoring_config: dict) -> BacktestResult:
@@ -158,6 +161,7 @@ class Backtester:
             tracking_config=self._tracking_config,
             target_selection_config=self._target_selection_config,
             play_call_model_config=self._play_call_model_config,
+            qb_rushing_config=self._qb_rushing_config,
             max_workers=self.max_workers,
             dual_arm=False,
         )

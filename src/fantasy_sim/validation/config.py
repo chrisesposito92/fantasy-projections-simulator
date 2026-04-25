@@ -26,7 +26,6 @@ BUILD_GAME_CONFIG_EXCLUDE_KEYS = frozenset(
     {
         "role_trend_config",
         "market_history_config",
-        "qb_rushing_config",
     }
 )
 

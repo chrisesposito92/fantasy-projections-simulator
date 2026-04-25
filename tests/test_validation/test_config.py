@@ -227,16 +227,16 @@ class TestBuildEngineConfigs:
         assert configs["qb_rushing_config"].scramble.factor_clamp == (0.75, 1.40)
         assert configs["qb_rushing_config"].scramble.probability_clamp == (0.01, 0.20)
 
-    def test_build_game_config_kwargs_omits_post_sim_and_unwired_configs(self, tmp_path):
+    def test_build_game_config_kwargs_omits_post_sim_configs(self, tmp_path):
         defaults = load_defaults()
         configs = build_engine_configs(defaults)
 
         build_configs = build_game_config_kwargs(configs)
 
-        assert "qb_rushing_config" not in build_configs
+        assert "qb_rushing_config" in build_configs
         assert build_games_parallel([], cache_dir=tmp_path, **build_configs) == []
 
-    def test_build_games_parallel_ignores_unwired_qb_rushing_config(self, tmp_path):
+    def test_build_games_parallel_accepts_wired_qb_rushing_config(self, tmp_path):
         defaults = load_defaults()
         configs = build_engine_configs(defaults)
         build_configs = {

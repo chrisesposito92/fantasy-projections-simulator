@@ -10,6 +10,12 @@ from fantasy_sim.data.play_call_model import (
     PLAY_CALL_MODEL_TYPE,
     PlayCallModelConfig,
 )
+from fantasy_sim.data.qb_rushing import (
+    QB_SCRAMBLE_MODEL_TYPE,
+    QB_SCRAMBLE_SCHEMA_VERSION,
+    QbRushingConfig,
+    QbScrambleModelConfig,
+)
 from fantasy_sim.data.vegas.models import VegasContext
 from fantasy_sim.engine.types import TeamDistributions
 from fantasy_sim.models.player import TeamRoster
@@ -132,6 +138,63 @@ class TestGameContextBuilder:
 
         assert home_dists.play_call_context is not None
         assert away_dists.play_call_context is not None
+
+    def test_qb_scramble_model_created_when_enabled(self, tmp_path):
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            qb_rushing_config=QbRushingConfig(
+                scramble=QbScrambleModelConfig(
+                    enabled=True,
+                    artifacts_dir=str(tmp_path),
+                ),
+            ),
+        )
+
+        assert builder._qb_scramble_model is not None
+
+    def test_qb_scramble_context_attached_when_artifact_exists(
+        self, tmp_path, expanded_pbp, sample_rosters
+    ):
+        artifact = {
+            "schema_version": QB_SCRAMBLE_SCHEMA_VERSION,
+            "model_type": QB_SCRAMBLE_MODEL_TYPE,
+            "target_season": 2024,
+            "source_seasons": [2023],
+            "feature_names": ["intercept"],
+            "coefficients": {"intercept": 0.0},
+            "priors": {
+                "qb": {},
+                "team": {},
+                "opponent_allowed": {},
+                "league": 0.06,
+            },
+        }
+        (tmp_path / "qb_scramble_model_2024.json").write_text(
+            json.dumps(artifact),
+            encoding="utf-8",
+        )
+        builder = GameContextBuilder(
+            cache_dir=tmp_path / "cache",
+            qb_rushing_config=QbRushingConfig(
+                scramble=QbScrambleModelConfig(
+                    enabled=True,
+                    artifacts_dir=str(tmp_path),
+                ),
+            ),
+        )
+
+        home_dists, away_dists, _, _ = builder.build_game(
+            home_team="KC",
+            away_team="BUF",
+            pbp=expanded_pbp,
+            rosters=sample_rosters,
+            training_seasons=[2024],
+            target_season=2024,
+            week=1,
+        )
+
+        assert home_dists.qb_scramble_context is not None
+        assert away_dists.qb_scramble_context is not None
 
     def test_vegas_pass_rate_is_not_skipped_when_artifact_missing(
         self, tmp_path, expanded_pbp, sample_rosters

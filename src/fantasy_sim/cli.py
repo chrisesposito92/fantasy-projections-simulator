@@ -19,6 +19,7 @@ from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
 from fantasy_sim.data.play_call_model import load_play_call_model_config
+from fantasy_sim.data.qb_rushing import load_qb_rushing_config
 from fantasy_sim.data.target_selection import load_target_selection_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 from fantasy_sim.engine.types import TeamDistributions
@@ -152,6 +153,7 @@ def _make_builder(
     td_tendency_config = load_td_tendency_config(defaults)
     target_selection_config = load_target_selection_config(defaults)
     play_call_model_config = load_play_call_model_config(defaults)
+    qb_rushing_config = load_qb_rushing_config(defaults)
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
@@ -168,6 +170,9 @@ def _make_builder(
         target_selection_config=target_selection_config,
         play_call_model_config=(
             play_call_model_config if play_call_model_config.enabled else None
+        ),
+        qb_rushing_config=(
+            qb_rushing_config if qb_rushing_config.scramble.enabled else None
         ),
     )
 
