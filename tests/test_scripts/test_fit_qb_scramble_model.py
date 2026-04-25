@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -34,6 +35,7 @@ def _pbp():
                 "play_type": "run" if idx < 4 else "pass",
                 "passer_player_id": "QB1",
                 "passer_player_name": "Mobile QB",
+                "rusher_player_id": "QB1" if idx < 4 else None,
                 "qb_scramble": 1 if idx < 4 else 0,
                 "down": 3,
                 "ydstogo": 8,
@@ -54,6 +56,13 @@ def test_collect_examples_from_pbp_includes_passes_and_scrambles():
     assert len(examples) == 12
     assert sum(example.label for example in examples) == 4
     assert priors.qb["QB1"] == 4 / 12
+
+
+def test_collect_examples_from_pbp_requires_rusher_player_id():
+    pbp = _pbp().drop("rusher_player_id")
+
+    with pytest.raises(ValueError, match="rusher_player_id"):
+        collect_examples_from_pbp(pbp)
 
 
 def test_fit_artifact_for_season_writes_json(tmp_path):

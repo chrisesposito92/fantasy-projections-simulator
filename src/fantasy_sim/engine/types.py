@@ -47,7 +47,7 @@ class QbScrambleContextProtocol(Protocol):
         state: "GameState",
         passer: "PlayerModel",
     ) -> float | None:
-        raise NotImplementedError
+        ...
 
 
 @dataclass

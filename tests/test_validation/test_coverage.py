@@ -94,6 +94,7 @@ def _write_qb_scramble_artifact(
     *,
     feature_names: list[object] | None = None,
     coefficients: dict[str, object] | None = None,
+    diagnostics: dict[str, object] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -105,6 +106,9 @@ def _write_qb_scramble_artifact(
                 "source_seasons": [2023],
                 "feature_names": feature_names if feature_names is not None else ["intercept"],
                 "coefficients": coefficients if coefficients is not None else {"intercept": 0.0},
+                "diagnostics": diagnostics
+                if diagnostics is not None
+                else {"num_examples": 500, "scramble_rate": 0.06},
             }
         ),
         encoding="utf-8",
@@ -2248,6 +2252,31 @@ def test_qb_scramble_coverage_rejects_duplicate_feature_names(tmp_path):
                 "scramble": {
                     "enabled": True,
                     "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.scramble"].covered_seasons == []
+    assert coverage["qb_rushing.scramble"].missing_seasons == [2024]
+
+
+def test_qb_scramble_coverage_rejects_artifact_below_min_examples(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_scramble_artifact(
+        artifact_dir / "qb_scramble_model_2024.json",
+        diagnostics={"num_examples": 499, "scramble_rate": 0.06},
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "scramble": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                    "min_examples": 500,
                 }
             }
         },

@@ -427,7 +427,11 @@ def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool
     return all(math.isfinite(value) for value in parsed)
 
 
-def _qb_scramble_artifact_is_valid(path: Path, expected_season: int) -> bool:
+def _qb_scramble_artifact_is_valid(
+    path: Path,
+    expected_season: int,
+    min_examples: int,
+) -> bool:
     if not path.exists():
         return False
     try:
@@ -446,6 +450,14 @@ def _qb_scramble_artifact_is_valid(path: Path, expected_season: int) -> bool:
         artifact.get("source_seasons"),
         expected_season,
     ):
+        return False
+    diagnostics = artifact.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        return False
+    num_examples = diagnostics.get("num_examples")
+    if not isinstance(num_examples, int) or isinstance(num_examples, bool):
+        return False
+    if num_examples < min_examples:
         return False
     feature_names = artifact.get("feature_names")
     coefficients = artifact.get("coefficients")
@@ -495,12 +507,13 @@ def _covered_seasons_from_play_call_model_artifacts(
 def _covered_seasons_from_qb_scramble_artifacts(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Path],
+    min_examples: int,
 ) -> list[int]:
     return [
         season
         for season in test_seasons
         if (path := paths_by_season.get(season)) is not None
-        and _qb_scramble_artifact_is_valid(path, season)
+        and _qb_scramble_artifact_is_valid(path, season, min_examples)
     ]
 
 
@@ -836,6 +849,15 @@ def collect_signal_coverage(
         ("qb_rushing_config", "qb_rushing"),
         ("qb_rushing", "scramble"),
         nested_path=("scramble",),
+    )
+    qb_scramble_min_examples = int(
+        _config_value(
+            config,
+            ("qb_rushing_config", "qb_rushing"),
+            ("qb_rushing", "scramble", "min_examples"),
+            nested_path=("scramble", "min_examples"),
+            default=500,
+        )
     )
     ensemble_enabled = _signal_enabled(
         config,
@@ -1489,6 +1511,7 @@ def collect_signal_coverage(
             _covered_seasons_from_qb_scramble_artifacts(
                 seasons,
                 qb_scramble_artifact_paths,
+                qb_scramble_min_examples,
             ),
             note=(
                 "Requires qb_scramble_model_<season>.json artifacts fitted from "

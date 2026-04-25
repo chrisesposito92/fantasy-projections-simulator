@@ -168,6 +168,7 @@ class TestGameContextBuilder:
                 "opponent_allowed": {},
                 "league": 0.06,
             },
+            "diagnostics": {"num_examples": 500, "scramble_rate": 0.06},
         }
         (tmp_path / "qb_scramble_model_2024.json").write_text(
             json.dumps(artifact),

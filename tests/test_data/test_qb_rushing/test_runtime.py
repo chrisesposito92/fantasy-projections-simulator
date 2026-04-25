@@ -66,6 +66,7 @@ def _artifact(**overrides):
             "opponent_allowed": {"KC": 0.07},
             "league": 0.06,
         },
+        "diagnostics": {"num_examples": 500, "scramble_rate": 0.06},
     }
     values.update(overrides)
     return values
@@ -138,6 +139,13 @@ def test_duplicate_feature_names_return_none(tmp_path):
         coefficients={"intercept": 1.0},
     )
     model = QbScrambleModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+def test_artifact_below_min_examples_returns_none(tmp_path):
+    _write_artifact(tmp_path, diagnostics={"num_examples": 499, "scramble_rate": 0.06})
+    model = QbScrambleModel(_config(tmp_path, min_examples=500))
 
     assert _build_context(model) is None
 

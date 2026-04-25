@@ -38,6 +38,7 @@ _REQUIRED_PBP_COLUMNS = frozenset(
         "ydstogo",
         "yardline_100",
         "passer_player_id",
+        "rusher_player_id",
         "qb_scramble",
     }
 )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 import logging
 import math
@@ -60,6 +61,12 @@ class QbScrambleModel:
                 "Invalid QB scramble artifact for %s: unsafe source seasons",
                 target_season,
             )
+            return None
+        if not _artifact_meets_min_examples(
+            artifact,
+            target_season,
+            self.config.min_examples,
+        ):
             return None
 
         parsed = _parse_features_and_coefficients(artifact, target_season)
@@ -200,6 +207,36 @@ def _parse_features_and_coefficients(
         )
         return None
     return parsed_features, coefficients
+
+
+def _artifact_meets_min_examples(
+    artifact: dict[str, Any],
+    target_season: int,
+    min_examples: int,
+) -> bool:
+    diagnostics = artifact.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        logger.warning(
+            "Invalid QB scramble artifact for %s: missing diagnostics",
+            target_season,
+        )
+        return False
+    num_examples = diagnostics.get("num_examples")
+    if not isinstance(num_examples, int) or isinstance(num_examples, bool):
+        logger.warning(
+            "Invalid QB scramble artifact for %s: malformed num_examples",
+            target_season,
+        )
+        return False
+    if num_examples < min_examples:
+        logger.warning(
+            "Invalid QB scramble artifact for %s: num_examples %s below minimum %s",
+            target_season,
+            num_examples,
+            min_examples,
+        )
+        return False
+    return True
 
 
 def _artifact_clamp(
