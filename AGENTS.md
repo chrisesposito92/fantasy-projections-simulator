@@ -177,6 +177,7 @@ All development phases complete through the current Phase 5 accuracy initiative 
 - Phase 2 kept off: `role_trend.enabled=false`
 - Phase 4 kept off: `tracking.enabled=false`
 - Phase 5 slices implemented and kept off: `pff.depth_role.enabled=false`, `pff.depth_role.efficiency.enabled=false`, `pff.rb_scheme_fit.enabled=false`, `pff.qb_split.enabled=false`
+- QB scramble model implemented off-by-default: `qb_rushing.scramble.enabled=false`, with temporal artifacts loaded from `qb_rushing.scramble.artifacts_dir` and fallback to base QB `scramble_rate` when artifacts are missing or invalid
 - Weekly + season A/B validation harnesses with persistent ledgers and KS distribution diagnostics for compressed/deflated stat outputs
 
 ## Style
