@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import math
 import threading
 from pathlib import Path
 import polars as pl
@@ -770,6 +771,8 @@ class GameContextBuilder:
         except (TypeError, ValueError):
             return dict(none_features), dict(none_features)
         if spread_line is None or total_line is None:
+            return dict(none_features), dict(none_features)
+        if not math.isfinite(spread_line) or not math.isfinite(total_line):
             return dict(none_features), dict(none_features)
 
         home_implied = total_line / 2.0 + spread_line / 2.0

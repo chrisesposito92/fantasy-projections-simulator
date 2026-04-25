@@ -104,6 +104,7 @@ class TestGameContextBuilder:
             "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
             "model_type": PLAY_CALL_MODEL_TYPE,
             "target_season": 2024,
+            "source_seasons": [2023],
             "feature_names": ["intercept"],
             "coefficients": {"intercept": 0.0},
         }
@@ -194,6 +195,41 @@ class TestGameContextBuilder:
         [(None, 48.0), (-3.0, None)],
     )
     def test_play_call_market_features_fail_closed_for_incomplete_market_data(
+        self, builder, spread_line, total_line
+    ):
+        builder.loader.load_schedules = lambda seasons: pl.DataFrame(
+            [
+                {
+                    "season": 2024,
+                    "week": 1,
+                    "home_team": "KC",
+                    "away_team": "BUF",
+                    "spread_line": spread_line,
+                    "total_line": total_line,
+                }
+            ]
+        )
+
+        home_market, away_market = builder._play_call_market_features(
+            "KC", "BUF", 2024, 1
+        )
+
+        assert home_market == {
+            "spread_line": None,
+            "total_line": None,
+            "implied_team_total": None,
+        }
+        assert away_market == {
+            "spread_line": None,
+            "total_line": None,
+            "implied_team_total": None,
+        }
+
+    @pytest.mark.parametrize(
+        "spread_line,total_line",
+        [(float("nan"), 48.0), (-3.0, float("inf"))],
+    )
+    def test_play_call_market_features_fail_closed_for_non_finite_market_data(
         self, builder, spread_line, total_line
     ):
         builder.loader.load_schedules = lambda seasons: pl.DataFrame(

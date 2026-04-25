@@ -43,6 +43,7 @@ def _artifact(**overrides):
         "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
         "model_type": PLAY_CALL_MODEL_TYPE,
         "target_season": 2024,
+        "source_seasons": [2023],
         "feature_names": ["intercept", "down_3"],
         "coefficients": {"intercept": 0.0, "down_3": 0.0},
     }
@@ -139,6 +140,17 @@ def test_malformed_feature_names_return_none(tmp_path):
 
 def test_artifact_target_season_mismatch_returns_none(tmp_path):
     _write_artifact(tmp_path, target_season=2023)
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+@pytest.mark.parametrize(
+    "source_seasons",
+    [[], [2024], [2023, 2024], [float("inf")], ["2023"]],
+)
+def test_artifact_with_invalid_source_seasons_returns_none(tmp_path, source_seasons):
+    _write_artifact(tmp_path, source_seasons=source_seasons)
     model = PlayCallModel(_config(tmp_path))
 
     assert _build_context(model) is None

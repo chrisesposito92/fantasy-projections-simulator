@@ -66,6 +66,7 @@ def _write_custom_play_call_model_artifact(
     path: Path,
     *,
     target_season: int = 2024,
+    source_seasons: list[object] | None = None,
     feature_names: list[object] | None = None,
     coefficients: dict[str, object] | None = None,
 ) -> None:
@@ -76,6 +77,7 @@ def _write_custom_play_call_model_artifact(
                 "schema_version": PLAY_CALL_MODEL_SCHEMA_VERSION,
                 "model_type": PLAY_CALL_MODEL_TYPE,
                 "target_season": target_season,
+                "source_seasons": source_seasons if source_seasons is not None else [2023],
                 "feature_names": feature_names if feature_names is not None else ["intercept"],
                 "coefficients": coefficients if coefficients is not None else {"intercept": 0.0},
             }
@@ -2199,6 +2201,10 @@ def test_play_call_model_ignores_runtime_rejected_artifacts(tmp_path):
             "feature_names": ["intercept"],
             "coefficients": {"intercept": float("inf")},
         },
+        "missing_source_seasons": {"source_seasons": []},
+        "leaky_source_season": {"source_seasons": [2024]},
+        "non_finite_source_season": {"source_seasons": [float("inf")]},
+        "malformed_source_season": {"source_seasons": ["2023"]},
     }
 
     for name, overrides in invalid_artifacts.items():

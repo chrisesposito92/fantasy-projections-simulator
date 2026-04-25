@@ -354,6 +354,21 @@ def _target_selection_artifact_is_valid(path: Path) -> bool:
     return bool(parsed)
 
 
+def _play_call_source_seasons_are_safe(
+    source_seasons: object,
+    expected_season: int,
+) -> bool:
+    if not isinstance(source_seasons, list) or not source_seasons:
+        return False
+    return all(
+        isinstance(season, int)
+        and not isinstance(season, bool)
+        and math.isfinite(season)
+        and season < expected_season
+        for season in source_seasons
+    )
+
+
 def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool:
     if not path.exists():
         return False
@@ -368,6 +383,11 @@ def _play_call_model_artifact_is_valid(path: Path, expected_season: int) -> bool
     if artifact.get("model_type") != PLAY_CALL_MODEL_TYPE:
         return False
     if artifact.get("target_season") != expected_season:
+        return False
+    if not _play_call_source_seasons_are_safe(
+        artifact.get("source_seasons"),
+        expected_season,
+    ):
         return False
     feature_names = artifact.get("feature_names")
     coefficients = artifact.get("coefficients")

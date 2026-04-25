@@ -20,6 +20,18 @@ from fantasy_sim.data.play_call_model.models import (
 logger = logging.getLogger(__name__)
 
 
+def _source_seasons_are_safe(source_seasons: object, target_season: int) -> bool:
+    if not isinstance(source_seasons, list) or not source_seasons:
+        return False
+    return all(
+        isinstance(season, int)
+        and not isinstance(season, bool)
+        and math.isfinite(season)
+        and season < target_season
+        for season in source_seasons
+    )
+
+
 class PlayCallModel:
     """Loads learned play-call artifacts and builds per-team runtime contexts."""
 
@@ -53,6 +65,12 @@ class PlayCallModel:
         if artifact.get("target_season") != target_season:
             logger.warning(
                 "Invalid play-call artifact for %s: target season mismatch",
+                target_season,
+            )
+            return None
+        if not _source_seasons_are_safe(artifact.get("source_seasons"), target_season):
+            logger.warning(
+                "Invalid play-call artifact for %s: unsafe source seasons",
                 target_season,
             )
             return None
