@@ -29,7 +29,7 @@ from fantasy_sim.data.game_script import GameScriptConfig
 from fantasy_sim.data.goal_line_concentration import GoalLineConcentrationConfig
 from fantasy_sim.data.game_script.engine import GameScriptEngine
 from fantasy_sim.data.play_call_model import PlayCallModel, PlayCallModelConfig
-from fantasy_sim.data.qb_rushing import QbRushingConfig, QbScrambleModel
+from fantasy_sim.data.qb_rushing import QbDesignedRunModel, QbRushingConfig, QbScrambleModel
 from fantasy_sim.data.target_selection import TargetSelectionConfig, TargetSelectionModel
 from fantasy_sim.data.td_tendency import TdTendencyConfig, TdTendencyEngine
 from fantasy_sim.engine.types import TeamDistributions
@@ -293,6 +293,13 @@ class GameContextBuilder:
         if self._qb_rushing_config.scramble.enabled:
             self._qb_scramble_model = QbScrambleModel(self._qb_rushing_config.scramble)
             logger.info("QB scramble model enabled")
+
+        self._qb_designed_run_model = None
+        if self._qb_rushing_config.designed_runs.enabled:
+            self._qb_designed_run_model = QbDesignedRunModel(
+                self._qb_rushing_config.designed_runs
+            )
+            logger.info("QB designed-run model enabled")
 
     def _is_goal_line_concentration_enabled(self) -> bool:
         """Return the runtime feature flag for built team distributions."""
@@ -1008,6 +1015,37 @@ class GameContextBuilder:
                 **home_market,
             )
             away_dists.qb_scramble_context = self._qb_scramble_model.build_context(
+                roster=away_roster,
+                team=away_team,
+                opponent=home_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=False,
+                **away_market,
+            )
+
+        if self._qb_designed_run_model is not None and target_season is not None:
+            home_market, away_market = self._play_call_market_features(
+                home_team,
+                away_team,
+                target_season,
+                week,
+            )
+            context_week = week or 0
+            home_dists.qb_designed_run_context = self._qb_designed_run_model.build_context(
+                roster=home_roster,
+                team=home_team,
+                opponent=away_team,
+                home_team=home_team,
+                away_team=away_team,
+                target_season=target_season,
+                week=context_week,
+                is_home=True,
+                **home_market,
+            )
+            away_dists.qb_designed_run_context = self._qb_designed_run_model.build_context(
                 roster=away_roster,
                 team=away_team,
                 opponent=home_team,
