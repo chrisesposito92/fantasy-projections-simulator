@@ -129,13 +129,18 @@ class TestLearnedPlayCallSelection:
         assert all(result == "pass" for result in results)
 
     @pytest.mark.parametrize(
-        ("probability", "expected"),
-        [(1.25, "pass"), (-0.25, "run")],
+        ("probability", "empirical_pass_rate", "expected"),
+        [(1.25, 0.0, "run"), (-0.25, 1.0, "pass")],
     )
-    def test_learned_probability_is_clamped(self, probability: float, expected: str):
+    def test_empirical_fallback_when_learned_context_returns_out_of_range(
+        self,
+        probability: float,
+        empirical_pass_rate: float,
+        expected: str,
+    ):
         rng = np.random.default_rng(42)
         state = make_state()
-        play_calling = make_play_calling(pass_rate=0.5)
+        play_calling = make_play_calling(pass_rate=empirical_pass_rate)
         context = FixedPlayCallContext(probability)
 
         results = [

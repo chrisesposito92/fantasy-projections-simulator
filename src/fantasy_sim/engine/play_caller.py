@@ -15,8 +15,7 @@ def select_play_type(
     """Select run or pass based on game state and team tendencies."""
     if play_call_context is not None:
         pass_probability = play_call_context.pass_probability(state, script=script)
-        if pass_probability is not None and np.isfinite(pass_probability):
-            pass_probability = float(np.clip(pass_probability, 0.0, 1.0))
+        if pass_probability is not None and np.isfinite(pass_probability) and 0.0 <= pass_probability <= 1.0:
             return rng.choice(
                 ["pass", "run"],
                 p=[pass_probability, 1.0 - pass_probability],

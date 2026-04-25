@@ -88,8 +88,9 @@ class TestSimulateGame:
             seen["profile"] = profile
             return script
 
-        def fake_select_play_type(state, play_calling, rng, script=None):
+        def fake_select_play_type(state, play_calling, rng, script=None, play_call_context=None):
             seen["script"] = script
+            seen["play_call_context"] = play_call_context
             return "run"
 
         def fake_resolve_play(
@@ -130,6 +131,7 @@ class TestSimulateGame:
         assert seen["config"] is not None
         assert seen["profile"] is not None
         assert seen["script"] is script
+        assert seen["play_call_context"] is None
         assert seen["resolve_script"] is script
         assert seen["target_selection_context"] is target_context
         assert seen["goal_line_concentration_enabled"] is True
