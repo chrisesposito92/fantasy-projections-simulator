@@ -769,12 +769,11 @@ class GameContextBuilder:
             total_line = None if total_raw is None else float(total_raw)
         except (TypeError, ValueError):
             return dict(none_features), dict(none_features)
+        if spread_line is None or total_line is None:
+            return dict(none_features), dict(none_features)
 
-        home_implied = None
-        away_implied = None
-        if spread_line is not None and total_line is not None:
-            home_implied = total_line / 2.0 + spread_line / 2.0
-            away_implied = total_line / 2.0 - spread_line / 2.0
+        home_implied = total_line / 2.0 + spread_line / 2.0
+        away_implied = total_line / 2.0 - spread_line / 2.0
 
         home_features = {
             "spread_line": spread_line,
@@ -782,7 +781,7 @@ class GameContextBuilder:
             "implied_team_total": home_implied,
         }
         away_features = {
-            "spread_line": spread_line,
+            "spread_line": -spread_line,
             "total_line": total_line,
             "implied_team_total": away_implied,
         }

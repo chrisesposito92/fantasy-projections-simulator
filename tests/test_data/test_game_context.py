@@ -160,6 +160,70 @@ class TestGameContextBuilder:
 
         assert dists.play_calling.default["pass"] > before
 
+    def test_play_call_market_features_use_team_perspective_spread(self, builder):
+        builder.loader.load_schedules = lambda seasons: pl.DataFrame(
+            [
+                {
+                    "season": 2024,
+                    "week": 1,
+                    "home_team": "KC",
+                    "away_team": "BUF",
+                    "spread_line": -3.0,
+                    "total_line": 48.0,
+                }
+            ]
+        )
+
+        home_market, away_market = builder._play_call_market_features(
+            "KC", "BUF", 2024, 1
+        )
+
+        assert home_market == {
+            "spread_line": -3.0,
+            "total_line": 48.0,
+            "implied_team_total": 22.5,
+        }
+        assert away_market == {
+            "spread_line": 3.0,
+            "total_line": 48.0,
+            "implied_team_total": 25.5,
+        }
+
+    @pytest.mark.parametrize(
+        "spread_line,total_line",
+        [(None, 48.0), (-3.0, None)],
+    )
+    def test_play_call_market_features_fail_closed_for_incomplete_market_data(
+        self, builder, spread_line, total_line
+    ):
+        builder.loader.load_schedules = lambda seasons: pl.DataFrame(
+            [
+                {
+                    "season": 2024,
+                    "week": 1,
+                    "home_team": "KC",
+                    "away_team": "BUF",
+                    "spread_line": spread_line,
+                    "total_line": total_line,
+                }
+            ]
+        )
+
+        home_market, away_market = builder._play_call_market_features(
+            "KC", "BUF", 2024, 1
+        )
+
+        assert home_market == {
+            "spread_line": None,
+            "total_line": None,
+            "implied_team_total": None,
+        }
+        assert away_market == {
+            "spread_line": None,
+            "total_line": None,
+            "implied_team_total": None,
+        }
+
     def test_missing_team_gets_league_defaults(self, builder, expanded_pbp, sample_rosters):
         """A team not in PBP data should get league-average distributions."""
         dists = builder.build_team_distributions(
