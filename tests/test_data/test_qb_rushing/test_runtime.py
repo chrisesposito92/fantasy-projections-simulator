@@ -131,6 +131,17 @@ def test_unsupported_feature_name_returns_none(tmp_path):
     assert _build_context(model) is None
 
 
+def test_duplicate_feature_names_return_none(tmp_path):
+    _write_artifact(
+        tmp_path,
+        feature_names=["intercept", "intercept"],
+        coefficients={"intercept": 1.0},
+    )
+    model = QbScrambleModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
 def test_artifact_target_season_mismatch_returns_none(tmp_path):
     _write_artifact(tmp_path, target_season=2023)
     model = QbScrambleModel(_config(tmp_path))
@@ -152,3 +163,74 @@ def test_invalid_utf8_artifact_returns_none(tmp_path):
     model = QbScrambleModel(_config(tmp_path))
 
     assert _build_context(model) is None
+
+
+def test_invalid_artifact_clamps_fall_back_to_config_clamps(tmp_path):
+    _write_artifact(
+        tmp_path,
+        factor_clamp=[2.0, 1.0],
+        probability_clamp=[-1.0, 2.0],
+    )
+    model = QbScrambleModel(
+        _config(
+            tmp_path,
+            factor_clamp=(0.75, 1.25),
+            probability_clamp=(0.01, 0.20),
+        )
+    )
+
+    context = _build_context(model)
+
+    assert context is not None
+    assert context.factor_clamp == (0.75, 1.25)
+    assert context.probability_clamp == (0.01, 0.20)
+
+
+def test_valid_artifact_clamps_override_config_clamps(tmp_path):
+    _write_artifact(
+        tmp_path,
+        factor_clamp=[0.60, 1.40],
+        probability_clamp=[0.02, 0.22],
+    )
+    model = QbScrambleModel(
+        _config(
+            tmp_path,
+            factor_clamp=(0.75, 1.25),
+            probability_clamp=(0.01, 0.20),
+        )
+    )
+
+    context = _build_context(model)
+
+    assert context is not None
+    assert context.factor_clamp == (0.60, 1.40)
+    assert context.probability_clamp == (0.02, 0.22)
+
+
+def test_malformed_priors_fall_back_to_league_and_default(tmp_path):
+    _write_artifact(
+        tmp_path,
+        priors={
+            "team": {"BUF": "nan"},
+            "opponent_allowed": "bad",
+            "league": 0.06,
+        },
+    )
+    model = QbScrambleModel(_config(tmp_path))
+
+    context = _build_context(model)
+
+    assert context is not None
+    assert context.team_prior_scramble_rate == pytest.approx(0.06)
+    assert context.opponent_prior_scramble_rate_allowed == pytest.approx(0.06)
+
+
+def test_malformed_priors_without_valid_league_fall_back_to_default(tmp_path):
+    _write_artifact(tmp_path, priors={"team": {"BUF": "nan"}, "league": "bad"})
+    model = QbScrambleModel(_config(tmp_path))
+
+    context = _build_context(model)
+
+    assert context is not None
+    assert context.team_prior_scramble_rate == pytest.approx(0.05)
+    assert context.opponent_prior_scramble_rate_allowed == pytest.approx(0.05)

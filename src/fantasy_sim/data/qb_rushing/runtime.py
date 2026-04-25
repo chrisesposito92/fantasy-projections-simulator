@@ -172,6 +172,12 @@ def _parse_features_and_coefficients(
         return None
 
     parsed_features = tuple(feature_names)
+    if len(set(parsed_features)) != len(parsed_features):
+        logger.warning(
+            "Invalid QB scramble artifact for %s: duplicate feature name",
+            target_season,
+        )
+        return None
     try:
         coefficients = {str(name): float(value) for name, value in coefficients_raw.items()}
     except (TypeError, ValueError):
