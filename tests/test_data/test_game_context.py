@@ -182,6 +182,18 @@ class TestGameContextBuilder:
                 ),
             ),
         )
+        builder.loader.load_schedules = lambda seasons: pl.DataFrame(
+            [
+                {
+                    "season": 2024,
+                    "week": 1,
+                    "home_team": "KC",
+                    "away_team": "BUF",
+                    "spread_line": -3.0,
+                    "total_line": 48.0,
+                }
+            ]
+        )
 
         home_dists, away_dists, _, _ = builder.build_game(
             home_team="KC",
@@ -195,6 +207,22 @@ class TestGameContextBuilder:
 
         assert home_dists.qb_scramble_context is not None
         assert away_dists.qb_scramble_context is not None
+        assert home_dists.qb_scramble_context.team == "KC"
+        assert home_dists.qb_scramble_context.opponent == "BUF"
+        assert home_dists.qb_scramble_context.home_team == "KC"
+        assert home_dists.qb_scramble_context.away_team == "BUF"
+        assert home_dists.qb_scramble_context.is_home is True
+        assert home_dists.qb_scramble_context.spread_line == -3.0
+        assert home_dists.qb_scramble_context.total_line == 48.0
+        assert home_dists.qb_scramble_context.implied_team_total == 22.5
+        assert away_dists.qb_scramble_context.team == "BUF"
+        assert away_dists.qb_scramble_context.opponent == "KC"
+        assert away_dists.qb_scramble_context.home_team == "KC"
+        assert away_dists.qb_scramble_context.away_team == "BUF"
+        assert away_dists.qb_scramble_context.is_home is False
+        assert away_dists.qb_scramble_context.spread_line == 3.0
+        assert away_dists.qb_scramble_context.total_line == 48.0
+        assert away_dists.qb_scramble_context.implied_team_total == 25.5
 
     def test_vegas_pass_rate_is_not_skipped_when_artifact_missing(
         self, tmp_path, expanded_pbp, sample_rosters

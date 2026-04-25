@@ -188,6 +188,44 @@ class TestBacktesterParallelBuild:
         call_kwargs = mock_build_parallel.call_args[1]
         assert call_kwargs["tracking_config"] is tracking_cfg
 
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_phase1_passes_qb_rushing_config(self, mock_loader_cls, mock_build_parallel):
+        from pathlib import Path
+        from fantasy_sim.data.qb_rushing import QbRushingConfig, QbScrambleModelConfig
+
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = Path("/tmp/test")
+        mock_loader.load_schedules.return_value = pl.DataFrame(
+            {
+                "season": pl.Series([], dtype=pl.Int32),
+                "week": pl.Series([], dtype=pl.Int32),
+                "game_id": pl.Series([], dtype=pl.Utf8),
+                "home_team": pl.Series([], dtype=pl.Utf8),
+                "away_team": pl.Series([], dtype=pl.Utf8),
+            }
+        )
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+        mock_build_parallel.return_value = []
+
+        qb_rushing_cfg = QbRushingConfig(
+            scramble=QbScrambleModelConfig(enabled=True)
+        )
+
+        from fantasy_sim.config.loader import load_defaults, resolve_scoring
+        scoring_config = resolve_scoring(load_defaults()["scoring"], "ppr")
+
+        bt = Backtester(test_season=2024, n_sims=10, qb_rushing_config=qb_rushing_cfg)
+        bt.loader = mock_loader
+        bt.run(scoring_config)
+
+        call_kwargs = mock_build_parallel.call_args[1]
+        assert bt._qb_rushing_config is qb_rushing_cfg
+        assert call_kwargs["qb_rushing_config"] is qb_rushing_cfg
+
     @patch("fantasy_sim.validation.backtester.FfOpportunityProjectionEnsembler")
     @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
     @patch("fantasy_sim.validation.backtester.build_games_parallel")
