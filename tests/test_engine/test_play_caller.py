@@ -115,6 +115,36 @@ class TestLearnedPlayCallSelection:
 
         assert all(result == "pass" for result in results)
 
+    def test_empirical_fallback_when_learned_context_returns_nan(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=1.0)
+        context = FixedPlayCallContext(float("nan"))
+
+        results = [
+            select_play_type(state, play_calling, rng, play_call_context=context)
+            for _ in range(100)
+        ]
+
+        assert all(result == "pass" for result in results)
+
+    @pytest.mark.parametrize(
+        ("probability", "expected"),
+        [(1.25, "pass"), (-0.25, "run")],
+    )
+    def test_learned_probability_is_clamped(self, probability: float, expected: str):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=0.5)
+        context = FixedPlayCallContext(probability)
+
+        results = [
+            select_play_type(state, play_calling, rng, play_call_context=context)
+            for _ in range(100)
+        ]
+
+        assert all(result == expected for result in results)
+
     def test_script_pass_rate_factor_is_skipped_for_learned_context(self):
         rng = np.random.default_rng(42)
         state = make_state()
