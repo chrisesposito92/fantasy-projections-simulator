@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 import time
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import polars as pl
@@ -62,8 +63,9 @@ def _positions_from_rosters(rosters: pl.DataFrame) -> dict[str, str]:
     }
 
 
-def _qb_ids_from_rosters(rosters: pl.DataFrame) -> tuple[dict[tuple[object, object, str], str], str | None]:
+def _unique_qb_ids_from_rosters(rosters: pl.DataFrame) -> tuple[dict[tuple[object, object, str], str], str | None]:
     team_column = next((name for name in ("team", "recent_team", "club") if name in rosters.columns), None)
+    qb_ids_by_team_week: dict[tuple[object, object, str], set[str]] = defaultdict(set)
     by_team_week: dict[tuple[object, object, str], str] = {}
     qb_ids: set[str] = set()
     for row in rosters.iter_rows(named=True):
@@ -72,20 +74,47 @@ def _qb_ids_from_rosters(rosters: pl.DataFrame) -> tuple[dict[tuple[object, obje
         player_id = str(row["player_id"])
         qb_ids.add(player_id)
         if team_column is not None and row.get(team_column) not in (None, ""):
-            by_team_week[(row.get("season"), row.get("week"), str(row[team_column]))] = player_id
+            qb_ids_by_team_week[(row.get("season"), row.get("week"), str(row[team_column]))].add(player_id)
+    for key, team_qb_ids in qb_ids_by_team_week.items():
+        if len(team_qb_ids) == 1:
+            by_team_week[key] = next(iter(team_qb_ids))
     fallback = next(iter(qb_ids)) if len(qb_ids) == 1 else None
     return by_team_week, fallback
 
 
-def _annotate_offense_qbs(rows: list[dict[str, object]], rosters: pl.DataFrame) -> list[dict[str, object]]:
-    by_team_week, fallback = _qb_ids_from_rosters(rosters)
+def _qb_ids_from_pbp(rows: list[dict[str, object]]) -> dict[tuple[object, object, str], str]:
+    counts_by_team_week: dict[tuple[object, object, str], Counter[str]] = defaultdict(Counter)
     for row in rows:
+        team = row.get("posteam")
+        if team in (None, ""):
+            continue
+        key = (row.get("season"), row.get("week"), str(team))
+        if row.get("rusher_position") == "QB" and row.get("rusher_player_id") not in (None, ""):
+            counts_by_team_week[key][str(row["rusher_player_id"])] += 1
+        for qb_field in ("qb_player_id", "offense_qb_player_id", "posteam_qb_player_id", "passer_player_id"):
+            if row.get(qb_field) not in (None, ""):
+                counts_by_team_week[key][str(row[qb_field])] += 1
+    by_team_week: dict[tuple[object, object, str], str] = {}
+    for key, counts in counts_by_team_week.items():
+        if not counts:
+            continue
+        most_common = counts.most_common(2)
+        if len(most_common) == 1 or most_common[0][1] > most_common[1][1]:
+            by_team_week[key] = most_common[0][0]
+    return by_team_week
+
+
+def _annotate_offense_qbs(rows: list[dict[str, object]], rosters: pl.DataFrame) -> list[dict[str, object]]:
+    pbp_by_team_week = _qb_ids_from_pbp(rows)
+    roster_by_team_week, fallback = _unique_qb_ids_from_rosters(rosters)
+    for row in rows:
+        if row.get("rusher_position") == "QB" and row.get("rusher_player_id") not in (None, ""):
+            row["offense_qb_player_id"] = str(row["rusher_player_id"])
+            continue
         if any(row.get(key) not in (None, "") for key in ("qb_player_id", "offense_qb_player_id", "posteam_qb_player_id", "passer_player_id")):
             continue
-        row["offense_qb_player_id"] = by_team_week.get(
-            (row.get("season"), row.get("week"), str(row.get("posteam"))),
-            fallback,
-        )
+        key = (row.get("season"), row.get("week"), str(row.get("posteam")))
+        row["offense_qb_player_id"] = pbp_by_team_week.get(key, roster_by_team_week.get(key, fallback))
     return rows
 
 

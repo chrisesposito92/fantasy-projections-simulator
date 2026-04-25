@@ -75,6 +75,22 @@ def test_collect_examples_from_pbp_excludes_scrambles_and_builds_tail_buckets():
     assert tail_buckets["global"] == (8, 8, 8, 8)
 
 
+def test_collect_examples_from_pbp_credits_qb_rusher_when_roster_has_multiple_qbs():
+    rosters = pl.DataFrame(
+        [
+            {"season": 2023, "week": 1, "team": "BUF", "player_id": "QB1", "position": "QB"},
+            {"season": 2023, "week": 1, "team": "BUF", "player_id": "QB2", "position": "QB"},
+            {"season": 2023, "week": 1, "team": "BUF", "player_id": "RB1", "position": "RB"},
+        ]
+    )
+
+    examples, priors, _tail_buckets = collect_examples_from_pbp(_pbp(), rosters)
+
+    assert len(examples) == 12
+    assert priors.qb["QB1"] == pytest.approx(4 / 12)
+    assert "QB2" not in priors.qb
+
+
 def test_collect_examples_from_pbp_requires_rusher_player_id():
     pbp = _pbp().drop("rusher_player_id")
 
