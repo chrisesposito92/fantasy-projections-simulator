@@ -302,10 +302,12 @@ class TestGameContextBuilder:
         assert home_dists.qb_designed_run_context.team == "KC"
         assert home_dists.qb_designed_run_context.opponent == "BUF"
         assert home_dists.qb_designed_run_context.spread_line == -3.0
+        assert home_dists.qb_designed_run_context.total_line == 48.0
         assert home_dists.qb_designed_run_context.implied_team_total == 22.5
         assert away_dists.qb_designed_run_context.team == "BUF"
         assert away_dists.qb_designed_run_context.opponent == "KC"
         assert away_dists.qb_designed_run_context.spread_line == 3.0
+        assert away_dists.qb_designed_run_context.total_line == 48.0
         assert away_dists.qb_designed_run_context.implied_team_total == 25.5
 
     def test_vegas_pass_rate_is_not_skipped_when_artifact_missing(
