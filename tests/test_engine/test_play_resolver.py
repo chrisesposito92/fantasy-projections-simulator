@@ -253,6 +253,74 @@ class TestResolvePassScramble:
         assert result.yards in [5, 8, 12]
 
 
+class FixedQbScrambleContext:
+    def __init__(self, probability):
+        self.probability = probability
+
+    def scramble_probability(self, state, passer):
+        return self.probability
+
+
+class TestResolvePassQbScrambleContext:
+    def _make_context_roster(self, scramble_rate=0.0) -> TeamRoster:
+        qb = PlayerModel(
+            "QB1",
+            "QB",
+            "QB",
+            "T",
+            PlayerUsage(snap_share=1.0, scramble_rate=scramble_rate),
+            PlayerOutcomes(scramble_yards_dist=np.array([6]), fumble_rate=0.0),
+        )
+        wr = PlayerModel(
+            "WR1",
+            "WR",
+            "WR",
+            "T",
+            PlayerUsage(target_share=1.0),
+            PlayerOutcomes(catch_rate=1.0, receiving_yards_dist=np.array([10])),
+        )
+        rb = PlayerModel(
+            "RB1",
+            "RB",
+            "RB",
+            "T",
+            PlayerUsage(carry_share=1.0),
+            PlayerOutcomes(rushing_yards_dist=np.array([4])),
+        )
+        return TeamRoster(team="T", players=[qb, wr, rb])
+
+    def test_qb_scramble_context_can_force_scramble_probability(self):
+        result = resolve_play(
+            make_state(),
+            "pass",
+            make_outcomes(),
+            make_turnover_rates(sack_rate=1.0, int_rate=1.0),
+            np.random.default_rng(42),
+            roster=self._make_context_roster(scramble_rate=0.0),
+            qb_scramble_context=FixedQbScrambleContext(1.0),
+        )
+
+        assert result.play_type == "run"
+        assert result.rusher_id == "QB1"
+        assert result.yards == 6
+        assert not result.is_sack
+        assert not result.is_interception
+
+    def test_qb_scramble_context_none_falls_back_to_base_rate(self):
+        result = resolve_play(
+            make_state(),
+            "pass",
+            make_outcomes(),
+            make_turnover_rates(),
+            np.random.default_rng(42),
+            roster=self._make_context_roster(scramble_rate=1.0),
+            qb_scramble_context=FixedQbScrambleContext(None),
+        )
+
+        assert result.play_type == "run"
+        assert result.rusher_id == "QB1"
+
+
 class TestResolveRunWithPlayers:
     def test_run_has_rusher(self):
         rng = np.random.default_rng(42)

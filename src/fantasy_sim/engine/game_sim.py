@@ -107,6 +107,7 @@ def simulate_game(
             goal_line_concentration_enabled=off_dists.goal_line_concentration_enabled,
             script=script,
             target_selection_context=off_dists.target_selection_context,
+            qb_scramble_context=off_dists.qb_scramble_context,
         )
         total_plays += 1
 
