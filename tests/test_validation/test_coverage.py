@@ -7,6 +7,8 @@ from pathlib import Path
 
 from fantasy_sim.config.loader import load_defaults
 from fantasy_sim.data.qb_rushing import (
+    QB_DESIGNED_RUN_MODEL_TYPE,
+    QB_DESIGNED_RUN_SCHEMA_VERSION,
     QB_SCRAMBLE_MODEL_TYPE,
     QB_SCRAMBLE_SCHEMA_VERSION,
 )
@@ -113,6 +115,24 @@ def _write_qb_scramble_artifact(
         ),
         encoding="utf-8",
     )
+
+
+def _write_qb_designed_run_artifact(path: Path, **overrides) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    artifact = {
+        "schema_version": QB_DESIGNED_RUN_SCHEMA_VERSION,
+        "model_type": QB_DESIGNED_RUN_MODEL_TYPE,
+        "target_season": 2024,
+        "source_seasons": [2023],
+        "feature_names": ["intercept"],
+        "coefficients": {"intercept": 0.0},
+        "factor_clamp": [0.50, 2.00],
+        "priors": {"league": 0.06, "mobility_tiers": {}},
+        "tail_buckets": {"global": [5, 8, 12]},
+        "diagnostics": {"num_examples": 500, "designed_qb_run_rate": 0.06},
+    }
+    artifact.update(overrides)
+    path.write_text(json.dumps(artifact), encoding="utf-8")
 
 
 def _base_config(
@@ -2286,6 +2306,63 @@ def test_qb_scramble_coverage_rejects_artifact_below_min_examples(tmp_path):
 
     assert coverage["qb_rushing.scramble"].covered_seasons == []
     assert coverage["qb_rushing.scramble"].missing_seasons == [2024]
+
+
+def test_qb_designed_run_coverage_disabled_by_default(tmp_path):
+    coverage = collect_signal_coverage(
+        config={"qb_rushing": {"designed_runs": {"enabled": False}}},
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.designed_runs"].enabled is False
+    assert coverage["qb_rushing.designed_runs"].status == "disabled"
+
+
+def test_qb_designed_run_coverage_requires_valid_artifact(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_designed_run_artifact(artifact_dir / "qb_designed_run_model_2024.json")
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "designed_runs": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.designed_runs"].enabled is True
+    assert coverage["qb_rushing.designed_runs"].covered_seasons == [2024]
+    assert coverage["qb_rushing.designed_runs"].missing_seasons == []
+
+
+def test_qb_designed_run_coverage_rejects_missing_tail_buckets(tmp_path):
+    artifact_dir = tmp_path / "artifacts"
+    _write_qb_designed_run_artifact(
+        artifact_dir / "qb_designed_run_model_2024.json",
+        tail_buckets={},
+    )
+
+    coverage = collect_signal_coverage(
+        config={
+            "qb_rushing": {
+                "designed_runs": {
+                    "enabled": True,
+                    "artifacts_dir": str(artifact_dir),
+                }
+            }
+        },
+        test_seasons=[2024],
+        cache_dir=tmp_path,
+    )
+
+    assert coverage["qb_rushing.designed_runs"].covered_seasons == []
+    assert coverage["qb_rushing.designed_runs"].missing_seasons == [2024]
 
 
 def test_play_call_model_reports_partial_artifact_coverage(tmp_path):
