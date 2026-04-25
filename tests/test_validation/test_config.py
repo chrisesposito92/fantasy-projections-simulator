@@ -164,6 +164,14 @@ class TestBuildEngineConfigs:
         assert "play_call_model_config" in configs
         assert configs["play_call_model_config"] is None
 
+    def test_defaults_keep_qb_rushing_disabled(self):
+        defaults = load_defaults()
+
+        configs = build_engine_configs(defaults)
+
+        assert "qb_rushing_config" in configs
+        assert configs["qb_rushing_config"] is None
+
     def test_enabled_target_selection_config_is_built(self):
         defaults = load_defaults()
         overridden = apply_overrides(
@@ -197,6 +205,25 @@ class TestBuildEngineConfigs:
         assert configs["play_call_model_config"] is not None
         assert configs["play_call_model_config"].artifacts_dir == "results/play_call_model/test"
         assert configs["play_call_model_config"].probability_clamp == (0.10, 0.90)
+
+    def test_enabled_qb_rushing_config_is_built(self):
+        defaults = load_defaults()
+        overridden = apply_overrides(
+            defaults,
+            [
+                "qb_rushing.scramble.enabled=true",
+                "qb_rushing.scramble.artifacts_dir=results/qb_rushing/scramble/test",
+                "qb_rushing.scramble.factor_clamp=[0.75,1.40]",
+                "qb_rushing.scramble.probability_clamp=[0.01,0.20]",
+            ],
+        )
+
+        configs = build_engine_configs(overridden)
+
+        assert configs["qb_rushing_config"] is not None
+        assert configs["qb_rushing_config"].scramble.artifacts_dir == "results/qb_rushing/scramble/test"
+        assert configs["qb_rushing_config"].scramble.factor_clamp == (0.75, 1.40)
+        assert configs["qb_rushing_config"].scramble.probability_clamp == (0.01, 0.20)
 
     def test_enabled_tracking_config_is_built_and_propagates_nested_values(self):
         defaults = load_defaults()

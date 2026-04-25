@@ -18,6 +18,7 @@ from fantasy_sim.data.tracking.config import load_tracking_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
 from fantasy_sim.data.play_call_model import load_play_call_model_config
+from fantasy_sim.data.qb_rushing import load_qb_rushing_config
 from fantasy_sim.data.target_selection import load_target_selection_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 
@@ -97,6 +98,7 @@ def build_engine_configs(config: dict) -> dict:
     td_tendency = load_td_tendency_config(config)
     target_selection = load_target_selection_config(config)
     play_call_model = load_play_call_model_config(config)
+    qb_rushing = load_qb_rushing_config(config)
     return {
         "pff_config": pff if pff.enabled else None,
         "weather_config": weather if weather.enabled else None,
@@ -114,6 +116,7 @@ def build_engine_configs(config: dict) -> dict:
         "td_tendency_config": td_tendency if td_tendency.enabled else None,
         "target_selection_config": target_selection if target_selection.enabled else None,
         "play_call_model_config": play_call_model if play_call_model.enabled else None,
+        "qb_rushing_config": qb_rushing if qb_rushing.scramble.enabled else None,
     }
 
 
@@ -134,4 +137,5 @@ def build_bare_engine_configs() -> dict:
         "td_tendency_config": None,
         "target_selection_config": None,
         "play_call_model_config": None,
+        "qb_rushing_config": None,
     }
