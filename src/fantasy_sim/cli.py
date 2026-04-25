@@ -18,6 +18,7 @@ from fantasy_sim.data.availability.config import load_availability_config
 from fantasy_sim.data.usage.config import load_usage_config
 from fantasy_sim.data.game_script import load_game_script_config
 from fantasy_sim.data.goal_line_concentration import load_goal_line_concentration_config
+from fantasy_sim.data.play_call_model import load_play_call_model_config
 from fantasy_sim.data.target_selection import load_target_selection_config
 from fantasy_sim.data.td_tendency import load_td_tendency_config
 from fantasy_sim.engine.types import TeamDistributions
@@ -150,6 +151,7 @@ def _make_builder(
     goal_line_concentration_config = load_goal_line_concentration_config(defaults)
     td_tendency_config = load_td_tendency_config(defaults)
     target_selection_config = load_target_selection_config(defaults)
+    play_call_model_config = load_play_call_model_config(defaults)
     loader = DataLoader()
     return GameContextBuilder(
         cache_dir=loader.cache_dir,
@@ -164,6 +166,9 @@ def _make_builder(
         goal_line_concentration_config=goal_line_concentration_config,
         td_tendency_config=td_tendency_config,
         target_selection_config=target_selection_config,
+        play_call_model_config=(
+            play_call_model_config if play_call_model_config.enabled else None
+        ),
     )
 
 
@@ -1482,6 +1487,7 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         usage_config.enabled = usage
     tracking_config = load_tracking_config(defaults)
     target_selection_config = load_target_selection_config(defaults)
+    play_call_model_config = load_play_call_model_config(defaults)
 
     click.echo(f"Backtesting {season} season ({scoring} scoring, {sims} sims/game)...")
     click.echo(f"Training data: {season - training_years}-{season - 1}\n")
@@ -1500,6 +1506,9 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
         market_history_config=market_history_config,
         ensemble_config=ensemble_config,
         target_selection_config=target_selection_config,
+        play_call_model_config=(
+            play_call_model_config if play_call_model_config.enabled else None
+        ),
     )
     result = bt.run(scoring_config)
 

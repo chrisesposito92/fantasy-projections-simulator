@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import polars as pl
 import numpy as np
 from fantasy_sim.cli import main
+from fantasy_sim.data.play_call_model import PlayCallModelConfig
 
 
 from fantasy_sim.engine.types import TeamDistributions
@@ -90,6 +91,27 @@ class TestCLI:
     def test_demo_half_ppr(self, runner):
         result = runner.invoke(main, ["demo", "--sims", "10", "--scoring", "half_ppr"])
         assert result.exit_code == 0
+
+
+class TestCliConfig:
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    @patch("fantasy_sim.cli.load_play_call_model_config")
+    def test_make_builder_threads_enabled_play_call_model_config(
+        self,
+        mock_load_play_call_model_config,
+        MockLoader,
+        MockBuilder,
+    ):
+        from fantasy_sim import cli
+
+        config = PlayCallModelConfig(enabled=True)
+        mock_load_play_call_model_config.return_value = config
+        MockLoader.return_value.cache_dir = Path("/tmp/cache")
+
+        cli._make_builder(defaults={})
+
+        assert MockBuilder.call_args.kwargs["play_call_model_config"] is config
 
 
 class TestWeekCommand:

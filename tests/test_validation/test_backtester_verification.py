@@ -2,6 +2,7 @@ import math
 
 import pytest
 
+from fantasy_sim.data.play_call_model import PlayCallModelConfig
 from fantasy_sim.validation.backtester import BacktestResult, Backtester
 from fantasy_sim.validation.metrics import boom_bust_calibration
 
@@ -166,3 +167,10 @@ class TestBacktestDataLeakage:
         assert bt.training_seasons == [2020, 2021, 2022, 2023]
         for i in range(1, len(bt.training_seasons)):
             assert bt.training_seasons[i] == bt.training_seasons[i - 1] + 1
+
+    def test_accepts_play_call_model_config(self):
+        config = PlayCallModelConfig(enabled=True)
+
+        bt = Backtester(test_season=2024, n_sims=10, play_call_model_config=config)
+
+        assert bt._play_call_model_config is config
