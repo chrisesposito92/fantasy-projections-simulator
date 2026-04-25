@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from fantasy_sim.data.play_call_model.models import PlayCallModelConfig
 
 _VALID_FALLBACKS = {"empirical"}
@@ -18,7 +20,7 @@ def load_play_call_model_config(defaults: dict) -> PlayCallModelConfig:
         raise ValueError("play_call_model.probability_clamp must contain [min, max]")
     lo = float(clamp_raw[0])
     hi = float(clamp_raw[1])
-    if lo < 0.0 or hi > 1.0 or lo >= hi:
+    if not math.isfinite(lo) or not math.isfinite(hi) or lo < 0.0 or hi > 1.0 or lo >= hi:
         raise ValueError(
             "play_call_model.probability_clamp must satisfy 0 <= min < max <= 1"
         )

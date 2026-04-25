@@ -37,6 +37,8 @@ def test_loads_enabled_config_values():
         [0.90, 0.10],
         [-0.01, 0.90],
         [0.10, 1.01],
+        [float("nan"), 0.90],
+        [0.10, float("inf")],
     ],
 )
 def test_invalid_probability_clamp_raises(clamp):
