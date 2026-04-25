@@ -95,11 +95,36 @@ def test_valid_artifact_loads_and_clamps_high_probability(tmp_path):
     assert context.pass_probability(_state()) == pytest.approx(0.95)
 
 
-def test_non_finite_coefficient_builds_context_but_probability_is_none(tmp_path):
+def test_non_finite_coefficient_returns_none(tmp_path):
     _write_artifact(tmp_path, coefficients={"intercept": 0.0, "down_3": "nan"})
     model = PlayCallModel(_config(tmp_path))
 
-    context = _build_context(model)
+    assert _build_context(model) is None
 
-    assert context is not None
-    assert context.pass_probability(_state()) is None
+
+def test_missing_feature_coefficient_returns_none(tmp_path):
+    _write_artifact(tmp_path, coefficients={"intercept": 0.0})
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+def test_malformed_feature_names_return_none(tmp_path):
+    _write_artifact(tmp_path, feature_names=["intercept", None])
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+def test_artifact_target_season_mismatch_returns_none(tmp_path):
+    _write_artifact(tmp_path, target_season=2023)
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None
+
+
+def test_artifact_read_error_returns_none(tmp_path):
+    (tmp_path / "play_call_model_2024.json").mkdir()
+    model = PlayCallModel(_config(tmp_path))
+
+    assert _build_context(model) is None

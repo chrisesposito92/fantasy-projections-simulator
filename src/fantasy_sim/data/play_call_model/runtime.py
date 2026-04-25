@@ -49,6 +49,13 @@ class PlayCallModel:
         if artifact is None:
             return None
 
+        if artifact.get("target_season") != target_season:
+            logger.warning(
+                "Invalid play-call artifact for %s: target season mismatch",
+                target_season,
+            )
+            return None
+
         feature_names = artifact.get("feature_names")
         coefficients_raw = artifact.get("coefficients")
         if not isinstance(feature_names, list) or not isinstance(coefficients_raw, dict):
@@ -57,9 +64,15 @@ class PlayCallModel:
                 target_season,
             )
             return None
+        if not feature_names or not all(isinstance(name, str) for name in feature_names):
+            logger.warning(
+                "Invalid play-call artifact for %s: malformed feature_names",
+                target_season,
+            )
+            return None
 
         try:
-            parsed_features = tuple(str(name) for name in feature_names)
+            parsed_features = tuple(feature_names)
             coefficients = {
                 str(name): float(value) for name, value in coefficients_raw.items()
             }
@@ -70,9 +83,16 @@ class PlayCallModel:
             )
             return None
 
-        if not parsed_features:
+        missing_features = [name for name in parsed_features if name not in coefficients]
+        if missing_features:
             logger.warning(
-                "Invalid play-call artifact for %s: empty feature_names",
+                "Invalid play-call artifact for %s: missing feature coefficients",
+                target_season,
+            )
+            return None
+        if not all(math.isfinite(coefficients[name]) for name in parsed_features):
+            logger.warning(
+                "Invalid play-call artifact for %s: non-finite coefficient",
                 target_season,
             )
             return None
@@ -106,6 +126,8 @@ class PlayCallModel:
                 loaded = json.load(handle)
         except FileNotFoundError:
             logger.info("Missing play-call artifact: %s", path)
+        except OSError:
+            logger.warning("Unable to read play-call artifact: %s", path)
         except json.JSONDecodeError:
             logger.warning("Invalid play-call artifact JSON: %s", path)
         else:
