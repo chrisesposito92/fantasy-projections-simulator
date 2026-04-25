@@ -110,11 +110,13 @@ def build_example_from_row(
     spread_line = _float_or_none(row.get("spread_line"))
     total_line = _float_or_none(row.get("total_line"))
     implied_team_total = None
+    team_spread_line = spread_line
     if total_line is not None and spread_line is not None:
         if posteam == home_team:
             implied_team_total = total_line / 2.0 + spread_line / 2.0
         else:
             implied_team_total = total_line / 2.0 - spread_line / 2.0
+            team_spread_line = -spread_line
 
     values = play_call_feature_values(
         state,
@@ -124,7 +126,7 @@ def build_example_from_row(
         away_team=away_team,
         is_home=posteam == home_team,
         week=int(row.get("week") or 0),
-        spread_line=spread_line,
+        spread_line=team_spread_line,
         total_line=total_line,
         implied_team_total=implied_team_total,
         team_prior_pass_rate=0.57,

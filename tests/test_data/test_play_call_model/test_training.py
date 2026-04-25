@@ -69,6 +69,18 @@ def test_build_example_from_row_labels_run_as_zero():
     assert example.label == 0
 
 
+def test_build_example_from_row_uses_team_perspective_spread_for_away_team():
+    features = ("spread_norm",)
+
+    example = build_example_from_row(
+        _row(posteam="BUF", defteam="KC", spread_line=3.0, total_line=48.0),
+        features,
+    )
+
+    assert example is not None
+    assert example.features[0] == pytest.approx(-3.0 / 14.0)
+
+
 def test_build_example_from_row_skips_non_scrimmage_play():
     assert build_example_from_row(
         _row(play_type="punt"),
