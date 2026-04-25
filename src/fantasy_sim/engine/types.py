@@ -28,6 +28,17 @@ class TargetSelectionContextProtocol(Protocol):
         ...
 
 
+class PlayCallContextProtocol(Protocol):
+    """Play-call selection interface used by the engine."""
+
+    def pass_probability(
+        self,
+        state: "GameState",
+        script: "RuntimeGameScript | None" = None,
+    ) -> float | None:
+        ...
+
+
 @dataclass
 class DefensiveTdRates:
     """Team-specific defensive TD rates (replaces fixed constants in game_sim)."""
@@ -48,6 +59,7 @@ class TeamDistributions:
     defensive_td_rates: DefensiveTdRates = field(default_factory=DefensiveTdRates)
     game_script_config: GameScriptConfig | None = None
     game_script_profile: GameScriptProfile | None = None
+    play_call_context: PlayCallContextProtocol | None = None
     target_selection_context: TargetSelectionContextProtocol | None = None
 
 

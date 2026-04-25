@@ -90,7 +90,13 @@ def simulate_game(
             off_dists.game_script_config,
             off_dists.game_script_profile,
         )
-        play_type = select_play_type(state, off_dists.play_calling, rng, script=script)
+        play_type = select_play_type(
+            state,
+            off_dists.play_calling,
+            rng,
+            script=script,
+            play_call_context=off_dists.play_call_context,
+        )
         roster = home_roster if state.possession == "home" else away_roster
         is_home_team = (state.possession == "home")
         result = resolve_play(

@@ -7,6 +7,18 @@ from fantasy_sim.models.distributions import PlayCallingDist, KickingModel
 from fantasy_sim.models.game_state import GameStateBucket
 
 
+class FixedPlayCallContext:
+    def __init__(self, probability: float | None):
+        self.probability = probability
+
+    def pass_probability(
+        self,
+        state: GameState,
+        script: RuntimeGameScript | None = None,
+    ) -> float | None:
+        return self.probability
+
+
 def make_state(**overrides) -> GameState:
     defaults = dict(
         quarter=1, clock=900, possession="home",
@@ -74,6 +86,54 @@ class TestSelectPlayType:
         pass_rate = sum(1 for r in results if r == "pass") / len(results)
 
         assert pass_rate > 0.58
+
+
+class TestLearnedPlayCallSelection:
+    def test_learned_context_wins_when_valid(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=0.0)
+        context = FixedPlayCallContext(1.0)
+
+        results = [
+            select_play_type(state, play_calling, rng, play_call_context=context)
+            for _ in range(100)
+        ]
+
+        assert all(result == "pass" for result in results)
+
+    def test_empirical_fallback_when_learned_context_returns_none(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=1.0)
+        context = FixedPlayCallContext(None)
+
+        results = [
+            select_play_type(state, play_calling, rng, play_call_context=context)
+            for _ in range(100)
+        ]
+
+        assert all(result == "pass" for result in results)
+
+    def test_script_pass_rate_factor_is_skipped_for_learned_context(self):
+        rng = np.random.default_rng(42)
+        state = make_state()
+        play_calling = make_play_calling(pass_rate=0.5)
+        script = RuntimeGameScript(pass_rate_factor=1.35)
+        context = FixedPlayCallContext(0.0)
+
+        results = [
+            select_play_type(
+                state,
+                play_calling,
+                rng,
+                script=script,
+                play_call_context=context,
+            )
+            for _ in range(100)
+        ]
+
+        assert all(result == "run" for result in results)
 
 
 class TestFourthDownDecision:

@@ -99,6 +99,17 @@ class TestTeamDistributions:
         assert td.play_calling.team == "KC"
         assert td.kicking.xp_rate == pytest.approx(0.94)
 
+    def test_team_distributions_defaults_play_call_context_to_none(self):
+        td = TeamDistributions(
+            play_calling=PlayCallingDist(team="KC", distributions={}),
+            play_outcomes=PlayOutcomeDist(distributions={}, defaults={"pass": np.array([5]), "run": np.array([3])}),
+            turnover_rates=TurnoverRates(team="KC", int_rate=0.025, fumble_rate=0.01, sack_rate=0.06, sack_fumble_rate=0.10),
+            kicking=KickingModel(fg_make_rate={"0_39": 0.95, "40_49": 0.82, "50_plus": 0.65}, xp_rate=0.94),
+            drive_start=DriveStartModel(touchback_rate=0.55, touchback_yardline=75, return_yardlines=np.array([72, 78])),
+        )
+
+        assert td.play_call_context is None
+
 
 class TestPlayerBoxScore:
     def test_defaults_to_zero(self):
