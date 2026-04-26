@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.engine.types import (
     GameState,
     PlayResult,
@@ -16,6 +17,18 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from fantasy_sim.engine.game_script import RuntimeGameScript
     from fantasy_sim.models.player import TeamRoster
+
+# Phase 1 KS-01 feature flag (Cycle 3 D-45). Read once at module import; the
+# flag picks between the legacy `_tackled_short` rewrite (default) and the new
+# `_tackled_short_preserve_distribution` variant per D-09. validate.py runs both
+# A/B arms in a single Python process, so flag flips during a process require
+# a process restart — the bare-isolation A/B harness already does this between
+# arms via fresh GameContextBuilder construction.
+_KS01_PRESERVE_DIST = (
+    get_phase1_ks_flags()
+    .get("ks01_preserve_distribution", {})
+    .get("enabled", False)
+)
 
 # Average clock runoff in seconds — calibrated for ~65 plays/team/game
 CLOCK_RUN = 35
@@ -280,7 +293,15 @@ def _resolve_pass(
             if _red_zone_td_gate(state.yard_line, "pass", rng, receiver.outcomes.receiving_td_factor):
                 is_td = True
             else:
-                yards = _tackled_short(state.yard_line, rng)
+                # KS-01 (D-09 / Cycle 3 D-45): when the flag is on, preserve the
+                # sampled distribution by capping at yard_line - 1 instead of
+                # overwriting with the legacy strictly-shorter rewrite.
+                # `player_yards` is the pre-`_clamp_yards`, pre-`_apply_home_field`
+                # value sampled from the receiver's distribution (line 267 / 271).
+                if _KS01_PRESERVE_DIST:
+                    yards = _tackled_short_preserve_distribution(state.yard_line, player_yards)
+                else:
+                    yards = _tackled_short(state.yard_line, rng)
                 is_td = False
         else:
             is_td = is_complete and (state.yard_line - yards) <= 0
@@ -373,7 +394,13 @@ def _resolve_run(
             if _red_zone_td_gate(state.yard_line, "run", rng, td_factor):
                 is_td = True
             else:
-                yards = _tackled_short(state.yard_line, rng)
+                # KS-01 (D-09 / Cycle 3 D-45): preserve the sampled distribution
+                # when the flag is on. `raw_yards` is the post-`_apply_home_field`,
+                # pre-`_clamp_yards` rushing value (line 362).
+                if _KS01_PRESERVE_DIST:
+                    yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)
+                else:
+                    yards = _tackled_short(state.yard_line, rng)
                 is_td = False
         else:
             is_td = (state.yard_line - yards) <= 0
@@ -416,6 +443,21 @@ def _bucket_from_state(state: GameState) -> GameStateBucket:
         state.down, state.distance, state.score_differential,
         state.quarter, state.yard_line,
     )
+
+
+def _tackled_short_preserve_distribution(yard_line: int, sampled_yards_pre_clamp: int) -> int:
+    """KS-01: when the RZ TD gate fails, preserve the sampled distribution.
+
+    Returns ``yards = max(1, min(yard_line - 1, sampled_yards_pre_clamp))``
+    per D-09. Reserves 1 yard short of the goal so the play does not score;
+    preserves the rest of the catch / run distribution rather than overwriting
+    it with a strictly-shorter integer (the legacy ``_tackled_short`` behavior).
+
+    Gated behind ``phase1_ks_flags.ks01_preserve_distribution.enabled`` (default
+    ``false``) per Cycle 3 D-45 — so the per-KS A/B genuinely measures the
+    marginal effect of this code path vs. the legacy ``_tackled_short`` rewrite.
+    """
+    return max(1, min(yard_line - 1, sampled_yards_pre_clamp))
 
 
 def _tackled_short(yard_line: int, rng: np.random.Generator) -> int:

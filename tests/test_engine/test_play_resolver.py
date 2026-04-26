@@ -909,14 +909,17 @@ def test_ks01_resolve_pass_failed_gate_yields_yards_in_safe_band(monkeypatch):
     monkeypatch.setattr(pr, "_red_zone_td_gate", lambda *args, **kwargs: False)
 
     rng = np.random.default_rng(7)
-    # High-mean WR — receiving distribution that would normally produce TDs in the RZ.
+    # Mixed-band WR — distribution mixes "short catch" (1 yd) with "long catch"
+    # values (8+ yd) so the helper's max(1, min(yard_line - 1, sample)) actually
+    # produces a mix of 1s and (yard_line - 1)s across trials, proving it is
+    # *sampling* through the band rather than always saturating at the cap.
     wr = PlayerModel(
         "WR1", "WR1", "WR", "T",
         PlayerUsage(target_share=1.0),
         PlayerOutcomes(
             catch_rate=1.0,
             red_zone_catch_rate=1.0,
-            receiving_yards_dist=np.array([8, 10, 12, 15, 20]),
+            receiving_yards_dist=np.array([1, 1, 1, 8, 10, 12, 15, 20]),
             receiving_td_factor=1.0,
         ),
     )
