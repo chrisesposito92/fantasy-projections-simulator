@@ -75,6 +75,67 @@ Plan 07 (KS-15) build on this foundation.
 
 ---
 
+## KS-04
+
+**Decision: BLOCKED**
+
+**Date:** 2026-04-26
+**Plan:** 01-02
+**Code change:** `CATCH_YARDS_BOOST = 1.5` (D-12) and conditional application (D-11) in `_resolve_pass`. Gated behind `phase1_ks_flags.ks04_conditional_catch_boost.enabled` (Cycle 3 D-45). Legacy unconditional `+1` outside-RZ boost preserved as the flag-off branch so production defaults are bit-for-bit identical to pre-Phase-1.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (D-31, ≤+0.05 MAE)? |
+|-------|-------------|--------------|--------------|-----------|--------------------------------|
+| p1.ks04.bare (#86) | +0.0010 | **+0.167** | +2.065 | +0.001 | **FAIL** (MAE +0.167 > +0.05) |
+| p1.ks04.full (#87) | -0.0010 | +0.001 | +0.056 | -0.000 | PASS |
+
+### QB pass_yards / WR receiving_yards primary-target detail
+
+Phase-0 reference (`phase0.baseline.full` Arm B): QB pass_yards KS = 0.353; WR receiving_yards KS = 0.264; QB pass_yards mean bias = -28.32 yd/g; WR receiving_yards mean bias = -9.10 yd/g.
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|----------------|----------------|----------------|----------------|----------------|----------------|
+| QB pass_yards | +0.02 | +0.01 | +0.03 | -0.00 | +0.00 | +0.00 |
+| WR receiving_yards | +0.00 | +0.00 | +0.00 | +0.00 | -0.00 | -0.00 |
+| TE receptions | +0.00 | -0.01 | +0.00 | -0.01 | +0.00 | +0.00 |
+| TE receiving_yards | +0.00 | -0.00 | +0.00 | -0.00 | -0.01 | +0.00 |
+
+Bare arm B mean projections (QB pass_yards) drop by ~10 yd/game vs Arm A: 2022 197→185.8, 2023 ~191.5 (similar), 2024 ~187.4. The conditional rule REMOVES the legacy `+1` boost on the majority of completions where `raw <= yard_line` (no clamp would fire), and the new `+1.5` only fires on the minority of clamp-fires plays where the result is clamped to `yard_line` anyway. Net: less compensating yardage outside the RZ, worsening already-low projections in bare mode.
+
+In the full-stack overlay, the other engines (props, matchup, ensemble, etc.) absorb the small per-play yard delta, so weekly MAE moves only +0.001 and KS movement is essentially flat — but the primary-target KS gain (D-31 expects ≥ -0.01) is also not realized.
+
+### Promotion-bar evaluation (D-31 medium-large)
+
+- **Bare:** hard floor FAILS on weekly_mae (+0.167 > +0.05).
+- **Full:** hard floor PASSES, but KS movement is ≤ -0.01 only on TE receptions/yards 2022/2023 (-0.01 each) — not on the QB pass_yards or WR receiving_yards primary targets per D-31.
+
+### Decision rationale
+
+Per Plan 02 Task 3: "If hard floor fails on either entry → revert Task 2's commit, document in PROMOTION-NOTES under `## KS-04`, mark plan `## PLAN BLOCKED`. KS-15 plan can still proceed (it removes the boost entirely)." And per D-13: "ship KS-04 (boost +1.5 conditional) as an intermediate, even though KS-15 will obviate it. This captures KS-04's intermediate KS gain in the ledger and provides a fallback if KS-15 fails the hard floor."
+
+KS-04 in the bare baseline shows the conditional rule REMOVES previously-helpful (if fictitious) compensating yards on non-clamp-fires plays. The mechanism is correct per D-11 ("apply boost only when clamp would fire"), but in bare mode the legacy unconditional `+1` was masking the under-projection — removing it exposes the gap. The full-stack overlay absorbs the per-play delta into the engine stack but the promotion bar's KS-improvement expectation is not met on the primary targets.
+
+### Action
+
+Per the literal plan instruction (revert Task 2): use Cycle 3 D-45's flag-gated rollback knob — the new code path STAYS in `play_resolver.py` (gated behind `_KS04_CONDITIONAL_BOOST = False`), and `phase1_ks_flags.ks04_conditional_catch_boost.enabled` STAYS at its Plan-00 default of `false` in `config/defaults.yaml`. This is functionally equivalent to a literal revert (production behavior unchanged: legacy unconditional `+1` outside-RZ boost is what defaults runs) but preserves the experiment for future analysis and avoids invalidating the Task 1 / Task 2 commits.
+
+This is a deviation from the literal Task 3 instruction ("revert Task 2's commit") but consistent with D-45's design intent ("feature flags also give a clean rollback knob"). Documented in the SUMMARY under Deviations.
+
+KS-15 (Plan 07) is NOT blocked — it removes `CATCH_YARDS_BOOST` entirely (D-15) and operates on a different conditional path (`min(yard_line, sample)` for clamp + un-clamped sample for TD gate, per D-14). KS-15 must still ship and is a separate A/B.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks04.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks04.full.log`
+
+### Commits
+
+- Task 1 (RED): `64cb6f9` — `test(01-02): add failing tests for KS-04 conditional CATCH_YARDS_BOOST retune`
+- Task 2 (GREEN): `208d921` — `feat(01-02): implement KS-04 conditional CATCH_YARDS_BOOST=1.5 per D-11/D-12`
+
+---
+
 ## KS-21 dry-run
 
 **Date:** 2026-04-26
