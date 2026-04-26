@@ -31,18 +31,28 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 
 <!-- Outcome targets (TGT-XX) for this initiative. The 25 in-scope hypotheses live in REQUIREMENTS.md (KS-01..KS-21, KS-29, KS-32, traced back to HYPOTHESES.md). -->
 
-- [ ] **TGT-01**: QB `pass_yards` KS reduced from ~0.36 to ≤ 0.20 across 2022-2024
-- [ ] **TGT-02**: WR `receiving_yards` KS reduced from ~0.26 to ≤ 0.20 across 2022-2024
-- [ ] **TGT-03**: WR `receptions` KS reduced from ~0.28 to ≤ 0.22
-- [ ] **TGT-04**: TE `receptions` KS reduced from ~0.35 to ≤ 0.27 (largest defaults-vs-bare regression; target relaxed from ≤0.25 after sanity-check flagged budget as tightest)
-- [ ] **TGT-05**: TE `receiving_yards` KS reduced from ~0.31 to ≤ 0.25
-- [ ] **TGT-06**: RB `rush_yards` KS reduced from ~0.26 to ≤ 0.22 (defaults currently regresses vs bare)
-- [ ] **TGT-07**: RB `receiving_yards` KS reduced from ~0.42 to ≤ 0.34 (target relaxed from ≤0.30 after sanity-check flagged largest gap with least-direct levers)
-- [ ] **TGT-08**: Aggregate `fpts` KS held ≤ 0.18 across all positions (currently 0.15-0.25)
-- [ ] **TGT-09**: QB pass_yards mean bias closed from -28 yd/game to within ±5 yd/game
-- [ ] **TGT-10**: WR receiving_yards mean bias closed from -9 yd/game to within ±2 yd/game
+> **Phase-1 exit baseline (2026-04-26):** the `Current` values below are read from
+> ledger entry `p1.aggregate.full` (#105) Arm B. The Phase-0 entry baseline is preserved
+> in `.planning/PROJECT-PHASE0-FROZEN.md` (ledger entry `phase0.baseline.full` #82).
+> Methodology: 200 sims/season × 2022-2024 PPR, `validate.py --baseline bare`. Phase 2
+> plans should compare against `p1.aggregate.full` rather than `phase0.baseline.full`.
+
+| ID | Description | Current (post-Phase-1) | Target | Status |
+|----|-------------|------------------------|--------|--------|
+| TGT-01 | QB `pass_yards` KS | 0.4287 | ≤ 0.20 | regressed +0.075 vs Phase 0; Phase 2 KS-09 (per-stat residual_calibration) is the architectural lever |
+| TGT-02 | WR `receiving_yards` KS | 0.2573 | ≤ 0.20 | improved -0.007 vs Phase 0; below intermediate target, above final |
+| TGT-03 | WR `receptions` KS | 0.2803 | ≤ 0.22 | flat (+0.005); Phase 2 KS-08 floor + KS-09 needed |
+| TGT-04 | TE `receptions` KS | 0.3521 | ≤ 0.27 | flat (-0.001); relaxed target; Phase 2 KS-10 (TE elite tier) needed |
+| TGT-05 | TE `receiving_yards` KS | 0.3001 | ≤ 0.25 | improved -0.016 vs Phase 0 |
+| TGT-06 | RB `rush_yards` KS | 0.2464 | ≤ 0.22 | improved -0.008 vs Phase 0; near intermediate target |
+| TGT-07 | RB `receiving_yards` KS | 0.4175 | ≤ 0.34 | improved -0.005; relaxed target; Phase 3 KS-02 + KS-16 needed |
+| TGT-08 | Aggregate `fpts` KS | ≤ 0.05 (`total_lift` ks_delta) | ≤ 0.18 | held; aggregate `fpts` ks_delta from `phase0.baseline.full` 0.052 → `p1.aggregate.full` 0.050 |
+| TGT-09 | QB pass_yards mean bias (yd/g) | -39.29 | ±5 | regressed -10.99 yd/g vs Phase 0 (-28.30 → -39.29); HEADLINE PHASE-1 MISS; Phase 2 KS-09 stat-level residual_calibration is the design lever for closure |
+| TGT-10 | WR receiving_yards mean bias (yd/g) | -10.36 | ±2 | regressed -1.25 yd/g vs Phase 0 (-9.11 → -10.36); Phase 2 KS-09 needed |
 
 (Outcome targets — TGT-04 and TGT-07 relaxed after sanity-check; others held. The hypothesis backlog `.planning/research/HYPOTHESES.md` shows plausible 70-100% closure across these targets through P1-P4. **Hypothesis IDs (KS-XX) and outcome target IDs (TGT-XX) are different namespaces — don't conflate.**)
+
+> **Phase-1 outcome note:** Phase 1 shipped under the hard floor (rank_corr Δ -0.0004, weekly_mae Δ +0.0142 — both within ±0.005/±0.05) but did NOT close the headline TGT-09 / TGT-01 (QB pass_yards) targets — both regressed at the n=200-sim resolution. The targeted closure for QB pass_yards was concentrated in KS-01 (RZ TD-gate fix) which shipped SHIPPED-NO-OP at the per-KS A/B (mechanism only fires on RZ TD-gate failures; per-game stat impact below detection threshold). Phase 2's KS-09 per-stat `residual_calibration` is the architectural mechanism designed to close stat-level mean bias and is now the primary lever for TGT-09 closure. See `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md ## Phase 1 aggregate` for the full delta and walk-back analysis.
 
 ### Out of Scope
 
@@ -130,4 +140,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 after initialization*
+*Last updated: 2026-04-26 — Phase 1 closure (Plan 11): TGT-XX `Current` column refreshed to post-Phase-1 baseline (ledger entry `p1.aggregate.full` #105 Arm B). Phase-0 reference preserved in `.planning/PROJECT-PHASE0-FROZEN.md`.*
