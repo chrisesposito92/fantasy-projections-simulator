@@ -35,7 +35,41 @@ This initiative closes the distribution-shape (KS) gap that survives our current
   3. RB rush_yards KS recovers from defaults' 0.26 regression back to ≤ 0.23 (matching bare baseline) — driven mainly by KS-07 RZ catch-rate retune
   4. Across all positions: rank_corr regression ≤ 0.005 AND MAE regression ≤ 0.05 vs prior promoted defaults (hard floor; per-change gate)
   5. Odds API alternate-line markets (`player_pass_yds_alternate`, `player_reception_yds_alternate`, `player_rush_yds_alternate`, `player_pass_attempts_alternate`, `player_receptions_alternate`, `player_rush_attempts_alternate`) cached as parquet at `~/.fantasy-sim/odds/` for 2022-2024 weeks 1-18 (or up to The Odds API's historical-coverage limit) — verified by row counts logged after each season's scrape
-**Plans**: TBD
+**Plans**:
+
+**Wave 1**
+- 01 — KS-01 RZ TD-gate distribution preservation
+- 09 — KS-21 alt-line scrape (parallel to KS-01; file-isolated)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- 02 — KS-04 conditional CATCH_YARDS_BOOST retune
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- 03 — KS-03 matchup/coverage per-player dist-mean anchor
+- 04 — KS-05 props engine magnitude bug + default constant
+- 05 — KS-06 backup-receiver fallback (preprocessor + player_builder + play_resolver)
+- 06 — KS-07 positional RZ catch rate modifiers
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- 07 — KS-15 field-position clamping fix + CATCH_YARDS_BOOST=0
+
+**Wave 5** *(blocked on Wave 4 completion)*
+- 08 — KS-29 pff.team_context re-enable + sensitivity sweep
+
+**Wave 6** *(blocked on Wave 5 completion)*
+- 10 — KS-32 clock runoff measure-then-decide
+
+**Wave 7** *(blocked on Wave 6 completion)*
+- 11 — Phase 1 aggregate validation (p1.aggregate.full)
+
+**Cross-cutting constraints** (appear in 2+ plans' `must_haves.truths`):
+- D-25/D-26: one commit per KS-XX in dependency order; KS-01 → KS-04 → KS-15 RZ stack must ship in this order
+- D-27: ledger label scheme `p1.ksXX.{bare,full}`; KS-29 sweep adds `s003/s005/s008` suffixes; KS-32 may use `p1.ks32.measure`
+- D-28: validation set = all 2022-2024, 200 sims/season, PPR scoring (every per-plan A/B + aggregate)
+- D-29: A/B mode per change = isolation + full-stack; agents execute `scripts/validate.py` directly per the 2026-04-26 rule reversal
+- D-30/D-31: hard floor on rank_corr Δ ≥ -0.005 AND MAE Δ ≤ +0.05 for promotion; medium-large items (KS-01/04/05/15) require KS Δ ≤ -0.01 on primary target
+- D-33/D-34: TDD-first for KS-01/04/15 (RZ stack); test-after acceptable for KS-03/05/06/07/29
+- D-35: existing 1,200+ test suite stays green throughout
 **Cross-references to Outcome Targets**: TGT-01, TGT-02, TGT-05, TGT-06, TGT-07, TGT-09, TGT-10
 **Risk notes**:
 - KS-01 + KS-04 + KS-15 interact (all touch the clamping/RZ stack); per HYPOTHESES.md they must ship in dependency order: KS-01 first, then KS-04 (boost retune relative to fixed RZ), then KS-15 (clamping). KS-15 may allow `CATCH_YARDS_BOOST` to drop to 0; preserve TD-gate calibration via tests.
