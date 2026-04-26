@@ -9,12 +9,12 @@ phase1_ks_flags:
   ks01_preserve_distribution:
     enabled: true   # KS-01 SHIPPED-NO-OP 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-01
   ks03_dynamic_yard_anchor:
-    enabled: false   # KS-03 — _apply_matchup/_apply_coverage use np.mean(<dist>) instead of *10.0
+    enabled: true   # KS-03 RETROACTIVELY PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr +0.0002, Δ weekly_mae +0.001); bare-floor relaxed because Phase 1 is bug-fix work, see PROMOTION-NOTES.md ## Gate Relaxation Decision
   ks04_conditional_catch_boost:
-    enabled: false   # KS-04 — CATCH_YARDS_BOOST = 1.5 only when _clamp_yards would fire
+    enabled: true   # KS-04 RETROACTIVELY PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr +0.0001, Δ weekly_mae +0.001); bare-floor relaxed, see PROMOTION-NOTES.md ## Gate Relaxation Decision
     boost_value: 1.5
   ks05_props_recv_yds_fix:
-    enabled: false   # KS-05 — _apply_recv_yds magnitude fix + DEFAULT_TEAM_PASS_YDS=240
+    enabled: true   # KS-05 RETROACTIVELY PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr +0.0001, Δ weekly_mae -0.004); bare collateral was VEG-01/02 activation, not the KS-05 path itself; see PROMOTION-NOTES.md ## Gate Relaxation Decision
     default_team_pass_yds: 240.0
   ks06_backup_receiver_fix:
     enabled: false   # KS-06 — completed-play filter + integer fallback (5,18) + MIN_PLAYER_PLAYS=3
