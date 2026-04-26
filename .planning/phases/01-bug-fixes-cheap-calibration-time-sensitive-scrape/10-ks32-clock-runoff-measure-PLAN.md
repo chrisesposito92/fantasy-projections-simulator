@@ -195,19 +195,23 @@ Commit: `feat(01-10): KS-32 retune CLOCK_PASS_INCOMPLETE = 3 per D-23 measuremen
   <action>
 **SKIP THIS TASK if Task 1's decision is NO CHANGE.** (In that case proceed directly to Task 4.)
 
-If RETUNE branch: run BOTH A/B passes per D-29:
+If RETUNE branch: run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks32.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks32.bare"
 
+# Full-stack overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks32.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks32"
 ```
+
+NOTE: KS-32 changes the `CLOCK_PASS_INCOMPLETE` module constant — no `--set` flag needed; the change ships as the source code itself.
 
 Capture logs to `.../logs/p1.ks32.{bare,full}.log`.
 
@@ -248,17 +252,19 @@ Commit: `chore(01-10): record KS-32 retune A/B ledger entries (p1.ks32.{bare,ful
 
 If NO CHANGE branch (per D-24): run a single `validate.py` invocation with the special `p1.ks32.measure` label to record the measurement-only entry. This documents that KS-32 was evaluated and not promoted, satisfying the REQUIREMENTS.md "delivered" definition.
 
+**REVISED 2026-04-26 (HIGH-4 fix):** Use `--baseline bare` (no `--set`) instead of `--baseline defaults` (no `--set`) — the latter would produce Arm A == Arm B (defaults vs defaults) and yield a no-op snapshot identical in structure to the broken Plan 11 in the original. The `--baseline bare` form gives Arm A=bare, Arm B=current promoted defaults, which is a real delta-baring snapshot equivalent to `phase0.baseline.full` from Plan 00 (and may even differ from `phase0.baseline.full` if KS-32 has any incidental effect; if so, that's the KS-32 measurement signal).
+
 ```bash
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults \
+  --baseline bare \
   --label "p1.ks32.measure" \
   2>&1 | tee .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks32.measure.log
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks32"
 ```
 
-NOTE: This is a no-op A/B (no `--set` flags) — it records the post-Phase-1 baseline against itself, which the ledger should still preserve as a snapshot. Verify the entry shows ~zero deltas.
+NOTE: This records the post-Phase-1 baseline against bare — a real delta. Compare against `phase0.baseline.full` from Wave 0 (Plan 00) to confirm KS-32's measurement decision had ~zero net effect on the headline metrics (the validation is meant to confirm "no change motivated").
 
 Append to PROMOTION-NOTES.md under `## KS-32 final decision`:
 ```markdown
@@ -280,6 +286,67 @@ Commit: `chore(01-10): KS-32 measure-only ledger entry per D-24 (no change motiv
     - **If NO CHANGE branch**: `git log -1 --pretty=%s` matches `chore(01-10): KS-32 measure-only`
   </acceptance_criteria>
   <done>Either p1.ks32.measure recorded (NO CHANGE) or p1.ks32.{bare,full} recorded (RETUNE). KS-32 requirement deliverable per D-24.</done>
+</task>
+
+<task type="auto">
+  <name>Task 5: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-32 sections)
+  </read_first>
+  <action>
+Per D-25 (revised), create the final promotion commit + SUMMARY. Determine state from PROMOTION-NOTES `## KS-32` sections:
+- RETUNE branch + hard floor pass + KS Δ ≥ 0 → `PROMOTED`
+- RETUNE branch + hard floor pass + KS doesn't move → `SHIPPED-NO-OP`
+- RETUNE branch + hard floor fail → `BLOCKED` (Task 2 reverted)
+- NO CHANGE branch → `MEASURED-NO-CHANGE` (per D-24)
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-10-SUMMARY.md`:
+
+```markdown
+# Plan 10 Summary — KS-32 clock runoff calibration (measure-then-decide)
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED|MEASURED-NO-CHANGE>
+**Phase:** 1
+**Wave:** 6
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+- Task 1 measurement: validate_passing.py output recorded; decision branch chosen
+- If RETUNE: CLOCK_PASS_INCOMPLETE = 3 in play_resolver.py + ledger entries p1.ks32.{bare,full}
+- If NO CHANGE: ledger entry p1.ks32.measure (Arm A=bare, Arm B=current defaults — gives a real delta vs phase0.baseline.full)
+
+## Codex HIGH-4 fix note (NO CHANGE branch only)
+
+The original Plan 10 NO CHANGE branch used `--baseline defaults` which produces
+a no-op A/B (Arm A=Arm B=defaults). Replan switched to `--baseline bare` so the
+Arm B metrics in the ledger entry can be compared against `phase0.baseline.full`
+from Wave 0 to confirm KS-32 had ~zero net effect on headline metrics.
+```
+
+Commit (per D-25 revised):
+
+```bash
+PROMO_STATE="MEASURED-NO-CHANGE"  # or PROMOTED / SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-10-SUMMARY.md
+git commit -m "feat(01-10): KS-32 ${PROMO_STATE} — clock runoff calibration measure-then-decide
+
+Wave 6. Per D-23: validate_passing.py measurement against post-bug-fix
+baseline; promotion conditional on observed pass attempts.
+
+Bare-isolation A/B (RETUNE branch only) uses --baseline bare --arm-b-base bare per Plan 00.
+NO CHANGE branch uses --baseline bare (real delta) per HIGH-4 fix."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-10-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED|MEASURED-NO-CHANGE" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-10-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - `git log -1 --pretty=%s` matches `feat(01-10): KS-32 PROMOTED|SHIPPED-NO-OP|BLOCKED|MEASURED-NO-CHANGE`
+  </acceptance_criteria>
+  <done>KS-32 promotion-state commit landed; SUMMARY captures the decision and the HIGH-4 fix.</done>
 </task>
 
 </tasks>

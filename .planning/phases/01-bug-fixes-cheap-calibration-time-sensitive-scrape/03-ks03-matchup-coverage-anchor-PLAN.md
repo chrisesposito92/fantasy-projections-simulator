@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 03
 type: execute
 wave: 3
-depends_on: ["01", "02"]
+depends_on: ["00", "01", "02"]
 files_modified:
   - src/fantasy_sim/data/game_context.py
   - tests/test_data/test_game_context.py
@@ -11,11 +11,15 @@ autonomous: true
 requirements: [KS-03]
 must_haves:
   truths:
-    - "Per D-16: _apply_matchup line 535 uses (factor - 1.0) * float(np.mean(player.outcomes.receiving_yards_dist)) — same pattern as _apply_weather lines 701-712"
-    - "Per D-16: _apply_coverage line 591 uses (mods.ypr_modifier - 1.0) * float(np.mean(player.outcomes.receiving_yards_dist)) — same pattern as _apply_weather"
-    - "Empty receiving_yards_dist guard preserved (matches _apply_weather predicate: target_share > 0 AND dist is not None AND len(dist) > 0)"
+    - "Per D-16 (revised 2026-04-26 — MEDIUM-1 from 01-REVIEWS.md): _apply_matchup receiving branch (line 535) uses (factor - 1.0) * float(np.mean(player.outcomes.receiving_yards_dist))"
+    - "Per D-16 (revised 2026-04-26): _apply_coverage line 591 uses (mods.ypr_modifier - 1.0) * float(np.mean(player.outcomes.receiving_yards_dist))"
+    - "Per D-16b (NEW 2026-04-26 — MEDIUM-1): _apply_matchup rushing branch (lines 546-558) uses (combined_rush - 1.0) * float(np.mean(player.outcomes.rushing_yards_dist)). KS-03 hypothesis explicitly widened to cover this site; RB rush_yards is a Phase 1 success criterion (#3) so attribution is clean."
+    - "All 3 sites mirror _apply_weather lines 701-712 (canonical reference pattern)"
+    - "Empty dist guard preserved at all 3 sites (target_share > 0 / carry_share > 0 AND dist is not None AND len(dist) > 0)"
+    - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks03.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00 to have landed); p1.ks03.full uses --baseline defaults (full-stack overlay)"
     - "p1.ks03.bare and p1.ks03.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
-    - "Per D-25/D-26: KS-03 commit chain ships after KS-04 lands (sequenced for clean ledger attribution; no file-touch overlap with KS-04)"
+    - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-03): KS-03 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — per-player dist-mean anchor fix`"
+    - "Per D-26: KS-03 commit chain ships after KS-04 lands (sequenced for clean ledger attribution; no file-touch overlap with KS-04). Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-03 (existing 1,200+ test suite covers the changed branches; new tests target the specific changed predicates)"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
   artifacts:
@@ -37,11 +41,18 @@ must_haves:
 ---
 
 <objective>
-Implement KS-03 — replace the hardcoded `* 10.0` yard anchor in `_apply_matchup` (line 535) and `_apply_coverage` (line 591) with per-player `float(np.mean(player.outcomes.receiving_yards_dist))`. Mirror the correct reference implementation in `_apply_weather` at lines 701-712 (D-16). Single-mechanism fix; no variant choice.
+Implement KS-03 — replace the hardcoded `* 10.0` yard anchor at THREE sites in `src/fantasy_sim/data/game_context.py` with per-player `float(np.mean(player.outcomes.<dist>))`:
+1. `_apply_matchup` receiving branch (line 535) → uses `receiving_yards_dist`
+2. `_apply_matchup` rushing branch (lines 546-558) → uses `rushing_yards_dist` (per D-16b, added 2026-04-26 — addresses Codex MEDIUM-1)
+3. `_apply_coverage` (line 591) → uses `receiving_yards_dist`
 
-Purpose: The hardcoded 10-yard anchor over-scales players with mean ~5 yd/reception (slot/possession WRs) and under-scales players with mean ~15 yd/reception (deep WRs). The weather engine already uses the correct per-player anchor. KS-03 brings matchup and coverage to parity.
+All 3 sites mirror the correct reference implementation in `_apply_weather` at lines 701-712 (D-16/D-16b).
 
-Output: Two functions updated with mirror-pattern shifts; new tests confirming the behavior; both ledger entries pass hard floor.
+**Why widened scope (HIGH context for the Codex MEDIUM-1 fix):** The original D-16 stated "receiving yards only" but the original Plan 03 already widened scope to rushing in Task 1 step 2. Codex review flagged this as scope creep that muddies RB rush_yards attribution (a Phase 1 success criterion). Resolution is to formally widen KS-03's hypothesis to all three call sites — the rushing fix is materially the same change (5-line diff mirroring `_apply_weather`), RB rush_yards is already a Phase 1 success criterion (#3), and splitting into two mini-plans would add overhead without value.
+
+Purpose: The hardcoded 10-yard anchor over-scales players with mean ~5 yd/reception (slot/possession WRs) and under-scales players with mean ~15 yd/reception (deep WRs). It also misanchors RB rushing-yard adjustments — applying a fixed 10-yard shift regardless of whether the back averages 3.5 yd/carry (short-yardage specialist) or 5.5 yd/carry (workhorse). The weather engine already uses the correct per-player anchor. KS-03 brings matchup (both pass and rush) and coverage to parity.
+
+Output: Three call sites updated with mirror-pattern shifts; new tests confirming the behavior at all three sites; both ledger entries pass hard floor.
 </objective>
 
 <execution_context>
@@ -302,13 +313,15 @@ Commit: `test(01-03): add KS-03 dist-mean anchor tests for _apply_matchup and _a
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29 isolation+full-stack rule, D-30 small-gain promotion bar)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` flag for true isolation):
 
 ```bash
+# True isolation (bare engines + only KS-03 on top — requires Plan 00 to have landed)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks03.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks03.bare"
 
+# Full-stack overlay (defaults + KS-03)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks03.full"
@@ -316,15 +329,17 @@ uv run python scripts/validate.py \
 uv run python scripts/validate.py --show-ledger | grep "p1.ks03"
 ```
 
+NOTE: KS-03 is a code change to `_apply_matchup` and `_apply_coverage` (no config flag). For the bare-isolation run, the KS-03 fix is included in the source as committed; there's no `--set` flag needed. The bare run shows the marginal impact of KS-03 in isolation; the full run shows compatibility with all promoted engines.
+
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks03.{bare,full}.log`.
 
-Promotion decision per D-30 (KS-03 is a bug fix; treat as small-gain bar — ship if hard floor passes AND any non-regression KS delta on WR/TE receiving_yards):
+Promotion decision per D-30 (KS-03 is a bug fix; treat as small-gain bar — ship if hard floor passes AND any non-regression KS delta on the primary targets):
 - Hard floor: rank_corr Δ ≥ -0.005 AND MAE Δ ≤ +0.05 on BOTH entries
-- KS delta: WR receiving_yards KS delta ≥ 0 (i.e., not worsening)
+- KS delta: WR/TE receiving_yards KS delta ≥ 0 AND RB rush_yards KS delta ≥ 0 (per the widened scope in D-16b — both attributable to KS-03 now)
 
 If hard floor fails on either entry → revert Task 1's commit, document under `## KS-03` in `logs/PROMOTION-NOTES.md`, mark `## PLAN BLOCKED`.
 
-Append `## KS-03` section to `logs/PROMOTION-NOTES.md` with the decision.
+Append `## KS-03` section to `logs/PROMOTION-NOTES.md` with the decision (include both WR/TE recv AND RB rush KS deltas).
 
 Commit: `chore(01-03): record KS-03 A/B ledger entries (p1.ks03.{bare,full})`
   </action>
@@ -339,6 +354,83 @@ Commit: `chore(01-03): record KS-03 A/B ledger entries (p1.ks03.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-03): record KS-03 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision documented.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-03 section from Task 3)
+  </read_first>
+  <action>
+Per D-25 (revised — promotion-state commit per KS plan), create the final promotion commit + SUMMARY.
+
+Determine promotion state from Task 3's `## KS-03` decision in PROMOTION-NOTES.md:
+- All hard floor passes + WR/TE recv KS delta ≥ 0 + RB rush KS delta ≥ 0 → `PROMOTED`
+- Hard floor passes but KS deltas don't move → `SHIPPED-NO-OP`
+- Hard floor fails on either entry → `BLOCKED` (and Task 1's commit is reverted)
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-03-SUMMARY.md`:
+
+```markdown
+# Plan 03 Summary — KS-03 matchup/coverage anchor fix
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1 (Bug Fixes, Cheap Calibration & Time-Sensitive Scrape)
+**Wave:** 3
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `_apply_matchup` receiving branch (`game_context.py:534-544`) — per-player `mean_yards = float(np.mean(receiving_yards_dist))` anchor
+2. `_apply_matchup` rushing branch (`game_context.py:546-558`) — per-player `mean_yards = float(np.mean(rushing_yards_dist))` anchor (per D-16b — widened scope)
+3. `_apply_coverage` (`game_context.py:591`) — per-player `mean_yards = float(np.mean(receiving_yards_dist))` anchor
+4. 5 new tests in `tests/test_data/test_game_context.py` covering all 3 sites + empty-dist guards
+
+All 3 call sites now mirror the canonical `_apply_weather` reference pattern at lines 701-712.
+
+## Why this matters (Codex MEDIUM-1 fix)
+
+The original D-16 stated "receiving yards only" but Plan 03 already widened scope
+to rushing in Task 1. Codex review flagged this as scope creep that muddies RB
+rush_yards attribution. Resolution: formally widen KS-03's hypothesis to all 3
+call sites and explicitly track RB rush_yards KS as a KS-03 deliverable.
+
+## Ledger results
+
+(Filled in from PROMOTION-NOTES.md ## KS-03 section)
+
+| Entry | rank_corr Δ | MAE Δ | WR/TE recv KS Δ | RB rush KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|-----------------|--------------|-------------|----------------|
+| p1.ks03.bare | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks03.full | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+```
+
+Then commit:
+
+```bash
+# Substitute the actual promotion state
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED based on Task 3 decision
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-03-SUMMARY.md
+git commit -m "feat(01-03): KS-03 ${PROMO_STATE} — per-player dist-mean anchor in matchup (pass+rush) and coverage
+
+Wave 3. Replaces hardcoded *10.0 anchor at 3 sites in game_context.py with
+per-player dist mean, mirroring _apply_weather. Widens KS-03 scope to cover
+the rushing branch in _apply_matchup per D-16b (addresses Codex MEDIUM-1
+scope-creep concern; RB rush_yards is a Phase 1 success criterion #3).
+
+Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-03-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-03-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in (not placeholder)
+    - `git log -1 --pretty=%s` matches `feat(01-03): KS-03 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-03 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>
@@ -366,10 +458,12 @@ Commit: `chore(01-03): record KS-03 A/B ledger entries (p1.ks03.{bare,full})`
 </verification>
 
 <success_criteria>
-- KS-03 requirement deliverable
+- KS-03 requirement deliverable across all 3 call sites (matchup pass, matchup rush, coverage)
 - Hard floor passes on both ledger entries (or BLOCKED + reverted)
-- WR/TE receiving_yards KS delta ≥ 0 on `p1.ks03.full` (per D-30 small-gain promotion bar)
+- WR/TE receiving_yards KS delta ≥ 0 AND RB rush_yards KS delta ≥ 0 on `p1.ks03.full` (per D-30 small-gain promotion bar, widened scope per D-16b)
 - 1,200+ existing test suite still green
+- Bare-isolation A/B uses --baseline bare --arm-b-base bare (per D-29 revised; requires Plan 00)
+- Promotion-state commit message format per D-25 revised
 </success_criteria>
 
 <output>

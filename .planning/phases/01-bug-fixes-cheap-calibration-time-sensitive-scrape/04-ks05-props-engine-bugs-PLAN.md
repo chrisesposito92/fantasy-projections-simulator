@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 04
 type: execute
 wave: 3
-depends_on: ["01", "02"]
+depends_on: ["00", "01", "02"]
 files_modified:
   - src/fantasy_sim/data/vegas/props_engine.py
   - tests/test_data/test_vegas/test_props_engine.py
@@ -14,8 +14,11 @@ must_haves:
     - "Per D-17: _DEFAULT_TEAM_PASS_YDS = 240.0 (previously 230.0)"
     - "Per D-17: _apply_recv_yds line 248 uses dist_mean * catches_per_game * games_played (previously dist_mean * games_played)"
     - "Per D-18: catches_per_game proxy uses player.usage.target_share * 32.0 * player.outcomes.catch_rate (per RESEARCH.md Pitfall 4 v1 fallback) — pipeline-plumbed version deferred"
+    - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks05.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks05.full uses --baseline defaults (full-stack overlay)"
+    - "Per D-41 (added 2026-04-26 — MEDIUM-3): test target is `tests/test_data/test_vegas/` (NOT `src/fantasy_sim/data/vegas/` which is a source directory and contains no test files). VALIDATION.md previously had the wrong path; replan corrects it."
     - "p1.ks05.bare and p1.ks05.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31"
-    - "Per D-25/D-26: KS-05 commit chain ships after KS-04 lands"
+    - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-04): KS-05 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — props_engine bug fixes`"
+    - "Per D-26: KS-05 commit chain ships after KS-04 lands. Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-05 (existing test suite covers the changed branches)"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
   artifacts:
@@ -302,19 +305,25 @@ Commit: `test(01-04): add KS-05 props engine bug fix tests`
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation (bare engines + only KS-05 on top — requires Plan 00 to have landed)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks05.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks05.bare"
 
+# Full-stack overlay (defaults + KS-05)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks05.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks05"
 ```
+
+NOTE: KS-05 changes module constants and a function body — no `--set` flag is needed; the change ships as the source code itself.
+
+NOTE for the bare-isolation run: if `props_engine` requires `vegas.props.enabled=true` to be active in the bare config, the run also needs `--set vegas.props.enabled=true` (and possibly `--set vegas.itt.enabled=true` if vegas requires the parent flag). Inspect `validation/config.py::build_engine_configs` and the `load_props_config()` predicate to confirm; the planner adds the appropriate `--set` flags here if so. The acceptance reads "true isolation of KS-05 on top of bare-engines + props_engine-enabled".
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks05.{bare,full}.log`.
 
@@ -339,6 +348,77 @@ Commit: `chore(01-04): record KS-05 A/B ledger entries (p1.ks05.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-04): record KS-05 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision documented.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-05 section from Task 3)
+  </read_first>
+  <action>
+Per D-25 (revised — promotion-state commit per KS plan), create the final promotion commit + SUMMARY.
+
+Determine promotion state from PROMOTION-NOTES `## KS-05` section:
+- Hard floor passes + KS delta ≤ -0.01 on WR/TE receiving_yards → `PROMOTED`
+- Hard floor passes but KS doesn't move (per D-31) → `SHIPPED-NO-OP` (the bug fix is correct even if KS doesn't budge)
+- Hard floor fails → `BLOCKED` (Task 1 reverted)
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-04-SUMMARY.md`:
+
+```markdown
+# Plan 04 Summary — KS-05 props engine bug fixes
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 3
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `_DEFAULT_TEAM_PASS_YDS = 240.0` (was 230.0; D-17 sub-fix 1)
+2. `_PROXY_TEAM_TARGETS_PER_GAME = 32.0` constant added for the catches_per_game proxy
+3. `_apply_recv_yds` magnitude bug fix: `historical_season_yds = dist_mean * catches_per_game * games_played` (D-17 sub-fix 2 + D-18 v1 proxy)
+4. 4-5 new tests in `tests/test_data/test_vegas/test_props_engine.py`
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | WR/TE recv KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|-----------------|-------------|----------------|
+| p1.ks05.bare | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks05.full | ... | ... | ... | ✅/❌ | ✅/❌ |
+
+## Codex MEDIUM-3 fix note
+
+The original Plan 04 frontmatter referenced `pytest src/fantasy_sim/data/vegas/`
+which is a source directory and contains no tests. The replan corrects all test
+invocations to `pytest tests/test_data/test_vegas/`.
+```
+
+Then commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-04-SUMMARY.md
+git commit -m "feat(01-04): KS-05 ${PROMO_STATE} — props_engine bug fixes (default 230→240; magnitude bug)
+
+Wave 3. Fixes _DEFAULT_TEAM_PASS_YDS to NFL ~240 and corrects _apply_recv_yds
+historical computation to multiply by catches_per_game.
+
+Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00.
+Test target normalized to tests/test_data/test_vegas/ (was incorrectly
+src/fantasy_sim/data/vegas/ in original Plan 04 — Codex MEDIUM-3 fix)."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-04-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-04-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-04): KS-05 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-05 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>

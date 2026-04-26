@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 02
 type: tdd
 wave: 2
-depends_on: ["01"]
+depends_on: ["00", "01"]
 files_modified:
   - src/fantasy_sim/engine/play_resolver.py
   - tests/test_engine/test_play_resolver.py
@@ -260,19 +260,23 @@ Commit: `feat(01-02): implement KS-04 conditional CATCH_YARDS_BOOST=1.5 per D-11
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-13, D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks04.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks04.bare"
 
+# Full-stack overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks04.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks04"
 ```
+
+NOTE: KS-04 changes the `CATCH_YARDS_BOOST` module constant — no `--set` flag needed; the change ships as the source code itself.
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks04.{bare,full}.log`.
 
@@ -299,6 +303,65 @@ Commit: `chore(01-02): record KS-04 A/B ledger entries (p1.ks04.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-02): record KS-04 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision in PROMOTION-NOTES; if BLOCKED, code reverted.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-04 section)
+  </read_first>
+  <action>
+Per D-25 (revised), create the final promotion commit + SUMMARY. Determine state from PROMOTION-NOTES `## KS-04` section per D-13 / D-31 (intermediate-tolerance bar — shipped no-op is acceptable).
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-02-SUMMARY.md`:
+
+```markdown
+# Plan 02 Summary — KS-04 CATCH_YARDS_BOOST conditional retune
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 2
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `CATCH_YARDS_BOOST = 1.5` in `play_resolver.py` (D-12)
+2. Conditional boost: only fires when `raw_yards > yard_line` AND outside red zone (D-11)
+3. KS-04 RED→GREEN tests including the boost-conditional behavior
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | QB pass_yards KS Δ | WR recv_yards KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|---------------------|---------------------|-------------|----------------|
+| p1.ks04.bare | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks04.full | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+
+Note per D-13: KS-04 is an intermediate fix; KS-15 will obviate it. SHIPPED-NO-OP is acceptable.
+```
+
+Commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-02-SUMMARY.md
+git commit -m "feat(01-02): KS-04 ${PROMO_STATE} — CATCH_YARDS_BOOST=1.5 conditional retune
+
+Wave 2. Conditional boost (raw_yards > yard_line AND outside RZ) per D-11.
+Intermediate fix per D-13; KS-15 will obviate the boost entirely.
+
+Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-02-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-02-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-02): KS-04 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-04 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>

@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 08
 type: execute
 wave: 5
-depends_on: ["01", "02", "03", "04", "05", "06", "07"]
+depends_on: ["00", "01", "02", "03", "04", "05", "06", "07"]
 files_modified:
   - config/defaults.yaml
 autonomous: true
@@ -72,51 +72,56 @@ Pre-flight verification: `tier_engine.apply_team_context` at `src/fantasy_sim/da
 
 <task type="auto">
   <name>Task 1: Pre-flight — verify tier_engine.apply_team_context honors D-22 (no QB carry/scramble/yards blending)</name>
-  <files>(no source modifications — inspection only)</files>
+  <files>(no source modifications — inspection + behavior-test re-run)</files>
   <read_first>
     - src/fantasy_sim/data/pff/tier_engine.py (lines around 1196-1215 — apply_team_context function)
-    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-22)
+    - tests/test_data/test_pff/test_tier_engine.py (line ~848 — existing QB-untouched test asserting apply_team_context leaves QBs unchanged; per Codex LOW-2 from 01-REVIEWS.md)
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-22, D-43)
     - User memory `feedback_qb_calibration.md` (PFF layers must NOT blend QB carry_share / scramble_rate / yards)
   </read_first>
   <action>
-Open `src/fantasy_sim/data/pff/tier_engine.py` lines 1196-1215. Verify the `apply_team_context` function:
-
-1. Iterates over players
-2. For QB players, does NOT modify:
-   - `player.usage.carry_share`
-   - `player.outcomes.scramble_rate`
-   - `player.outcomes.rushing_yards_dist` (yards)
-   - `player.outcomes.passing_yards_dist` (if it exists; some pipelines store it implicitly via per-pass-attempt sampling)
-
-3. The factors that SHOULD apply to QBs (per the engine description in AGENTS.md):
-   - `pass_rate_factor` → ONLY scales play-calling distributions, NOT per-player QB stats
-   - QB-quality-derived `catch_rate_factor` for downstream WR/TE — NOT applied to QB
-   - `ol_pass_block_factor` → may modify `sack_rate` (acceptable — QB is on the receiving end of sacks, not the agent)
-
-If the function violates D-22 (touches QB carry/scramble/yards), record the violation in `.../logs/PROMOTION-NOTES.md` under `## KS-29 — BLOCKED PRE-FLIGHT` and STOP this plan with `## PLAN BLOCKED`. The fix would need a code patch to `tier_engine.py` (out of scope for this plan; raise as a follow-up).
-
-If the function honors D-22, append to `.../logs/PROMOTION-NOTES.md` under `## KS-29 — pre-flight passed` with the verification note. Proceed to Task 2.
+**REVISED 2026-04-26 (LOW-2 fix from `01-REVIEWS.md`):** Replace the original ad-hoc grep preflight with a behavior-level check using the existing `test_tier_engine.py:848` test that already asserts `apply_team_context` leaves QBs unchanged. Per D-43 (acceptance checks tightened to behavior-level assertions), running an existing test is a more reliable preflight than literal-string grep over `tier_engine.py`.
 
 ```bash
-# Run the verification:
-echo "Inspecting tier_engine.apply_team_context for D-22 compliance..." >&2
-grep -n "QB\|carry_share\|scramble_rate\|rushing_yards" src/fantasy_sim/data/pff/tier_engine.py | head -50
+# Behavior-level preflight: re-run the existing tier_engine QB-untouched test.
+# This is a stronger guarantee than grep-inspection because it actually exercises
+# apply_team_context end-to-end with a QB present in the roster.
+uv run pytest tests/test_data/test_pff/test_tier_engine.py -v -k "team_context and qb" 2>&1 | tee \
+  .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/ks29_preflight.log
 ```
 
-This task does NOT commit anything (inspection-only). Append the pre-flight note to PROMOTION-NOTES.md as a record.
+EXPECTED: The existing test(s) at `tests/test_data/test_pff/test_tier_engine.py` (around line 848) PASS, confirming `apply_team_context` does not mutate QB `carry_share`, `scramble_rate`, or `rushing_yards_dist`.
 
-Commit (only the PROMOTION-NOTES update, if needed): `chore(01-08): KS-29 pre-flight verification — tier_engine D-22 compliance`
+If the test fails or no such test is found:
+1. Inspect `tests/test_data/test_pff/test_tier_engine.py` for any test name containing `qb` AND `team_context` — adjust the `-k` filter to match the actual test name
+2. If no such test exists, FALL BACK to the original grep approach AND add a new behavior-test as part of this preflight task (following the canonical pattern at `test_tier_engine.py:848`-area). Commit the new test before proceeding to Task 2.
+3. If the test exists and FAILS, the function violates D-22 — record under `## KS-29 — BLOCKED PRE-FLIGHT` in PROMOTION-NOTES.md and STOP. Fix in `tier_engine.py` would be out of scope for this plan (raise as follow-up).
+
+Append to `.../logs/PROMOTION-NOTES.md` under `## KS-29 — pre-flight passed` (or `BLOCKED PRE-FLIGHT`):
+
+```markdown
+## KS-29 — pre-flight passed
+
+Behavior test: tests/test_data/test_pff/test_tier_engine.py (around :848) PASSED.
+Confirms apply_team_context does not mutate QB carry_share / scramble_rate / rushing_yards_dist.
+
+Codex LOW-2 fix: replaced ad-hoc grep preflight with the existing behavior-level
+test that already asserts QBs are untouched.
+```
+
+Commit (only the PROMOTION-NOTES update + log file): `chore(01-08): KS-29 pre-flight — re-run existing tier_engine QB-untouched test (Codex LOW-2 fix)`
   </action>
   <verify>
-    <automated>grep -nE "carry_share|scramble_rate|rushing_yards" src/fantasy_sim/data/pff/tier_engine.py 2>&1 | head -20 && test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md && grep -c "## KS-29" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md</automated>
+    <automated>uv run pytest tests/test_data/test_pff/test_tier_engine.py -v -k "team_context and qb" 2>&1 | tail -5 && test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md && grep -c "## KS-29" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md</automated>
   </verify>
   <acceptance_criteria>
-    - `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md` contains a section header `## KS-29` (either `pre-flight passed` or `BLOCKED PRE-FLIGHT`)
-    - The verification grep output is captured in the PROMOTION-NOTES section
-    - If BLOCKED PRE-FLIGHT: plan halted with the violation documented
-    - If pre-flight passed: ready for Task 2
+    - `uv run pytest tests/test_data/test_pff/test_tier_engine.py -v -k "team_context and qb"` exits 0 (existing behavior test passes)
+    - `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/ks29_preflight.log` exists with the test output
+    - PROMOTION-NOTES.md contains `## KS-29` with pre-flight result documented
+    - If test FAILED: PROMOTION-NOTES contains `BLOCKED PRE-FLIGHT` AND plan is halted
+    - `git log -1 --pretty=%s` matches `chore(01-08): KS-29 pre-flight`
   </acceptance_criteria>
-  <done>D-22 compliance verified or violation documented; plan proceeds or halts.</done>
+  <done>D-22 compliance verified via behavior test (or violation documented); plan proceeds or halts.</done>
 </task>
 
 <task type="auto">
@@ -129,7 +134,7 @@ Commit (only the PROMOTION-NOTES update, if needed): `chore(01-08): KS-29 pre-fl
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (ensure pre-flight passed)
   </read_first>
   <action>
-Run the full sweep — 3 sensitivities × 2 baseline modes = 6 `validate.py` invocations:
+Run the full sweep — 3 sensitivities × 2 baseline modes = 6 `validate.py` invocations (revised 2026-04-26 per D-29 — uses Plan 00's `--arm-b-base bare` for true isolation in the bare runs; full runs use the default arm-b-base of `defaults`):
 
 ```bash
 # Sensitivity sweep — 6 A/B runs total
@@ -137,19 +142,35 @@ for s_str in "003 0.03" "005 0.05" "008 0.08"; do
   s_label=$(echo $s_str | cut -d' ' -f1)
   s_value=$(echo $s_str | cut -d' ' -f2)
   for mode in bare full; do
-    base=$([ "$mode" = "bare" ] && echo "bare" || echo "defaults")
     label="p1.ks29.s${s_label}.${mode}"
     echo "=== Running ${label} ===" >&2
-    uv run python scripts/validate.py \
-      --sims 200 \
-      --seasons 2022 2023 2024 \
-      --scoring ppr \
-      --positions QB RB WR TE \
-      --baseline "$base" \
-      --set "pff.team_context.enabled=true" \
-      --set "pff.team_context.pass_rate_sensitivity=${s_value}" \
-      --label "$label" \
-      2>&1 | tee ".planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/${label}.log"
+    if [ "$mode" = "bare" ]; then
+      # True isolation: bare engines + ONLY KS-29 team_context on top
+      # NOTE: tier_engine may need to be enabled too if team_context depends on it.
+      # Inspect load_pff_config for the dependency; add --set pff.tier_engine.enabled=true if so.
+      uv run python scripts/validate.py \
+        --sims 200 \
+        --seasons 2022 2023 2024 \
+        --scoring ppr \
+        --positions QB RB WR TE \
+        --baseline bare --arm-b-base bare \
+        --set "pff.team_context.enabled=true" \
+        --set "pff.team_context.pass_rate_sensitivity=${s_value}" \
+        --label "$label" \
+        2>&1 | tee ".planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/${label}.log"
+    else
+      # Full-stack: promoted defaults + KS-29 sensitivity overlay
+      uv run python scripts/validate.py \
+        --sims 200 \
+        --seasons 2022 2023 2024 \
+        --scoring ppr \
+        --positions QB RB WR TE \
+        --baseline defaults \
+        --set "pff.team_context.enabled=true" \
+        --set "pff.team_context.pass_rate_sensitivity=${s_value}" \
+        --label "$label" \
+        2>&1 | tee ".planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/${label}.log"
+    fi
   done
 done
 
@@ -236,9 +257,34 @@ uv run pytest tests/ -v 2>&1 | tail -10
 
 EXPECTED: All tests pass (config change shouldn't break unit tests; only behavior in integration/statistical tests).
 
-Commit:
-- If sensitivity chosen: `feat(01-08): KS-29 promote pff.team_context.enabled=true with pass_rate_sensitivity=<VALUE>`
-- If SHIPPED OFF: `docs(01-08): KS-29 sweep results — keep team_context disabled (no sensitivity met hard floor)`
+Commit (per D-25 revised — promotion-state commit message format):
+- If sensitivity chosen: `feat(01-08): KS-29 PROMOTED — pff.team_context.enabled=true with pass_rate_sensitivity=<VALUE>`
+- If SHIPPED OFF: `feat(01-08): KS-29 SHIPPED-OFF — team_context kept disabled (no sensitivity met hard floor)`
+
+Also create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-08-SUMMARY.md`:
+
+```markdown
+# Plan 08 Summary — KS-29 pff.team_context re-enable
+
+**Promotion state:** <PROMOTED|SHIPPED-OFF|BLOCKED>
+**Phase:** 1
+**Wave:** 5
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+- Pre-flight: existing `tests/test_data/test_pff/test_tier_engine.py:848` test rerun, confirms apply_team_context leaves QBs unchanged (Codex LOW-2 fix)
+- Sensitivity sweep: 6 ledger entries (s003, s005, s008 × bare, full) using --baseline bare --arm-b-base bare for the bare runs (Codex HIGH-1 fix)
+- Chosen sensitivity: <VALUE> (or SHIPPED-OFF if no sensitivity met both hard floors)
+
+## Sweep results
+
+| Sensitivity | bare rank_corr Δ | bare MAE Δ | full rank_corr Δ | full MAE Δ | Hard floor (both)? |
+|-------------|------------------|------------|------------------|------------|---------------------|
+| 0.03 | ... | ... | ... | ... | ✅/❌ |
+| 0.05 | ... | ... | ... | ... | ✅/❌ |
+| 0.08 | ... | ... | ... | ... | ✅/❌ |
+```
   </action>
   <verify>
     <automated>(grep -E "team_context:" config/defaults.yaml -A 7 | head -10) && uv run pytest tests/ -v 2>&1 | tail -5</automated>

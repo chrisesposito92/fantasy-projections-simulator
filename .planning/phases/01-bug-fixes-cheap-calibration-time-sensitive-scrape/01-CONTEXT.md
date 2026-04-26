@@ -1,7 +1,8 @@
 # Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape - Context
 
 **Gathered:** 2026-04-26
-**Status:** Ready for planning
+**Replanned:** 2026-04-26 (incorporates Codex `01-REVIEWS.md` HIGH-1..HIGH-4 + MEDIUM-1..MEDIUM-4)
+**Status:** Ready for planning (post-review revision)
 
 <domain>
 ## Phase Boundary
@@ -23,13 +24,13 @@ Out of scope for this phase (belongs in later phases):
 ### KS-21 Odds API Alternate-Line Scrape (Phase 1 sub-deliverable)
 
 - **D-01:** Books = DraftKings + FanDuel + Caesars (3-book consensus). Sufficient for de-vig pairing; fits within remaining ~4.93M credit tier.
-- **D-02:** "Open" snapshot = Tuesday 12pm ET (line release). Mirrors existing `close_core8` close-line snapshot at game-time -1h.
-- **D-03:** Scrape scope = open + close snapshots for **all 14 markets** (the existing 8 main-line markets in `DEFAULT_PROP_MARKETS` + 6 new alt-line markets). Existing 8 main-line `close_core8` cache stays untouched; this scrape adds open-line versions of the 8 main lines AND open + close for the 6 new alt-line markets.
+- **D-02:** **REVISED 2026-04-26 (HIGH-3):** "Earlier" snapshot = whatever The Odds API returns as `previous_timestamp` relative to the existing gameday-noon UTC events crawl (`events_inventory.build_request_window` at `events_inventory.py:89-96`). The current pipeline does NOT store a real Tuesday 12pm ET line-release marker, so the earlier-snapshot label honestly describes itself as "prior" not "open". Phase 4 expectations updated to consume "prior-snapshot" lines, not "Tuesday 12pm ET line release". A future follow-up may extend the event inventory to capture a true Tuesday marker; out of scope for Phase 1's time-sensitive scrape.
+- **D-03:** Scrape scope = prior + close snapshots for **all 14 markets** (the existing 8 main-line markets in `DEFAULT_PROP_MARKETS` + 6 new alt-line markets). Existing 8 main-line `close_core8` cache stays untouched; this scrape adds prior-line versions of the 8 main lines AND prior + close for the 6 new alt-line markets.
 - **D-04:** New alt-line markets = `player_pass_yds_alternate`, `player_reception_yds_alternate`, `player_rush_yds_alternate`, `player_pass_attempts_alternate`, `player_receptions_alternate`, `player_rush_attempts_alternate` (6 markets, matches ROADMAP success criterion #5).
 - **D-05:** Coverage = 2023, 2024, 2025 regular seasons (matches existing main-line coverage). The Odds API has no historical player props pre-2023 — Phase 1 success criterion #5 ("2022-2024 weeks 1-18") is hereby relaxed to "2023-2024 regular season + 2025 to current" with no further investigation needed (confirmed by user from prior scrape work).
-- **D-06:** Snapshot labels = `open_core8`, `close_alt6`, `open_alt6` (and existing `close_core8` stays as-is). Label scheme keeps phase 1 open snapshots and alt-line snapshots distinguishable.
+- **D-06:** **REVISED 2026-04-26 (HIGH-3):** Snapshot labels = `prior_core8`, `prior_alt6`, `close_alt6` (and existing `close_core8` stays as-is). The `prior_*` prefix replaces the misleading `open_*` prefix from the original plan, and explicitly identifies these as "API previous_timestamp relative to gameday-noon UTC crawl". Phase 4 engine integration must reference `prior_*` labels.
 - **D-07:** Parquet schema = reuse existing `player_markets_*` schema unchanged (`season, week, event_id, schedule_game_id, snapshot_label, snapshot_timestamp, market_key, player_name, player_name_normalized, home_team, away_team, bookmaker_count, line, line_stddev, over_price, under_price, yes_price, implied_prob`). Multi-line alt-line markets are encoded as repeated rows (one row per (player, market_key, line) tuple). Existing `props_backfill.py` machinery handles this without code changes.
-- **D-08:** Reuse existing `scripts/fetch_market_history_props.py` infrastructure. Scrape requires (a) adding alt-line market tuple, (b) running with new snapshot labels and date-source/offset for Tuesday 12pm ET. No new scrape script needed.
+- **D-08:** **REVISED 2026-04-26 (HIGH-2):** Pipeline = (1) `scripts/fetch_market_history_props.py` writes raw JSON to `~/.fantasy-sim/market-history/raw/props/{season}/{snapshot_label}/{event_id}.json` via `save_raw_props_snapshot()` (`props_backfill.py:139`); (2) `scripts/build_market_history_player_markets.py` reads the JSON cache and writes processed parquet at `~/.fantasy-sim/market-history/processed/player_markets_{season}_{snapshot_label}.parquet` via `build_player_market_signals_for_season()` (`player_markets.py:190`). Both scripts must run; the original CONTEXT incorrectly assumed `fetch_market_history_props.py` produced parquet directly. KS-21 plan adds (a) the alt-line market tuple, (b) raw fetch loop, (c) processed-build loop, (d) schema/timing verification.
 
 ### KS-01 RZ TD-Gate Truncation Fix (`play_resolver.py:279-284, 421-424`)
 
@@ -42,14 +43,19 @@ Out of scope for this phase (belongs in later phases):
 - **D-12:** Boost magnitude when condition triggers = **+1.5** (HYPOTHESES low-end of 1.5-2.0). No sweep — ship at 1.5 directly. Conservative; minimizes overshoot risk.
 - **D-13:** Path = ship KS-04 (boost +1.5 conditional) as an intermediate, even though KS-15 will obviate it. This captures KS-04's intermediate KS gain in the ledger and provides a fallback if KS-15 fails the hard floor.
 
-### KS-15 Field-Position Clamping Fix (`play_resolver.py:32, 265-274, 437-446`)
+### KS-15 Field-Position Clamping Fix (`play_resolver.py:32, 265-274, 302-321, 392-410, 437-446`)
 
 - **D-14:** Approach = restore un-clamped sample as `min(yard_line, sample)` for yards while using the un-clamped sample for the TD probability gate. Per HYPOTHESES KS-15: "convert truncated samples into TDs rather than truncating to goal line." Bug-fix-class change.
 - **D-15:** In the same change, drop `CATCH_YARDS_BOOST` to 0. Per HYPOTHESES, KS-15 obviates the boost's original justification (band-aid for clamping-induced under-counting). KS-04's tuned value becomes archival.
+- **D-15b (added 2026-04-26 — MEDIUM-4):** Apply the same `min(yard_line, sample)` + would-be-TD detection pattern to the legacy non-roster paths in `_resolve_pass` (lines 302-321) and `_resolve_run` (lines 392-410). The validation harness instantiates rosters in all production paths, but keeping two divergent clamping semantics in the same module is a foot-gun. New tests must cover both roster and non-roster code paths. The rewrite re-uses the same `would_be_td = (state.yard_line - raw_yards) <= 0` detection used in the roster path.
 
-### KS-03 Matchup/Coverage Yard Anchor Fix (`game_context.py:534-544, 591`)
+### KS-03 Matchup/Coverage Yard Anchor Fix (`game_context.py:534-544, 546-558, 591`)
 
-- **D-16:** Replace hardcoded `* 10.0` with `* float(np.mean(player.outcomes.receiving_yards_dist))` in both `_apply_matchup` and `_apply_coverage`. Mirrors the correct reference implementation in `_apply_weather` at `game_context.py:701-712`. Single-mechanism fix; no variant choice.
+- **D-16:** Replace hardcoded `* 10.0` with `* float(np.mean(player.outcomes.<dist>))` in:
+  - `_apply_matchup` receiving branch (lines 534-544) → uses `receiving_yards_dist`
+  - `_apply_coverage` (line 591) → uses `receiving_yards_dist`
+  - **D-16b (added 2026-04-26 — MEDIUM-1):** `_apply_matchup` rushing branch (lines 546-558) → uses `rushing_yards_dist`. The original D-16 stated "receiving yards only" but the existing Plan 03 already widens scope to rushing. Codex review flagged this as scope creep; resolution is to formally widen KS-03's hypothesis to cover all three call sites consistently. RB rush_yards is already a Phase 1 success criterion (#3) so the attribution is appropriate. The mirror pattern (`_apply_weather` at `game_context.py:701-712`) is identical for both rushing and receiving branches.
+- All 3 sites mirror the correct reference implementation in `_apply_weather` at `game_context.py:701-712`. Single-mechanism fix; no variant choice.
 
 ### KS-05 Props Engine Bug Fixes (`props_engine.py:43, 248, 380-409`)
 
@@ -82,17 +88,32 @@ Out of scope for this phase (belongs in later phases):
 
 ### Sequencing, Commit Cadence & A/B Cadence
 
-- **D-25:** Commit cadence = **one commit per KS-XX, in dependency order**. Each commit includes (a) implementation, (b) tests (TDD-first for KS-01/04/15; test-after acceptable for the rest), (c) ledger entry naming. Provides clean bisect, attribution, and rollback.
+- **D-25:** **REVISED 2026-04-26 (MEDIUM-2):** Commit cadence = **one promotion-state commit per KS-XX, in dependency order**. Within a KS plan, intermediate task commits (RED test, GREEN implementation, ledger record) are normal git practice for clean bisect within a plan. The FINAL commit per KS plan is the "promotion-state" commit using a standardized message format: `feat(01-NN): KS-XX [PROMOTED|SHIPPED-NO-OP|BLOCKED|SHIPPED-OFF|MEASURED-NO-CHANGE] — <short summary>`. The ledger entry name (`p1.ksXX.bare`/`.full`) and the PROMOTION-NOTES section header are tied to this final commit. Bisect/rollback at KS-XX granularity is achieved by reverting the promotion commit + intermediate commits via `git revert` of the commit range, or `git reset` to the promotion commit's parent. The original "HEAD~3 after Plan 01" claim was already broken by Plan 09 running parallel in wave 1; this revision replaces it with a per-plan promotion-commit anchor that is stable regardless of wave parallelism.
 - **D-26:** Dependency-mandatory order: **KS-01 → KS-04 → KS-15** (RZ stack). Other items can ship in any order after KS-01 (which clears the largest mean-bias mechanism). Suggested overall order: KS-01 → KS-04 → KS-03 → KS-05 → KS-06 → KS-07 → KS-15 → KS-29 → KS-32 (measure). KS-21 scrape runs in parallel with the code changes — no dependency conflict.
-- **D-27:** Ledger label scheme = `p1.ksXX.bare` (baseline + KS-XX only) and `p1.ksXX.full` (all_engines + KS-XX) per change. KS-29 sweep adds `p1.ks29.s003.bare`, `p1.ks29.s005.bare`, `p1.ks29.s008.bare` (and `.full` versions). KS-32 measurement adds `p1.ks32.measure` if no change is needed; otherwise normal `p1.ks32.bare`/`.full`.
+- **D-27:** Ledger label scheme = `p1.ksXX.bare` (true bare-baseline isolation: bare engines + KS-XX only — see D-29) and `p1.ksXX.full` (defaults + KS-XX, full-stack overlay) per change. KS-29 sweep adds `p1.ks29.s003.bare`, `p1.ks29.s005.bare`, `p1.ks29.s008.bare` (and `.full` versions). KS-32 measurement adds `p1.ks32.measure` if no change is needed; otherwise normal `p1.ks32.bare`/`.full`. **NEW Phase-0 baseline labels (D-32b):** `phase0.baseline.full` (Arm A = bare, Arm B = current pre-Phase-1 promoted defaults) and `phase0.baseline.bare` (Arm A = bare, Arm B = bare — sanity-check no-op) pinned in Wave 0 BEFORE any KS work begins.
 - **D-28:** Validation set = **all 2022-2024, 200 sims/season**, PPR scoring. Matches PROJECT.md baseline evidence + ROADMAP success criteria + existing `decision_s200` artifact convention. KS-21 historical limited to 2023+, but that doesn't affect 2022 stat-level validation for code-side changes.
-- **D-29:** A/B mode per change = **isolation + full-stack** (per `feedback_ab_testing_approach.md`). Both modes run before promotion. **Agents execute the A/B runs directly via `scripts/validate.py`** (rule updated 2026-04-26 — see `feedback_ab_manual.md` memory; previous "manual only" rule is reversed). Each run logs to the persistent ledger with the proposed labels so the user can inspect via `--show-ledger`. Long runs use `--background` where supported.
+- **D-29:** **REVISED 2026-04-26 (HIGH-1):** A/B mode per change = **true isolation + full-stack overlay** (per `feedback_ab_testing_approach.md`).
+  - The current `scripts/validate.py` has a documented mismatch: `--baseline bare` makes Arm A bare but Arm B = `apply_overrides(defaults, overrides)`, NOT `apply_overrides(bare, overrides)`. So `--baseline bare --set X.enabled=true` actually compares `(bare) vs (defaults + X)`, which is contaminated by all default-on engines. This was the basis for HIGH-1 in the Codex review.
+  - **Resolution (Plan 00 implements this):** Extend `scripts/validate.py` with a new `--arm-b-base {defaults,bare}` flag (default: `defaults`, preserves backward compatibility). When `--arm-b-base bare`, Arm B starts from `build_bare_engine_configs()` and applies `--set` overrides on top. Then **true isolation** is `--baseline bare --arm-b-base bare --set <KS-X overrides>` → `(bare) vs (bare + KS-X)`.
+  - **Full-stack overlay** stays unchanged: `--baseline defaults --set <KS-X overrides>` → `(defaults) vs (defaults + KS-X)`.
+  - **All Phase 1 KS plans use `--baseline bare --arm-b-base bare` for the `p1.ksXX.bare` ledger entry, and `--baseline defaults` for the `p1.ksXX.full` ledger entry.**
+  - **Agents execute the A/B runs directly via `scripts/validate.py`** (rule updated 2026-04-26 — see `feedback_ab_manual.md` memory; previous "manual only" rule is reversed). Each run logs to the persistent ledger with the proposed labels so the user can inspect via `--show-ledger`. Long runs use `--background` where supported.
 
 ### Promotion Bar
 
 - **D-30:** Promotion bar for KS items HYPOTHESES marks "small" expected gain (KS-06, KS-07, KS-29, KS-32) = **ship if hard floor passes AND any non-regression KS delta on the primary target**. Per `feedback_quality_over_simplicity.md`: small wins compound; stack effect is the goal.
 - **D-31:** Promotion bar for "medium-large" expected items (KS-01, KS-04, KS-05, KS-15) = same hard floor (rank_corr ≤ -0.005, MAE ≤ -0.05) plus expectation of ≥ -0.01 KS delta on the primary target. If hard floor passes but KS doesn't move, mark as "shipped no-op" and continue (the bug fix is correct even if KS doesn't budge).
-- **D-32:** End-of-phase aggregate = single `p1.aggregate.full` A/B run after all 9 KS items have shipped, comparing post-Phase-1 defaults vs original Phase-0 baseline. Confirms no stack regression. Records the Phase 1 entry/exit metrics for the next phase to baseline against. Agent runs this directly and reports results; if any regression appears, walk back the smallest-gain promotion candidate first.
+- **D-32:** **REVISED 2026-04-26 (HIGH-4):** End-of-phase aggregate = single `p1.aggregate.full` A/B run after all 9 KS items have shipped, comparing **post-Phase-1 defaults vs the FROZEN Phase-0 baseline ledger entry pinned in Wave 0** (per D-32b). The original plan stated "comparing post-Phase-1 defaults vs original Phase-0 baseline" but failed to define what the Phase-0 baseline ledger artifact was — and Plan 11's `--baseline defaults` with no `--set` made Arm A == Arm B, recording a no-op snapshot rather than a delta. The replan resolves this by:
+  - **Wave 0 (Plan 00) pins Phase-0 baseline:** runs `validate.py --baseline bare --label phase0.baseline.full` against current pre-Phase-1 promoted defaults. Arm A = bare, Arm B = current defaults. The Arm B metrics in this ledger entry ARE the Phase-0 reference values.
+  - **Phase 1 closure (Plan 11) records post-Phase-1 baseline:** runs the SAME command `validate.py --baseline bare --label p1.aggregate.full` AFTER all KS plans ship and update `defaults.yaml`. Arm A = bare, Arm B = post-Phase-1 defaults. The Arm B metrics in this entry ARE the post-Phase-1 reference values.
+  - **The "Phase-1 vs Phase-0" delta** is computed by reading both ledger entries' Arm B metrics and differencing. Plan 11 surfaces this via `validate.py --show-ledger | grep "phase0.baseline.full\|p1.aggregate.full"` and a new helper script (or PROMOTION-NOTES.md table). Hard floor + success criteria are evaluated against this differenced delta.
+  - If any regression appears, walk back the smallest-gain promotion candidate first per D-30/D-31 promotion bar.
+- **D-32b (NEW 2026-04-26):** Phase-0 baseline pin is created by **Plan 00** in Wave 0 (BEFORE any KS work). Plan 00 must:
+  1. Implement the `--arm-b-base {defaults,bare}` extension to `scripts/validate.py` (per D-29 above).
+  2. Run `validate.py --sims 200 --seasons 2022 2023 2024 --scoring ppr --baseline bare --label phase0.baseline.full` to capture current promoted-defaults metrics.
+  3. Run `validate.py --sims 200 --seasons 2022 2023 2024 --scoring ppr --baseline bare --arm-b-base bare --label phase0.baseline.bare` as a self-consistency check (Arm A == Arm B should yield zero delta).
+  4. Commit both ledger entries and a `PROJECT-PHASE0-FROZEN.md` doc that records the exact `defaults.yaml` snapshot (or commit hash) backing the Phase-0 entries.
+  - This completes the per-plan A/B isolation contract and the end-of-phase comparison contract that the original plan claimed but did not implement.
 
 ### Test Discipline
 
@@ -106,7 +127,18 @@ Out of scope for this phase (belongs in later phases):
 - Specific test-case enumeration for TDD on KS-01/04/15 (planner derives from HYPOTHESES.md mechanism descriptions).
 - Per-team rolling-mean window length for KS-05 D-18 (planner picks based on existing pipeline window conventions).
 - KS-21 scrape execution sequencing (which season/week pages first if user pauses mid-scrape) — opportunistic, no formal dependency.
-- Specific snapshot timestamps within "Tuesday 12pm ET" (timezone handling, DST transitions).
+- Specific implementation of the `--arm-b-base` flag in `scripts/validate.py` (planner picks the cleanest insertion point relative to existing `--baseline` handling at lines 1040-1075).
+
+### Replan Additions (2026-04-26 — incorporates Codex `01-REVIEWS.md`)
+
+- **D-36 (HIGH-1 + HIGH-4):** Phase-0 baseline pinning + true bare-isolation A/B harness extension are PRE-CONDITIONS for ANY Phase 1 KS work. New Plan 00 in Wave 0 owns this; all per-KS A/B plans (Plans 01-10) depend on Plan 00.
+- **D-37 (HIGH-2):** Plan 09 split into raw-fetch and processed-build sub-tasks. Acceptance gates on BOTH the raw JSON files at `~/.fantasy-sim/market-history/raw/props/...` AND the processed parquet at `~/.fantasy-sim/market-history/processed/...`. The original Plan 09 missed the processed build step (`scripts/build_market_history_player_markets.py`); the replan calls it explicitly.
+- **D-38 (HIGH-3):** Snapshot label naming uses `prior_*` not `open_*` to honestly describe the Odds API's `previous_timestamp` semantics relative to the existing gameday-noon UTC events crawl. A future follow-up plan may extend `events_inventory.py` to capture a real Tuesday line-release marker; out of scope for the time-sensitive Phase 1 scrape.
+- **D-39 (MEDIUM-1):** KS-03 hypothesis explicitly widened to cover the rushing branch in `_apply_matchup` (`game_context.py:546-558`) per D-16b. RB rush_yards is a Phase 1 success criterion (#3) so attribution is clean.
+- **D-40 (MEDIUM-2):** Per-KS commit cadence retains intermediate task commits but designates a final "promotion-state" commit per KS plan with standardized message format (see revised D-25). Bisect/rollback at KS-XX granularity is the promotion-commit anchor, not a fragile commit-count offset.
+- **D-41 (MEDIUM-3):** Plan 04 fixed test surface from `pytest src/fantasy_sim/data/vegas/` to `pytest tests/test_data/test_vegas/`. Plan 05 fixed callable from `build_play_outcomes` to `Preprocessor().compute_play_outcomes()` (the actual API at `preprocessor.py:110`). Other plans audited for similar surface mismatches and corrected.
+- **D-42 (MEDIUM-4):** KS-15 plan widened to also patch the legacy non-roster paths in `_resolve_pass` (lines 302-321) and `_resolve_run` (lines 392-410) per D-15b. Tests added for both roster and non-roster code paths.
+- **D-43 (LOW polish):** Acceptance checks tightened for behavior-level assertions where feasible. Plan 08 references the existing `tests/test_data/test_pff/test_tier_engine.py:848` QB-untouched test rather than ad-hoc grep preflight. Log/summary directory creation made explicit in Wave 0.
 
 </decisions>
 

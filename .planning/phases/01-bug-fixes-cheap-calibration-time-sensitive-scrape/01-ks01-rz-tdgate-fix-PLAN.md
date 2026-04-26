@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 01
 type: tdd
 wave: 1
-depends_on: []
+depends_on: ["00"]
 files_modified:
   - src/fantasy_sim/engine/play_resolver.py
   - tests/test_engine/test_play_resolver.py
@@ -294,16 +294,16 @@ Commit: `feat(01-01): implement KS-01 _tackled_short_preserve_distribution per D
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-26 dependency order, D-27 label scheme, D-28 validation set, D-29 isolation+full-stack rule, D-31 promotion bar for medium-large items)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 with the labels per D-27. Run sequentially (the harness shares an internal cache).
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation) with the labels per D-27. Run sequentially (the harness shares an internal cache).
 
 ```bash
-# Isolation: bare baseline + KS-01 code change → marginal impact
+# True isolation: bare baseline + KS-01 code change → marginal impact (requires Plan 00 to have landed)
 uv run python scripts/validate.py \
   --sims 200 \
   --seasons 2022 2023 2024 \
   --scoring ppr \
   --positions QB RB WR TE \
-  --baseline bare \
+  --baseline bare --arm-b-base bare \
   --label "p1.ks01.bare"
 
 # Full-stack: promoted defaults + KS-01 code change → compatibility check
@@ -318,6 +318,8 @@ uv run python scripts/validate.py \
 # Inspect ledger
 uv run python scripts/validate.py --show-ledger | grep "p1.ks01"
 ```
+
+NOTE: KS-01 changes the `_tackled_short` function body — no `--set` flag needed; the change ships as the source code itself.
 
 Capture stdout/stderr to per-run logs at `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks01.bare.log` and `.../logs/p1.ks01.full.log` for the SUMMARY.md.
 
@@ -346,6 +348,67 @@ Commit: `chore(01-01): record KS-01 A/B ledger entries (p1.ks01.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-01): record KS-01 A/B`
   </acceptance_criteria>
   <done>Both p1.ks01.bare and p1.ks01.full ledger entries exist; promotion decision recorded; if BLOCKED, KS-01 commit reverted and plan halted.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-01 section)
+  </read_first>
+  <action>
+Per D-25 (revised — promotion-state commit per KS plan), create the final promotion commit + SUMMARY.
+
+Determine promotion state from PROMOTION-NOTES `## KS-01` section per D-31 medium-large bar:
+- Hard floor passes + QB pass_yards KS Δ ≤ -0.01 → `PROMOTED`
+- Hard floor passes but KS doesn't move → `SHIPPED-NO-OP`
+- Hard floor fails → `BLOCKED` (Task 2 reverted)
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md`:
+
+```markdown
+# Plan 01 Summary — KS-01 RZ TD-gate truncation fix
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 1
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. Replaced `_tackled_short()` rewrite with `max(1, min(yard_line - 1, sampled_yards_pre_clamp))` (D-09)
+2. PASS_TD_GATE / RUN_TD_GATE calibration regression tests as a guard
+3. RED→GREEN test pair (TDD per D-33)
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | QB pass_yards KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|---------------------|-------------|----------------|
+| p1.ks01.bare | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks01.full | ... | ... | ... | ✅/❌ | ✅/❌ |
+```
+
+Commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md
+git commit -m "feat(01-01): KS-01 ${PROMO_STATE} — RZ TD-gate truncation fix
+
+Wave 1. Replaces _tackled_short() with distribution-preserving variant
+per D-09. Bare-isolation A/B uses --baseline bare --arm-b-base bare per
+Plan 00."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-01): KS-01 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-01 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>

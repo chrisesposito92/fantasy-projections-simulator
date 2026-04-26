@@ -296,33 +296,128 @@ if ctx.pass_yards_factor != 1.0:
 
 KS-03 must replicate this exact `mean_yards = float(np.mean(...))` computation in `_apply_matchup` (line 535) and `_apply_coverage` (line 591).
 
-### Pattern 3: A/B isolation + full-stack per change (D-29)
+### Pattern 3: A/B isolation + full-stack per change (D-29) — REVISED 2026-04-26
 
-**What:** For each KS-XX, run TWO `scripts/validate.py` invocations:
-1. **Isolation** (`--baseline bare --set <ks_change>`): bare baseline (no engines on) + only this change → shows the marginal impact.
-2. **Full-stack** (`--baseline defaults --set <ks_change>`): all currently-promoted engines on + this change → shows compatibility with the production stack.
+**REVISED 2026-04-26 (HIGH-1 from `01-REVIEWS.md`):** The original write-up below was incorrect. The current `scripts/validate.py` (lines 316-349, 1040-1075) treats `--baseline bare` as Arm A = bare engines, BUT Arm B = `apply_overrides(defaults, --set overrides)`, NOT `apply_overrides(bare, --set overrides)`. So `--baseline bare --set X.enabled=true` actually compares `(bare) vs (defaults + X)`, which is contaminated by all default-on engines. The "isolation" claim was false.
+
+**Resolution (Plan 00 implements):** Extend `scripts/validate.py` with a new `--arm-b-base {defaults,bare}` flag (default: `defaults`, preserves backward compatibility). When `--arm-b-base bare`:
+- Arm B starts from `build_bare_engine_configs()` (i.e., all engines None)
+- `--set` overrides are applied on top of the bare config (same `apply_overrides()` machinery, but the source dict is bare not defaults)
+- Then the comparison is `(bare) vs (bare + overrides)` — true isolation.
+
+The implementation is small: in `validate.py:1061-1065`, change
+
+```python
+if args.overrides:
+    arm_b_dict = apply_overrides(defaults, args.overrides)
+else:
+    arm_b_dict = defaults
+arm_b_configs = build_engine_configs(arm_b_dict)
+```
+
+to
+
+```python
+if args.arm_b_base == "bare":
+    arm_b_configs = build_bare_engine_configs()
+    if args.overrides:
+        # apply --set on bare-engine config dict
+        arm_b_dict = apply_overrides(_bare_engine_config_dict(defaults), args.overrides)
+        arm_b_configs = build_engine_configs(arm_b_dict)
+else:
+    if args.overrides:
+        arm_b_dict = apply_overrides(defaults, args.overrides)
+    else:
+        arm_b_dict = defaults
+    arm_b_configs = build_engine_configs(arm_b_dict)
+```
+
+(Implementation detail: a `_bare_engine_config_dict(defaults)` helper produces a defaults dict with every engine's `enabled` flag forced to `false` — preserves the dict structure so `apply_overrides()` can find the leaf paths the user requests via `--set`.)
+
+**Three valid validation modes after the extension:**
+
+| Mode | Flag combo | Arm A | Arm B | Use case |
+|------|-----------|-------|-------|----------|
+| **True isolation** | `--baseline bare --arm-b-base bare --set <KS-X>` | bare engines | bare engines + KS-X | Per-KS isolation (D-29 row 1, replaces broken `--baseline bare` w/o `--arm-b-base`) |
+| **Full-stack overlay** | `--baseline defaults --set <KS-X>` | promoted defaults | defaults + KS-X | Per-KS full-stack (D-29 row 2; unchanged from current behavior) |
+| **Phase-0 baseline pin** | `--baseline bare --label phase0.baseline.full` (no `--set`) | bare engines | promoted defaults | Wave 0 reference snapshot (D-32b) |
+
+**For each KS-XX, run TWO `scripts/validate.py` invocations:**
+1. **True isolation** (`--baseline bare --arm-b-base bare --set <ks_change>`): bare baseline (no engines on) + only this change → shows the marginal impact.
+2. **Full-stack overlay** (`--baseline defaults --set <ks_change>`): all currently-promoted engines on + this change → shows compatibility with the production stack.
 
 **When to use:** Every KS-XX before promotion. Both must pass hard floor (`rank_corr Δ ≥ -0.005 AND weekly_mae Δ ≤ +0.05`).
 
-**Example invocations:**
+**Example invocations (post-Plan-00):**
 
 ```bash
-# Isolation (baseline = bare)
+# True isolation (bare baseline + only this change)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr \
-  --baseline bare \
-  --set engine.play_resolver.tackled_short_variant=ks01_safe \
+  --baseline bare --arm-b-base bare \
   --label "p1.ks01.bare"
 
-# Full-stack (baseline = defaults)
+# Full-stack (promoted defaults + this change)
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr \
   --baseline defaults \
-  --set engine.play_resolver.tackled_short_variant=ks01_safe \
   --label "p1.ks01.full"
 ```
 
-> Note: `--set` paths follow the `apply_overrides()` convention in `validation/config.py`. For KS items that change module constants (not config keys), the change ships as a code edit and the `--set` is a no-op flag (e.g., the per-KS branch is the commit itself; the validator picks up the new constant on import).
+> Note 1: `--set` paths follow the `apply_overrides()` convention in `validation/config.py`. For KS items that change module constants (not config keys), the change ships as a code edit and the `--set` is a no-op flag (e.g., the per-KS branch is the commit itself; the validator picks up the new constant on import).
+>
+> Note 2: For Plans 00-08 and 10 (per-KS), the bare arm uses `--baseline bare --arm-b-base bare`. Plan 09 (KS-21 scrape) does no A/B; it produces data only. Plan 11 uses the no-`--set`, `--baseline bare --label p1.aggregate.full` form to capture post-Phase-1 promoted defaults vs. bare for direct comparison against the Wave 0 `phase0.baseline.full` ledger entry.
+
+### Pattern 4: Market-history scrape pipeline — REVISED 2026-04-26
+
+**REVISED 2026-04-26 (HIGH-2 from `01-REVIEWS.md`):** The original CONTEXT/RESEARCH conflated raw fetch and processed parquet build. The actual pipeline is two distinct steps:
+
+```
+1. scripts/fetch_market_history_props.py
+   ├── reads:  ~/.fantasy-sim/market-history/processed/events_inventory_{season}.parquet
+   ├── writes: ~/.fantasy-sim/market-history/raw/props/{season}/{snapshot_label}/{event_id}.json
+   └── via:    save_raw_props_snapshot() at props_backfill.py:139
+
+2. scripts/build_market_history_player_markets.py
+   ├── reads:  ~/.fantasy-sim/market-history/raw/props/{season}/{snapshot_label}/*.json
+   ├── writes: ~/.fantasy-sim/market-history/processed/player_markets_{season}_{snapshot_label}.parquet
+   └── via:    build_player_market_signals_for_season() at player_markets.py:190
+```
+
+The `scripts/build_market_history_player_markets.py` script (verified to exist) takes `--season` and `--snapshot-label` arguments matching the raw fetch script. KS-21 deliverable acceptance MUST gate on the existence of BOTH the raw JSON files (Step 1) AND the processed parquet (Step 2). The original Plan 09 only ran Step 1 and asserted parquet existed — that assertion would have been false even after a successful raw scrape.
+
+**Pipeline invocation example (per season-snapshot pair):**
+
+```bash
+# Step 1: Raw fetch
+uv run python scripts/fetch_market_history_props.py \
+  --season 2024 --markets $ALT --regions us \
+  --snapshot-label prior_alt6 --date-source previous_snapshot_timestamp
+
+# Step 2: Build processed parquet from raw cache
+uv run python scripts/build_market_history_player_markets.py \
+  --season 2024 --snapshot-label prior_alt6
+```
+
+Both steps must run for every season-snapshot pair before KS-21 is deliverable.
+
+### Pattern 5: Snapshot label naming honesty — REVISED 2026-04-26
+
+**REVISED 2026-04-26 (HIGH-3 from `01-REVIEWS.md`):** The original CONTEXT used `open_*` labels (`open_core8`, `open_alt6`) and asserted the timing was "Tuesday 12pm ET". This was incorrect:
+
+- The current event inventory crawl uses `gameday + T12:00:00Z` (gameday noon UTC) as the snapshot date — see `events_inventory.py:89-96` `build_request_window()`.
+- `previous_snapshot_timestamp` is what The Odds API returns as `previous_timestamp` relative to that gameday-noon snapshot — see `events_inventory.py:247` `flatten_raw_snapshot()`.
+- The Odds API determines its own snapshot cadence; for NFL games, the prior available snapshot to a Sunday gameday-noon crawl could be Sunday morning, Saturday, Friday, or earlier — NOT guaranteed to be Tuesday line-release time.
+- No code path in the current pipeline persists a real Tuesday 12pm ET marker.
+
+**Resolution:** Rename labels to `prior_*` (`prior_core8`, `prior_alt6`) to honestly describe semantics. Update Phase 4 expectations to consume "prior-snapshot" lines, not "Tuesday 12pm ET line release". A future follow-up plan may extend `events_inventory.py` to capture a real Tuesday line-release marker (would require a separate Tuesday-noon crawl to populate `events_inventory_tuesday_*.parquet`); out of scope for the time-sensitive Phase 1 scrape window.
+
+| Original label | New label | Semantic |
+|----------------|-----------|----------|
+| `open_core8` | `prior_core8` | API previous_timestamp for the 8 main markets |
+| `open_alt6` | `prior_alt6` | API previous_timestamp for the 6 alt-line markets |
+| `close_alt6` | `close_alt6` (unchanged) | gameday-noon-1h for the 6 alt-line markets |
+| `close_core8` | `close_core8` (unchanged) | existing pre-Phase-1 cache |
 
 ### Anti-patterns to avoid
 
@@ -331,6 +426,9 @@ uv run python scripts/validate.py \
 - **Re-tuning `PASS_TD_GATE` after KS-15** — the gate calibration was set by historical NFL data; KS-15 must not require gate re-tuning. If tests show drift, that's a signal of a bug, not a tuning opportunity.
 - **Modifying `~/.fantasy-sim/market-history/processed/player_markets_*_close_core8.parquet`** — DO NOT touch existing main-line cache. New snapshots get distinct labels (D-06).
 - **Reading `~/.fantasy-sim/market-history/.env`** — never read this file (per AGENTS.md project guidance).
+- **Asserting `--baseline bare` is true isolation** (REVISED — see HIGH-1) — until Plan 00 lands the `--arm-b-base` extension, `--baseline bare` produces `(bare) vs (defaults+overrides)`. Per-KS isolation runs MUST use `--baseline bare --arm-b-base bare` after Plan 00.
+- **Calling `fetch_market_history_props.py` without then calling `build_market_history_player_markets.py`** (REVISED — see HIGH-2) — the raw script writes JSON only; the processed parquet downstream code reads requires the build step.
+- **Labeling Tuesday-line snapshots as `open_*`** (REVISED — see HIGH-3) — current pipeline cannot guarantee Tuesday timing; use `prior_*` to describe what the API actually returns.
 
 ## Don't Hand-Roll
 
@@ -356,41 +454,45 @@ uv run python scripts/validate.py \
 - `weekly_mae` regression must be ≤ 0.05 (i.e., `Δ weekly_mae ≤ +0.05`)
 - Where `Δ = (Arm B with KS-XX) - (Arm A baseline)`
 
-### Per-KS validation criteria
+### Per-KS validation criteria — REVISED 2026-04-26 (HIGH-1, HIGH-4)
 
-| KS | Primary target metric | Validation source | Promotion bar (D-30/D-31) |
-|----|----------------------|-------------------|---------------------------|
-| KS-01 | QB pass_yards KS, QB pass_yards mean bias | `validate.py --label p1.ks01.{bare,full}` | Hard floor + Δ KS ≤ -0.01 |
-| KS-03 | WR/TE receiving_yards KS | `validate.py --label p1.ks03.{bare,full}` | Hard floor + ≥0 KS delta |
-| KS-04 | QB/WR receiving + passing yards KS | `validate.py --label p1.ks04.{bare,full}` | Hard floor + Δ KS ≤ -0.01 |
-| KS-05 | WR/TE receiving_yards mean bias + KS | `validate.py --label p1.ks05.{bare,full}` | Hard floor + Δ KS ≤ -0.01 |
-| KS-06 | WR/TE backup-receiver edge cases | `validate.py --label p1.ks06.{bare,full}` | Hard floor + ≥0 KS delta |
-| KS-07 | RB rush_yards KS, TE/WR receiving KS | `validate.py --label p1.ks07.{bare,full}` | Hard floor + ≥0 KS delta |
-| KS-15 | QB pass_yards KS, WR receiving_yards KS | `validate.py --label p1.ks15.{bare,full}` | Hard floor + Δ KS ≤ -0.01 |
-| KS-29 | Aggregate rank_corr / KS sweep | `validate.py --label p1.ks29.s{003,005,008}.{bare,full}` (3×2=6 runs) | Hard floor + best-of-3; ≥0 KS delta |
-| KS-32 | `nfl_pass_attempts` 35-36 / `plays_per_team` 63-65 | `validate_passing.py` first; only then `validate.py --label p1.ks32.{bare,full}` if change motivated | Either "measured no change" OR hard floor + ≥0 KS delta |
-| Phase aggregate | All metrics vs. Phase-0 promoted defaults | `validate.py --label p1.aggregate.full --baseline defaults` | No regression on any TGT |
+| KS | Primary target metric | Bare-isolation invocation | Full-stack invocation | Promotion bar (D-30/D-31) |
+|----|----------------------|---------------------------|----------------------|---------------------------|
+| Wave-0 baseline pin | rank_corr/MAE/per-stat KS for ALL positions | `validate.py --baseline bare --label phase0.baseline.full` (no `--set`) | n/a (Arm B = current promoted defaults) | Wave 0 mandatory; freezes the comparison reference |
+| KS-01 | QB pass_yards KS, QB pass_yards mean bias | `validate.py --baseline bare --arm-b-base bare --label p1.ks01.bare` | `validate.py --baseline defaults --label p1.ks01.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-03 | WR/TE receiving_yards KS, RB rush_yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks03.bare` | `validate.py --baseline defaults --label p1.ks03.full` | Hard floor + ≥0 KS delta on WR/TE recv AND RB rush |
+| KS-04 | QB/WR receiving + passing yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks04.bare` | `validate.py --baseline defaults --label p1.ks04.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-05 | WR/TE receiving_yards mean bias + KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks05.bare` | `validate.py --baseline defaults --label p1.ks05.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-06 | WR/TE backup-receiver edge cases | `validate.py --baseline bare --arm-b-base bare --label p1.ks06.bare` | `validate.py --baseline defaults --label p1.ks06.full` | Hard floor + ≥0 KS delta |
+| KS-07 | RB rush_yards KS, TE/WR receiving KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks07.bare` | `validate.py --baseline defaults --label p1.ks07.full` | Hard floor + ≥0 KS delta |
+| KS-15 | QB pass_yards KS, WR receiving_yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks15.bare` | `validate.py --baseline defaults --label p1.ks15.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-29 | Aggregate rank_corr / KS sweep | 3 sweep × `--baseline bare --arm-b-base bare --set pff.team_context.enabled=true --set pff.team_context.pass_rate_sensitivity=<v>` | 3 sweep × `--baseline defaults --set ...` (full-stack overlay) | Hard floor + best-of-3; ≥0 KS delta |
+| KS-32 | `nfl_pass_attempts` 35-36 / `plays_per_team` 63-65 | `validate_passing.py` first; only then bare-isolation A/B if reduction motivated | Same | Either "measured no change" OR hard floor + ≥0 KS delta |
+| Phase aggregate | All metrics vs. Phase-0 baseline pin | `validate.py --baseline bare --label p1.aggregate.full` (no `--set`) | n/a | Δ Arm B (post-Phase-1 defaults) vs. Δ Arm B (Wave-0 phase0.baseline.full) — no regression on any TGT |
 
-### Validation cadence
+### Validation cadence — REVISED 2026-04-26 (HIGH-4)
 
-1. **Per KS commit:** TWO `validate.py` runs (isolation + full-stack), persistent ledger entries with the labels above.
-2. **End of phase:** ONE `validate.py` aggregate run with `--label p1.aggregate.full` comparing post-Phase-1 defaults vs. original Phase-0 baseline.
-3. **KS-32 special case:** Run `validate_passing.py` against the post-bug-fixes baseline FIRST. Branch on the measured `plays_per_team` and `nfl_pass_attempts`.
+1. **Wave 0 (Plan 00):** Extend `validate.py` with `--arm-b-base` flag. Pin `phase0.baseline.full` (Arm A = bare, Arm B = current promoted defaults) and `phase0.baseline.bare` (Arm A = bare, Arm B = bare; sanity check). Commit the harness extension AND both ledger entries before any KS work begins.
+2. **Per KS commit:** TWO `validate.py` runs (bare isolation + full-stack overlay) per the table above. Both use the new flag combos. Persistent ledger entries with the labels above. Hard floor evaluated per row.
+3. **End of phase (Plan 11):** ONE `validate.py` run with `--baseline bare --label p1.aggregate.full` (no `--set`) capturing post-Phase-1 promoted defaults' Arm B metrics. Plan 11 then reads BOTH `phase0.baseline.full` AND `p1.aggregate.full` from the ledger and computes the Arm B delta to evaluate against TGT-XX targets.
+4. **KS-32 special case:** Run `validate_passing.py` against the post-bug-fixes baseline FIRST. Branch on the measured `plays_per_team` and `nfl_pass_attempts`.
 
-### Ledger label scheme (D-27)
+### Ledger label scheme (D-27, REVISED 2026-04-26)
 
 ```
-p1.ks01.bare      | KS-01 isolation
-p1.ks01.full      | KS-01 full-stack
-p1.ks03.bare/full | KS-03 ditto
-... (one pair per KS)
-p1.ks29.s003.bare | KS-29 sweep, sensitivity=0.03, isolation
-p1.ks29.s003.full | KS-29 sweep, sensitivity=0.03, full-stack
+phase0.baseline.full | Wave-0 frozen reference (Arm A = bare, Arm B = pre-Phase-1 defaults)
+phase0.baseline.bare | Wave-0 self-consistency (Arm A = bare, Arm B = bare; sanity zero-delta)
+p1.ks01.bare         | KS-01 true isolation (--baseline bare --arm-b-base bare)
+p1.ks01.full         | KS-01 full-stack overlay (--baseline defaults)
+p1.ks03.bare/full    | KS-03 ditto
+... (one pair per KS, all using --arm-b-base bare for the .bare entry)
+p1.ks29.s003.bare    | KS-29 sweep, sensitivity=0.03, true isolation
+p1.ks29.s003.full    | KS-29 sweep, sensitivity=0.03, full-stack
 p1.ks29.s005.{bare,full}
 p1.ks29.s008.{bare,full}
-p1.ks32.measure   | KS-32 measurement-only (if no change motivated)
-p1.ks32.bare/full | KS-32 if reduction motivated
-p1.aggregate.full | End-of-phase aggregate
+p1.ks32.measure      | KS-32 measurement-only (if no change motivated)
+p1.ks32.bare/full    | KS-32 if reduction motivated
+p1.aggregate.full    | End-of-phase aggregate (Arm A = bare, Arm B = post-Phase-1 defaults; compare to phase0.baseline.full Arm B)
 ```
 
 ### Inspection

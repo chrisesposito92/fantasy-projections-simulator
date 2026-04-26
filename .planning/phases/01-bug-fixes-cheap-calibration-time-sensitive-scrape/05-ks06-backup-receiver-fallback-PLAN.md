@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 05
 type: execute
 wave: 3
-depends_on: ["01", "02"]
+depends_on: ["00", "01", "02"]
 files_modified:
   - src/fantasy_sim/data/preprocessor.py
   - src/fantasy_sim/data/player_builder.py
@@ -18,8 +18,11 @@ must_haves:
     - "Per D-19 sub-fix 1: team-bucket distribution in preprocessor.py is filtered to completed plays only (was including incompletions in the yards distribution)"
     - "Per D-19 sub-fix 2: backup-receiver fallback in play_resolver.py:271 uses rng.integers(5, 18) (mean ~11.5, matching NFL average) — was rng.integers(3, 12) (mean ~7)"
     - "Per D-19 sub-fix 3: MIN_PLAYER_PLAYS in player_builder.py:11 is 3 (was 5) — gives more players their own dist"
+    - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks06.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks06.full uses --baseline defaults"
+    - "Per D-41 (added 2026-04-26 — MEDIUM-3): test invocations use the actual `Preprocessor().compute_play_outcomes()` API at preprocessor.py:27/110 (NOT a non-existent `build_play_outcomes` function); see Task 1 test code for the canonical pattern"
     - "p1.ks06.bare and p1.ks06.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
-    - "Per D-25/D-26: KS-06 commit chain ships after KS-04 lands (file overlap with play_resolver.py — sequenced for clean line-anchor merging)"
+    - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-05): KS-06 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — backup receiver fallback fixes`"
+    - "Per D-26: KS-06 commit chain ships after KS-04 lands (file overlap with play_resolver.py — sequenced for clean line-anchor merging). Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-06"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
   artifacts:
@@ -134,7 +137,7 @@ def test_ks06_team_bucket_excludes_incompletions():
     """KS-06 D-19 sub-fix 1: team pass-yards bucket should only include completed plays."""
     import polars as pl
     import numpy as np
-    from fantasy_sim.data.preprocessor import build_play_outcomes  # or whatever the entry point is
+    from fantasy_sim.data.preprocessor import Preprocessor  # actual API; see preprocessor.py:27 (class) and :110 (compute_play_outcomes)
 
     # Build a minimal PBP dataframe with 5 completions (10 yds each) and 5 incompletions (0 yds)
     pbp = pl.DataFrame({
@@ -144,16 +147,18 @@ def test_ks06_team_bucket_excludes_incompletions():
         "down": [1] * 10, "ydstogo": [10] * 10,
         "yardline_100": [50] * 10,
         "score_differential": [0] * 10, "qtr": [2] * 10,
-        # ... other required columns; inspect existing fixtures for the schema
+        # ... other required columns; inspect existing fixtures (tests/conftest.py sample_pbp) for the schema
     })
-    outcomes = build_play_outcomes(pbp)
+    pre = Preprocessor()
+    outcomes = pre.compute_play_outcomes(pbp)
     # Sample many times from the bucket; mean should be 10 (completions only), not 5 (mixed)
     rng = np.random.default_rng(0)
+    # bucket can be any GameStateBucket present in outcomes; pick the first one or use a sentinel
     samples = [outcomes.sample_yards("pass", bucket=..., rng=rng) for _ in range(1000)]
     assert 9.0 <= np.mean(samples) <= 11.0, f"Bucket mean shifted: {np.mean(samples)}"
 ```
 
-NOTE: Adapt the test signature based on the actual `build_play_outcomes` (or equivalent) function in preprocessor.py. The test name and assertion semantics are what matter.
+NOTE (revised 2026-04-26 — MEDIUM-3 fix): The actual API is `Preprocessor().compute_play_outcomes(pbp)` at `src/fantasy_sim/data/preprocessor.py:27` (class) and `:110` (method). The original draft of this plan referenced a non-existent `build_play_outcomes()` entry point that Codex review flagged as wrong. The bucket lookup pattern follows the `tests/conftest.py::sample_pbp` fixture; consult existing tests in `tests/test_data/test_preprocessor.py` for the canonical bucket-construction shape.
 
 3. Run pytest:
 ```bash
@@ -267,19 +272,23 @@ Commit: `fix(01-05): KS-06 D-19 sub-fixes 2+3 — fallback range (5,18) and MIN_
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-30)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks06.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks06.bare"
 
+# Full-stack overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks06.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks06"
 ```
+
+NOTE: KS-06 changes module constants and a preprocessor filter — no `--set` flag needed; the change ships as the source code itself.
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks06.{bare,full}.log`.
 
@@ -304,6 +313,74 @@ Commit: `chore(01-05): record KS-06 A/B ledger entries (p1.ks06.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-05): record KS-06 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision documented.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-06 section)
+  </read_first>
+  <action>
+Per D-25 (revised), create the final promotion commit + SUMMARY.
+
+Determine promotion state from PROMOTION-NOTES `## KS-06` section per D-30 small-gain bar.
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-05-SUMMARY.md`:
+
+```markdown
+# Plan 05 Summary — KS-06 backup receiver fallback fixes
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 3
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `preprocessor.py` filter: team-bucket pass yards now exclude incompletions (D-19 sub-fix 1)
+2. `play_resolver.py` backup-receiver fallback uses `rng.integers(5, 18)` (mean ~11.5) instead of `rng.integers(3, 12)` (mean ~7) (D-19 sub-fix 2)
+3. `player_builder.py` `MIN_PLAYER_PLAYS = 3` (was 5) (D-19 sub-fix 3)
+4. New tests in `tests/test_data/test_preprocessor.py`, `tests/test_data/test_player_builder.py`, `tests/test_engine/test_play_resolver.py`
+
+## Codex MEDIUM-3 fix note
+
+Original Plan 05 referenced a non-existent `build_play_outcomes()` entry point.
+Replan corrects all test invocations to `Preprocessor().compute_play_outcomes()`
+(the actual API at `src/fantasy_sim/data/preprocessor.py:27`/`:110`).
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | WR/TE recv KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|-----------------|-------------|----------------|
+| p1.ks06.bare | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks06.full | ... | ... | ... | ✅/❌ | ✅/❌ |
+```
+
+Commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-05-SUMMARY.md
+git commit -m "feat(01-05): KS-06 ${PROMO_STATE} — backup receiver fallback fixes
+
+Wave 3. Three sub-fixes per D-19: completed-play filter on team buckets,
+backup fallback range raised to (5,18), MIN_PLAYER_PLAYS lowered to 3.
+
+Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00.
+Test invocations corrected to Preprocessor().compute_play_outcomes()
+(was wrong API name in original plan — Codex MEDIUM-3 fix)."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-05-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-05-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-05): KS-06 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-06 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>

@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 06
 type: execute
 wave: 3
-depends_on: ["01", "02"]
+depends_on: ["00", "01", "02"]
 files_modified:
   - src/fantasy_sim/engine/play_resolver.py
   - src/fantasy_sim/data/player_builder.py
@@ -235,19 +235,23 @@ Commit: `feat(01-06): KS-07 player_builder.py uses positional RZ_CATCH_RATE_MODI
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-30)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks07.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks07.bare"
 
+# Full-stack overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks07.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks07"
 ```
+
+NOTE: KS-07 changes module constants and a per-player override — no `--set` flag needed; the change ships as the source code itself.
 
 Capture logs to `.../logs/p1.ks07.{bare,full}.log`.
 
@@ -272,6 +276,59 @@ Commit: `chore(01-06): record KS-07 A/B ledger entries (p1.ks07.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-06): record KS-07 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision documented.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-07 section)
+  </read_first>
+  <action>
+Per D-25 (revised), create the final promotion commit + SUMMARY. Determine state from PROMOTION-NOTES `## KS-07` section per D-30 small-gain bar.
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-06-SUMMARY.md`:
+
+```markdown
+# Plan 06 Summary — KS-07 positional RZ catch rate
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 3
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `RZ_CATCH_RATE_MODIFIERS = {"WR": 0.92, "TE": 0.95, "RB": 0.85}` per D-20
+2. Per-player override in `player_builder.py:520` (≥10 RZ targets) preserved
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | RB rush_yards KS Δ | TE recv_yards KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|---------------------|---------------------|-------------|----------------|
+| p1.ks07.bare | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks07.full | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+```
+
+Commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-06-SUMMARY.md
+git commit -m "feat(01-06): KS-07 ${PROMO_STATE} — positional RZ catch rate (WR 0.92, TE 0.95, RB 0.85)
+
+Wave 3. Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-06-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-06-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-06): KS-07 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-07 promotion-state commit landed; SUMMARY captures the decision.</done>
 </task>
 
 </tasks>

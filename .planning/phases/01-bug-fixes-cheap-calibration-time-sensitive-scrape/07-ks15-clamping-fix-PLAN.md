@@ -3,7 +3,7 @@ phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 07
 type: tdd
 wave: 4
-depends_on: ["01", "02", "03", "04", "05", "06"]
+depends_on: ["00", "01", "02", "03", "04", "05", "06"]
 files_modified:
   - src/fantasy_sim/engine/play_resolver.py
   - tests/test_engine/test_play_resolver.py
@@ -13,23 +13,26 @@ must_haves:
   truths:
     - "Per D-14: yards path uses min(yard_line, sample) for clamping; the un-clamped sample drives the TD probability gate (i.e., raw_sample > yard_line means a would-be TD even if final yards = yard_line)"
     - "Per D-15: CATCH_YARDS_BOOST is dropped to 0 in the same change (KS-04's tuned value becomes archival)"
+    - "Per D-15b (added 2026-04-26 — MEDIUM-4 from 01-REVIEWS.md): the legacy non-roster paths in _resolve_pass (lines 302-321) and _resolve_run (lines 392-410) are patched to use the same min(yard_line, sample) + would-be-TD detection pattern. Tests added for both roster and non-roster paths. Codex MEDIUM-4 flagged that keeping two divergent clamping semantics in the same module is a foot-gun even if the validation harness only hits the roster path."
     - "PASS_TD_GATE and RUN_TD_GATE calibration unchanged (regression guard from KS-01 tests still passes)"
+    - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks15.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks15.full uses --baseline defaults"
     - "p1.ks15.bare and p1.ks15.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31"
-    - "Per D-25/D-26: KS-15 commit chain ships after the post-KS-01/02/03/04/05/06/07 baseline lands (dependency-mandatory order; final RZ-stack commit)"
+    - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-07): KS-15 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — field-position clamping fix + CATCH_YARDS_BOOST=0`"
+    - "Per D-26: KS-15 commit chain ships after the post-KS-01/02/03/04/05/06/07 baseline lands (dependency-mandatory order; final RZ-stack commit). Plan 00 must land first."
     - "Per D-33: TDD-first for KS-15 RZ-stack work — RED tests + PASS_TD_GATE / RUN_TD_GATE regression guards committed first"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
   artifacts:
     - path: "src/fantasy_sim/engine/play_resolver.py"
-      provides: "Field-position clamping fix per D-14 + CATCH_YARDS_BOOST = 0 per D-15"
+      provides: "Field-position clamping fix per D-14 + CATCH_YARDS_BOOST = 0 per D-15; legacy non-roster paths patched per D-15b"
       contains: "CATCH_YARDS_BOOST = 0"
     - path: "tests/test_engine/test_play_resolver.py"
-      provides: "RED→GREEN tests for KS-15: would-be-TD detection from raw_sample, clamping preserves yard_line as max yards, no double-counted yards regression"
+      provides: "RED→GREEN tests for KS-15: would-be-TD detection from raw_sample, clamping preserves yard_line as max yards, no double-counted yards regression, legacy-path semantics align with roster-path semantics"
       contains: "def test_ks15_"
   key_links:
-    - from: "_resolve_pass _resolve_run"
+    - from: "_resolve_pass _resolve_run (roster path AND legacy non-roster path)"
       to: "the TD-gate decision"
       via: "raw_sample (pre-clamp) — if raw_sample > yard_line, the play is a would-be TD that goes through the gate"
-      pattern: "raw_sample > state.yard_line"
+      pattern: "would_be_td = "
 ---
 
 <objective>
@@ -113,6 +116,8 @@ KS-15 must:
     - Test 5 (`test_ks15_pass_td_gate_calibration_unchanged`): regression — same as KS-01 Test 3 (re-run 100k trials at yard_line=3, "pass", assert rate ∈ [0.54, 0.56]).
     - Test 6 (`test_ks15_run_long_carry_outside_rz_yields_td`): state at yard_line=20 (just outside RZ for run; or state at yard_line=25), RB dist samples 30; assert all TDs.
     - Test 7 (`test_ks15_run_safety_branch_preserved`): state at yard_line=98 (own 2), RB dist samples 100 (massive loss / safety scenario); assert is_safety=True is detected before any clamping.
+    - **Test 8 (`test_ks15_legacy_pass_path_preserves_distribution`) — NEW per D-15b (MEDIUM-4):** call `_resolve_pass` with `roster=None` (forces the legacy non-roster branch at lines 302-321) at yard_line=30 with `play_outcomes` that returns 35-yard pass samples; assert the observed yardage distribution preserves values up to and including 30 (TD scored), not arbitrarily clamped. Specifically: over 1000 trials, the TD rate is ~100% AND the recorded yards are NOT capped at some pre-fix lower value.
+    - **Test 9 (`test_ks15_legacy_run_path_preserves_distribution`) — NEW per D-15b (MEDIUM-4):** symmetric test for `_resolve_run` legacy path at lines 392-410 with `roster=None`, yard_line=25, RB-bucket sampler returns 30 yards. Assert TDs land at 100% rate; safety branch still fires for yard_line=98 + raw_yards=100.
   </behavior>
   <action>
 Append to `tests/test_engine/test_play_resolver.py` under `# === KS-15: field-position clamping fix ===`:
@@ -154,6 +159,21 @@ def test_ks15_run_long_carry_outside_rz_yields_td():
 def test_ks15_run_safety_branch_preserved():
     """state.yard_line=98 (own 2), RB raw_yards=100 → is_safety=True (clamping must not mask this)."""
     pass
+
+def test_ks15_legacy_pass_path_preserves_distribution():
+    """KS-15 D-15b (MEDIUM-4): legacy non-roster _resolve_pass path (roster=None) preserves
+    distribution semantics consistent with the roster path. yard_line=30, sampler returns 35,
+    over 1000 trials the play scores TDs and does not silently truncate to a smaller value."""
+    # Use a play_outcomes mock or fixture whose sample_yards("pass", bucket, rng) returns 35
+    # _resolve_pass(state, play_outcomes, turnover_rates, rng, roster=None, ...) must produce TD outside RZ
+    # Assert TD rate ~100% AND yards never < state.yard_line (they may equal state.yard_line — that's the TD)
+    pass
+
+def test_ks15_legacy_run_path_preserves_distribution():
+    """KS-15 D-15b (MEDIUM-4): legacy non-roster _resolve_run path (roster=None) preserves
+    semantics. yard_line=25, RB sampler returns 30; assert TD rate ~100%. Also test
+    yard_line=98 + raw_yards=100 still triggers is_safety=True."""
+    pass
 ```
 
 Run pytest:
@@ -176,6 +196,8 @@ Commit: `test(01-07): add failing tests for KS-15 field-position clamping fix`
     - `tests/test_engine/test_play_resolver.py` contains `def test_ks15_pass_td_gate_calibration_unchanged`
     - `tests/test_engine/test_play_resolver.py` contains `def test_ks15_run_long_carry_outside_rz_yields_td`
     - `tests/test_engine/test_play_resolver.py` contains `def test_ks15_run_safety_branch_preserved`
+    - `tests/test_engine/test_play_resolver.py` contains `def test_ks15_legacy_pass_path_preserves_distribution` (D-15b legacy path test)
+    - `tests/test_engine/test_play_resolver.py` contains `def test_ks15_legacy_run_path_preserves_distribution` (D-15b legacy path test)
     - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks15_catch_yards_boost_is_zero` exits non-zero (RED — boost is still 1.5)
     - `git log -1 --pretty=%s` matches `test(01-07): add failing tests for KS-15`
   </acceptance_criteria>
@@ -291,17 +313,75 @@ else:
     is_td = False
 ```
 
-4. Optionally: leave `_clamp_yards` in place (it may have other callers in the legacy / no-roster fallback path on lines 393-410). Verify with grep before removing.
+4. **NEW per D-15b (MEDIUM-4):** Apply the same min(yard_line, sample) + would-be-TD detection to the legacy non-roster paths. The current legacy paths use the old `_clamp_yards`-based semantics:
 
-5. Run pytest:
+```python
+# CURRENT legacy _resolve_pass (lines ~302-321 — no-roster fallback):
+team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
+team_yards = _apply_home_field(team_yards, is_home, rng)
+yards = _clamp_yards(state.yard_line, team_yards)
+
+is_complete = yards > 0
+is_td = (state.yard_line - yards) <= 0
+# ...
+
+# NEW legacy _resolve_pass (KS-15 D-15b):
+team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
+raw_yards = _apply_home_field(team_yards, is_home, rng)
+
+would_be_td = (state.yard_line - raw_yards) <= 0
+if would_be_td:
+    yards = state.yard_line
+    is_td = True
+else:
+    yards = raw_yards
+    is_td = False
+
+is_complete = yards > 0  # legacy semantic preserved (any positive yards = completion)
+# ... (fumble check, return)
+```
+
+```python
+# CURRENT legacy _resolve_run (lines ~392-410 — no-roster fallback):
+raw_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
+raw_yards = _apply_home_field(raw_yards, is_home, rng)
+is_safety = (state.yard_line - raw_yards) >= 100
+yards = _clamp_yards(state.yard_line, raw_yards)
+is_td = (state.yard_line - yards) <= 0
+# ...
+
+# NEW legacy _resolve_run (KS-15 D-15b):
+raw_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
+raw_yards = _apply_home_field(raw_yards, is_home, rng)
+
+is_safety = (state.yard_line - raw_yards) >= 100
+would_be_td = (state.yard_line - raw_yards) <= 0 and not is_safety
+
+if would_be_td:
+    yards = state.yard_line
+    is_td = True
+elif is_safety:
+    yards = -(99 - state.yard_line)  # max loss; matches existing _clamp_yards behavior for safety
+    is_td = False
+else:
+    yards = raw_yards
+    is_td = False
+# ... (fumble check, return — preserve is_safety in PlayResult)
+```
+
+NOTE: The legacy paths do NOT route through the RZ TD gate — they have no roster/receiver/rusher to look up `td_factor` on. Per Codex MEDIUM-4 review note, the legacy paths only run when `roster is None`, which the current validation harness does not exercise; the change is for codebase-consistency hygiene. If a future feature reintroduces non-roster execution, the engineer can add a roster-less RZ-gate variant separately.
+
+5. After both roster and legacy paths are patched, `_clamp_yards` may have no remaining callers in `_resolve_pass`/`_resolve_run`. Run `grep -n "_clamp_yards" src/fantasy_sim/engine/play_resolver.py` to confirm. If unused, leave the helper definition in place (it's small and may be useful for future tests) but add a comment marking it as deprecated for the resolve paths.
+
+6. Run pytest:
 ```bash
 uv run pytest tests/test_engine/test_play_resolver.py -v -k "ks01 or ks04 or ks06 or ks07 or ks15"
 uv run pytest tests/ -v
 ```
 
-EXPECTED: All tests pass (KS-01 calibration tests still green per regression guard; KS-04 boost-zero test now passes since boost=0; KS-15 all tests pass).
+EXPECTED: All tests pass (KS-01 calibration tests still green per regression guard; KS-04 boost-zero test now passes since boost=0; KS-15 roster path AND legacy path tests pass).
 
-Commit: `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_BOOST=0 per D-15`
+Commit: `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_BOOST=0 per D-15 + legacy paths per D-15b`
   </action>
   <verify>
     <automated>uv run pytest tests/test_engine/test_play_resolver.py -v -k "ks01 or ks04 or ks06 or ks07 or ks15" && uv run pytest tests/ -v 2>&1 | tail -5</automated>
@@ -309,9 +389,11 @@ Commit: `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_B
   <acceptance_criteria>
     - `grep -c "CATCH_YARDS_BOOST = 0$" src/fantasy_sim/engine/play_resolver.py` returns 1
     - `grep -c "CATCH_YARDS_BOOST = 1.5" src/fantasy_sim/engine/play_resolver.py` returns 0
-    - `grep -c "would_be_td = " src/fantasy_sim/engine/play_resolver.py` returns at least 2 (one in _resolve_pass, one in _resolve_run)
+    - `grep -c "would_be_td = " src/fantasy_sim/engine/play_resolver.py` returns at least 4 (one in roster-path _resolve_pass, one in roster-path _resolve_run, one in legacy _resolve_pass per D-15b, one in legacy _resolve_run per D-15b)
     - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks15_catch_yards_boost_is_zero` exits 0
     - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks15_pass_td_gate_calibration_unchanged` exits 0 (regression guard still passes)
+    - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks15_legacy_pass_path_preserves_distribution` exits 0 (legacy path patched per D-15b)
+    - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks15_legacy_run_path_preserves_distribution` exits 0 (legacy path patched per D-15b)
     - `uv run pytest tests/test_engine/test_play_resolver.py -v -k "ks01 or ks04 or ks15"` exits 0 (no RZ-stack regression)
     - `uv run pytest tests/ -v 2>&1 | tail -5` shows `passed` with no `failed`
     - `git log -1 --pretty=%s` matches `feat(01-07): KS-15`
@@ -328,19 +410,23 @@ Commit: `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_B
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29:
+Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
 
 ```bash
+# True isolation
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --label "p1.ks15.bare"
+  --baseline bare --arm-b-base bare --label "p1.ks15.bare"
 
+# Full-stack overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
   --baseline defaults --label "p1.ks15.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks15"
 ```
+
+NOTE: KS-15 changes module constants and resolve-function bodies — no `--set` flag needed; the change ships as the source code itself.
 
 Capture logs to `.../logs/p1.ks15.{bare,full}.log`.
 
@@ -365,6 +451,76 @@ Commit: `chore(01-07): record KS-15 A/B ledger entries (p1.ks15.{bare,full})`
     - `git log -1 --pretty=%s` matches `chore(01-07): record KS-15 A/B`
   </acceptance_criteria>
   <done>Both ledger entries recorded; promotion decision documented; KS-04 partial-progress fallback active if KS-15 BLOCKED.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Promotion-state commit + SUMMARY (per D-25 revised)</name>
+  <files>(no source modifications)</files>
+  <read_first>
+    - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md (## KS-15 section from Task 3)
+  </read_first>
+  <action>
+Per D-25 (revised), create the final promotion commit + SUMMARY.
+
+Determine promotion state from PROMOTION-NOTES `## KS-15` section per D-31 medium-large bar.
+
+Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-07-SUMMARY.md`:
+
+```markdown
+# Plan 07 Summary — KS-15 field-position clamping fix
+
+**Promotion state:** <PROMOTED|SHIPPED-NO-OP|BLOCKED>
+**Phase:** 1
+**Wave:** 4 (final RZ-stack commit)
+**Final commit:** $(git log -1 --pretty=%H)
+
+## What shipped
+
+1. `CATCH_YARDS_BOOST = 0` in `play_resolver.py` (D-15 — boost obviated by clamping fix)
+2. Roster-path `_resolve_pass` and `_resolve_run` use `min(yard_line, sample)` for yards while un-clamped sample drives the TD gate (D-14)
+3. Legacy non-roster `_resolve_pass` (lines 302-321) and `_resolve_run` (lines 392-410) patched with the same `min(yard_line, raw_yards)` + would-be-TD pattern (D-15b — addresses Codex MEDIUM-4)
+4. 9 KS-15 tests (7 roster-path + 2 legacy-path)
+
+## Codex MEDIUM-4 fix note
+
+Original Plan 07 only patched the roster paths. Codex review flagged that
+keeping two divergent clamping semantics in the same module is a foot-gun
+even if the validation harness only exercises the roster path. Resolution:
+patch BOTH paths with the same semantics; add 2 new tests (Test 8 / Test 9)
+that exercise the legacy non-roster code path explicitly.
+
+## Ledger results
+
+| Entry | rank_corr Δ | MAE Δ | QB pass_yards KS Δ | WR recv_yards KS Δ | Hard floor? | Promotion bar? |
+|-------|-------------|-------|---------------------|---------------------|-------------|----------------|
+| p1.ks15.bare | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+| p1.ks15.full | ... | ... | ... | ... | ✅/❌ | ✅/❌ |
+```
+
+Commit:
+
+```bash
+PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
+git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-07-SUMMARY.md
+git commit -m "feat(01-07): KS-15 ${PROMO_STATE} — field-position clamping fix + CATCH_YARDS_BOOST=0 + legacy paths
+
+Wave 4 (final RZ-stack commit). Roster path AND legacy non-roster path
+both now use min(yard_line, sample) + would-be-TD detection per D-14.
+CATCH_YARDS_BOOST set to 0 per D-15 (KS-04 boost obviated).
+
+Bare-isolation A/B uses --baseline bare --arm-b-base bare per Plan 00.
+Legacy paths patched per D-15b (Codex MEDIUM-4 fix)."
+```
+  </action>
+  <verify>
+    <automated>test -f .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-07-SUMMARY.md && grep -cE "PROMOTED|SHIPPED-NO-OP|BLOCKED" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-07-SUMMARY.md</automated>
+  </verify>
+  <acceptance_criteria>
+    - SUMMARY exists with explicit promotion state header
+    - SUMMARY's ledger results table is filled in
+    - `git log -1 --pretty=%s` matches `feat(01-07): KS-15 PROMOTED|SHIPPED-NO-OP|BLOCKED`
+  </acceptance_criteria>
+  <done>KS-15 promotion-state commit landed; SUMMARY captures the decision and the legacy-paths fix rationale.</done>
 </task>
 
 </tasks>
