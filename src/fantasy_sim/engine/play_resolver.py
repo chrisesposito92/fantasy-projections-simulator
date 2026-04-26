@@ -30,6 +30,23 @@ _KS01_PRESERVE_DIST = (
     .get("enabled", False)
 )
 
+# Phase 1 KS-04 feature flag (Cycle 3 D-45). When enabled, switches the
+# CATCH_YARDS_BOOST policy from "unconditional +1 outside the RZ" to
+# "conditional +`_KS04_BOOST_VALUE` only when the un-clamped sample would
+# have been clipped by `_clamp_yards`" per D-11/D-12. The new path is the
+# Arm B genuine code-path flip; the legacy path (flag off) keeps the
+# pre-Phase-1 unconditional `+1` behavior so Arm A is preserved.
+_KS04_CONDITIONAL_BOOST = (
+    get_phase1_ks_flags()
+    .get("ks04_conditional_catch_boost", {})
+    .get("enabled", False)
+)
+_KS04_BOOST_VALUE = float(
+    get_phase1_ks_flags()
+    .get("ks04_conditional_catch_boost", {})
+    .get("boost_value", 1.5)
+)
+
 # Average clock runoff in seconds — calibrated for ~65 plays/team/game
 CLOCK_RUN = 35
 CLOCK_PASS_COMPLETE = 30
@@ -39,10 +56,14 @@ CLOCK_SACK = 35
 # Calibration: per-player yards distributions are field-position-independent,
 # but the sim samples them at specific field positions where _clamp_yards()
 # truncates long catches (e.g., a 30-yard catch at the 20 is clamped to 20).
-# This systematically reduces yards/completion by ~1-2 yards vs the
-# distribution mean.  A small additive boost compensates without changing
-# the distribution shape or game physics.
-CATCH_YARDS_BOOST = 1
+# This systematically reduces yards/completion vs the distribution mean.
+# A conditional additive boost compensates without changing the distribution
+# shape or game physics — when KS-04 is enabled (D-11), the boost is applied
+# only when the un-clamped sample would have been clipped by _clamp_yards
+# (i.e., raw_sample > yard_line). KS-15 (planned) will obviate this entirely.
+# The constant value reflects D-12 (`+1.5`); the legacy unconditional code
+# path (flag off) hardcodes `+1` to preserve pre-Phase-1 Arm A behavior.
+CATCH_YARDS_BOOST = 1.5
 
 # Sack yardage loss distribution
 SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
@@ -273,15 +294,37 @@ def _resolve_pass(
         if is_complete:
             # Use player's receiving yards dist if available, otherwise team dist
             full_dist = receiver.outcomes.receiving_yards_dist
-            # Only apply boost outside the red zone — inside the 20,
-            # the TD gate controls scoring and the boost would inflate TDs.
-            boost = CATCH_YARDS_BOOST if state.yard_line > 20 else 0
+            # Sample raw yards first so the KS-04 conditional branch (D-11)
+            # can inspect the un-clamped value before deciding whether to add
+            # the boost. The legacy code added the boost unconditionally
+            # outside the RZ; KS-04 conditions on the clamp actually firing.
             if full_dist is not None and len(full_dist) > 0:
-                player_yards = int(rng.choice(full_dist)) + boost
+                raw_sample = int(rng.choice(full_dist))
             else:
                 # Fallback: sample from team distribution (only when player lacks personal dist)
                 team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
-                player_yards = (team_yards if team_yards > 0 else int(rng.integers(3, 12))) + boost
+                raw_sample = team_yards if team_yards > 0 else int(rng.integers(3, 12))
+
+            # KS-04 D-11 (Cycle 3 D-45): when the flag is on, apply boost
+            # ONLY when _clamp_yards would actually fire (raw_sample >
+            # yard_line) AND we are outside the red zone. Inside the RZ the
+            # TD gate controls scoring and the boost would inflate TDs.
+            # When the flag is off, fall back to the legacy unconditional
+            # `+1` outside-RZ boost so Arm A is bit-for-bit identical to
+            # pre-Phase-1 behavior (preserves the genuine two-arm A/B).
+            if _KS04_CONDITIONAL_BOOST:
+                if state.yard_line > 20 and raw_sample > state.yard_line:
+                    player_yards = raw_sample + _KS04_BOOST_VALUE
+                else:
+                    player_yards = raw_sample
+                # `_apply_home_field` and `_clamp_yards` expect ints; round
+                # at the boundary because _KS04_BOOST_VALUE is a float (1.5).
+                if isinstance(player_yards, float):
+                    player_yards = int(round(player_yards))
+            else:
+                # Legacy unconditional boost (`+1` outside RZ, 0 inside).
+                legacy_boost = 1 if state.yard_line > 20 else 0
+                player_yards = raw_sample + legacy_boost
 
             yards = _apply_home_field(player_yards, is_home, rng)
             yards = _clamp_yards(state.yard_line, yards)

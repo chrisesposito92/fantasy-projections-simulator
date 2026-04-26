@@ -1115,28 +1115,23 @@ def test_ks04_boost_zero_in_red_zone(monkeypatch):
 
 
 def test_ks04_boost_conditional_when_clamp_fires(monkeypatch):
-    """D-11: when raw_sample > yard_line, boost IS applied before _clamp_yards.
+    """D-11: when raw_sample > yard_line (and outside RZ), boost IS applied
+    before _clamp_yards.
 
     Captures the input to `_clamp_yards` via monkeypatch and verifies the
-    BRANCH was taken. With dist=[25] and yard_line=10:
-    - raw_sample = 25
-    - 25 > 10 → boost fires; player_yards = 25 + 1.5 = 26.5 (or rounded
-      depending on implementation choice — the spec allows a float-to-int
-      coercion at the boundary)
-    - _clamp_yards receives a value >= 25 (the boost may round; we tolerate
-      either ceil/floor/round). Without boost it would be exactly 25.
+    BRANCH was taken. With dist=[35] and yard_line=30 (outside the RZ so the
+    `state.yard_line > 20` half of the conditional fires):
+    - raw_sample = 35
+    - 35 > 30 → clamp WOULD fire; AND yard_line > 20 → outside RZ check
+      passes; so boost fires. player_yards = 35 + 1.5 = 36.5; coerced to int
+      via `round` (banker's rounding) → 36.
+    - is_home=False removes home-field +1 noise so every clamp call sees
+      exactly the post-boost integer.
+    - _clamp_yards receives 36 (boost fired) instead of 35 (no boost).
 
-    The test asserts the recorded `_clamp_yards` input is in {25, 26, 27}
-    (raw + nothing = 25, raw + boost = 26 or 27 depending on home-field +
-    rounding) BUT critically NEVER < 25. With the OLD unconditional policy +
-    OLD constant `+1` it could be 25 or 26 (boost int-added). With the NEW
-    conditional policy + NEW `+1.5`, it's 25 (no clamp would fire — wait, 25
-    > 10 SO clamp WOULD fire) → 26 or 27. So this test detects whether the
-    boost branch was taken when raw > yard_line.
-
-    Easiest deterministic check: at minimum, observe at least one trial
-    where the recorded clamp input is strictly > 25 (the raw sample), proving
-    the boost was added on top of raw before clamp.
+    Without the new conditional branch (i.e., if the boost-on-clamp-fires
+    semantics were missing on the flag-on path), every recorded input would
+    be exactly 35.
     """
     from fantasy_sim.engine import play_resolver as pr
     monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", True)
@@ -1152,24 +1147,24 @@ def test_ks04_boost_conditional_when_clamp_fires(monkeypatch):
     monkeypatch.setattr(pr, "_clamp_yards", _spy_clamp)
 
     rng = np.random.default_rng(23)
-    roster = _make_ks04_wr_roster(receiving_yards_dist=[25, 25, 25, 25, 25])
+    roster = _make_ks04_wr_roster(receiving_yards_dist=[35, 35, 35, 35, 35])
     outcomes = make_outcomes(pass_yards=[10])
     rates = make_turnover_rates()
 
     for _ in range(200):
-        state = make_state(yard_line=10)  # raw 25 > 10 → boost fires
+        state = make_state(yard_line=30)  # outside RZ; raw 35 > 30 → boost fires
         # is_home=False to remove home-field noise — every clamp input is
         # exactly raw + boost (or raw if no boost).
         resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
 
     assert captured_clamp_inputs, "Expected at least one _clamp_yards call"
-    # All raw samples are 25; boost adds 1.5 → 26 or 27 after coercion.
+    # All raw samples are 35; boost adds 1.5 → 36 or 37 after coercion.
     # Without the conditional branch (i.e., if boost never fires when it
-    # should), every recorded input would be exactly 25.
-    boosted = [v for v in captured_clamp_inputs if v > 25]
+    # should), every recorded input would be exactly 35.
+    boosted = [v for v in captured_clamp_inputs if v > 35]
     assert len(boosted) > 0, (
         f"_clamp_yards inputs = {sorted(set(captured_clamp_inputs))}; "
-        f"expected at least some > 25 proving boost fired before clamp "
-        f"(D-11). All inputs ≤ 25 means the conditional boost branch was "
+        f"expected at least some > 35 proving boost fired before clamp "
+        f"(D-11). All inputs ≤ 35 means the conditional boost branch was "
         f"never taken."
     )
