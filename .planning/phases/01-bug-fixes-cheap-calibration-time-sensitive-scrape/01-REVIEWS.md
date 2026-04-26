@@ -72,6 +72,24 @@ cycles:
       - 09-ks21-altline-scrape-PLAN.md
       - 10-ks32-clock-runoff-measure-PLAN.md
       - 11-phase1-aggregate-validation-PLAN.md
+  - cycle: 5
+    reviewers: [codex]
+    reviewed_at: 2026-04-26
+    model: gpt-5.4
+    bundle_commit: 5fa72f3
+    plans_reviewed:
+      - 00-validation-harness-and-phase0-baseline-PLAN.md
+      - 01-ks01-rz-tdgate-fix-PLAN.md
+      - 02-ks04-catch-yards-boost-PLAN.md
+      - 03-ks03-matchup-coverage-anchor-PLAN.md
+      - 04-ks05-props-engine-bugs-PLAN.md
+      - 05-ks06-backup-receiver-fallback-PLAN.md
+      - 06-ks07-positional-rz-catch-rate-PLAN.md
+      - 07-ks15-clamping-fix-PLAN.md
+      - 08-ks29-team-context-enable-PLAN.md
+      - 09-ks21-altline-scrape-PLAN.md
+      - 10-ks32-clock-runoff-measure-PLAN.md
+      - 11-phase1-aggregate-validation-PLAN.md
 ---
 
 # Cross-AI Plan Review — Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape
@@ -519,3 +537,84 @@ Phase 1 is **NOT YET safe to execute**. The Cycle-3 fix is good, but the broader
 3. Re-run `gsd-review --phase 1 --codex` for Cycle 5 to confirm convergence.
 
 Per the workflow's max-cycles escalation guidance: the convergence-loop count is now at 4 cycles. The remaining gap is purely doc-consistency, not plan-structure or harness-design, so the user can reasonably choose between (a) one more cycle to drive HIGH count to 0, or (b) escalating with explicit conditional approval — the executor must read the corrected `01-CONTEXT.md` before touching `09-ks21-altline-scrape-PLAN.md`. **Recommended:** path (a) — one more cycle is cheap and the doc-level inconsistency in a "MUST read" file is a real execution risk for any future agent that picks Plan 09 cold.
+
+---
+
+## Cycle 5 Review (Codex / gpt-5.4) — Post-CONTEXT-Fix Verification
+
+External reviewer: **OpenAI Codex CLI (gpt-5.4)**, invoked at commit `5fa72f3` with the FULL post-Cycle-4-fix Phase 1 bundle (PROJECT.md, REQUIREMENTS.md, ROADMAP.md Phase 1 section, STATE.md, the updated `01-CONTEXT.md` / `01-RESEARCH.md` / `01-VALIDATION.md`, and all 12 PLAN.md files). Codex was explicitly framed as a Cycle 5 verification pass: confirm the Cycle-4 HIGH (`01-CONTEXT.md:244` + `01-CONTEXT.md:292` doc rot, plus `01-VALIDATION.md:120` overclaim) is fully resolved post-fix at commit `5fa72f3`, confirm the Cycle-4 MEDIUM (STATE.md frontmatter inconsistency) is resolved or documented, and surface any new issues introduced by the corrective edit.
+
+Bundle commit in scope:
+- `5fa72f3` — `docs(01): close Codex Cycle-4 HIGH (CONTEXT.md doc rot + STATE consistency)`
+
+### Codex Review (Cycle 5)
+
+> Reviewed at `5fa72f3`. The Cycle-4 HIGH is FULLY RESOLVED. The Cycle-4 MEDIUM (STATE.md frontmatter `status: executing`) survives — the `5fa72f3` fix updated `stopped_at` and the body Session Continuity but left the YAML `status` field unchanged. No new HIGH/MEDIUM/LOW were introduced by the fix.
+
+#### Findings
+
+- **`[MEDIUM]`** `STATE.md:5` still says `status: executing`, while `STATE.md:29` says `Plan: 0 of 12` and `STATE.md:30` says `Status: Ready to execute`. The reviewer still considers that internally inconsistent. If any tool keys off YAML only, it can route as if execution has already started. **Recommended fix:** normalize the frontmatter `status` to a pre-execution value (e.g. `ready_to_execute`, `planned`, or whatever the state machine expects) so it matches the body and `completed_plans: 0`.
+
+#### Verdict
+
+- The Cycle 4 HIGH is **FULLY RESOLVED**. `01-CONTEXT.md:244` now uses `prior_core8` / `prior_alt6` and explicitly cites the HIGH-3 reconciliation; `01-CONTEXT.md:292` correctly frames the Tuesday marker as a future follow-up rather than current reality; `01-VALIDATION.md:120` accurately records that Cycle 4 reconciled `01-CONTEXT.md`.
+- No remaining live prescriptive `open_*`, `Tuesday 12pm ET`, or "fetch writes parquet" guidance was found in the canonical execution bundle (`01-CONTEXT.md`, `01-RESEARCH.md`, `01-VALIDATION.md`, and the 12 plan files). The remaining hits in the bundle (e.g. `01-RESEARCH.md:502`, `09-ks21-altline-scrape-PLAN.md:656`, `11-phase1-aggregate-validation-PLAN.md:437`) are all clearly historical/reconciliation context, not live guidance.
+- `5fa72f3` did NOT introduce any new HIGH/MEDIUM/LOW issues in the doc bundle. It fixed the canonical CONTEXT/VALIDATION drift and aligned `stopped_at`; it just did not fully close the previously flagged `STATE.md` `status` mismatch.
+- **Current state: 0 HIGH, 1 MEDIUM.** The bundle is safe to execute from a planning/instructions standpoint, but it is not at a strict fully-clean convergence state until `STATE.md` frontmatter `status` is aligned with "Ready to execute."
+
+### Cycle 5 Disposition
+
+| Concern | Status | Evidence (file:line) |
+|---|---|---|
+| Cycle-4 HIGH: `01-CONTEXT.md:244` Reusable-Assets `open_*` labels | **FULLY RESOLVED** | [`01-CONTEXT.md:244`](./01-CONTEXT.md) — now reads `prior_core8`, `close_alt6`, `prior_alt6` with explicit HIGH-3 citation |
+| Cycle-4 HIGH: `01-CONTEXT.md:292` "D-02 picks Tuesday 12pm ET" follow-up | **FULLY RESOLVED** | [`01-CONTEXT.md:292`](./01-CONTEXT.md) — rewritten as "Real Tuesday-line-release marker follow-up" framing API `previous_timestamp` honestly |
+| Cycle-4 HIGH: `01-VALIDATION.md:120` overclaim of HIGH-3 closure | **FULLY RESOLVED** | [`01-VALIDATION.md:120`](./01-VALIDATION.md) — sign-off updated to "Cycle 3 RESEARCH.md reconciled; Cycle 4 CONTEXT.md reconciled" with explicit list of remaining REVISED/history references |
+| Cycle-4 MEDIUM: STATE.md frontmatter `stopped_at` inconsistency | **FULLY RESOLVED** | [`STATE.md:6`](../../STATE.md) — `stopped_at: Phase 1 planning complete`; body Session Continuity aligned at line 104 |
+| Cycle-4 MEDIUM: STATE.md frontmatter `status: executing` mismatch | **NOT RESOLVED** (re-flagged by Codex) | [`STATE.md:5`](../../STATE.md) `status: executing` vs. [`STATE.md:30`](../../STATE.md) `Status: Ready to execute`. User pre-empted this in the Cycle 5 framing as escalation territory rather than HIGH; Codex confirmed it is MEDIUM-level. |
+| Bundle-wide audit for stale `open_*` / `Tuesday 12pm ET` / "fetch writes parquet" in live guidance | **CLEAN** | No remaining live prescriptive references; only historical/reconciliation context survives in the bundle |
+| New issues introduced by `5fa72f3` | **NONE** | The corrective edit was narrow and accurate; no collateral damage in the doc bundle |
+
+UNRESOLVED_HIGHS: 0
+
+---
+
+## Consensus Summary (Cycle 5)
+
+Single external reviewer (Codex / gpt-5.4) again, so "consensus" is the synthesis of that single pass into actionable severity buckets.
+
+### Net Cycle-5 disposition (HIGH only)
+
+| Concern source | Disposition | Counts toward CYCLE_SUMMARY? |
+|----------------|-------------|------------------------------|
+| Cycle-4 HIGH (`01-CONTEXT.md:244` + `01-CONTEXT.md:292` + `01-VALIDATION.md:120`) | **FULLY RESOLVED** — three doc-edits at `5fa72f3` closed all three line-level concerns; bundle-wide audit found no remaining live prescriptive references | NO |
+
+**Total unresolved HIGHs heading into Cycle 6 / convergence: 0.**
+
+### Cycle-4 → Cycle-5 progress (positive)
+
+- The `5fa72f3` fix did exactly what it claimed: closed the three CONTEXT/VALIDATION line-items.
+- Bundle-wide audit by Codex confirms NO remaining live prescriptive `open_*` / "Tuesday 12pm ET" / "fetch writes parquet" guidance in any canonical execution doc.
+- HIGH count went 4 (Cycle 1) → 6 (Cycle 2) → 1 (Cycle 3) → 1 (Cycle 4) → **0 (Cycle 5)**. **Convergence achieved.**
+
+### Surviving / new gaps
+
+The single residual item is a Cycle-4 MEDIUM that the corrective edit did not fully close: the YAML `status: executing` field in STATE.md frontmatter contradicts the body's "Status: Ready to execute" + `Plan: 0 of 12` + `completed_plans: 0`. Per the user's Cycle-5 framing this is escalation territory rather than another cycle blocker — `status: executing` is being interpreted by the user as "in the executing phase of the GSD workflow" matching "Ready to execute," but Codex flagged that any tool keying off YAML alone could route incorrectly.
+
+### Divergent Views
+
+Single-reviewer pass; no divergence to record.
+
+---
+
+## Recommended Next Action (Cycle 5)
+
+**Phase 1 is SAFE-TO-EXECUTE — 0 HIGH-severity concerns remain.**
+
+The convergence loop has converged: `4 → 6 → 1 → 1 → 0`. The single Cycle-5 MEDIUM (STATE.md `status` field) is a documentation-polish issue that does not affect the planning, harness, or per-plan execution contracts.
+
+Two viable paths from here:
+
+1. **Path A (close the residual MEDIUM):** Apply a one-line edit normalizing `STATE.md:5` from `status: executing` to `status: ready_to_execute` (or whatever the GSD state machine expects for a planned-but-not-yet-started phase), commit, optionally re-run `gsd-review` for Cycle 6 confirmation. Cheap and reaches strict 0/0/0 convergence.
+2. **Path B (proceed to execution):** Per the user's Cycle-5 framing pre-empting this exact MEDIUM, escalate the residual `status` mismatch as a known acceptable item and proceed to `gsd-execute-phase 1`. The bundle is structurally safe and the 4 HIGHs from Cycle 1, 6 from Cycle 2, and 1 from Cycles 3-4 are all closed.
+
+**Recommended:** Path B per the user's explicit pre-emption in the Cycle-5 framing — the convergence loop has achieved its primary goal (0 HIGH-severity blockers). The residual STATE.md `status` MEDIUM is a non-blocking polish item that can be closed in flight or when Plan 00 promotes (which would naturally bump `status` and `completed_plans`).
