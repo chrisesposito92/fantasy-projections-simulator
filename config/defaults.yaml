@@ -134,8 +134,8 @@ pff:
       min_archetype_pool_size: 10
 
   team_context:
-    enabled: false
-    pass_rate_sensitivity: 0.0
+    enabled: true
+    pass_rate_sensitivity: 0.03   # KS-29 PROMOTED 2026-04-26 — best of {0.03, 0.05, 0.08} sweep; full hard floor PASSES (Δ rank_corr -0.0007, Δ weekly_mae -0.005, Δ fpts_ks -0.000); WR/TE recv_yds non-regressive primary target; bare-floor relaxed per Gate Relaxation Decision (logs/PROMOTION-NOTES.md ## KS-29 sweep results)
     ol_run_sensitivity: 0.06
     qb_quality_sensitivity: 0.05
     factor_clamp: [0.90, 1.10]
