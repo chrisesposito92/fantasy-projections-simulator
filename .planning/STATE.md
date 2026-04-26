@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-07-PLAN.md (KS-15 PROMOTED — final RZ-stack commit; bug fix correct, KS movement below detection threshold)
-last_updated: "2026-04-26T22:24:35.492Z"
+stopped_at: Completed 01-10-PLAN.md (KS-32 MEASURED-NO-CHANGE — final per-KS plan; only Plan 11 aggregate validation remains)
+last_updated: "2026-04-26T22:45:10.856Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 10 of 12
+Plan: 11 of 12
 Status: Ready to execute
 Last activity: 2026-04-26
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████████░░] 83%
 | Phase 01 P06 | 40min | 4 tasks | 6 files |
 | Phase 01 P07 | 32min | 4 tasks | 4 files |
 | Phase 01 P08 | 1h 8m | 3 tasks | 2 files |
+| Phase 01 P10 | 13 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 01]: Plan 01-06 KS-07 PROMOTED — full hard floor PASSES (Δ rank_corr -0.0012, Δ weekly_mae +0.003, Δ fpts_ks +0.000); D-30 small-gain primary-target non-regression bar met (WR Δ ≈ 0; TE flat in 2 of 3 seasons); success criterion #3 RB rush_yards Δ ≥ 0 across all 3 seasons. KS-07 is 2nd plan in Phase 1 to clear relaxed gate cleanly with new code active. Flag default flipped to true in config/defaults.yaml. Bare regression (+0.064 weekly_mae) informational per gate-relaxation decision. KS-15/29/32 unblocked.
 - [Phase ?]: KS-15 PROMOTED under relaxed gate (full hard floor passes); SHIPPED-NO-OP on QB pass_yards primary-target KS bar (Δ avg ~0). D-15 boost-zeroing implemented behaviorally; D-15b legacy non-roster paths patched per Codex MEDIUM-4
 - [Phase 01]: [Phase 01]: Plan 01-08 KS-29 PROMOTED — pff.team_context.enabled=true with pass_rate_sensitivity=0.03 (best of {0.03, 0.05, 0.08} sweep); full hard floor passes (Δ rank_corr -0.0007, Δ weekly_mae -0.005); WR/TE recv_yds non-regressive primary target; bare-mode QB pass_yards regression informational per Gate Relaxation Decision; D-22 honored via existing TestApplyTeamContext::test_qb_unchanged behavior test. 2,131 tests still green. Last per-KS code/config plan in Phase 1 before Plan 10 (KS-32 measure) and Plan 11 (aggregate).
+- [Phase ?]: Phase 01-10: KS-32 MEASURED-NO-CHANGE per D-24 — plays_per_team in target band and nfl_pass_attempts in band; reducing CLOCK_PASS_INCOMPLETE 5 to 3 contraindicated. p1.ks32.measure ledger #104 confirms post-Phase-1 stack matches phase0.baseline.full within noise. KS-32 satisfies REQUIREMENTS delivered definition with no source change.
 
 ### Pending Todos
 
@@ -118,6 +120,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T22:24:16.037Z
-Stopped at: Completed 01-07-PLAN.md (KS-15 PROMOTED — final RZ-stack commit; bug fix correct, KS movement below detection threshold)
+Last session: 2026-04-26T22:45:10.849Z
+Stopped at: Completed 01-10-PLAN.md (KS-32 MEASURED-NO-CHANGE — final per-KS plan; only Plan 11 aggregate validation remains)
 Resume file: None
