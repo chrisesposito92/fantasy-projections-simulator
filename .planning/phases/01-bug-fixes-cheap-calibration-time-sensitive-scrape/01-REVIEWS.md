@@ -1,20 +1,41 @@
 ---
 phase: 1
-reviewers: [codex]
-reviewed_at: 2026-04-26
-plans_reviewed:
-  - 01-ks01-rz-tdgate-fix-PLAN.md
-  - 02-ks04-catch-yards-boost-PLAN.md
-  - 03-ks03-matchup-coverage-anchor-PLAN.md
-  - 04-ks05-props-engine-bugs-PLAN.md
-  - 05-ks06-backup-receiver-fallback-PLAN.md
-  - 06-ks07-positional-rz-catch-rate-PLAN.md
-  - 07-ks15-clamping-fix-PLAN.md
-  - 08-ks29-team-context-enable-PLAN.md
-  - 09-ks21-altline-scrape-PLAN.md
-  - 10-ks32-clock-runoff-measure-PLAN.md
-  - 11-phase1-aggregate-validation-PLAN.md
-model: gpt-5.4
+cycles:
+  - cycle: 1
+    reviewers: [codex]
+    reviewed_at: 2026-04-26
+    model: gpt-5.4
+    bundle_commit: pre-93005e4
+    plans_reviewed:
+      - 01-ks01-rz-tdgate-fix-PLAN.md
+      - 02-ks04-catch-yards-boost-PLAN.md
+      - 03-ks03-matchup-coverage-anchor-PLAN.md
+      - 04-ks05-props-engine-bugs-PLAN.md
+      - 05-ks06-backup-receiver-fallback-PLAN.md
+      - 06-ks07-positional-rz-catch-rate-PLAN.md
+      - 07-ks15-clamping-fix-PLAN.md
+      - 08-ks29-team-context-enable-PLAN.md
+      - 09-ks21-altline-scrape-PLAN.md
+      - 10-ks32-clock-runoff-measure-PLAN.md
+      - 11-phase1-aggregate-validation-PLAN.md
+  - cycle: 2
+    reviewers: [codex]
+    reviewed_at: 2026-04-26
+    model: gpt-5.4
+    bundle_commit: 93005e4
+    plans_reviewed:
+      - 00-validation-harness-and-phase0-baseline-PLAN.md
+      - 01-ks01-rz-tdgate-fix-PLAN.md
+      - 02-ks04-catch-yards-boost-PLAN.md
+      - 03-ks03-matchup-coverage-anchor-PLAN.md
+      - 04-ks05-props-engine-bugs-PLAN.md
+      - 05-ks06-backup-receiver-fallback-PLAN.md
+      - 06-ks07-positional-rz-catch-rate-PLAN.md
+      - 07-ks15-clamping-fix-PLAN.md
+      - 08-ks29-team-context-enable-PLAN.md
+      - 09-ks21-altline-scrape-PLAN.md
+      - 10-ks32-clock-runoff-measure-PLAN.md
+      - 11-phase1-aggregate-validation-PLAN.md
 ---
 
 # Cross-AI Plan Review — Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape
@@ -23,7 +44,9 @@ External reviewer: **OpenAI Codex CLI (gpt-5.4)**, invoked with the full Phase 1
 
 ---
 
-## Codex Review
+# Cycle 1 (2026-04-26 — pre-replan)
+
+## Codex Review (Cycle 1)
 
 ### Summary
 
@@ -75,7 +98,7 @@ The fixes themselves are mostly sensible. The blocking risk is that the plans wi
 
 ---
 
-## Consensus Summary
+## Consensus Summary (Cycle 1)
 
 This review pass had a single external reviewer (Codex / gpt-5.4), so "consensus" here is just the synthesis of that single pass into actionable severity buckets. Cross-AI consensus would require a second reviewer; the planning loop can re-run with `--gemini` or `--claude` if desired.
 
@@ -115,7 +138,7 @@ Single-reviewer pass; no divergence to record. If a follow-up Gemini/Claude revi
 
 ---
 
-## Recommended Next Action
+## Recommended Next Action (Cycle 1)
 
 Per the GSD convergence pattern, the four HIGH-severity concerns should feed back into planning before Phase 1 execution starts:
 
@@ -131,3 +154,99 @@ Specifically, the planner should:
 4. **Skip LOW concerns** unless they're cheap to fix in passing.
 
 Phase 1 is **not safe to execute** as currently planned — the per-KS A/B evidence and the end-of-phase aggregate would both be misleading. Once the HIGH concerns are resolved and the planner refreshes the affected PLAN.md files, re-run `gsd-review --phase 1` to confirm convergence.
+
+---
+
+# Cycle 2 (2026-04-26 — post-replan at commit `93005e4`)
+
+External reviewer: **OpenAI Codex CLI (gpt-5.4)**, invoked with the FULL post-replan Phase 1 bundle (PROJECT.md, ROADMAP.md, REQUIREMENTS.md, the verbatim Cycle-1 `01-REVIEWS.md` for context, the updated `01-CONTEXT.md` / `01-RESEARCH.md` / `01-VALIDATION.md`, and all 12 PLAN.md files including the new Plan 00). Codex was explicitly instructed to verify whether each prior HIGH was actually resolved and to flag any new HIGHs introduced by the replan.
+
+## Codex Review (Cycle 2)
+
+> Reviewed at `93005e4`. The replan is better, but I do not think Phase 1 is safe to execute yet.
+
+### Findings
+
+- **HIGH** — The per-KS A/B plan is still invalid for the code-change plans. [`01-VALIDATION.md`](./01-VALIDATION.md) (line 53 / Per-Plan Verification Map) defines Plans 01-07 and the retune branch of 10 as plain `validate.py` runs with no `--set`, and [`01-ks01-rz-tdgate-fix-PLAN.md`](./01-ks01-rz-tdgate-fix-PLAN.md) (line 297, Task 3) says that is fine because "the change ships as the source code itself." It is not fine: both arms in a single `validate.py` run execute the same patched code, so `p1.ks01.*`, `p1.ks03.*`, `p1.ks04.*`, `p1.ks05.*`, `p1.ks06.*`, `p1.ks07.*`, `p1.ks15.*`, and the retuned `p1.ks32.*` cannot measure the marginal effect of the code change at all. The new `--arm-b-base bare` flag only fixes config-arm construction; it does NOT create a pre/post code-version comparison. Suggested fix: put each KS code change behind a feature flag and use `--set <flag>=true` for Arm B, OR pin pre-commit and post-commit ledger entries explicitly around each KS commit (no two-arm same-code runs).
+- **HIGH** — The proposed `bare_config_dict()` is not actually equivalent to a bare arm. In [`00-validation-harness-and-phase0-baseline-PLAN.md`](./00-validation-harness-and-phase0-baseline-PLAN.md) (line 184, Task 1 helper definition), the helper turns off sub-engine leaves but omits top-level gates like `pff.enabled`, `vegas.enabled`, and `usage.enabled`. Meanwhile [`src/fantasy_sim/validation/config.py:94`](../../../src/fantasy_sim/validation/config.py), [`src/fantasy_sim/data/pff/config.py:308`](../../../src/fantasy_sim/data/pff/config.py), [`src/fantasy_sim/data/vegas/config.py:28`](../../../src/fantasy_sim/data/vegas/config.py), and [`src/fantasy_sim/data/usage/config.py:32`](../../../src/fantasy_sim/data/usage/config.py) all key off those top-level flags. Plan 00 then explicitly allows "loosen the test" if the end-to-end check disagrees ([`00-validation-harness-and-phase0-baseline-PLAN.md`](./00-validation-harness-and-phase0-baseline-PLAN.md) line 579, Task 4). That means HIGH-1 is not fully closed even for config-driven work like KS-29. Suggested fix: make `bare_config_dict()` exactly mirror `build_bare_engine_configs()` semantics (include the top-level gates) and remove the "loosen the test" escape hatch — the integration test should be a hard gate.
+- **HIGH** — Plan 11 still cannot verify success criterion 1 as written. The delta script in [`11-phase1-aggregate-validation-PLAN.md`](./11-phase1-aggregate-validation-PLAN.md) (line 145, Task 2 delta-computation step) only extracts `rank_corr`, `MAE`, and `stat_ks`, and the ledger schema in [`src/fantasy_sim/validation/ledger.py:25`](../../../src/fantasy_sim/validation/ledger.py) has no mean-bias field anywhere. But the acceptance block still asks the plan to fill "QB pass_yards mean bias (yd/g)" and mark Phase 1 success criterion #1 YES/NO at [`11-phase1-aggregate-validation-PLAN.md`](./11-phase1-aggregate-validation-PLAN.md) line 232. That metric is not available from the planned artifact path. Suggested fix: extend `validate.py`/ledger to surface mean-bias per stat-position, OR change Plan 11 so criterion 1 is evaluated from a side artifact (e.g., a separate diagnostic script that consumes raw projection rows).
+- **MEDIUM** — KS-21 is corrected in Plan 09, but the canonical bundle is still internally contradictory. The revised story is in [`01-CONTEXT.md`](./01-CONTEXT.md) (line 27, D-02 / D-06 revisions) and [`09-ks21-altline-scrape-PLAN.md`](./09-ks21-altline-scrape-PLAN.md) (line 304), but [`01-RESEARCH.md`](./01-RESEARCH.md) at lines 14, 206, and 653 still say `open_*`, "Tuesday 12pm ET," and "fetch_market_history_props.py … writes parquet." Since RESEARCH is listed as a canonical reference downstream agents must read, HIGH-2 and HIGH-3 are still partially reintroduced by the bundle itself. Suggested fix: reconcile `01-RESEARCH.md` with `01-CONTEXT.md` and Plan 09 so only the `prior_*` / raw→build pipeline story remains.
+- **MEDIUM** — Plan 09's credit-balance logging cannot work as written. The raw scrape task greps `x-requests-remaining` from the run logs at [`09-ks21-altline-scrape-PLAN.md`](./09-ks21-altline-scrape-PLAN.md) line 370, but the current fetch script only prints `cost={x-requests-last}` at [`scripts/fetch_market_history_props.py:110`](../../../scripts/fetch_market_history_props.py). Unless that script is extended, the before/after credit tables in Plan 09 are not collectible from the proposed logs. Suggested fix: extend `fetch_market_history_props.py` to also log `x-requests-remaining` from the response headers, or change the credit-tracking acceptance to a manual check against the Odds API dashboard.
+
+### Prior HIGHs — verification
+
+| HIGH | Disposition | Reasoning |
+|------|-------------|-----------|
+| HIGH-1 | **PARTIALLY-RESOLVED** | The new `--arm-b-base bare` idea addresses the original defaults-vs-bare contamination in principle, but (a) the helper implementation is not truly bare (omits top-level engine gates) and (b) the code-change plans still use no-op A/Bs (both arms run the same patched code). |
+| HIGH-2 | **PARTIALLY-RESOLVED** | Plan 09 now explicitly does raw fetch plus parquet build, but `01-RESEARCH.md` still repeats the old "fetch writes parquet" model in three places (lines 14, 206, 653). |
+| HIGH-3 | **PARTIALLY-RESOLVED** | `01-CONTEXT.md` and Plan 09 renamed `open_*` to `prior_*`, but `01-RESEARCH.md` still contains the stale "Tuesday 12pm ET / open_*" instructions in the same three sections. |
+| HIGH-4 | **RESOLVED** | [`11-phase1-aggregate-validation-PLAN.md`](./11-phase1-aggregate-validation-PLAN.md) line 128 now uses `phase0.baseline.full` plus `p1.aggregate.full`, so the original defaults-vs-defaults no-op problem is closed. (A separate new HIGH about mean-bias retrieval is logged above; that is a different gap.) |
+
+### Recommended Replan (Cycle 2 → Cycle 3)
+
+1. **Split validation strategy by change type.** For KS-01/03/04/05/06/07/15/32 (code-change plans), either put the code change behind a flag and use `--set`, OR use explicit pre/post ledger pins around the commit. Do not treat same-code two-arm runs as per-KS evidence.
+2. **Make `bare_config_dict()` exactly mirror `build_bare_engine_configs()`** — include the top-level gates (`pff.enabled`, `vegas.enabled`, `usage.enabled`, etc.) and remove the "loosen the test" escape hatch.
+3. **Reconcile `01-RESEARCH.md`** with `01-CONTEXT.md` and Plan 09 so only the `prior_*` / raw→build pipeline story remains.
+4. **Add durable mean-bias output** to `validate.py` / ledger schema, OR change Plan 11 so success criterion 1 is evaluated from an artifact that actually contains the bias number.
+5. Address Plan 09 credit-balance MEDIUM by extending `fetch_market_history_props.py` to surface `x-requests-remaining`.
+
+### Recommendation
+
+**NEEDS-CYCLE-3.** Three new HIGH-severity issues remain (per-KS code-change A/B is no-op; `bare_config_dict()` is incomplete; Plan 11 mean-bias not in ledger), and two of the prior HIGHs are still partially open via stale `01-RESEARCH.md` content. Phase 1 is **not safe to execute** until these are addressed.
+
+---
+
+## Consensus Summary (Cycle 2)
+
+Single external reviewer (Codex / gpt-5.4) again, so "consensus" is the synthesis of that single pass into actionable severity buckets. The replan closed exactly one of the four prior HIGHs cleanly (HIGH-4 frozen Phase-0 baseline + delta computation), substantially advanced two more (HIGH-2, HIGH-3 via Plan 09 split + label rename in CONTEXT and Plan 09), and made structural progress on HIGH-1 (`--arm-b-base bare` + Plan 00) without finishing the work.
+
+### Net Cycle-2 disposition (HIGH only)
+
+| Concern source | Disposition | Counts toward CYCLE_SUMMARY? |
+|----------------|-------------|------------------------------|
+| Cycle 1 HIGH-1 (per-KS bare A/B contamination) | PARTIALLY-RESOLVED — superseded by two more-specific Cycle 2 HIGHs (no-op same-code A/B + incomplete `bare_config_dict`) | YES |
+| Cycle 1 HIGH-2 (Plan 09 raw vs parquet) | PARTIALLY-RESOLVED — Plan 09 fixed; `01-RESEARCH.md` still stale | YES |
+| Cycle 1 HIGH-3 (Tuesday-12pm-ET label honesty) | PARTIALLY-RESOLVED — `01-CONTEXT.md` and Plan 09 fixed; `01-RESEARCH.md` still stale | YES |
+| Cycle 1 HIGH-4 (Plan 11 aggregate is no-op) | FULLY RESOLVED — `phase0.baseline.full` pinned by Plan 00, Plan 11 reads both ledger entries | NO |
+| Cycle 2 NEW HIGH (per-KS code-change A/B is no-op) | NEW | YES |
+| Cycle 2 NEW HIGH (`bare_config_dict()` omits top-level gates) | NEW | YES |
+| Cycle 2 NEW HIGH (Plan 11 mean-bias not in ledger schema) | NEW | YES |
+
+**Total unresolved HIGHs heading into Cycle 3: 6.**
+
+(Note: NEW HIGH #1 — same-code two-arm A/B — and NEW HIGH #2 — `bare_config_dict()` incompleteness — are different facets of why Cycle-1 HIGH-1 is still open. They are counted separately because they require distinct fixes (flag-gating per-KS code changes vs. completing the bare-config helper). NEW HIGH #3 is wholly distinct and was not flagged in Cycle 1.)
+
+### Cycle-1 → Cycle-2 progress (positive)
+
+- Plan 00 (NEW, Wave 0) is a real piece of execution prerequisite work, not just documentation. Adds the `--arm-b-base` flag, ships unit + integration tests, pins the Phase-0 baseline ledger entry, writes the freeze doc.
+- HIGH-4 went from "Plan 11 is a no-op snapshot" to "Plan 11 reads two pinned ledger entries and differs them" — clean fix.
+- KS-21 Plan 09 is structurally correct now (raw fetch → parquet build), and the label-rename to `prior_*` is the right honesty move.
+- All 4 MEDIUMs and 2 LOWs from Cycle 1 received explicit acknowledgement in CONTEXT D-39..D-43 and the VALIDATION sign-off table — auditable trail of changes.
+
+### Surviving / new gaps
+
+1. The biggest single residual issue is that **the per-KS A/B harness contract (D-29) is still incoherent for code-change plans**. `--arm-b-base bare` solves the config-arm construction question but leaves the code-version question unsolved. Cycle 1 implicitly assumed "the code change is the override" without examining whether the harness can express that; Cycle 2 confirms it cannot (single-process Python, single set of imports per `validate.py` run, no commit-aware caching of the comparison arm's binary state).
+2. `01-RESEARCH.md` is the canonical research reference downstream agents (planner + executors) read first. Leaving stale `open_*` / "Tuesday 12pm ET" / "fetch writes parquet" wording in it means Cycle 1 HIGH-2 and HIGH-3 will silently leak back into Plan 09 task execution and Phase 4 expectations unless RESEARCH is reconciled with CONTEXT.
+3. Mean-bias is a Phase 1 success criterion (#1: "QB pass_yards mean bias narrowed from ~−28 yd/game to within ±10 yd/game") but is not a ledger column — Plan 11 cannot evaluate the criterion from the artifact it claims to use. This needs either a ledger-schema extension or an alternate evaluation path.
+
+### Divergent Views
+
+Single-reviewer pass; no divergence to record. If a follow-up Gemini/Claude review is run for Cycle 3, divergence between reviewers will surface here.
+
+---
+
+## Recommended Next Action (Cycle 2)
+
+Phase 1 is **not safe to execute** as currently planned. Three new HIGH issues remain and two prior HIGHs are still partially open through `01-RESEARCH.md` staleness.
+
+The next step is `gsd-plan-phase 1 --reviews` to incorporate the Cycle-2 findings into another replan, then `gsd-review --phase 1 --codex` for Cycle 3. Specifically the Cycle-3 replan should:
+
+1. **Resolve the per-KS code-change A/B no-op question** (NEW HIGH #1). Two viable paths:
+   - **Path A (preferred for new code paths):** Add a feature flag for each KS code change (e.g., `engine.ks01_preserve_distribution.enabled`, default `false`). All KS changes ship under their flag. `validate.py --set <flag>=true` then drives a real two-arm comparison. Promotion = flip the default to `true` after the A/B passes.
+   - **Path B (acceptable for trivial constant changes):** Pre-pin a ledger entry against the pre-commit code state, then run a post-commit ledger entry, and compute the delta from the two entries. Plan 00 already established this pattern for `phase0.baseline.full`; extend it to per-KS pre/post pins.
+2. **Fix `bare_config_dict()` completeness** (NEW HIGH #2). Walk every `.enabled` truthiness check in `validation/config.py`, `pff/config.py`, `vegas/config.py`, `usage/config.py`, etc., and ensure every gate (top-level + sub-engine) is enumerated in the helper. Convert Task 4's "loosen the test" escape hatch into a hard gate.
+3. **Fix Plan 11 mean-bias evaluation path** (NEW HIGH #3). Either extend `validate.py` to write a mean-bias-by-(position, stat) table to the ledger, or add a Phase 1 closure diagnostic script that derives mean-bias from raw projection rows produced during the aggregate run.
+4. **Reconcile `01-RESEARCH.md`** with the post-replan CONTEXT and Plan 09. Targets: lines 14 (User Constraints D-02/D-06), line 206 (RESEARCH parallel-track diagram), line 653 (Code Examples script comments). Replace `open_*` → `prior_*`, "Tuesday 12pm ET" → "API previous_timestamp relative to gameday-noon UTC crawl", and "writes parquet" → "writes raw JSON; build_market_history_player_markets.py writes parquet".
+5. **Address MEDIUM #2** (Plan 09 credit logging) — small change to `fetch_market_history_props.py`'s response-header logging.
+
+Once Cycle 3 lands, re-run `gsd-review --phase 1 --codex` to confirm convergence.
