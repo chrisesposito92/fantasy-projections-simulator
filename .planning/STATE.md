@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 planning complete
-last_updated: "2026-04-26T14:29:46.782Z"
-last_activity: 2026-04-26 -- Phase 01 execution started
+last_updated: "2026-04-26T15:46:08.275Z"
+last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 17
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 1 of 12
-Status: Executing Phase 01
-Last activity: 2026-04-26 -- Phase 01 execution started
+Plan: 2 of 12
+Status: Ready to execute
+Last activity: 2026-04-26
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: N/A (no execution yet)
 
 *Updated after each plan completion*
+| Phase 01 P01 | 28.5 min | 4 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,7 @@ Recent decisions affecting current work:
   - **HIGH-2/HIGH-3 partial-resolve cleanup:** `01-RESEARCH.md` reconciled with `01-CONTEXT.md` and Plan 09 — User Constraints D-02/D-06/D-08 updated; parallel-track architecture diagram updated; Pattern 4 split into raw-fetch + parquet-build steps; Pattern 5 explicitly renames `open_*` → `prior_*` and documents `previous_timestamp` honesty; Example 3 bash blocks rewritten with both pipeline steps; Anti-patterns updated to forbid `open_*` labels and "fetch writes parquet" wording.
   - Plan 00 expanded: 7 tasks → 9 tasks (Task 8 = config block + loader shim, Task 9 = ledger schema bump + validate.py wiring). New file `tests/test_validation/test_ledger_schema.py`.
   - Plan count unchanged: 12.
+- [Phase 01]: Plan 01-01 KS-01: SHIPPED-NO-OP per D-31 — _tackled_short_preserve_distribution per D-09 ships behind phase1_ks_flags.ks01_preserve_distribution=true; hard floor passes both A/B entries (Δ rank_corr +0.0011/+0.0004, Δ weekly_mae -0.002/+0.003), KS Δ on QB pass_yards <= -0.01 promotion bar barely met (only 2024 full -0.01); bug fix is a correct precondition for KS-04/KS-15. — Mechanism only fires on RZ TD-gate failures; per-game stat impact below detection threshold at 200 sims; KS-04+KS-15 will stack on this foundation per dependency-mandatory order in D-26.
 
 ### Pending Todos
 
@@ -100,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: --stopped-at
+Last session: 2026-04-26T15:44:35.621Z
 Stopped at: Phase 1 planning complete
-Resume file: --resume-file
+Resume file: None

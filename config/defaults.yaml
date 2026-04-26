@@ -7,7 +7,7 @@
 # the A/B passes hard floor + promotion bar.
 phase1_ks_flags:
   ks01_preserve_distribution:
-    enabled: false   # KS-01 — _tackled_short_preserve_distribution variant in play_resolver.py
+    enabled: true   # KS-01 SHIPPED-NO-OP 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-01
   ks03_dynamic_yard_anchor:
     enabled: false   # KS-03 — _apply_matchup/_apply_coverage use np.mean(<dist>) instead of *10.0
   ks04_conditional_catch_boost:
