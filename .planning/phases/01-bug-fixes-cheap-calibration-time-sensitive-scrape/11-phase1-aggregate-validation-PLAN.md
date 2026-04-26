@@ -11,15 +11,16 @@ requirements: [KS-01, KS-03, KS-04, KS-05, KS-06, KS-07, KS-15, KS-29, KS-32]
 must_haves:
   truths:
     - "Per D-32 (revised 2026-04-26 — addresses Codex HIGH-4): end-of-phase aggregate runs `validate.py --baseline bare --label p1.aggregate.full` (NO --set), capturing post-Phase-1 promoted defaults' metrics in Arm B. The Phase-1-vs-Phase-0 delta is computed by reading BOTH `phase0.baseline.full` (pinned in Wave 0 by Plan 00) AND `p1.aggregate.full` (this plan) from the ledger and differencing the Arm B metrics."
+    - "Per D-46 (Cycle 3 — addresses Codex Cycle-2 NEW HIGH #3): mean bias is read directly from the extended ledger schema (`SeasonMetrics.stat_mean_bias`, schema v5) shipped by Plan 00 Task 9. The delta script reads `stat_mean_bias['QB']['pass_yards']['arm_b_bias']` from both `phase0.baseline.full` and `p1.aggregate.full` ledger entries and differences them. No re-simulation; no side script."
     - "The original Plan 11 ran `validate.py --baseline defaults` with no `--set`, producing Arm A == Arm B (a no-op snapshot, not a delta). This was Codex HIGH-4 and is now resolved."
-    - "Per D-32b: Plan 00 must have landed (phase0.baseline.full ledger entry exists) BEFORE this plan can compute the comparison."
+    - "Per D-32b: Plan 00 must have landed (phase0.baseline.full ledger entry exists, schema v5 with stat_mean_bias populated) BEFORE this plan can compute the comparison."
     - "Records Phase 1 entry/exit metrics for the next phase to baseline against (PROJECT.md TGT-XX update)"
     - "If any regression appears in the Phase-1-vs-Phase-0 delta, walk back the smallest-gain promotion candidate first per D-32"
-    - "Phase 1 success criteria 1-4 (QB pass_yards bias, QB pass_yards KS, RB rush_yards KS, hard floor across positions) verified against the differenced delta"
+    - "Phase 1 success criteria 1-4 (QB pass_yards bias, QB pass_yards KS, RB rush_yards KS, hard floor across positions) verified against the differenced delta — criterion 1 specifically reads from the new `stat_mean_bias` ledger field, NOT from a re-simulated diagnostic"
     - "Phase 1 success criterion 5 (KS-21 alt-line scrape) verified by Plan 09's 9 parquet caches existing"
-    - "Per D-27 (revised): ledger label scheme — phase0.baseline.{full,bare} pinned by Plan 00 in Wave 0; p1.ksXX.bare/full per change use --baseline bare --arm-b-base bare for true isolation; p1.aggregate.full = post-Phase-1 promoted defaults vs bare (this plan)"
+    - "Per D-27 (revised): ledger label scheme — phase0.baseline.{full,bare} pinned by Plan 00 in Wave 0; p1.ksXX.bare/full per change use --baseline bare --arm-b-base bare with --set phase1_ks_flags.ksXX_<name>.enabled=true for true isolation (Cycle 3 D-45); p1.aggregate.full = post-Phase-1 promoted defaults vs bare (this plan)"
     - "Per D-28: validation set = all 2022-2024, 200 sims/season, PPR scoring across all per-plan and aggregate runs"
-    - "Per D-29: A/B mode per change = true isolation + full-stack overlay (uses --arm-b-base bare for the isolation runs); agents executed scripts/validate.py directly per the 2026-04-26 rule reversal"
+    - "Per D-29: A/B mode per change = true isolation + full-stack overlay (uses --arm-b-base bare for the isolation runs + Cycle-3 D-45 feature flags); agents executed scripts/validate.py directly per the 2026-04-26 rule reversal"
     - "Per D-25 (revised): final commit message format `feat(01-11): KS-Phase1 PROMOTED — aggregate validation complete (post-Phase-1 vs phase0.baseline.full delta)`"
   artifacts:
     - path: ".planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md"
@@ -77,7 +78,7 @@ Output: `p1.aggregate.full` ledger entry; PROMOTION-NOTES.md `## Phase 1 aggrega
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-32, D-32b)
   </read_first>
   <action>
-Confirm Plan 00 (Wave 0) has landed and the Phase-0 baseline ledger entries exist:
+Confirm Plan 00 (Wave 0) has landed and the Phase-0 baseline ledger entries exist with schema v5 (`stat_mean_bias` field populated):
 
 ```bash
 # Plan 00 deliverables check:
@@ -90,9 +91,26 @@ uv run python scripts/validate.py --show-ledger | grep -E "phase0\.baseline\.(fu
 # Validate.py extension check:
 uv run python scripts/validate.py --help 2>&1 | grep -c "arm-b-base"
 # Expected: 1+ (the --arm-b-base flag is wired)
+
+# NEW Cycle 3: Schema v5 + stat_mean_bias presence check
+uv run python <<'PY'
+import json
+from pathlib import Path
+from fantasy_sim.validation.ledger import CURRENT_LEDGER_SCHEMA_VERSION
+assert CURRENT_LEDGER_SCHEMA_VERSION == 5, f"Schema version is {CURRENT_LEDGER_SCHEMA_VERSION}, expected 5"
+data = json.loads(Path("results/ab_ledger.json").read_text())
+entries = data if isinstance(data, list) else data.get("entries", [])
+phase0 = next((e for e in entries if e.get("label") == "phase0.baseline.full"), None)
+assert phase0 is not None, "phase0.baseline.full ledger entry missing"
+sr = phase0["season_results"][0]
+assert "stat_mean_bias" in sr, "stat_mean_bias field missing from phase0.baseline.full season_results — Plan 00 Task 9 incomplete"
+mb_qb = sr["stat_mean_bias"].get("QB", {}).get("pass_yards", {})
+assert "arm_b_bias" in mb_qb, f"QB pass_yards arm_b_bias missing from phase0.baseline.full stat_mean_bias: {mb_qb}"
+print(f"phase0.baseline.full stat_mean_bias check OK; QB pass_yards arm_b_bias = {mb_qb['arm_b_bias']:.2f}")
+PY
 ```
 
-If any of these checks fails, STOP this plan with a clear error and route the user back to Plan 00. Plan 11 cannot run until the Phase-0 baseline is pinned.
+If any of these checks fails, STOP this plan with a clear error and route the user back to Plan 00. Plan 11 cannot run until the Phase-0 baseline is pinned with schema v5.
 
 If all pass, proceed.
 
@@ -105,8 +123,9 @@ Commit (informational, no code change): no commit needed — Task 1 is a pre-fli
     - `.planning/PROJECT-PHASE0-FROZEN.md` exists
     - The verify command returns at least `2` (both phase0.baseline.full and phase0.baseline.bare in the ledger)
     - `uv run python scripts/validate.py --help` shows `--arm-b-base` in the output
+    - Schema v5 + `stat_mean_bias` field check passes (the inline Python block prints OK + the QB pass_yards arm_b_bias value)
   </acceptance_criteria>
-  <done>Plan 00 prerequisites confirmed; safe to proceed.</done>
+  <done>Plan 00 prerequisites confirmed (incl. Cycle-3 schema v5 + stat_mean_bias); safe to proceed.</done>
 </task>
 
 <task type="auto">
@@ -140,7 +159,9 @@ uv run python scripts/validate.py --show-ledger | grep -E "phase0\.baseline\.ful
 
 This produces a ledger row where Arm A = bare (matches phase0.baseline.full's Arm A) and Arm B = current post-Phase-1 promoted defaults. The Arm B metrics are the post-Phase-1 reference values.
 
-**Compute the Phase-1-vs-Phase-0 delta** by reading BOTH ledger entries' Arm B metrics from the JSON ledger:
+**Compute the Phase-1-vs-Phase-0 delta** by reading BOTH ledger entries' Arm B metrics from the JSON ledger.
+
+**REVISED Cycle 3 (Codex Cycle-2 NEW HIGH #3 fix):** the script now also reads `stat_mean_bias` (added in Plan 00 Task 9, schema v5) so success criterion 1 (QB pass_yards mean bias) is evaluable directly from the ledger artifact. No re-simulation; no side script.
 
 ```bash
 uv run python <<'EOF' | tee .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1_vs_phase0_delta.log
@@ -167,22 +188,29 @@ def collect_arm_b(entry):
     weekly_mae = []
     season_mae = []
     stat_ks = {}
+    stat_mean_bias = {}  # NEW Cycle 3 — addresses Codex Cycle-2 NEW HIGH #3
     for s in seasons:
         for pos, val in s["arm_b_rank_corr"].items():
             rank_corr.setdefault(pos, []).append(val)
         weekly_mae.append(s["arm_b_weekly_mae"])
         season_mae.append(s["arm_b_season_mae"])
+        # stat_ks
         for pos, stats in s.get("stat_ks", {}).items():
             for stat, ks_data in stats.items():
-                # ks_data may be a dict with "arm_b_ks" key or similar; inspect schema
                 if isinstance(ks_data, dict) and "arm_b_ks" in ks_data:
                     stat_ks.setdefault((pos, stat), []).append(ks_data["arm_b_ks"])
+        # stat_mean_bias (NEW Cycle 3 — schema v5)
+        for pos, stats in s.get("stat_mean_bias", {}).items():
+            for stat, mb_data in stats.items():
+                if isinstance(mb_data, dict) and "arm_b_bias" in mb_data:
+                    stat_mean_bias.setdefault((pos, stat), []).append(mb_data["arm_b_bias"])
     avg = {pos: sum(v)/len(v) for pos, v in rank_corr.items()}
     return {
         "rank_corr": avg,
         "weekly_mae": sum(weekly_mae)/len(weekly_mae),
         "season_mae": sum(season_mae)/len(season_mae),
         "stat_ks": {k: sum(v)/len(v) for k, v in stat_ks.items()},
+        "stat_mean_bias": {k: sum(v)/len(v) for k, v in stat_mean_bias.items()},
     }
 
 p0 = collect_arm_b(phase0)
@@ -214,10 +242,35 @@ for key in focus_stats:
     if key in p1["stat_ks"] and key in p0["stat_ks"]:
         d = p1["stat_ks"][key] - p0["stat_ks"][key]
         print(f"  {key[0]} {key[1]}: Δ {d:+.4f}  (Phase 0: {p0['stat_ks'][key]:.4f}, Phase 1: {p1['stat_ks'][key]:.4f})")
+
+# NEW Cycle 3: Per-stat MEAN BIAS deltas — addresses Codex Cycle-2 NEW HIGH #3
+# Phase-1 success criterion 1: QB pass_yards mean bias narrowed from ~−28 yd/g to within ±10 yd/g.
+print()
+print("Per-stat MEAN BIAS deltas (Phase 1 - Phase 0):")
+for key in focus_stats:
+    if key in p1["stat_mean_bias"] and key in p0["stat_mean_bias"]:
+        d = p1["stat_mean_bias"][key] - p0["stat_mean_bias"][key]
+        print(
+            f"  {key[0]} {key[1]} bias (yd/g): Phase 0={p0['stat_mean_bias'][key]:+.2f}, "
+            f"Phase 1={p1['stat_mean_bias'][key]:+.2f}, Δ={d:+.2f}"
+        )
+
+# Explicit success criterion 1 evaluation
+qb_pass_yds_bias_p1 = p1["stat_mean_bias"].get(("QB", "pass_yards"))
+if qb_pass_yds_bias_p1 is not None:
+    crit1_met = abs(qb_pass_yds_bias_p1) <= 10.0
+    print()
+    print(f"Phase-1 success criterion 1 (QB pass_yards mean bias |Δ vs actual| ≤ 10 yd/g):")
+    print(f"  Phase-1 Arm B QB pass_yards bias = {qb_pass_yds_bias_p1:+.2f} yd/g")
+    print(f"  Criterion 1: {'YES (PASS)' if crit1_met else 'NO (FAIL — bias exceeds ±10 yd/g)'}")
+else:
+    print()
+    print("WARNING: stat_mean_bias['QB']['pass_yards'] missing from p1.aggregate.full ledger entry.")
+    print("This means Plan 00 Task 9 did not wire validate.py to write the field. Re-check Plan 00.")
 EOF
 ```
 
-NOTE: The `collect_arm_b` helper inspects the ledger schema; if the actual `stat_ks` structure differs from what's shown above (e.g., per-arm KS keys are named differently), adjust the helper to match. The goal is: differenced metrics (Phase 1 Arm B minus Phase 0 Arm B) for the headline KS values.
+NOTE: If `collect_arm_b` raises `KeyError` on `stat_mean_bias` for either ledger entry, that means Plan 00 Task 9 (ledger schema v5 + validate.py write site) did not complete successfully — STOP this plan and route back to Plan 00. Schema v5 with populated `stat_mean_bias` is a hard prerequisite.
 
 Append `## Phase 1 aggregate (Phase-1-vs-Phase-0 delta)` to PROMOTION-NOTES.md using the differenced metrics:
 
@@ -229,13 +282,13 @@ Both entries share the same Arm A (bare engines), so the difference IS the Phase
 
 ### Headline metrics
 
-| Metric | Phase 0 (frozen) | Phase 1 (post-promotion) | Δ | Phase-1 target | Met? |
-|--------|------------------|--------------------------|---|----------------|------|
-| QB pass_yards mean bias (yd/g) | ... | ... | ... | within ±10 | YES/NO |
-| QB pass_yards KS | ... | ... | ... | ≤ 0.28 | YES/NO |
-| RB rush_yards KS | ... | ... | ... | ≤ 0.23 | YES/NO |
-| Aggregate rank_corr (PPR) | ... | ... | ... | Δ ≥ -0.005 | YES/NO |
-| Aggregate weekly_mae (PPR) | ... | ... | ... | Δ ≤ +0.05 | YES/NO |
+| Metric | Phase 0 (frozen) | Phase 1 (post-promotion) | Δ | Phase-1 target | Met? | Source |
+|--------|------------------|--------------------------|---|----------------|------|--------|
+| QB pass_yards mean bias (yd/g) | ... | ... | ... | \|Phase 1\| ≤ 10 | YES/NO | NEW Cycle 3: stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"] from ledger v5 |
+| QB pass_yards KS | ... | ... | ... | ≤ 0.28 | YES/NO | stat_ks["QB"]["pass_yards"]["arm_b_ks"] |
+| RB rush_yards KS | ... | ... | ... | ≤ 0.23 | YES/NO | stat_ks["RB"]["rush_yards"]["arm_b_ks"] |
+| Aggregate rank_corr (PPR) | ... | ... | ... | Δ ≥ -0.005 | YES/NO | mean(arm_b_rank_corr) over positions |
+| Aggregate weekly_mae (PPR) | ... | ... | ... | Δ ≤ +0.05 | YES/NO | arm_b_weekly_mae |
 
 ### Per-position rank_corr (Phase 1 - Phase 0)
 
@@ -284,11 +337,14 @@ Commit: `chore(01-11): KS-Phase1 aggregate ledger entry + Phase-1-vs-Phase-0 del
     - The verify command returns at least `1` (p1.aggregate.full ledger entry exists)
     - `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.aggregate.full.log` exists
     - `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1_vs_phase0_delta.log` exists with the differenced metrics
-    - PROMOTION-NOTES.md contains `## Phase 1 aggregate (p1.aggregate.full vs phase0.baseline.full)` with the 5 success criteria evaluated YES/NO and the headline metrics filled in
-    - If any criterion is NO: PROMOTION-NOTES contains the walk-back proposal naming the smallest-gain candidate
+    - The delta log contains a section "Per-stat MEAN BIAS deltas" AND a "Phase-1 success criterion 1" block evaluating QB pass_yards mean bias (NEW Cycle 3 — addresses Codex Cycle-2 NEW HIGH #3)
+    - PROMOTION-NOTES.md contains `## Phase 1 aggregate (p1.aggregate.full vs phase0.baseline.full)` with all 5 success criteria evaluated YES/NO (criterion 1 = QB pass_yards mean bias filled from the new `stat_mean_bias` ledger field) and the headline metrics filled in
+    - If criterion 1 is NO (mean-bias miss): PROMOTION-NOTES walk-back proposal explicitly considers reverting KS-01 (the largest-mean-bias mechanism) before any smaller-gain candidate
+    - If any other criterion is NO: PROMOTION-NOTES contains the walk-back proposal naming the smallest-gain candidate per D-32
+    - `grep -c "stat_mean_bias" .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1_vs_phase0_delta.log` returns at least 1 (the script actually read the new field, didn't silently fall back to empty)
     - `git log -1 --pretty=%s` matches `chore(01-11): KS-Phase1 aggregate`
   </acceptance_criteria>
-  <done>p1.aggregate.full ledger entry recorded; Phase-1-vs-Phase-0 delta computed; success criteria evaluated; walk-back proposal documented if needed.</done>
+  <done>p1.aggregate.full ledger entry recorded; Phase-1-vs-Phase-0 delta computed (incl. mean-bias from ledger v5); success criteria 1-4 evaluated YES/NO; walk-back proposal documented if needed.</done>
 </task>
 
 <task type="auto">

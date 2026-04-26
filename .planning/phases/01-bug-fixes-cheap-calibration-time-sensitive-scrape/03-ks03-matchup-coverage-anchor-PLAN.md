@@ -17,7 +17,8 @@ must_haves:
     - "All 3 sites mirror _apply_weather lines 701-712 (canonical reference pattern)"
     - "Empty dist guard preserved at all 3 sites (target_share > 0 / carry_share > 0 AND dist is not None AND len(dist) > 0)"
     - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks03.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00 to have landed); p1.ks03.full uses --baseline defaults (full-stack overlay)"
-    - "p1.ks03.bare and p1.ks03.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the dynamic-yard-anchor change is gated behind `phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` (default false until promotion). The implementation in `src/fantasy_sim/data/game_context.py` (`_apply_matchup` rushing + receiving branches per D-16/D-16b, and `_apply_coverage`) reads `get_phase1_ks_flags()['ks03_dynamic_yard_anchor']['enabled']` and branches: flag-on path uses `* float(np.mean(player.outcomes.<dist>))`; flag-off path keeps the legacy `* 10.0`. Both A/B runs use `--set phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true`. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks03.bare and p1.ks03.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30. Both runs invoke `--set phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true` per Cycle 3 D-45."
     - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-03): KS-03 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — per-player dist-mean anchor fix`"
     - "Per D-26: KS-03 commit chain ships after KS-04 lands (sequenced for clean ledger attribution; no file-touch overlap with KS-04). Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-03 (existing 1,200+ test suite covers the changed branches; new tests target the specific changed predicates)"
@@ -313,23 +314,29 @@ Commit: `test(01-03): add KS-03 dist-mean anchor tests for _apply_matchup and _a
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29 isolation+full-stack rule, D-30 small-gain promotion bar)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` flag for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-03 dynamic-yard-anchor change is gated behind `phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true` for Arm B; Arm A keeps the default (legacy hardcoded `* 10.0` anchor in `_apply_matchup` rushing + receiving branches and `_apply_coverage`).
+
+Run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation (bare engines + only KS-03 on top — requires Plan 00 to have landed)
+# True isolation: bare engines + KS-03 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks03.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true" \
+  --label "p1.ks03.bare"
 
-# Full-stack overlay (defaults + KS-03)
+# Full-stack overlay: defaults + KS-03 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks03.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true" \
+  --label "p1.ks03.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks03"
 ```
 
-NOTE: KS-03 is a code change to `_apply_matchup` and `_apply_coverage` (no config flag). For the bare-isolation run, the KS-03 fix is included in the source as committed; there's no `--set` flag needed. The bare run shows the marginal impact of KS-03 in isolation; the full run shows compatibility with all promoted engines.
+NOTE: REVISED Cycle 3 — KS-03's edits to `_apply_matchup` and `_apply_coverage` now branch on `phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` at module-or-function entry. Arm A keeps the legacy `* 10.0` hardcoded anchor; Arm B uses `* float(np.mean(player.outcomes.<dist>))` per D-16/D-16b. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1) — Cycle 3 fixes it.
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks03.{bare,full}.log`.
 

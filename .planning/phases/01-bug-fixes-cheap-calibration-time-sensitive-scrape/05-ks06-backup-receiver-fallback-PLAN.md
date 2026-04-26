@@ -20,7 +20,8 @@ must_haves:
     - "Per D-19 sub-fix 3: MIN_PLAYER_PLAYS in player_builder.py:11 is 3 (was 5) — gives more players their own dist"
     - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks06.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks06.full uses --baseline defaults"
     - "Per D-41 (added 2026-04-26 — MEDIUM-3): test invocations use the actual `Preprocessor().compute_play_outcomes()` API at preprocessor.py:27/110 (NOT a non-existent `build_play_outcomes` function); see Task 1 test code for the canonical pattern"
-    - "p1.ks06.bare and p1.ks06.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the backup-receiver fixes are gated behind `phase1_ks_flags.ks06_backup_receiver_fix.enabled` (default false until promotion). The implementations in `src/fantasy_sim/engine/play_resolver.py`, `src/fantasy_sim/data/preprocessor.py`, and `src/fantasy_sim/data/player_builder.py` read `get_phase1_ks_flags()['ks06_backup_receiver_fix']` and branch: flag-on path uses `MIN_PLAYER_PLAYS = 3`, fallback `rng.integers(5, 18)`, AND the completed-play filter; flag-off path keeps `MIN_PLAYER_PLAYS = 5`, fallback `rng.integers(3, 12)`, AND the unfiltered team bucket distribution. Both A/B runs use `--set phase1_ks_flags.ks06_backup_receiver_fix.enabled=true`. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks06.bare and p1.ks06.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30. Both runs invoke `--set phase1_ks_flags.ks06_backup_receiver_fix.enabled=true` per Cycle 3 D-45."
     - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-05): KS-06 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — backup receiver fallback fixes`"
     - "Per D-26: KS-06 commit chain ships after KS-04 lands (file overlap with play_resolver.py — sequenced for clean line-anchor merging). Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-06"
@@ -272,23 +273,29 @@ Commit: `fix(01-05): KS-06 D-19 sub-fixes 2+3 — fallback range (5,18) and MIN_
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-30)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-06 backup-receiver fixes are gated behind `phase1_ks_flags.ks06_backup_receiver_fix.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks06_backup_receiver_fix.enabled=true` for Arm B; Arm A keeps the legacy `MIN_PLAYER_PLAYS = 5`, the legacy `rng.integers(3, 12)` fallback range, and the legacy non-completed-play-filtered team bucket distribution.
+
+Run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation
+# True isolation: bare engines + KS-06 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks06.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks06_backup_receiver_fix.enabled=true" \
+  --label "p1.ks06.bare"
 
-# Full-stack overlay
+# Full-stack overlay: defaults + KS-06 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks06.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks06_backup_receiver_fix.enabled=true" \
+  --label "p1.ks06.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks06"
 ```
 
-NOTE: KS-06 changes module constants and a preprocessor filter — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-06's edits to `play_resolver.py`, `preprocessor.py`, and `player_builder.py` (`MIN_PLAYER_PLAYS`, fallback range, completed-play filter) now branch on `phase1_ks_flags.ks06_backup_receiver_fix.enabled`. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1).
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks06.{bare,full}.log`.
 

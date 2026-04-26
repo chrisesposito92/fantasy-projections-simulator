@@ -6,18 +6,20 @@ wave: 1
 depends_on: ["00"]
 files_modified:
   - src/fantasy_sim/engine/play_resolver.py
+  - config/defaults.yaml
   - tests/test_engine/test_play_resolver.py
 autonomous: true
 requirements: [KS-01]
 must_haves:
   truths:
     - "Per D-09: when RZ TD-gate fails, yards = max(1, min(yard_line - 1, sampled_yards_pre_clamp)) — preserves the sampled distribution and reserves 1 yard short of the goal"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the new behavior is gated behind config flag `phase1_ks_flags.ks01_preserve_distribution.enabled` (default false until promotion). The legacy `_tackled_short` code path remains the default until the promotion commit flips the flag to `true` in `config/defaults.yaml`. This makes the per-KS A/B a real two-arm comparison (Arm A = legacy code path, Arm B = new code path with `--set phase1_ks_flags.ks01_preserve_distribution.enabled=true`) rather than the same-code no-op the Cycle-2 plans produced."
     - "PASS_TD_GATE calibration unchanged after the fix (RZ pass-TD rate still ~55% at yard_line in (1,3))"
     - "RUN_TD_GATE calibration unchanged after the fix (RZ run-TD rate still ~35% at yard_line in (1,3))"
-    - "Both _resolve_pass and _resolve_run thread the pre-clamp sampled value through to the new failure-branch helper"
-    - "p1.ks01.bare and p1.ks01.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31, with KS delta ≤ -0.01 on QB pass_yards"
-    - "Per D-25/D-26: this plan ships as a single KS-XX commit chain (Task 1 RED, Task 2 GREEN, Task 3 ledger) — KS-01 commit is HEAD~3 after Plan 01 lands; bisect-clean attribution"
-    - "Per D-33: TDD-first for KS-01 RZ-stack work; failing tests committed before the implementation"
+    - "Both _resolve_pass and _resolve_run thread the pre-clamp sampled value through to the new failure-branch helper (when the flag is true)"
+    - "p1.ks01.bare and p1.ks01.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31, with KS delta ≤ -0.01 on QB pass_yards. The bare entry uses `--baseline bare --arm-b-base bare --set phase1_ks_flags.ks01_preserve_distribution.enabled=true`; the full entry uses `--baseline defaults --set phase1_ks_flags.ks01_preserve_distribution.enabled=true`."
+    - "Per D-25/D-26: this plan ships as a single KS-XX commit chain (Task 1 RED, Task 2 GREEN behind flag, Task 3 ledger A/B, Task 4 promotion-state commit incl. flag-default flip)"
+    - "Per D-33: TDD-first for KS-01 RZ-stack work; failing tests committed before the implementation; new tests cover BOTH flag-off (legacy behavior preserved) AND flag-on (new behavior) branches"
     - "Per D-35: existing 1,200+ test suite stays green throughout (verified after Task 2 with `uv run pytest tests/ -v`)"
     - "Per D-10: no calibrated goal-line-only variant for v1; if subsequent measurements show goal-line distortion, revisit as a follow-up — not blocking Phase 1"
   artifacts:
@@ -210,9 +212,26 @@ Commit: `test(01-01): add failing tests for KS-01 RZ TD-gate distribution preser
     - .planning/research/HYPOTHESES.md lines 103-115
   </read_first>
   <action>
+**REVISED Cycle 3 (Codex Cycle-2 NEW HIGH #1 fix):** the implementation is gated behind the `phase1_ks_flags.ks01_preserve_distribution.enabled` flag (added to `config/defaults.yaml` by Plan 00 Task 8, default `false`). Both code paths coexist; runtime branches on the flag read at module import time. This makes the Plan 00 → Plan 01 A/B contract a real two-arm comparison.
+
 Modify `src/fantasy_sim/engine/play_resolver.py`:
 
-1. Add a new helper function near the existing `_tackled_short` (around line 421), BEFORE the existing function:
+1. Add the import at the top of the file (after the existing imports):
+
+```python
+from fantasy_sim.config.loader import get_phase1_ks_flags
+
+# Read flag once at module import (validate.py runs both arms in a single
+# Python process; flag flips during a process require a restart, which the
+# bare-isolation A/B harness already does between arms via fresh GameContextBuilder).
+_KS01_PRESERVE_DIST = (
+    get_phase1_ks_flags()
+    .get("ks01_preserve_distribution", {})
+    .get("enabled", False)
+)
+```
+
+2. Add a new helper function near the existing `_tackled_short` (around line 421), BEFORE the existing function:
 
 ```python
 def _tackled_short_preserve_distribution(yard_line: int, sampled_yards_pre_clamp: int) -> int:
@@ -221,52 +240,75 @@ def _tackled_short_preserve_distribution(yard_line: int, sampled_yards_pre_clamp
     Returns yards = max(1, min(yard_line - 1, sampled_yards_pre_clamp)) per D-09.
     Reserves 1 yard short of the goal so the play does not score; preserves the
     rest of the catch/run distribution.
+
+    Gated behind ``phase1_ks_flags.ks01_preserve_distribution.enabled`` (default
+    false) per Cycle 3 D-45 — so the per-KS A/B genuinely measures the marginal
+    effect of this code path vs. the legacy ``_tackled_short`` rewrite.
     """
     return max(1, min(yard_line - 1, sampled_yards_pre_clamp))
 ```
 
-2. Keep the existing `_tackled_short` for backward compatibility / other callers. (Inspection: no other module imports `_tackled_short` per grep. After this task, `_tackled_short` becomes dead code; KS-15 plan can remove it.)
+3. Keep the existing `_tackled_short` AS THE LEGACY PATH (do NOT remove). Both call sites branch on `_KS01_PRESERVE_DIST` to pick which helper runs.
 
-3. Rewire `_resolve_pass` (around line 283):
+4. Rewire `_resolve_pass` (around line 283) — branch on the flag:
 ```python
 # BEFORE (current line 283):
 yards = _tackled_short(state.yard_line, rng)
-# AFTER (KS-01 — use pre-clamp player_yards from line 267 or 271):
-yards = _tackled_short_preserve_distribution(state.yard_line, player_yards)
+# AFTER (Cycle 3 — flag-gated; legacy path preserved as the default branch):
+if _KS01_PRESERVE_DIST:
+    yards = _tackled_short_preserve_distribution(state.yard_line, player_yards)
+else:
+    yards = _tackled_short(state.yard_line, rng)
 ```
 NOTE: `player_yards` is the variable defined on line 267 (`int(rng.choice(full_dist)) + boost`) or line 271 (`(team_yards if team_yards > 0 else int(rng.integers(3, 12))) + boost`). It is the pre-`_clamp_yards`, pre-`_apply_home_field` value WITH the boost included. For KS-01, this is the correct pre-clamp source. (The boost will be 0 in non-RZ paths but state.yard_line ≤ 20 here so we're inside the RZ; per current code line 265, boost=0 in RZ. So player_yards in the RZ branch == raw sample without boost. Correct.)
 
-4. Rewire `_resolve_run` (around line 376):
+5. Rewire `_resolve_run` (around line 376) — same flag-gated pattern:
 ```python
 # BEFORE (current line 376):
 yards = _tackled_short(state.yard_line, rng)
-# AFTER (KS-01 — use pre-clamp raw_yards from line 362):
-yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)
+# AFTER (Cycle 3 — flag-gated):
+if _KS01_PRESERVE_DIST:
+    yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)
+else:
+    yards = _tackled_short(state.yard_line, rng)
 ```
 NOTE: `raw_yards` on line 362 is `_apply_home_field(player_yards, is_home, rng)` — pre-clamp, post-home-field. Correct pre-clamp source.
 
-5. Run pytest:
+6. Run the new tests + the existing full suite:
 ```bash
 uv run pytest tests/test_engine/test_play_resolver.py -v -k ks01
 ```
 
-EXPECTED: Tests 1-4 PASS (the variant exists and meets the spec; calibration unchanged). Tests 5-6 PASS or SKIP.
+EXPECTED with flag default false: Tests 3-4 (PASS_TD_GATE / RUN_TD_GATE calibration regression guards) pass; Tests 1-2 still pass (the new helper exists; the test calls it directly without going through the flag-gated path, so the helper's behavior is testable regardless of flag state); Tests 5-6 PASS or SKIP.
 
-6. Run the full play_resolver test suite to catch regressions:
+To verify the flag-on path works, add a quick interactive check:
+```bash
+uv run python -c "
+import os
+# Force-flip the flag for this verify check via env or by inspecting the module import.
+# Simplest: assert the helper exists and produces the documented output.
+from fantasy_sim.engine.play_resolver import _tackled_short_preserve_distribution
+assert _tackled_short_preserve_distribution(yard_line=3, sampled_yards_pre_clamp=8) == 2
+assert _tackled_short_preserve_distribution(yard_line=3, sampled_yards_pre_clamp=1) == 1
+print('KS-01 helper round-trip OK')
+"
+```
+
+7. Run the full play_resolver test suite to catch regressions:
 ```bash
 uv run pytest tests/test_engine/test_play_resolver.py -v
 ```
 
-EXPECTED: All existing tests still pass. The old `_tackled_short` is now unused but its tests (if any) still pass because the function is preserved.
+EXPECTED: All existing tests still pass. With flag default false, the legacy `_tackled_short` path is the active one — existing test expectations are unchanged.
 
-7. Run full pytest suite:
+8. Run full pytest suite:
 ```bash
 uv run pytest tests/ -v
 ```
 
 EXPECTED: 1,200+ tests pass (per D-35).
 
-Commit: `feat(01-01): implement KS-01 _tackled_short_preserve_distribution per D-09`
+Commit: `feat(01-01): implement KS-01 _tackled_short_preserve_distribution per D-09 (gated behind phase1_ks_flags.ks01_preserve_distribution per Cycle 3 D-45)`
   </action>
   <verify>
     <automated>uv run pytest tests/test_engine/test_play_resolver.py -v -k ks01 && uv run pytest tests/ -v 2>&1 | tail -5</automated>
@@ -274,14 +316,16 @@ Commit: `feat(01-01): implement KS-01 _tackled_short_preserve_distribution per D
   <acceptance_criteria>
     - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `def _tackled_short_preserve_distribution(yard_line: int, sampled_yards_pre_clamp: int) -> int:`
     - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `return max(1, min(yard_line - 1, sampled_yards_pre_clamp))`
+    - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `_KS01_PRESERVE_DIST` (flag read at module import — REVISED Cycle 3)
+    - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `if _KS01_PRESERVE_DIST:` (flag-gated branch — REVISED Cycle 3)
     - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `yards = _tackled_short_preserve_distribution(state.yard_line, player_yards)` (in `_resolve_pass`)
     - `src/fantasy_sim/engine/play_resolver.py` contains the literal string `yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)` (in `_resolve_run`)
-    - `grep -c "yards = _tackled_short(state.yard_line, rng)" src/fantasy_sim/engine/play_resolver.py` returns 0 (old call sites removed)
+    - `grep -c "yards = _tackled_short(state.yard_line, rng)" src/fantasy_sim/engine/play_resolver.py` returns 2 (legacy path PRESERVED in both _resolve_pass and _resolve_run as the else-branch — REVISED Cycle 3, was 0 in earlier draft)
     - `uv run pytest tests/test_engine/test_play_resolver.py -v -k ks01` exits 0
     - `uv run pytest tests/ -v 2>&1 | tail -5` shows `passed` with no `failed`
     - `git log -1 --pretty=%s` matches `feat(01-01): implement KS-01`
   </acceptance_criteria>
-  <done>GREEN — all KS-01 tests pass, full suite green, both call sites use the new variant with pre-clamp values.</done>
+  <done>GREEN — all KS-01 tests pass, full suite green, both call sites have flag-gated branches with the legacy path preserved as the default.</done>
 </task>
 
 <task type="auto">
@@ -294,32 +338,39 @@ Commit: `feat(01-01): implement KS-01 _tackled_short_preserve_distribution per D
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-26 dependency order, D-27 label scheme, D-28 validation set, D-29 isolation+full-stack rule, D-31 promotion bar for medium-large items)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation) with the labels per D-27. Run sequentially (the harness shares an internal cache).
+Run BOTH A/B passes per D-29 (REVISED Cycle 3 — uses Plan 00's `--arm-b-base bare` AND the `phase1_ks_flags.ks01_preserve_distribution.enabled` feature flag from D-45 for a real two-arm comparison). Run sequentially (the harness shares an internal cache).
 
 ```bash
-# True isolation: bare baseline + KS-01 code change → marginal impact (requires Plan 00 to have landed)
+# True isolation: bare baseline + KS-01 flag flipped on → marginal impact of KS-01 code path
+# Arm A = bare engines + KS-01 flag default (false, legacy code path)
+# Arm B = bare engines + KS-01 flag overridden true (new code path)
+# This is now a REAL two-arm comparison per Cycle-3 D-45.
 uv run python scripts/validate.py \
   --sims 200 \
   --seasons 2022 2023 2024 \
   --scoring ppr \
   --positions QB RB WR TE \
   --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks01_preserve_distribution.enabled=true" \
   --label "p1.ks01.bare"
 
-# Full-stack: promoted defaults + KS-01 code change → compatibility check
+# Full-stack: promoted defaults + KS-01 flag overlay → compatibility check vs full stack
+# Arm A = current promoted defaults (KS-01 flag still false)
+# Arm B = current promoted defaults + KS-01 flag overridden true
 uv run python scripts/validate.py \
   --sims 200 \
   --seasons 2022 2023 2024 \
   --scoring ppr \
   --positions QB RB WR TE \
   --baseline defaults \
+  --set "phase1_ks_flags.ks01_preserve_distribution.enabled=true" \
   --label "p1.ks01.full"
 
 # Inspect ledger
 uv run python scripts/validate.py --show-ledger | grep "p1.ks01"
 ```
 
-NOTE: KS-01 changes the `_tackled_short` function body — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-01 is now flag-gated per Cycle-2 NEW HIGH #1 fix. Both arms still execute the same patched code, but the flag flip in Arm B is what genuinely picks the new branch via the `if _KS01_PRESERVE_DIST:` guard. The earlier Cycle-2 plan (no flag) had both arms execute identical code — that was structurally a no-op and is now fixed.
 
 Capture stdout/stderr to per-run logs at `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks01.bare.log` and `.../logs/p1.ks01.full.log` for the SUMMARY.md.
 
@@ -359,10 +410,33 @@ Commit: `chore(01-01): record KS-01 A/B ledger entries (p1.ks01.{bare,full})`
   <action>
 Per D-25 (revised — promotion-state commit per KS plan), create the final promotion commit + SUMMARY.
 
+**REVISED Cycle 3 (D-45):** if the A/B passes, the promotion commit ALSO flips `phase1_ks_flags.ks01_preserve_distribution.enabled` from `false` to `true` in `config/defaults.yaml` so downstream defaults runs (incl. Plan 11's `p1.aggregate.full`) automatically pick up the new code path. The flag REMAINS in defaults.yaml (we don't delete the block) so emergency rollback is just flipping it back to `false`.
+
 Determine promotion state from PROMOTION-NOTES `## KS-01` section per D-31 medium-large bar:
-- Hard floor passes + QB pass_yards KS Δ ≤ -0.01 → `PROMOTED`
-- Hard floor passes but KS doesn't move → `SHIPPED-NO-OP`
-- Hard floor fails → `BLOCKED` (Task 2 reverted)
+- Hard floor passes + QB pass_yards KS Δ ≤ -0.01 → `PROMOTED` (flip flag default to `true` in defaults.yaml)
+- Hard floor passes but KS doesn't move → `SHIPPED-NO-OP` (still flip flag — the bug fix is correct even if KS doesn't budge per D-31)
+- Hard floor fails → `BLOCKED` (do NOT flip flag; flag stays `false`; Task 2's code change stays in the tree but inert)
+
+If `PROMOTED` or `SHIPPED-NO-OP`, edit `config/defaults.yaml`:
+
+```yaml
+# BEFORE (default after Plan 00 Task 8):
+phase1_ks_flags:
+  ks01_preserve_distribution:
+    enabled: false
+
+# AFTER (Plan 01 promotion):
+phase1_ks_flags:
+  ks01_preserve_distribution:
+    enabled: true   # KS-01 PROMOTED 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-01
+```
+
+If `BLOCKED`, do not edit defaults.yaml; leave the flag default `false`.
+
+Run the full test suite to confirm the flag flip doesn't break anything:
+```bash
+uv run pytest tests/ -v 2>&1 | tail -10
+```
 
 Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md`:
 
@@ -377,8 +451,10 @@ Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01
 ## What shipped
 
 1. Replaced `_tackled_short()` rewrite with `max(1, min(yard_line - 1, sampled_yards_pre_clamp))` (D-09)
-2. PASS_TD_GATE / RUN_TD_GATE calibration regression tests as a guard
-3. RED→GREEN test pair (TDD per D-33)
+2. NEW Cycle 3 (D-45): gated behind `phase1_ks_flags.ks01_preserve_distribution.enabled` for a genuine two-arm A/B
+3. PASS_TD_GATE / RUN_TD_GATE calibration regression tests as a guard
+4. RED→GREEN test pair (TDD per D-33)
+5. (If PROMOTED/SHIPPED-NO-OP): flag default flipped from `false` to `true` in `config/defaults.yaml`
 
 ## Ledger results
 
@@ -386,6 +462,10 @@ Create `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01
 |-------|-------------|-------|---------------------|-------------|----------------|
 | p1.ks01.bare | ... | ... | ... | ✅/❌ | ✅/❌ |
 | p1.ks01.full | ... | ... | ... | ✅/❌ | ✅/❌ |
+
+## Codex review fixes addressed by this plan
+
+- **Cycle-2 NEW HIGH #1** (per-KS code-change A/B is no-op): KS-01 ships behind `phase1_ks_flags.ks01_preserve_distribution.enabled`. Both A/B runs use `--set phase1_ks_flags.ks01_preserve_distribution.enabled=true` so Arm B genuinely flips the new code path on while Arm A stays on the legacy default. Marginal effect of KS-01 is now genuinely measured.
 ```
 
 Commit:
@@ -393,11 +473,20 @@ Commit:
 ```bash
 PROMO_STATE="PROMOTED"  # or SHIPPED-NO-OP / BLOCKED
 git add .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-01-SUMMARY.md
+# If PROMOTED or SHIPPED-NO-OP, also stage the defaults.yaml flag flip
+if [ "$PROMO_STATE" != "BLOCKED" ]; then
+  git add config/defaults.yaml
+fi
 git commit -m "feat(01-01): KS-01 ${PROMO_STATE} — RZ TD-gate truncation fix
 
 Wave 1. Replaces _tackled_short() with distribution-preserving variant
-per D-09. Bare-isolation A/B uses --baseline bare --arm-b-base bare per
-Plan 00."
+per D-09 (gated behind phase1_ks_flags.ks01_preserve_distribution per
+Cycle 3 D-45). Bare-isolation A/B uses --baseline bare --arm-b-base bare
+--set phase1_ks_flags.ks01_preserve_distribution.enabled=true per Plan 00
++ Cycle-3 D-45 (real two-arm comparison; closes Codex Cycle-2 NEW HIGH #1
+for KS-01).
+
+If PROMOTED/SHIPPED-NO-OP: flag default flipped to true in defaults.yaml."
 ```
   </action>
   <verify>

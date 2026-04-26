@@ -16,7 +16,8 @@ must_haves:
     - "Per D-18: catches_per_game proxy uses player.usage.target_share * 32.0 * player.outcomes.catch_rate (per RESEARCH.md Pitfall 4 v1 fallback) — pipeline-plumbed version deferred"
     - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks05.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks05.full uses --baseline defaults (full-stack overlay)"
     - "Per D-41 (added 2026-04-26 — MEDIUM-3): test target is `tests/test_data/test_vegas/` (NOT `src/fantasy_sim/data/vegas/` which is a source directory and contains no test files). VALIDATION.md previously had the wrong path; replan corrects it."
-    - "p1.ks05.bare and p1.ks05.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the props-engine fixes are gated behind `phase1_ks_flags.ks05_props_recv_yds_fix.enabled` (default false until promotion). The implementation in `src/fantasy_sim/data/vegas/props_engine.py` reads `get_phase1_ks_flags()['ks05_props_recv_yds_fix']` and branches: flag-on path uses `_DEFAULT_TEAM_PASS_YDS = 240.0` (or the value from defaults.yaml `phase1_ks_flags.ks05_props_recv_yds_fix.default_team_pass_yds`) AND the corrected `_apply_recv_yds` magnitude formula; flag-off path keeps `_DEFAULT_TEAM_PASS_YDS = 230.0` and the buggy formula. Both A/B runs use `--set phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true`. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks05.bare and p1.ks05.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31. Both runs invoke `--set phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true` per Cycle 3 D-45. Bare-isolation run additionally requires `--set vegas.enabled=true --set vegas.props.enabled=true` because Cycle-3 `bare_config_dict` correctly disables the top-level `vegas.enabled` gate per Pattern 7."
     - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-04): KS-05 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — props_engine bug fixes`"
     - "Per D-26: KS-05 commit chain ships after KS-04 lands. Plan 00 must land first."
     - "Per D-34: test-after acceptable for KS-05 (existing test suite covers the changed branches)"
@@ -305,25 +306,33 @@ Commit: `test(01-04): add KS-05 props engine bug fix tests`
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-05 props-engine fixes are gated behind `phase1_ks_flags.ks05_props_recv_yds_fix.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true` for Arm B; Arm A keeps the legacy `_DEFAULT_TEAM_PASS_YDS = 230.0` constant and the buggy `_apply_recv_yds` magnitude formula.
+
+Run BOTH A/B passes per D-29. Because props_engine itself needs to be enabled for KS-05 to have any effect, the bare-isolation run flips `vegas.enabled=true` + `vegas.props.enabled=true` (NEW Cycle 3 — top-level `vegas.enabled` is required to be flipped explicitly because the Cycle-3 `bare_config_dict` correctly disables the top-level gate per Pattern 7):
 
 ```bash
-# True isolation (bare engines + only KS-05 on top — requires Plan 00 to have landed)
+# True isolation: bare engines + Vegas top-level + props sub-engine + KS-05 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks05.bare"
+  --baseline bare --arm-b-base bare \
+  --set "vegas.enabled=true" \
+  --set "vegas.props.enabled=true" \
+  --set "phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true" \
+  --label "p1.ks05.bare"
 
-# Full-stack overlay (defaults + KS-05)
+# Full-stack overlay: defaults + KS-05 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks05.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true" \
+  --label "p1.ks05.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks05"
 ```
 
-NOTE: KS-05 changes module constants and a function body — no `--set` flag is needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-05's changes to `props_engine.py` (the `_DEFAULT_TEAM_PASS_YDS` constant and `_apply_recv_yds` magnitude logic) now read `phase1_ks_flags.ks05_props_recv_yds_fix.enabled` at module import and branch on it. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1).
 
-NOTE for the bare-isolation run: if `props_engine` requires `vegas.props.enabled=true` to be active in the bare config, the run also needs `--set vegas.props.enabled=true` (and possibly `--set vegas.itt.enabled=true` if vegas requires the parent flag). Inspect `validation/config.py::build_engine_configs` and the `load_props_config()` predicate to confirm; the planner adds the appropriate `--set` flags here if so. The acceptance reads "true isolation of KS-05 on top of bare-engines + props_engine-enabled".
+NOTE on the bare-isolation `--set vegas.enabled=true --set vegas.props.enabled=true` requirement: per the Cycle-3 `bare_config_dict` (Pattern 7), top-level engine gates are now disabled in the bare base. To run KS-05's A/B in isolation, callers MUST explicitly re-enable Vegas's top-level gate AND the props sub-engine. This is a deliberate consequence of fixing Cycle-2 NEW HIGH #2 — the helper now correctly produces a fully-bare base, and per-engine isolation requires explicit re-enables. Plan 00 Task 4 Test 6 establishes the canonical pattern (`pff.enabled=true` + `pff.tier_engine.enabled=true` + `pff.team_context.enabled=true`); KS-05 follows the same shape with `vegas.enabled=true` + `vegas.props.enabled=true`.
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks05.{bare,full}.log`.
 

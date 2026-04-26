@@ -13,7 +13,8 @@ must_haves:
   truths:
     - "Per D-23: scripts/validate_passing.py is run against the post-bug-fix baseline (after KS-01..KS-29 ship); only retune CLOCK_PASS_INCOMPLETE from 5 → 3 if pass attempts are demonstrably low (32-33 instead of 35-36)"
     - "Per D-24: if measurement does not motivate change, document KS-32 as 'measured, no change' in the ledger via the p1.ks32.measure label"
-    - "If retune motivated, p1.ks32.bare and p1.ks32.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix; applies ONLY to the RETUNE branch): the `CLOCK_PASS_INCOMPLETE = 3` change is gated behind `phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled` (default false until promotion). The implementation in `src/fantasy_sim/engine/play_resolver.py` reads `get_phase1_ks_flags()['ks32_clock_pass_incomplete_3s']['enabled']` and branches: flag-on path uses `CLOCK_PASS_INCOMPLETE = 3`; flag-off path keeps the legacy `CLOCK_PASS_INCOMPLETE = 5`. RETUNE-branch A/B runs use `--set phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true`. NO CHANGE branch (Task 3, p1.ks32.measure) is unaffected — it uses no `--set` flag because no code change ships in that branch. Promotion commit (RETUNE only) flips the default to true in `config/defaults.yaml`."
+    - "If retune motivated, p1.ks32.bare and p1.ks32.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30. Both runs invoke `--set phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true` per Cycle 3 D-45."
   artifacts:
     - path: ".planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md"
       provides: "## KS-32 section with measurement results and decision (no change | retune to 3 | retune to N)"
@@ -195,23 +196,29 @@ Commit: `feat(01-10): KS-32 retune CLOCK_PASS_INCOMPLETE = 3 per D-23 measuremen
   <action>
 **SKIP THIS TASK if Task 1's decision is NO CHANGE.** (In that case proceed directly to Task 4.)
 
-If RETUNE branch: run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** if RETUNE branch fires, the new `CLOCK_PASS_INCOMPLETE = 3` value is gated behind `phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true` for Arm B; Arm A keeps the legacy `CLOCK_PASS_INCOMPLETE = 5`.
+
+If RETUNE branch: run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation
+# True isolation: bare engines + KS-32 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks32.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true" \
+  --label "p1.ks32.bare"
 
-# Full-stack overlay
+# Full-stack overlay: defaults + KS-32 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks32.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true" \
+  --label "p1.ks32.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks32"
 ```
 
-NOTE: KS-32 changes the `CLOCK_PASS_INCOMPLETE` module constant — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-32's edit to `CLOCK_PASS_INCOMPLETE` in `play_resolver.py` is now flag-gated. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1). The flag-on path uses `CLOCK_PASS_INCOMPLETE = 3`; the flag-off (default) path keeps `CLOCK_PASS_INCOMPLETE = 5`. The NO CHANGE branch (Task 3, p1.ks32.measure) is unaffected — it captures the post-Phase-1 baseline state without the KS-32 flag.
 
 Capture logs to `.../logs/p1.ks32.{bare,full}.log`.
 

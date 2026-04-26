@@ -1,23 +1,24 @@
 # Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape - Research
 
 **Researched:** 2026-04-26
+**Re-researched (Cycle 3):** 2026-04-26 (incorporates Codex `01-REVIEWS.md` Cycle 2 findings: per-KS code-change A/B is no-op, `bare_config_dict()` incomplete, Plan 11 mean-bias not in ledger; reconciles stale `open_*` / "Tuesday 12pm ET" / "fetch writes parquet" wording from earlier draft)
 **Domain:** NFL fantasy projections simulator — bug fixes in play resolver / context engines / props engine + Odds API alt-line scrape
 **Confidence:** HIGH (all claims grounded in current source files at `src/fantasy_sim/...` and `.planning/research/HYPOTHESES.md`)
 
 ## User Constraints
 
-> Copied verbatim from `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md` `<decisions>` (D-01..D-35). Locked. Non-negotiable.
+> Copied verbatim from `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md` `<decisions>` (D-01..D-46). Locked. Non-negotiable.
 
 ### KS-21 Odds API alternate-line scrape (sub-deliverable)
 
 - **D-01:** Books = DraftKings + FanDuel + Caesars (3-book consensus).
-- **D-02:** "Open" snapshot = Tuesday 12pm ET.
-- **D-03:** Scrape scope = open + close snapshots for **all 14 markets** (8 main-line + 6 new alt-line).
+- **D-02 (REVISED Cycle 2 — HIGH-3):** Earlier snapshot = whatever The Odds API returns as `previous_timestamp` relative to the existing gameday-noon UTC events crawl (`events_inventory.build_request_window` at `events_inventory.py:89-96`). The current pipeline does NOT store a real Tuesday 12pm ET line-release marker, so the earlier-snapshot label honestly describes itself as "prior" not "open". Phase 4 expectations updated to consume "prior-snapshot" lines, not "Tuesday 12pm ET line release".
+- **D-03 (REVISED Cycle 2 — HIGH-3):** Scrape scope = prior + close snapshots for **all 14 markets** (8 main-line + 6 new alt-line). Existing `close_core8` cache stays untouched; this scrape adds prior-line versions of the 8 main lines AND prior + close for the 6 new alt-line markets.
 - **D-04:** Alt-line markets = `player_pass_yds_alternate`, `player_reception_yds_alternate`, `player_rush_yds_alternate`, `player_pass_attempts_alternate`, `player_receptions_alternate`, `player_rush_attempts_alternate`.
 - **D-05:** Coverage = 2023, 2024, 2025 regular seasons (Odds API has no historical pre-2023; ROADMAP success criterion #5 relaxed accordingly).
-- **D-06:** Snapshot labels = `open_core8`, `close_alt6`, `open_alt6` (existing `close_core8` untouched).
+- **D-06 (REVISED Cycle 2 — HIGH-3):** Snapshot labels = `prior_core8`, `prior_alt6`, `close_alt6` (existing `close_core8` unchanged). The `prior_*` prefix replaces the misleading `open_*` prefix from the earlier draft and explicitly identifies these as "API previous_timestamp relative to gameday-noon UTC crawl". Phase 4 engine integration must reference `prior_*` labels.
 - **D-07:** Reuse existing `player_markets_*` parquet schema (one row per (player, market_key, line) tuple).
-- **D-08:** Reuse `scripts/fetch_market_history_props.py` infrastructure with new `--markets`, `--snapshot-label`, `--date-source`, `--offset-minutes` arguments. No new scrape script.
+- **D-08 (REVISED Cycle 2 — HIGH-2):** Pipeline = (1) `scripts/fetch_market_history_props.py` writes raw JSON to `~/.fantasy-sim/market-history/raw/props/{season}/{snapshot_label}/{event_id}.json` via `save_raw_props_snapshot()` (`props_backfill.py:139`); (2) `scripts/build_market_history_player_markets.py` reads the JSON cache and writes processed parquet at `~/.fantasy-sim/market-history/processed/player_markets_{season}_{snapshot_label}.parquet` via `build_player_market_signals_for_season()` (`player_markets.py:190`). Both scripts must run; the earlier draft incorrectly assumed `fetch_market_history_props.py` produced parquet directly. KS-21 plan adds (a) the alt-line market tuple, (b) raw fetch loop, (c) processed-build loop, (d) schema/timing verification.
 
 ### KS-01 RZ TD-gate truncation fix
 
@@ -199,18 +200,33 @@ This phase uses the existing stack — no new dependencies.
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│                   PARALLEL TRACK (KS-21 scrape)                      │
+│                   PARALLEL TRACK (KS-21 scrape — REVISED Cycle 2)    │
 │                                                                      │
-│  scripts/fetch_market_history_props.py                               │
+│  Step 1: scripts/fetch_market_history_props.py                       │
 │     ├── --markets <DEFAULT_PROP_MARKETS or ALT_PROP_MARKETS>         │
-│     ├── --snapshot-label <open_core8 | close_alt6 | open_alt6>       │
-│     ├── --date-source previous_snapshot_timestamp (Tue 12pm ET)      │
-│     └── writes parquet → ~/.fantasy-sim/market-history/processed/    │
-│           player_markets_<season>_<snapshot_label>.parquet           │
+│     ├── --snapshot-label <prior_core8 | close_alt6 | prior_alt6>     │
+│     ├── --date-source previous_snapshot_timestamp                    │
+│     │     (API previous_timestamp relative to gameday-noon crawl;    │
+│     │      NOT a real Tuesday 12pm ET marker — see Pattern 5)        │
+│     └── writes RAW JSON → ~/.fantasy-sim/market-history/raw/props/   │
+│           {season}/{snapshot_label}/{event_id}.json                  │
+│           via save_raw_props_snapshot() (props_backfill.py:139)      │
+│                                                                      │
+│  Step 2: scripts/build_market_history_player_markets.py              │
+│     ├── --season <int> --snapshot-label <label>                      │
+│     ├── reads raw JSON from Step 1                                   │
+│     └── writes PARQUET → ~/.fantasy-sim/market-history/processed/    │
+│           player_markets_{season}_{snapshot_label}.parquet           │
+│           via build_player_market_signals_for_season()               │
+│           (player_markets.py:190)                                    │
 │                                                                      │
 │  data/market_history/props_backfill.py                               │
 │     └── DEFAULT_PROP_MARKETS tuple (line 22) — KS-21 adds            │
 │         ALT_PROP_MARKETS sibling tuple                               │
+│                                                                      │
+│  KS-21 deliverable acceptance MUST gate on BOTH the raw JSON files   │
+│  (Step 1 output) AND the processed parquet (Step 2 output). The      │
+│  earlier draft only ran Step 1 and falsely asserted parquet existed. │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -364,9 +380,9 @@ uv run python scripts/validate.py \
   --label "p1.ks01.full"
 ```
 
-> Note 1: `--set` paths follow the `apply_overrides()` convention in `validation/config.py`. For KS items that change module constants (not config keys), the change ships as a code edit and the `--set` is a no-op flag (e.g., the per-KS branch is the commit itself; the validator picks up the new constant on import).
+> Note 1 (REVISED Cycle 3): `--set` paths follow the `apply_overrides()` convention in `validation/config.py`. ~~For KS items that change module constants (not config keys), the change ships as a code edit and the `--set` is a no-op flag.~~ **Cycle-2 NEW HIGH #1 invalidated that assumption** — both arms in a single `validate.py` process import the same patched code, so a same-code A/B is structurally a no-op. Cycle 3 fixes this by gating every per-KS code change behind a `phase1_ks_flags.ksXX_<name>.enabled` feature flag (default `false`) and using `--set phase1_ks_flags.ksXX_<name>.enabled=true` for Arm B. See Pattern 4b above.
 >
-> Note 2: For Plans 00-08 and 10 (per-KS), the bare arm uses `--baseline bare --arm-b-base bare`. Plan 09 (KS-21 scrape) does no A/B; it produces data only. Plan 11 uses the no-`--set`, `--baseline bare --label p1.aggregate.full` form to capture post-Phase-1 promoted defaults vs. bare for direct comparison against the Wave 0 `phase0.baseline.full` ledger entry.
+> Note 2: For Plans 00-08 and 10 (per-KS), the bare arm uses `--baseline bare --arm-b-base bare --set phase1_ks_flags.ksXX_<name>.enabled=true`. Plan 09 (KS-21 scrape) does no A/B; it produces data only. Plan 11 uses the no-`--set`, `--baseline bare --label p1.aggregate.full` form to capture post-Phase-1 promoted defaults vs. bare for direct comparison against the Wave 0 `phase0.baseline.full` ledger entry — by Phase-1 close the per-KS flag defaults have been flipped to `true` in `config/defaults.yaml`, so a bare-vs-defaults run captures the post-Phase-1 state.
 
 ### Pattern 4: Market-history scrape pipeline — REVISED 2026-04-26
 
@@ -401,6 +417,86 @@ uv run python scripts/build_market_history_player_markets.py \
 
 Both steps must run for every season-snapshot pair before KS-21 is deliverable.
 
+### Pattern 4b: Per-KS code-change A/B via feature flags — NEW Cycle 3 (HIGH-1 final fix)
+
+**Problem (Codex Cycle-2 NEW HIGH #1):** Even with `--arm-b-base bare` from Plan 00, the per-KS code-change plans (KS-01/03/04/05/06/07/15 and the KS-32 retune branch) still produce no-op A/B comparisons. `validate.py` is a single Python process — both arms import the SAME (patched) module, so a bare-isolation run after the KS code edit lands compares `(bare engines, patched code)` to `(bare engines, patched code + no extra config overrides)`. Both arms execute identical code. Marginal effect of the KS code change CANNOT be measured this way.
+
+**Resolution (Cycle 3):** Each KS code change ships behind a config feature flag, default `false` (preserves current behavior). The A/B run sets the flag to `true` in Arm B via `--set <flag>=true`, producing a real `(bare, OLD code) vs (bare, NEW code)` comparison. After the A/B passes hard floor + promotion bar, a SEPARATE promotion commit flips the flag default to `true` in `config/defaults.yaml`. This pattern matches how every existing engine (PFF, Vegas, weather, etc.) is gated.
+
+**Feature-flag inventory for Phase 1 code changes** (NEW config keys to add to `config/defaults.yaml` under a new top-level block):
+
+```yaml
+# Phase 1 Cycle-3 KS code-change feature flags (default false; flipped per promotion commit)
+phase1_ks_flags:
+  ks01_preserve_distribution:
+    enabled: false   # KS-01: _tackled_short_preserve_distribution variant
+  ks03_dynamic_yard_anchor:
+    enabled: false   # KS-03: _apply_matchup/_apply_coverage use np.mean(<dist>) instead of *10.0
+  ks04_conditional_catch_boost:
+    enabled: false   # KS-04: CATCH_YARDS_BOOST = 1.5 only when _clamp_yards would fire
+    boost_value: 1.5
+  ks05_props_recv_yds_fix:
+    enabled: false   # KS-05: _apply_recv_yds magnitude fix + DEFAULT_TEAM_PASS_YDS=240
+    default_team_pass_yds: 240.0
+  ks06_backup_receiver_fix:
+    enabled: false   # KS-06: filter completed plays + integer fallback (5,18) + MIN_PLAYER_PLAYS=3
+    min_player_plays: 3
+    fallback_low: 5
+    fallback_high: 18
+  ks07_positional_rz_catch_rate:
+    enabled: false   # KS-07: positional RZ_CATCH_RATE_MODIFIERS dict
+    rates:
+      WR: 0.92
+      TE: 0.95
+      RB: 0.85
+  ks15_unclamp_for_td_gate:
+    enabled: false   # KS-15: min(yard_line, sample) clamp + un-clamped sample drives TD gate
+  ks32_clock_pass_incomplete_3s:
+    enabled: false   # KS-32: CLOCK_PASS_INCOMPLETE = 3 (only set if measurement motivates)
+```
+
+**Code-side pattern** (per KS plan): the changed module reads the flag once at import time (or once per `GameContextBuilder` instance) and branches on it. Example for KS-01 (`engine/play_resolver.py`):
+
+```python
+# Module top, after constants
+from fantasy_sim.config.loader import get_phase1_ks_flags
+_KS01_PRESERVE_DIST = get_phase1_ks_flags().get("ks01_preserve_distribution", {}).get("enabled", False)
+
+# In _resolve_pass and _resolve_run, the failed-gate branch
+if _KS01_PRESERVE_DIST:
+    yards = _tackled_short_preserve_distribution(state.yard_line, sampled_yards_pre_clamp)
+else:
+    yards = _tackled_short(state.yard_line, rng)  # legacy
+```
+
+The `get_phase1_ks_flags()` helper is a thin shim added to `src/fantasy_sim/config/loader.py` in Plan 00 Task 8 (NEW Cycle-3 task). It reads from the same defaults.yaml chain `load_defaults()` already uses; the shim exists so KS plans don't have to plumb the full config dict through every call site.
+
+**A/B invocation per KS code change (Cycle-3 pattern):**
+
+```bash
+# KS-01 isolation A/B: bare baseline + ONLY the KS-01 flag flipped on
+uv run python scripts/validate.py \
+  --sims 200 --seasons 2022 2023 2024 --scoring ppr \
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks01_preserve_distribution.enabled=true" \
+  --label "p1.ks01.bare"
+
+# KS-01 full-stack overlay: defaults + KS-01 flag flipped on
+uv run python scripts/validate.py \
+  --sims 200 --seasons 2022 2023 2024 --scoring ppr \
+  --baseline defaults \
+  --set "phase1_ks_flags.ks01_preserve_distribution.enabled=true" \
+  --label "p1.ks01.full"
+```
+
+In Arm A both runs use the flag's default (`false`, legacy code path); in Arm B both runs flip it to `true` (new code path). Marginal effect of the KS-01 change is now genuinely measured.
+
+**Promotion-commit pattern (separate from the A/B commit):** after the A/B passes, a follow-up commit flips the flag default to `true` in `config/defaults.yaml`. The flag stays in the config tree (so the legacy path remains reachable for emergency rollback) but downstream defaults runs hit the new code path automatically. The flag can be removed entirely in a Phase 2+ cleanup commit once enough wall-clock has passed without rollback needs.
+
+**Anti-pattern:** running `validate.py --baseline bare --arm-b-base bare --label p1.ksXX.bare` AFTER landing the KS code change WITHOUT a flag — both arms execute the same patched code, the ledger entry is structurally a no-op, and the promotion claim "KS-XX A/B passed hard floor" is false. This was Codex Cycle-2 NEW HIGH #1.
+
+**Path B (deferred — not used in Cycle 3):** an alternative is to pin pre-commit and post-commit ledger entries via two separate `validate.py` runs at different commits. Plan 00 already established this pattern for `phase0.baseline.full`. We rejected it for per-KS work because (a) each KS would need two clean commits with a forced ledger-pin run between them, doubling wall-clock; (b) the cross-commit comparison is harder to audit than a flag-driven within-commit A/B; (c) feature flags also give us a clean rollback knob if a downstream phase reveals a regression.
+
 ### Pattern 5: Snapshot label naming honesty — REVISED 2026-04-26
 
 **REVISED 2026-04-26 (HIGH-3 from `01-REVIEWS.md`):** The original CONTEXT used `open_*` labels (`open_core8`, `open_alt6`) and asserted the timing was "Tuesday 12pm ET". This was incorrect:
@@ -419,6 +515,141 @@ Both steps must run for every season-snapshot pair before KS-21 is deliverable.
 | `close_alt6` | `close_alt6` (unchanged) | gameday-noon-1h for the 6 alt-line markets |
 | `close_core8` | `close_core8` (unchanged) | existing pre-Phase-1 cache |
 
+### Pattern 6: Mean-bias retrieval for Plan 11 — NEW Cycle 3 (HIGH-3 fix)
+
+**Problem (Codex Cycle-2 NEW HIGH #3):** Phase-1 success criterion 1 ("QB pass_yards mean bias narrowed from ~−28 yd/g to within ±10 yd/g") is not measurable from the existing ledger. `SeasonMetrics` (`src/fantasy_sim/validation/ledger.py:25`) carries `arm_a_rank_corr`, `arm_b_rank_corr`, `arm_a_weekly_mae`, `arm_b_weekly_mae`, `arm_a_season_mae`, `arm_b_season_mae`, `arm_a_calibration`, `arm_b_calibration`, `weekly_fpts_ks` (dict), and `stat_ks` (dict of dict). It does NOT carry per-position-stat **mean bias** (signed projection-vs-actual difference per game). Plan 11's acceptance block requires this number, so the comparison currently has no data path.
+
+**Resolution (Cycle 3 — Path A: extend the ledger schema):** add an optional `stat_mean_bias` field to `SeasonMetrics` mirroring the shape of `stat_ks`:
+
+```python
+@dataclass
+class SeasonMetrics:
+    # ... existing fields ...
+    stat_mean_bias: dict[str, dict[str, dict[str, float | int]]] = field(default_factory=dict)
+    # Shape: {position: {stat_name: {"arm_a_bias": float, "arm_b_bias": float,
+    #                                 "bias_delta": float, "n": int}}}
+```
+
+This is a **schema-version bump** (CURRENT_LEDGER_SCHEMA_VERSION 4 → 5). The `load_ledger()` function already does `item.setdefault(...)` for backward-compatible schema evolution; new entries have the field, old entries default to empty dict on load. Plan 00 owns the ledger-side change; Plan 11 reads `stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"]` directly.
+
+**Computation site:** the existing per-arm metrics code in `validate.py` already iterates over per-position-stat slices to compute KS. Mean bias is a sibling computation: `np.mean(projected_per_game) - np.mean(actual_per_game)` per (position, stat) per arm. No additional simulation cost — just a sum/mean over already-collected projection rows. Approximate insertion site: wherever `stat_ks` entries are built in `validate.py` (search for `weekly_fpts_ks` or `stat_ks` writes; the mean-bias write happens immediately adjacent). Plan 00 Task 9 (NEW Cycle-3) ships this in tandem with the bumped schema.
+
+**Path B (rejected for Cycle 3):** a side diagnostic script that consumes raw projection rows after Plan 11's run. Rejected because (a) it requires re-running the simulation just to compute bias, doubling Plan 11's wall-clock; (b) the metric is durable and useful for every future phase, so paying the schema-bump cost once is correct.
+
+**Plan 11 reads the new field** by adapting the `collect_arm_b()` helper in Plan 11 Task 2:
+
+```python
+mean_bias = {}
+for s in seasons:
+    for pos, stats in s.get("stat_mean_bias", {}).items():
+        for stat, mb_data in stats.items():
+            if isinstance(mb_data, dict) and "arm_b_bias" in mb_data:
+                mean_bias.setdefault((pos, stat), []).append(mb_data["arm_b_bias"])
+return {
+    # ...
+    "stat_mean_bias": {k: sum(v)/len(v) for k, v in mean_bias.items()},
+}
+```
+
+The differenced output `p1.aggregate.full Arm B - phase0.baseline.full Arm B` for `(QB, pass_yards)` is then the Phase-1-vs-Phase-0 mean bias delta needed for success criterion 1.
+
+### Pattern 7: bare_config_dict() completeness — NEW Cycle 3 (HIGH-2 fix)
+
+**Problem (Codex Cycle-2 NEW HIGH #2):** the Cycle-2 `bare_config_dict()` helper enumerates engine SUB-engine flags (e.g., `pff.team_context.enabled`) but omits the TOP-LEVEL engine gates (`pff.enabled`, `vegas.enabled`, `usage.enabled`, etc.) that engines also key off. From `src/fantasy_sim/validation/config.py:118-138`:
+
+```python
+"pff_config": pff if pff.enabled else None,
+"weather_config": weather if weather.enabled else None,
+"vegas_config": vegas if vegas.enabled else None,
+"props_config": props if props.enabled else None,
+"usage_config": usage if usage.enabled else None,
+"tracking_config": tracking if tracking.enabled else None,
+"availability_config": availability if availability.enabled else None,
+"role_trend_config": role_trend if role_trend.enabled else None,
+"market_history_config": market_history if market_history.enabled else None,
+"game_script_config": game_script if game_script.enabled else None,
+"goal_line_concentration_config": goal_line_concentration if goal_line_concentration.enabled else None,
+"td_tendency_config": td_tendency if td_tendency.enabled else None,
+"target_selection_config": target_selection if target_selection.enabled else None,
+"play_call_model_config": play_call_model if play_call_model.enabled else None,
+"qb_rushing_config": qb_rushing if (qb_rushing.scramble.enabled or qb_rushing.designed_runs.enabled) else None,
+```
+
+If `bare_config_dict()` only flips sub-engine flags (e.g., `pff.team_context.enabled=false`) but leaves `pff.enabled=true`, then `--set pff.team_context.enabled=true` on top of the bare base produces a config where `pff.enabled` is still true but ALL OTHER pff sub-engines are still bound by their `defaults.yaml` values. The bare base is not actually bare.
+
+**Resolution (Cycle 3):** `bare_config_dict()` MUST enumerate every `.enabled` truthiness gate the engines key off, including the TOP-LEVEL gates. Concretely:
+
+```python
+def bare_config_dict(defaults: dict) -> dict:
+    """REVISED Cycle 3: forces ALL .enabled gates to false — top-level engine
+    gates AND sub-engine flags. This must mirror build_bare_engine_configs()
+    semantics exactly: every key in build_engine_configs that ends up keying
+    off `.enabled` must be flipped here.
+    """
+    config = copy.deepcopy(defaults)
+    enabled_keys_to_disable = (
+        # Top-level engine gates (NEW Cycle 3 — fixes HIGH-2)
+        "pff.enabled",
+        "weather.enabled",
+        "vegas.enabled",
+        "props.enabled",  # Note: props is a sibling top-level block, not vegas.props
+        "usage.enabled",
+        "tracking.enabled",
+        "availability.enabled",
+        "role_trend.enabled",
+        "market_history.enabled",
+        "game_script.enabled",
+        "goal_line_concentration.enabled",
+        "td_tendency.enabled",
+        "target_selection.enabled",
+        "play_call_model.enabled",
+        # qb_rushing: gate is `scramble.enabled OR designed_runs.enabled`, so disable BOTH
+        "qb_rushing.scramble.enabled",
+        "qb_rushing.designed_runs.enabled",
+        # PFF sub-engines (Cycle 2 baseline; preserved)
+        "pff.tier_engine.enabled",
+        "pff.team_context.enabled",
+        "pff.matchup.enabled",
+        "pff.coverage.enabled",
+        "pff.kicker.enabled",
+        "pff.dst_baseline.enabled",
+        "pff.rb_scheme_fit.enabled",
+        "pff.qb_split.enabled",
+        "pff.depth_role.enabled",
+        "pff.depth_role.efficiency.enabled",
+        "pff.talent.enabled",
+        "pff.ncaa_rookie.enabled",
+        "pff.archetypes.enabled",
+        "pff.matchup.enabled",
+        # Vegas sub-engines (Cycle 2 baseline; preserved — note vegas.props.enabled is a sub-key, distinct from top-level props.enabled)
+        "vegas.itt.enabled",
+        "vegas.spread.enabled",
+        "vegas.props.enabled",
+        # Usage sub-engines (Cycle 2 baseline; preserved)
+        "usage.ngs.enabled",
+        "usage.route_rate.enabled",
+        # Ensemble (Cycle 2 baseline; preserved)
+        "ensemble.enabled",
+        "ensemble.ff_opportunity.enabled",
+        "ensemble.dynamic_blend.enabled",
+        "ensemble.residual_calibration.enabled",
+        # Phase-1 KS feature flags (NEW Cycle 3 — Pattern 4b)
+        "phase1_ks_flags.ks01_preserve_distribution.enabled",
+        "phase1_ks_flags.ks03_dynamic_yard_anchor.enabled",
+        "phase1_ks_flags.ks04_conditional_catch_boost.enabled",
+        "phase1_ks_flags.ks05_props_recv_yds_fix.enabled",
+        "phase1_ks_flags.ks06_backup_receiver_fix.enabled",
+        "phase1_ks_flags.ks07_positional_rz_catch_rate.enabled",
+        "phase1_ks_flags.ks15_unclamp_for_td_gate.enabled",
+        "phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled",
+    )
+    # ... walk + flip ...
+```
+
+**Acceptance for the helper (NEW Cycle 3 — replaces Cycle-2 escape hatch):** Plan 00 Task 4 (the integration test) is now a HARD GATE. The Cycle-2 "loosen the test if end-to-end behavior disagrees" escape hatch is REMOVED. The test must verify that for EVERY engine listed in `build_engine_configs()`, calling `bare_config_dict(load_defaults()) → build_engine_configs(...)` produces a dict where the corresponding `<engine>_config` is `None`. If any engine remains non-None, the helper is incomplete and the test fails (the helper must be extended, not the test loosened).
+
+**Anti-pattern:** "we'll loosen the test until it passes" — flagged by Codex Cycle 2 as the reason HIGH-1 wasn't actually closed. The Cycle-3 acceptance contract: helper must be exhaustive; test must enforce that exhaustively.
+
 ### Anti-patterns to avoid
 
 - **Stacking multiple KS commits before A/B-validating each one** — defeats the per-change ledger entry rule (D-25/D-27) and makes bisect impossible.
@@ -429,6 +660,9 @@ Both steps must run for every season-snapshot pair before KS-21 is deliverable.
 - **Asserting `--baseline bare` is true isolation** (REVISED — see HIGH-1) — until Plan 00 lands the `--arm-b-base` extension, `--baseline bare` produces `(bare) vs (defaults+overrides)`. Per-KS isolation runs MUST use `--baseline bare --arm-b-base bare` after Plan 00.
 - **Calling `fetch_market_history_props.py` without then calling `build_market_history_player_markets.py`** (REVISED — see HIGH-2) — the raw script writes JSON only; the processed parquet downstream code reads requires the build step.
 - **Labeling Tuesday-line snapshots as `open_*`** (REVISED — see HIGH-3) — current pipeline cannot guarantee Tuesday timing; use `prior_*` to describe what the API actually returns.
+- **Running per-KS A/B without a feature flag (Cycle-3 NEW HIGH #1)** — even with `--arm-b-base bare`, calling `validate.py --baseline bare --arm-b-base bare --label p1.ksXX.bare` AFTER landing the KS code change without a `--set <flag>=true` produces `(bare, NEW code) vs (bare, NEW code)` — both arms execute identical code. Marginal effect of the KS change is structurally unmeasurable. Cycle 3 mandates Pattern 4b feature flags; per-KS plans must invoke `--set phase1_ks_flags.ksXX_<name>.enabled=true` so Arm B genuinely flips the new code path on while Arm A stays on the legacy default (`enabled: false`).
+- **`bare_config_dict()` omitting top-level engine gates (Cycle-3 NEW HIGH #2)** — the helper must enumerate `pff.enabled`, `vegas.enabled`, `usage.enabled`, etc. (top-level gates that `build_engine_configs` keys off) AND the sub-engine flags. The Cycle-2 helper omitted the top-level gates and explicitly allowed "loosen the test" if the integration test disagreed. Cycle 3 forbids that escape hatch — the integration test is a HARD gate; if it fails, extend the helper, do not loosen the test. See Pattern 7.
+- **Reading mean-bias from raw projection rows after the fact (Cycle-3 NEW HIGH #3)** — the ledger does not persist mean-bias today, so any "I'll grep the projections later" approach is fragile and re-runs the simulation. Cycle 3 extends the ledger schema with `stat_mean_bias` (Path A in Pattern 6); Plan 11 reads it directly from the persisted ledger entry. Side diagnostic scripts that re-simulate are rejected.
 
 ## Don't Hand-Roll
 
@@ -454,21 +688,24 @@ Both steps must run for every season-snapshot pair before KS-21 is deliverable.
 - `weekly_mae` regression must be ≤ 0.05 (i.e., `Δ weekly_mae ≤ +0.05`)
 - Where `Δ = (Arm B with KS-XX) - (Arm A baseline)`
 
-### Per-KS validation criteria — REVISED 2026-04-26 (HIGH-1, HIGH-4)
+### Per-KS validation criteria — REVISED Cycle 3 (HIGH-1 final fix via Pattern 4b feature flags)
+
+> Every code-change KS now invokes `--set <feature_flag>=true` so Arm B genuinely executes the new code path while Arm A stays on the legacy default. KS-29 was already config-driven (D-21 sweep); its invocation pattern is unchanged.
 
 | KS | Primary target metric | Bare-isolation invocation | Full-stack invocation | Promotion bar (D-30/D-31) |
 |----|----------------------|---------------------------|----------------------|---------------------------|
-| Wave-0 baseline pin | rank_corr/MAE/per-stat KS for ALL positions | `validate.py --baseline bare --label phase0.baseline.full` (no `--set`) | n/a (Arm B = current promoted defaults) | Wave 0 mandatory; freezes the comparison reference |
-| KS-01 | QB pass_yards KS, QB pass_yards mean bias | `validate.py --baseline bare --arm-b-base bare --label p1.ks01.bare` | `validate.py --baseline defaults --label p1.ks01.full` | Hard floor + Δ KS ≤ -0.01 |
-| KS-03 | WR/TE receiving_yards KS, RB rush_yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks03.bare` | `validate.py --baseline defaults --label p1.ks03.full` | Hard floor + ≥0 KS delta on WR/TE recv AND RB rush |
-| KS-04 | QB/WR receiving + passing yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks04.bare` | `validate.py --baseline defaults --label p1.ks04.full` | Hard floor + Δ KS ≤ -0.01 |
-| KS-05 | WR/TE receiving_yards mean bias + KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks05.bare` | `validate.py --baseline defaults --label p1.ks05.full` | Hard floor + Δ KS ≤ -0.01 |
-| KS-06 | WR/TE backup-receiver edge cases | `validate.py --baseline bare --arm-b-base bare --label p1.ks06.bare` | `validate.py --baseline defaults --label p1.ks06.full` | Hard floor + ≥0 KS delta |
-| KS-07 | RB rush_yards KS, TE/WR receiving KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks07.bare` | `validate.py --baseline defaults --label p1.ks07.full` | Hard floor + ≥0 KS delta |
-| KS-15 | QB pass_yards KS, WR receiving_yards KS | `validate.py --baseline bare --arm-b-base bare --label p1.ks15.bare` | `validate.py --baseline defaults --label p1.ks15.full` | Hard floor + Δ KS ≤ -0.01 |
+| Wave-0 baseline pin | rank_corr/MAE/per-stat KS/per-stat mean-bias for ALL positions | `validate.py --baseline bare --label phase0.baseline.full` (no `--set`) | n/a (Arm B = current promoted defaults) | Wave 0 mandatory; freezes the comparison reference (now includes mean-bias per Pattern 6) |
+| KS-01 | QB pass_yards KS, QB pass_yards mean bias | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks01_preserve_distribution.enabled=true --label p1.ks01.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks01_preserve_distribution.enabled=true --label p1.ks01.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-03 | WR/TE receiving_yards KS, RB rush_yards KS | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true --label p1.ks03.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks03_dynamic_yard_anchor.enabled=true --label p1.ks03.full` | Hard floor + ≥0 KS delta on WR/TE recv AND RB rush |
+| KS-04 | QB/WR receiving + passing yards KS | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks04_conditional_catch_boost.enabled=true --label p1.ks04.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks04_conditional_catch_boost.enabled=true --label p1.ks04.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-05 | WR/TE receiving_yards mean bias + KS | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true --label p1.ks05.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks05_props_recv_yds_fix.enabled=true --label p1.ks05.full` | Hard floor + Δ KS ≤ -0.01 |
+| KS-06 | WR/TE backup-receiver edge cases | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks06_backup_receiver_fix.enabled=true --label p1.ks06.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks06_backup_receiver_fix.enabled=true --label p1.ks06.full` | Hard floor + ≥0 KS delta |
+| KS-07 | RB rush_yards KS, TE/WR receiving KS | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true --label p1.ks07.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true --label p1.ks07.full` | Hard floor + ≥0 KS delta |
+| KS-15 | QB pass_yards KS, WR receiving_yards KS | `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true --label p1.ks15.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true --label p1.ks15.full` | Hard floor + Δ KS ≤ -0.01 |
 | KS-29 | Aggregate rank_corr / KS sweep | 3 sweep × `--baseline bare --arm-b-base bare --set pff.team_context.enabled=true --set pff.team_context.pass_rate_sensitivity=<v>` | 3 sweep × `--baseline defaults --set ...` (full-stack overlay) | Hard floor + best-of-3; ≥0 KS delta |
-| KS-32 | `nfl_pass_attempts` 35-36 / `plays_per_team` 63-65 | `validate_passing.py` first; only then bare-isolation A/B if reduction motivated | Same | Either "measured no change" OR hard floor + ≥0 KS delta |
-| Phase aggregate | All metrics vs. Phase-0 baseline pin | `validate.py --baseline bare --label p1.aggregate.full` (no `--set`) | n/a | Δ Arm B (post-Phase-1 defaults) vs. Δ Arm B (Wave-0 phase0.baseline.full) — no regression on any TGT |
+| KS-32 (NO CHANGE branch) | `nfl_pass_attempts` 35-36 / `plays_per_team` 63-65 | `validate_passing.py` first; if no reduction motivated → `validate.py --baseline bare --label p1.ks32.measure` (REAL delta vs bare per HIGH-4) | Same | "measured, no change" — KS-32 deliverable per REQUIREMENTS.md |
+| KS-32 (RETUNE branch) | Same | If reduction motivated → `validate.py --baseline bare --arm-b-base bare --set phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true --label p1.ks32.bare` | `validate.py --baseline defaults --set phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled=true --label p1.ks32.full` | Hard floor + ≥0 KS delta |
+| Phase aggregate | All metrics + mean-bias vs. Phase-0 baseline pin | `validate.py --baseline bare --label p1.aggregate.full` (no `--set` — defaults reflect promoted flag flips) | n/a | Δ Arm B (post-Phase-1 defaults) vs. Δ Arm B (Wave-0 phase0.baseline.full) — no regression on any TGT; mean-bias delta evaluable per Pattern 6 |
 
 ### Validation cadence — REVISED 2026-04-26 (HIGH-4)
 
@@ -525,6 +762,7 @@ Filters by label substring possible via grep on the printed table.
 **Warning signs:**
 - Test `test_pass_td_gate_calibration_unchanged_after_fix` fails (RZ TD rate drifts off ~55%).
 - `validate.py p1.ks01.bare` shows pass_tds KS *worsening* on QBs.
+- (Cycle 3) `p1.ks01.bare` ledger entry shows ZERO delta on every metric — symptom of forgetting the `--set phase1_ks_flags.ks01_preserve_distribution.enabled=true` override. Both arms execute the legacy code path; KS-01 has no measured marginal effect.
 
 ### Pitfall 2: KS-15 + KS-04 ordering creates a phantom regression
 
@@ -580,11 +818,13 @@ Filters by label substring possible via grep on the printed table.
 
 **How to avoid:**
 - Run a dry-run of one season-week first (`--limit 1`) and inspect the response headers (`x-requests-used`, `x-requests-remaining` exposed by `events_inventory.build_client()`).
-- Front-load `open_core8` (8 markets × 1 snapshot × 3 seasons) — this is the smallest add and validates the timestamp / label flow.
-- Then add `close_alt6` and `open_alt6` (6 markets × 2 snapshots).
+- Front-load `prior_core8` (8 markets × 1 snapshot × 3 seasons) — this is the smallest add and validates the timestamp / label flow (REVISED Cycle 2 — was `open_core8`).
+- Then add `close_alt6` and `prior_alt6` (6 markets × 2 snapshots) (REVISED Cycle 2 — was `open_alt6`).
 - Per-season checkpoints — log row counts and remaining credits after each season's scrape so a mid-run abort is recoverable.
 
 **Warning signs:** `x-requests-remaining` drops by more than expected per request.
+
+> **Credit logging note (Cycle 2 MEDIUM):** `scripts/fetch_market_history_props.py` at line 110 currently logs `cost={x-requests-last}` from response headers but NOT `x-requests-remaining`. Plan 09 must either (a) extend `fetch_market_history_props.py` to also log `x-requests-remaining` from response headers, OR (b) collect remaining-credit values manually from the Odds API dashboard. Option (a) is preferred and small (~5 LOC). See Plan 09 Task 0 for the patch.
 
 ### Pitfall 7: KS-32 measurement contaminated by stacking
 
@@ -647,39 +887,62 @@ done
 uv run python scripts/validate.py --show-ledger | grep p1.ks29
 ```
 
-### Example 3: KS-21 alt-line scrape (per season, per snapshot label)
+### Example 3: KS-21 alt-line scrape (per season, per snapshot label) — REVISED Cycle 2 (HIGH-2 + HIGH-3)
 
 ```bash
-# Open snapshots (Tuesday 12pm ET = previous_snapshot_timestamp -47h before commence_time)
-# Source: scripts/fetch_market_history_props.py CLI inspection
+# ============================================================================
+# REVISED Cycle 2: snapshot labels are `prior_*` not `open_*`. The Odds API
+# `previous_snapshot_timestamp` returns the API's prior available snapshot
+# relative to the existing gameday-noon UTC events crawl — NOT a real
+# Tuesday 12pm ET line-release marker. See Pattern 5 below for full details.
+#
+# REVISED Cycle 2: each snapshot pair requires TWO scripts:
+#   Step 1 — fetch_market_history_props.py writes raw JSON
+#   Step 2 — build_market_history_player_markets.py writes processed parquet
+# Both must run for the parquet caches to exist.
+# ============================================================================
+
 ALT="player_pass_yds_alternate player_reception_yds_alternate player_rush_yds_alternate \
      player_pass_attempts_alternate player_receptions_alternate player_rush_attempts_alternate"
 
 CORE="player_pass_attempts player_pass_yds player_pass_tds player_rush_attempts \
       player_rush_yds player_receptions player_reception_yds player_anytime_td"
 
-# Open snapshot for main 8 markets (NEW: open_core8)
+# --- Prior snapshot for main 8 markets (NEW: prior_core8) ---
+# Step 1: raw fetch
 for season in 2023 2024 2025; do
   uv run python scripts/fetch_market_history_props.py \
     --season $season \
     --markets $CORE \
     --regions us \
-    --snapshot-label open_core8 \
+    --snapshot-label prior_core8 \
     --date-source previous_snapshot_timestamp \
     --offset-minutes 0
 done
+# Step 2: parquet build
+for season in 2023 2024 2025; do
+  uv run python scripts/build_market_history_player_markets.py \
+    --season $season --snapshot-label prior_core8
+done
 
-# Open snapshot for alt-line 6 markets (NEW: open_alt6)
+# --- Prior snapshot for alt-line 6 markets (NEW: prior_alt6) ---
+# Step 1: raw fetch
 for season in 2023 2024 2025; do
   uv run python scripts/fetch_market_history_props.py \
     --season $season \
     --markets $ALT \
     --regions us \
-    --snapshot-label open_alt6 \
+    --snapshot-label prior_alt6 \
     --date-source previous_snapshot_timestamp
 done
+# Step 2: parquet build
+for season in 2023 2024 2025; do
+  uv run python scripts/build_market_history_player_markets.py \
+    --season $season --snapshot-label prior_alt6
+done
 
-# Close snapshot for alt-line 6 markets (NEW: close_alt6)
+# --- Close snapshot for alt-line 6 markets (NEW: close_alt6) ---
+# Step 1: raw fetch
 for season in 2023 2024 2025; do
   uv run python scripts/fetch_market_history_props.py \
     --season $season \
@@ -689,9 +952,14 @@ for season in 2023 2024 2025; do
     --date-source commence_time \
     --offset-minutes -60
 done
+# Step 2: parquet build
+for season in 2023 2024 2025; do
+  uv run python scripts/build_market_history_player_markets.py \
+    --season $season --snapshot-label close_alt6
+done
 ```
 
-> **Tuesday 12pm ET → previous_snapshot_timestamp** mapping: per `props_backfill.py:67-80`, the date_source 'previous_snapshot_timestamp' uses the snapshot prior to commence_time. For NFL Sunday games, the snapshot just before is typically Tuesday-Wednesday morning. Validate against one event during the dry-run before scaling.
+> **`previous_snapshot_timestamp` honesty (REVISED Cycle 2 — HIGH-3):** per `props_backfill.py:67-80`, the date-source `previous_snapshot_timestamp` uses the API's prior available snapshot relative to commence_time. For NFL Sunday games crawled at gameday-noon UTC, the prior available snapshot could be Sunday morning, Saturday, Friday, or earlier — NOT guaranteed to be Tuesday line-release time. The `prior_*` label honestly describes this; do not call it "open" or "Tuesday 12pm ET". Validate against one event during the dry-run before scaling. A future follow-up plan may extend `events_inventory.py` to capture a real Tuesday line-release marker; out of scope for the time-sensitive Phase 1 scrape window.
 
 ### Example 4: KS-32 measurement (no change motivated)
 
@@ -728,11 +996,15 @@ uv run python scripts/validate.py \
 - [x] All 9 KS-XX hypotheses + KS-21 sub-deliverable mapped to source files
 - [x] Reference implementations identified (`_apply_weather` for KS-03; `_bayesian_blend` pattern for KS-05; existing scrape CLI for KS-21)
 - [x] Validation architecture defined (per-KS labels, hard floor, sweep mechanics, measurement gate)
-- [x] CONTEXT.md decisions D-01..D-35 honored verbatim in `## User Constraints`
+- [x] CONTEXT.md decisions D-01..D-46 honored verbatim in `## User Constraints` (D-44, D-45, D-46 added Cycle 3)
 - [x] Pitfalls section covers all 7 known traps from HYPOTHESES.md
-- [x] Multi-source claims cross-verified against current source files (play_resolver.py:21-49, 60, 240-280, 421-446; game_context.py:534-544, 591, 701-712; props_engine.py:43, 248; props_backfill.py:22)
+- [x] Multi-source claims cross-verified against current source files (play_resolver.py:21-49, 60, 240-280, 421-446; game_context.py:534-544, 591, 701-712; props_engine.py:43, 248; props_backfill.py:22; validation/config.py:118-138; validation/ledger.py:25)
 - [x] No security domain implications (this is offline simulation; no auth/data flows beyond existing PFF cookie + Odds API key, both already gated)
 - [x] No greenfield rename/refactor migration; Runtime State Inventory section omitted
+- [x] Cycle 3 NEW HIGH #1 (per-KS code-change A/B no-op): Pattern 4b feature flags introduced; per-KS validation table updated to include `--set phase1_ks_flags.ksXX_<name>.enabled=true` for every code-change KS
+- [x] Cycle 3 NEW HIGH #2 (`bare_config_dict()` incomplete): Pattern 7 enumerates every top-level + sub-engine `.enabled` gate; Plan 00 Task 4 acceptance is now a hard gate (no escape hatch)
+- [x] Cycle 3 NEW HIGH #3 (Plan 11 mean-bias not in ledger): Pattern 6 extends `SeasonMetrics.stat_mean_bias` (schema bump 4 → 5) so Plan 11 can read mean-bias directly from the persisted ledger entry
+- [x] Cycle 1 HIGH-2/HIGH-3 partial-resolves (RESEARCH staleness): all `open_*` references replaced with `prior_*`; "Tuesday 12pm ET" replaced with "API previous_timestamp relative to gameday-noon UTC crawl"; "writes parquet" split into two-step raw fetch + parquet build pipeline at every site (User Constraints D-02/D-06/D-08, Architecture parallel-track diagram, Pattern 4 + 5, Anti-patterns, Example 3)
 
 ---
 

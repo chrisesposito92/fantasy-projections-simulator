@@ -16,7 +16,8 @@ must_haves:
     - "Per D-15b (added 2026-04-26 — MEDIUM-4 from 01-REVIEWS.md): the legacy non-roster paths in _resolve_pass (lines 302-321) and _resolve_run (lines 392-410) are patched to use the same min(yard_line, sample) + would-be-TD detection pattern. Tests added for both roster and non-roster paths. Codex MEDIUM-4 flagged that keeping two divergent clamping semantics in the same module is a foot-gun even if the validation harness only hits the roster path."
     - "PASS_TD_GATE and RUN_TD_GATE calibration unchanged (regression guard from KS-01 tests still passes)"
     - "Per D-29 (revised 2026-04-26 — HIGH-1): p1.ks15.bare uses --baseline bare --arm-b-base bare (true isolation, requires Plan 00); p1.ks15.full uses --baseline defaults"
-    - "p1.ks15.bare and p1.ks15.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the unclamp-for-TD-gate change is gated behind `phase1_ks_flags.ks15_unclamp_for_td_gate.enabled` (default false until promotion). The implementation in `src/fantasy_sim/engine/play_resolver.py` (roster path AND legacy non-roster `_resolve_pass`/`_resolve_run` paths per D-15b/D-42) reads `get_phase1_ks_flags()['ks15_unclamp_for_td_gate']['enabled']` and branches: flag-on path uses `min(yard_line, sample)` for clamping AND drives the TD gate from the un-clamped sample AND zeroes `CATCH_YARDS_BOOST` (per D-15); flag-off path keeps the legacy clamp + post-clamp TD-gate logic AND the legacy `CATCH_YARDS_BOOST` value. Both A/B runs use `--set phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true`. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks15.bare and p1.ks15.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31. Both runs invoke `--set phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true` per Cycle 3 D-45."
     - "Per D-25 (revised 2026-04-26 — MEDIUM-2): final commit message format `feat(01-07): KS-15 [PROMOTED|SHIPPED-NO-OP|BLOCKED] — field-position clamping fix + CATCH_YARDS_BOOST=0`"
     - "Per D-26: KS-15 commit chain ships after the post-KS-01/02/03/04/05/06/07 baseline lands (dependency-mandatory order; final RZ-stack commit). Plan 00 must land first."
     - "Per D-33: TDD-first for KS-15 RZ-stack work — RED tests + PASS_TD_GATE / RUN_TD_GATE regression guards committed first"
@@ -410,23 +411,31 @@ Commit: `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_B
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-15 unclamp-for-TD-gate change is gated behind `phase1_ks_flags.ks15_unclamp_for_td_gate.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true` for Arm B; Arm A keeps the legacy clamp + post-clamp TD-gate logic AND the legacy `CATCH_YARDS_BOOST` value (KS-15 also drops the boost to 0 when the flag is on).
+
+Run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation
+# True isolation: bare engines + KS-15 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks15.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true" \
+  --label "p1.ks15.bare"
 
-# Full-stack overlay
+# Full-stack overlay: defaults + KS-15 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks15.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks15_unclamp_for_td_gate.enabled=true" \
+  --label "p1.ks15.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks15"
 ```
 
-NOTE: KS-15 changes module constants and resolve-function bodies — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-15's edits to `play_resolver.py` (roster + legacy non-roster `_resolve_pass`/`_resolve_run` paths per D-15b/D-42, plus `CATCH_YARDS_BOOST` zeroing) now branch on `phase1_ks_flags.ks15_unclamp_for_td_gate.enabled`. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1).
+
+NOTE on KS-04 interaction: when KS-15's flag is on, `CATCH_YARDS_BOOST` effectively drops to 0 inside the KS-15 branch (per D-15). When KS-04 is also flag-on at the same time (KS-15 ships in wave 4 after KS-04 in wave 2), the KS-04 conditional-boost code path becomes dead — the post-KS-15 code path doesn't apply the boost at all. This is intentional per D-13 ("ship KS-04 as an intermediate, even though KS-15 will obviate it"). The full-stack run (`p1.ks15.full`) executed AFTER KS-04 has already been promoted captures this stacking effect correctly.
 
 Capture logs to `.../logs/p1.ks15.{bare,full}.log`.
 

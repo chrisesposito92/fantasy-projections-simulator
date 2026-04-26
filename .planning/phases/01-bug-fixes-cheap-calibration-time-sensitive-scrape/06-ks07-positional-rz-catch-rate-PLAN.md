@@ -16,7 +16,8 @@ must_haves:
     - "Per D-20: RZ_CATCH_RATE_MODIFIERS = {\"WR\": 0.92, \"TE\": 0.95, \"RB\": 0.85} replaces the single RZ_CATCH_RATE_MODIFIER = 0.92"
     - "play_resolver.py:254 uses position-aware modifier (lookup by receiver.position with WR fallback)"
     - "player_builder.py:520 uses position-aware modifier when computing per-player red_zone_catch_rate fallback"
-    - "p1.ks07.bare and p1.ks07.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the positional-RZ-catch-rate change is gated behind `phase1_ks_flags.ks07_positional_rz_catch_rate.enabled` (default false until promotion). The implementations in `src/fantasy_sim/engine/play_resolver.py` and `src/fantasy_sim/data/player_builder.py` read `get_phase1_ks_flags()['ks07_positional_rz_catch_rate']` and branch: flag-on path looks up the per-position rate from `phase1_ks_flags.ks07_positional_rz_catch_rate.rates[position]` (defaults: WR=0.92, TE=0.95, RB=0.85); flag-off path uses the single legacy `RZ_CATCH_RATE_MODIFIER = 0.92`. Both A/B runs use `--set phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true`. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks07.bare and p1.ks07.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-30. Both runs invoke `--set phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true` per Cycle 3 D-45."
     - "Per D-25/D-26: KS-07 commit chain ships after KS-04 lands (file overlap with play_resolver.py)"
     - "Per D-34: test-after acceptable for KS-07"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
@@ -235,23 +236,29 @@ Commit: `feat(01-06): KS-07 player_builder.py uses positional RZ_CATCH_RATE_MODI
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-29, D-30)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-07 positional-RZ-catch-rate change is gated behind `phase1_ks_flags.ks07_positional_rz_catch_rate.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true` for Arm B; Arm A keeps the legacy single `RZ_CATCH_RATE_MODIFIER = 0.92` constant.
+
+Run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation
+# True isolation: bare engines + KS-07 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks07.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true" \
+  --label "p1.ks07.bare"
 
-# Full-stack overlay
+# Full-stack overlay: defaults + KS-07 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks07.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks07_positional_rz_catch_rate.enabled=true" \
+  --label "p1.ks07.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks07"
 ```
 
-NOTE: KS-07 changes module constants and a per-player override — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — KS-07's edits to `play_resolver.py` and `player_builder.py` now branch on `phase1_ks_flags.ks07_positional_rz_catch_rate.enabled`. The Cycle-2 "no `--set` flag needed" pattern was a same-code no-op (Codex Cycle-2 NEW HIGH #1). Per-position rates are read from `phase1_ks_flags.ks07_positional_rz_catch_rate.rates` (defined in defaults.yaml) when the flag is enabled.
 
 Capture logs to `.../logs/p1.ks07.{bare,full}.log`.
 

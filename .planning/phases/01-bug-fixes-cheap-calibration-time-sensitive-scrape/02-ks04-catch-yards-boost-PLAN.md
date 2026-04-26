@@ -13,7 +13,8 @@ must_haves:
   truths:
     - "Per D-11/D-12: CATCH_YARDS_BOOST is +1.5 (float), applied conditionally only when raw_yards > yard_line (i.e., when _clamp_yards would actually fire)"
     - "Per D-13: ship the conditional boost as an intermediate even though KS-15 will obviate it later — captures the intermediate ledger entry"
-    - "p1.ks04.bare and p1.ks04.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31"
+    - "Per D-45 (Cycle 3 — Codex Cycle-2 NEW HIGH #1 fix): the conditional-boost change is gated behind `phase1_ks_flags.ks04_conditional_catch_boost.enabled` (default false until promotion). The implementation in `src/fantasy_sim/engine/play_resolver.py` reads `get_phase1_ks_flags()['ks04_conditional_catch_boost']['enabled']` at module import and branches: flag-on path uses the conditional boost (`+1.5` only when `_clamp_yards` would fire); flag-off path keeps the legacy unconditional `CATCH_YARDS_BOOST = 1`. Both A/B runs use `--set phase1_ks_flags.ks04_conditional_catch_boost.enabled=true` so Arm B genuinely flips the new code path on. Promotion commit flips the default to true in `config/defaults.yaml`."
+    - "p1.ks04.bare and p1.ks04.full ledger entries pass hard floor (Δ rank_corr ≥ -0.005 AND Δ weekly_mae ≤ +0.05) per D-31. Both runs invoke `--set phase1_ks_flags.ks04_conditional_catch_boost.enabled=true` per Cycle 3 D-45."
     - "Per D-25/D-26: KS-04 commit chain ships immediately after KS-01 lands (dependency-mandatory order)"
     - "Per D-33: TDD-first for KS-04 RZ-stack work"
     - "Per D-35: existing 1,200+ test suite stays green throughout"
@@ -260,23 +261,29 @@ Commit: `feat(01-02): implement KS-04 conditional CATCH_YARDS_BOOST=1.5 per D-11
     - .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md (D-13, D-29, D-31)
   </read_first>
   <action>
-Run BOTH A/B passes per D-29 (revised 2026-04-26 — uses Plan 00's `--arm-b-base bare` for true isolation):
+**REVISED Cycle 3 (D-45 — Codex Cycle-2 NEW HIGH #1 fix):** the KS-04 conditional-boost change is gated behind `phase1_ks_flags.ks04_conditional_catch_boost.enabled` (default false; set in Plan 00 Task 8). Both arms use `--set phase1_ks_flags.ks04_conditional_catch_boost.enabled=true` for Arm B; Arm A keeps the default (legacy unconditional `CATCH_YARDS_BOOST = 1` behavior).
+
+Run BOTH A/B passes per D-29:
 
 ```bash
-# True isolation
+# True isolation: bare engines + KS-04 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline bare --arm-b-base bare --label "p1.ks04.bare"
+  --baseline bare --arm-b-base bare \
+  --set "phase1_ks_flags.ks04_conditional_catch_boost.enabled=true" \
+  --label "p1.ks04.bare"
 
-# Full-stack overlay
+# Full-stack overlay: defaults + KS-04 flag overlay
 uv run python scripts/validate.py \
   --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
-  --baseline defaults --label "p1.ks04.full"
+  --baseline defaults \
+  --set "phase1_ks_flags.ks04_conditional_catch_boost.enabled=true" \
+  --label "p1.ks04.full"
 
 uv run python scripts/validate.py --show-ledger | grep "p1.ks04"
 ```
 
-NOTE: KS-04 changes the `CATCH_YARDS_BOOST` module constant — no `--set` flag needed; the change ships as the source code itself.
+NOTE: REVISED Cycle 3 — the per-KS code change is now flag-gated. The Cycle-2 plan said "no `--set` flag needed; the change ships as the source code itself" — that was the same-code no-op pattern Codex flagged as Cycle-2 NEW HIGH #1. Cycle 3 fixes it: Task 2's GREEN implementation reads `phase1_ks_flags.ks04_conditional_catch_boost.enabled` at module import and branches on it; Arm A executes the legacy unconditional `CATCH_YARDS_BOOST` path, Arm B executes the new conditional path.
 
 Capture logs to `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks04.{bare,full}.log`.
 
