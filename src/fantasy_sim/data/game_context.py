@@ -964,14 +964,22 @@ class GameContextBuilder:
 
         home_play_call_context = None
         away_play_call_context = None
-        if self._play_call_model is not None and target_season is not None:
+        home_market: dict[str, float | None] = {}
+        away_market: dict[str, float | None] = {}
+        context_week = week or 0
+        if target_season is not None and (
+            self._play_call_model is not None
+            or self._qb_scramble_model is not None
+            or self._qb_designed_run_model is not None
+        ):
             home_market, away_market = self._play_call_market_features(
                 home_team,
                 away_team,
                 target_season,
                 week,
             )
-            context_week = week or 0
+
+        if self._play_call_model is not None and target_season is not None:
             home_play_call_context = self._play_call_model.build_context(
                 team=home_team,
                 opponent=away_team,
@@ -996,13 +1004,6 @@ class GameContextBuilder:
             away_dists.play_call_context = away_play_call_context
 
         if self._qb_scramble_model is not None and target_season is not None:
-            home_market, away_market = self._play_call_market_features(
-                home_team,
-                away_team,
-                target_season,
-                week,
-            )
-            context_week = week or 0
             home_dists.qb_scramble_context = self._qb_scramble_model.build_context(
                 roster=home_roster,
                 team=home_team,
@@ -1027,13 +1028,6 @@ class GameContextBuilder:
             )
 
         if self._qb_designed_run_model is not None and target_season is not None:
-            home_market, away_market = self._play_call_market_features(
-                home_team,
-                away_team,
-                target_season,
-                week,
-            )
-            context_week = week or 0
             home_dists.qb_designed_run_context = self._qb_designed_run_model.build_context(
                 roster=home_roster,
                 team=home_team,

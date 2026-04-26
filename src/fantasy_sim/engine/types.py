@@ -60,7 +60,7 @@ class QbDesignedRunContextProtocol(Protocol):
         state: "GameState",
         script: "RuntimeGameScript | None" = None,
     ) -> "np.ndarray | None":
-        raise NotImplementedError
+        ...
 
     def designed_run_yards(
         self,
@@ -69,7 +69,7 @@ class QbDesignedRunContextProtocol(Protocol):
         rng: "np.random.Generator",
         script: "RuntimeGameScript | None" = None,
     ) -> int | None:
-        raise NotImplementedError
+        ...
 
 
 @dataclass

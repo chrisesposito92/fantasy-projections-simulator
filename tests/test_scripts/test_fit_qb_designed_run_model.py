@@ -98,6 +98,17 @@ def test_collect_examples_from_pbp_requires_rusher_player_id():
         collect_examples_from_pbp(pbp, _rosters())
 
 
+@pytest.mark.parametrize(
+    "column",
+    ["qb_kneel", "qb_spike", "no_play", "qtr", "quarter_seconds_remaining"],
+)
+def test_collect_examples_from_pbp_requires_filter_and_state_columns(column):
+    pbp = _pbp().drop(column)
+
+    with pytest.raises(ValueError, match=column):
+        collect_examples_from_pbp(pbp, _rosters())
+
+
 def test_fit_artifact_for_season_writes_json(tmp_path):
     artifact = fit_artifact_for_season(
         FakeLoader(_pbp(), _rosters()),

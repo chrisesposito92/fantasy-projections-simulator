@@ -326,6 +326,29 @@ def test_build_designed_run_example_uses_leave_one_out_team_base_rate():
     assert example.base_rate == pytest.approx(0.0)
 
 
+def test_build_designed_run_example_ignores_spread_without_total_line():
+    rows = [
+        _designed_run_row(
+            rusher_player_id="QB1",
+            rusher_position="QB",
+            qb_player_id="QB1",
+            spread_line=7.0,
+            total_line=None,
+        ),
+        _designed_run_row(rusher_player_id="RB1", rusher_position="RB", qb_player_id="QB1"),
+    ]
+    priors = build_designed_run_priors(rows)
+
+    example = build_designed_run_example_from_row(
+        rows[0],
+        ("spread_norm", "total_norm", "implied_total_norm"),
+        priors,
+    )
+
+    assert example is not None
+    assert example.features.tolist() == pytest.approx([0.0, 0.0, 0.0])
+
+
 def test_build_designed_run_example_skips_scrambles_and_non_run_rows():
     priors = build_designed_run_priors([_designed_run_row()])
 

@@ -1,4 +1,5 @@
 import json
+import logging
 
 import pytest
 
@@ -326,6 +327,23 @@ def test_designed_run_artifact_below_min_examples_returns_none(tmp_path):
     model = QbDesignedRunModel(_designed_config(tmp_path, min_examples=500))
 
     assert _build_designed_context(model) is None
+
+
+def test_designed_run_artifact_below_min_examples_logs_designed_run_artifact(
+    tmp_path, caplog
+):
+    _write_designed_artifact(
+        tmp_path,
+        diagnostics={"num_examples": 499, "designed_qb_run_rate": 0.06},
+    )
+    model = QbDesignedRunModel(_designed_config(tmp_path, min_examples=500))
+
+    caplog.set_level(logging.WARNING, logger="fantasy_sim.data.qb_rushing.runtime")
+    assert _build_designed_context(model) is None
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("QB designed-run artifact" in message for message in messages)
+    assert not any("QB scramble artifact" in message for message in messages)
 
 
 def test_designed_run_artifact_requires_tail_buckets(tmp_path):

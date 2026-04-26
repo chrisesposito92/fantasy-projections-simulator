@@ -72,6 +72,7 @@ class QbScrambleModel:
             artifact,
             target_season,
             self.config.min_examples,
+            artifact_label="QB scramble artifact",
         ):
             return None
 
@@ -193,6 +194,7 @@ class QbDesignedRunModel:
             artifact,
             target_season,
             self.config.min_examples,
+            artifact_label="QB designed-run artifact",
         ):
             return None
 
@@ -407,24 +409,29 @@ def _artifact_meets_min_examples(
     artifact: dict[str, Any],
     target_season: int,
     min_examples: int,
+    *,
+    artifact_label: str,
 ) -> bool:
     diagnostics = artifact.get("diagnostics")
     if not isinstance(diagnostics, Mapping):
         logger.warning(
-            "Invalid QB scramble artifact for %s: missing diagnostics",
+            "Invalid %s for %s: missing diagnostics",
+            artifact_label,
             target_season,
         )
         return False
     num_examples = diagnostics.get("num_examples")
     if not isinstance(num_examples, int) or isinstance(num_examples, bool):
         logger.warning(
-            "Invalid QB scramble artifact for %s: malformed num_examples",
+            "Invalid %s for %s: malformed num_examples",
+            artifact_label,
             target_season,
         )
         return False
     if num_examples < min_examples:
         logger.warning(
-            "Invalid QB scramble artifact for %s: num_examples %s below minimum %s",
+            "Invalid %s for %s: num_examples %s below minimum %s",
+            artifact_label,
             target_season,
             num_examples,
             min_examples,

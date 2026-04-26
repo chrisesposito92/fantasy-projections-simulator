@@ -384,8 +384,9 @@ def build_designed_run_example_from_row(
     total_line = _float_or_none(row.get("total_line"))
     spread_line = _float_or_none(row.get("spread_line"))
     implied_team_total = None
-    team_spread_line = spread_line
+    team_spread_line = None
     if total_line is not None and spread_line is not None:
+        team_spread_line = spread_line
         if posteam == home_team:
             implied_team_total = total_line / 2.0 + spread_line / 2.0
         else:

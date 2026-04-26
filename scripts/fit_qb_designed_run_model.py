@@ -36,7 +36,12 @@ _REQUIRED_PBP_COLUMNS = frozenset(
         "yardline_100",
         "rusher_player_id",
         "qb_scramble",
+        "qb_kneel",
+        "qb_spike",
+        "no_play",
         "yards_gained",
+        "qtr",
+        "quarter_seconds_remaining",
     }
 )
 
