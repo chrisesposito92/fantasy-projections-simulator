@@ -1,5 +1,6 @@
 import polars as pl
 import numpy as np
+from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
@@ -7,6 +8,20 @@ from fantasy_sim.models.distributions import (
 )
 
 MIN_BUCKET_PLAYS = 10
+
+# Phase 1 KS-06 feature flag (Cycle 3 D-45). When enabled, the team-bucket
+# pass-yards distribution computed by ``compute_play_outcomes`` is filtered to
+# completed plays only — incompletions (yards_gained=0) drag the team bucket
+# mean down and bias the play_resolver backup-receiver fallback path low for
+# receivers without their own per-player distribution. Read once at module
+# import time; A/B arms are separate Python processes via fresh
+# GameContextBuilder construction so this matches the rest of the Phase 1 KS
+# flag-gated code paths.
+_KS06_BACKUP_RECEIVER_FIX = (
+    get_phase1_ks_flags()
+    .get("ks06_backup_receiver_fix", {})
+    .get("enabled", False)
+)
 
 # League-average fallback constants for penalty rates
 _LEAGUE_AVG_PENALTY_RATE = 0.07
@@ -112,16 +127,46 @@ class Preprocessor:
         pbp: pl.DataFrame,
         season_weights: dict[int, float] | None = None,
     ) -> PlayOutcomeDist:
-        """Compute empirical yards-gained distributions by play type and game state."""
+        """Compute empirical yards-gained distributions by play type and game state.
+
+        KS-06 D-19 sub-fix 1 (Cycle 3 D-45 flag-gated): when
+        ``phase1_ks_flags.ks06_backup_receiver_fix.enabled`` is true, pass plays
+        with ``complete_pass != 1`` are dropped before yards are appended to the
+        per-bucket and default distributions. This makes the team-bucket
+        ``pass`` distribution a "yards per completion" distribution rather than
+        a "yards per attempt" distribution, which matches the way the
+        play_resolver backup-receiver fallback samples it (only after the catch
+        succeeds via ``effective_catch_rate`` — including incompletions
+        double-counts the miss). Run plays are unaffected.
+        """
         plays = self._filter_real_plays(pbp)
         plays = self._apply_season_weights(plays, season_weights)
 
         bucket_yards: dict[tuple[str, GameStateBucket], list[int]] = {}
         defaults: dict[str, list[int]] = {"pass": [], "run": []}
 
+        # KS-06 D-19 sub-fix 1: tolerate fixtures missing complete_pass column
+        # by treating the filter as a no-op when the column isn't present
+        # (older test fixtures predate this column). Production PBP from
+        # nflverse always carries it.
+        has_complete_pass = "complete_pass" in plays.columns
         for row in plays.iter_rows(named=True):
             play_type = row["play_type"]
             yards = row["yards_gained"]
+
+            # Skip incomplete passes when the KS-06 flag is on so the team
+            # ``pass`` distribution is completion-only. ``run`` plays are
+            # unaffected. We still want to count the play in the bucket-size
+            # check (>= MIN_BUCKET_PLAYS) only for the rows that actually
+            # contribute, so the filter happens before the append.
+            if (
+                _KS06_BACKUP_RECEIVER_FIX
+                and play_type == "pass"
+                and has_complete_pass
+                and row.get("complete_pass") != 1
+            ):
+                continue
+
             defaults[play_type].append(yards)
 
             bucket = bucket_play(
