@@ -17,7 +17,7 @@ phase1_ks_flags:
     enabled: true   # KS-05 RETROACTIVELY PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr +0.0001, Δ weekly_mae -0.004); bare collateral was VEG-01/02 activation, not the KS-05 path itself; see PROMOTION-NOTES.md ## Gate Relaxation Decision
     default_team_pass_yds: 240.0
   ks06_backup_receiver_fix:
-    enabled: false   # KS-06 — completed-play filter + integer fallback (5,18) + MIN_PLAYER_PLAYS=3
+    enabled: true   # KS-06 PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr +0.0008, Δ weekly_mae -0.004, Δ fpts_ks +0.000); WR/TE recv_yds non-regressive primary target; bare-floor relaxed, see PROMOTION-NOTES.md ## KS-06
     min_player_plays: 3
     fallback_low: 5
     fallback_high: 18

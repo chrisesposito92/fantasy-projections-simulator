@@ -16,7 +16,7 @@ Confirmed code defects causing measurable bias. Bug-fix-class changes — should
 - [x] **KS-01**: Fix `_tackled_short()` RZ TD-gate truncation at `src/fantasy_sim/engine/play_resolver.py:279-284, 421-424`. Replace the punitive yards-rewrite with `min(yard_line - 1, sampled_yards)`. → Impacts TGT-01, TGT-02, TGT-05, TGT-07, TGT-09, TGT-10
 - [x] **KS-03**: Fix `_apply_matchup` and `_apply_coverage` hardcoded `* 10.0` yard anchor at `src/fantasy_sim/data/game_context.py:534-544, 591`. Replace with per-player `np.mean(receiving_yards_dist)` to mirror the (correctly-implemented) weather engine. → Impacts TGT-02, TGT-05, TGT-07, TGT-10
 - [x] **KS-05**: Fix props-engine magnitude bug at `src/fantasy_sim/data/vegas/props_engine.py:248` where `_apply_recv_yds` multiplies per-catch `dist_mean` by `games_played`. Also adjust `_DEFAULT_TEAM_PASS_YDS = 230.0 → ~240.0` to match NFL average. → Impacts TGT-01, TGT-02, TGT-05, TGT-09, TGT-10
-- [ ] **KS-06**: Fix backup-share fallback shrinking WR/TE receiving distributions when starter is questionable. → Impacts TGT-02, TGT-05
+- [x] **KS-06**: Fix backup-share fallback shrinking WR/TE receiving distributions when starter is questionable. → Impacts TGT-02, TGT-05
 - [ ] **KS-15**: Fix yards-distribution clamping bug that drops upper-tail values for QB pass_yards and WR receiving_yards. → Impacts TGT-01, TGT-02, TGT-09, TGT-10
 
 ### B. Structural Fixes
@@ -98,7 +98,7 @@ Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). T
 | KS-03 | Phase 1 | Complete |
 | KS-04 | Phase 1 | Complete |
 | KS-05 | Phase 1 | Complete |
-| KS-06 | Phase 1 | Pending |
+| KS-06 | Phase 1 | Complete |
 | KS-07 | Phase 1 | Pending |
 | KS-08 | Phase 2 | Pending |
 | KS-09 | Phase 2 | Pending |
