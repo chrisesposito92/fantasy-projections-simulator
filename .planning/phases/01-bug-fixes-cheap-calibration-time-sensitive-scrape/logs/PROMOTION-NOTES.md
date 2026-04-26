@@ -288,4 +288,70 @@ data per event for the CDF loader.
 
 ### Commits
 
-- Task 4 raw scrape: (this commit) — `chore(01-09): KS-21 raw fetch`
+- Task 4 raw scrape: `5f99977` — `chore(01-09): KS-21 raw fetch`
+
+---
+
+## KS-21 processed parquet build
+
+**Date:** 2026-04-26
+**Plan:** 01-09 Task 5
+**Scope:** Build 9 processed `player_markets_*` parquet files from the
+raw JSON cache populated by Task 4. No API credits consumed (local file
+transformation only).
+
+### Per-season parquet row count + market-coverage table
+
+| Season | Snapshot     | Parquet rows | Distinct events | Distinct players | Distinct markets | Markets present |
+|--------|--------------|-------------:|----------------:|-----------------:|-----------------:|-----------------|
+| 2023   | prior_core8  | 25,000       | 272             | 1,606            | 8                | all 8 main      |
+| 2024   | prior_core8  | 20,622       | 272             | 1,329            | 8                | all 8 main      |
+| 2025   | prior_core8  | 20,163       | 272             |   693            | 8                | all 8 main      |
+| 2023   | prior_alt6   |  2,415       | 198             |   285            | 4                | 4 of 6 alt      |
+| 2024   | prior_alt6   |  8,054       | 271             |   381            | 5                | 5 of 6 alt      |
+| 2025   | prior_alt6   |  9,104       | 270             |   388            | 6                | all 6 alt       |
+| 2023   | close_alt6   |  2,641       | 200             |   309            | 4                | 4 of 6 alt      |
+| 2024   | close_alt6   |  8,622       | 272             |   401            | 5                | 5 of 6 alt      |
+| 2025   | close_alt6   |  9,524       | 271             |   408            | 6                | all 6 alt       |
+
+### Acceptance checks (executed via build_verification.log)
+
+- All 9 files non-empty: **TRUE**
+- All 9 `snapshot_label` columns uniform: **TRUE**
+- All 9 `snapshot_label` values match the file's label suffix: **TRUE**
+- Zero main-line market leak in any `prior_alt6` or `close_alt6` parquet: **TRUE**
+
+### Alt-line market coverage growth over time
+
+The Odds API has expanded alt-line market coverage between 2023 and 2025:
+
+- **2023:** 4 of 6 alt markets returned (`player_pass_yds_alternate`,
+  `player_reception_yds_alternate`, `player_receptions_alternate`,
+  `player_rush_yds_alternate`). Missing: `player_pass_attempts_alternate`,
+  `player_rush_attempts_alternate`.
+- **2024:** 5 of 6 alt markets returned (added: `player_rush_attempts_alternate`).
+  Still missing: `player_pass_attempts_alternate`.
+- **2025:** All 6 alt markets returned.
+
+This is data-quality-positive for Phase 4 — modern seasons have richer
+CDF coverage. Phase 4's `OddsApiCdfLoader` should gracefully fall back
+to whichever markets are present per (season, event) tuple rather than
+hard-requiring all 6.
+
+### Existing close_core8 cache invariant (post-Task-5)
+
+```
+$ /usr/bin/find ~/.fantasy-sim/market-history/processed -name "player_markets_*_close_core8.parquet" -newer .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md
+0 hits
+```
+
+D-06 invariant still holds (close_core8 mtimes unchanged from April 13).
+
+### Logs
+
+- `build_2023_prior_core8.log` through `build_2025_close_alt6.log` (9 build logs)
+- `build_verification.log` (acceptance check results)
+
+### Commits
+
+- Task 5 build: (this commit) — `chore(01-09): KS-21 build processed parquet`

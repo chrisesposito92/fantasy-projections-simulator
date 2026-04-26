@@ -1,0 +1,22 @@
+2023 prior_core8: rows=25000 events=272 players=1606 markets=8 labels=['prior_core8']
+2023 prior_alt6: rows=2415 events=198 players=285 markets=4 labels=['prior_alt6']
+2023 close_alt6: rows=2641 events=200 players=309 markets=4 labels=['close_alt6']
+2024 prior_core8: rows=20622 events=272 players=1329 markets=8 labels=['prior_core8']
+2024 prior_alt6: rows=8054 events=271 players=381 markets=5 labels=['prior_alt6']
+2024 close_alt6: rows=8622 events=272 players=401 markets=5 labels=['close_alt6']
+2025 prior_core8: rows=20163 events=272 players=693 markets=8 labels=['prior_core8']
+2025 prior_alt6: rows=9104 events=270 players=388 markets=6 labels=['prior_alt6']
+2025 close_alt6: rows=9524 events=271 players=408 markets=6 labels=['close_alt6']
+
+=== ACCEPTANCE CHECKS ===
+All 9 files non-empty: True
+All 9 snapshot_label uniform: True
+All 9 snapshot_label correct: True
+
+=== ALT-LINE MARKET-LEAK CHECK ===
+2023 prior_alt6: actual=['player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_yds_alternate'] leak=[] missing=['player_pass_attempts_alternate', 'player_rush_attempts_alternate']
+2023 close_alt6: actual=['player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_yds_alternate'] leak=[] missing=['player_pass_attempts_alternate', 'player_rush_attempts_alternate']
+2024 prior_alt6: actual=['player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_attempts_alternate', 'player_rush_yds_alternate'] leak=[] missing=['player_pass_attempts_alternate']
+2024 close_alt6: actual=['player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_attempts_alternate', 'player_rush_yds_alternate'] leak=[] missing=['player_pass_attempts_alternate']
+2025 prior_alt6: actual=['player_pass_attempts_alternate', 'player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_attempts_alternate', 'player_rush_yds_alternate'] leak=[] missing=[]
+2025 close_alt6: actual=['player_pass_attempts_alternate', 'player_pass_yds_alternate', 'player_reception_yds_alternate', 'player_receptions_alternate', 'player_rush_attempts_alternate', 'player_rush_yds_alternate'] leak=[] missing=[]
