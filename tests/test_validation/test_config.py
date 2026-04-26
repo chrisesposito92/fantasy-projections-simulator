@@ -1,8 +1,11 @@
 """Tests for validation config resolution."""
+import copy
+
 import pytest
 from fantasy_sim.validation.config import (
     _parse_value,
     apply_overrides,
+    bare_config_dict,
     build_game_config_kwargs,
     build_engine_configs,
     build_bare_engine_configs,
@@ -452,3 +455,79 @@ class TestBuildBareEngineConfigs:
         assert configs["market_history_config"] is None
         assert configs["game_script_config"] is None
         assert configs["target_selection_config"] is None
+
+
+# === KS-Phase1 / D-29 (HIGH-1) + D-44 (Cycle 3 NEW HIGH #2):
+# bare_config_dict for true-isolation A/B ===
+
+
+class TestBareConfigDict:
+    def test_bare_config_dict_disables_pff_team_context(self):
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        assert bare["pff"]["team_context"]["enabled"] is False
+
+    def test_bare_config_dict_disables_all_engines(self):
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        enabled_keys_to_check = [
+            ("pff", "tier_engine", "enabled"),
+            ("pff", "team_context", "enabled"),
+            ("pff", "matchup", "enabled"),
+            ("pff", "coverage", "enabled"),
+            ("pff", "kicker", "enabled"),
+            ("pff", "dst_baseline", "enabled"),
+            ("weather", "enabled"),
+            ("vegas", "enabled"),
+            ("vegas", "props", "enabled"),
+        ]
+        for path in enabled_keys_to_check:
+            target = bare
+            try:
+                for k in path[:-1]:
+                    target = target[k]
+                assert target.get(path[-1], False) is False, (
+                    f"key {'.'.join(path)} not disabled"
+                )
+            except (KeyError, TypeError):
+                # Path missing in defaults — acceptable; bare_config_dict skips silently
+                pass
+
+    def test_bare_config_dict_preserves_non_enabled_keys(self):
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        # Pick a known non-enabled key that exists in the defaults tree.
+        # If the test runs and the path is missing, defaults.yaml schema changed —
+        # update the test.
+        # We only compare SCALAR/list values at this level — nested sub-dicts may
+        # themselves contain `enabled` flags (e.g., tier_engine.ncaa_rookie.enabled,
+        # tier_engine.archetypes.enabled) that bare_config_dict legitimately flips.
+        if "pff" in defaults and "tier_engine" in defaults["pff"]:
+            tier_engine = defaults["pff"]["tier_engine"]
+            bare_tier_engine = bare["pff"]["tier_engine"]
+            for key, val in tier_engine.items():
+                if key == "enabled":
+                    continue  # this one IS supposed to flip
+                if isinstance(val, dict):
+                    continue  # nested sub-dicts may have their own .enabled flips
+                assert bare_tier_engine[key] == val, (
+                    f"non-enabled scalar key {key} was mutated"
+                )
+
+    def test_apply_overrides_on_bare_config_dict_enables_one_engine(self):
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        isolated = apply_overrides(bare, ["pff.team_context.enabled=true"])
+
+        assert isolated["pff"]["team_context"]["enabled"] is True
+        # Spot-check that other engines remain disabled
+        if "pff" in isolated and "matchup" in isolated["pff"]:
+            assert isolated["pff"]["matchup"].get("enabled", False) is False
+        if "weather" in isolated:
+            assert isolated["weather"].get("enabled", False) is False
+
+    def test_bare_config_dict_does_not_mutate_input(self):
+        defaults = load_defaults()
+        snapshot = copy.deepcopy(defaults)
+        bare_config_dict(defaults)
+        assert defaults == snapshot, "bare_config_dict mutated its input"
