@@ -28,7 +28,7 @@ phase1_ks_flags:
       TE: 0.95
       RB: 0.85
   ks15_unclamp_for_td_gate:
-    enabled: false   # KS-15 — min(yard_line, sample) clamp + un-clamped sample drives TD gate
+    enabled: true    # KS-15 PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr -0.0006, Δ weekly_mae -0.002, Δ fpts_ks -0.000); SHIPPED-NO-OP on QB pass_yards primary-target KS bar (Δ averages ~0 across seasons); bare-floor relaxed (+0.056 just above +0.05 threshold), see PROMOTION-NOTES.md ## KS-15. Roster + legacy non-roster paths both patched per D-15b/MEDIUM-4. CATCH_YARDS_BOOST zeroed per D-15 in the KS-15 code branch.
   ks32_clock_pass_incomplete_3s:
     enabled: false   # KS-32 — CLOCK_PASS_INCOMPLETE = 3 (only set if measurement motivates)
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-06-PLAN.md (KS-07 PROMOTED — positional RZ catch rate WR/TE/RB; 2nd plan to clear relaxed full-stack gate cleanly with new code path active)
-last_updated: "2026-04-26T20:27:30.962Z"
+stopped_at: Completed 01-07-PLAN.md (KS-15 PROMOTED — final RZ-stack commit; bug fix correct, KS movement below detection threshold)
+last_updated: "2026-04-26T21:09:53.228Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 8
-  percent: 67
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 8 of 12
+Plan: 9 of 12
 Status: Ready to execute
 Last activity: 2026-04-26
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [███████░░░] 67%
 | Phase 01 P04 | 27min | 4 tasks | 5 files |
 | Phase 01 P05 | 90min | 4 tasks | 11 files |
 | Phase 01 P06 | 40min | 4 tasks | 6 files |
+| Phase 01 P07 | 32min | 4 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 01]: Plan 01-04 KS-05: BLOCKED per D-31 hard floor — bare weekly_mae +0.154 > +0.05 limit. CRITICAL: both A/B runs report props:none (no historical PFF props parquet for 2022/2023/2024 per forward-only PFF endpoint contract); KS-05 _apply_recv_yds path never fires in either A/B. The bare-isolation MAE failure is collateral from required vegas.enabled+props.enabled activation per D-44 bare_config_dict pattern (VEG-01 ITT pace + VEG-02 spread pass-rate), NOT from KS-05 logic. Flag-based rollback per D-45: phase1_ks_flags.ks05_props_recv_yds_fix.enabled stays false in defaults.yaml; new code path stays in props_engine.py but dormant. KS-15/KS-06/KS-07 unblocked.
 - [Phase ?]: [Phase 01]: Plan 01-05 KS-06 PROMOTED under relaxed full-stack-only gate — full hard floor PASSES (Δ rank_corr +0.0008, Δ weekly_mae -0.004, Δ fpts_ks +0.000); WR/TE receiving_yards primary target non-regressive (Δ ≈ 0 across 3 seasons). Bare hard-floor failure (+0.068 weekly_mae) informational only per gate-relaxation decision. Three D-19 sub-fixes promoted: completion-only filter on team buckets (preprocessor.py), [5,18) integer fallback (play_resolver.py), MIN_PLAYER_PLAYS = 5 → 3 (player_builder.py). KS-06 is FIRST plan in Phase 1 to clear the relaxed full-stack hard floor cleanly with the new code path active. Flag default flipped to true in config/defaults.yaml. KS-07/15/29/32 unblocked.
 - [Phase ?]: [Phase 01]: Plan 01-06 KS-07 PROMOTED — full hard floor PASSES (Δ rank_corr -0.0012, Δ weekly_mae +0.003, Δ fpts_ks +0.000); D-30 small-gain primary-target non-regression bar met (WR Δ ≈ 0; TE flat in 2 of 3 seasons); success criterion #3 RB rush_yards Δ ≥ 0 across all 3 seasons. KS-07 is 2nd plan in Phase 1 to clear relaxed gate cleanly with new code active. Flag default flipped to true in config/defaults.yaml. Bare regression (+0.064 weekly_mae) informational per gate-relaxation decision. KS-15/29/32 unblocked.
+- [Phase ?]: KS-15 PROMOTED under relaxed gate (full hard floor passes); SHIPPED-NO-OP on QB pass_yards primary-target KS bar (Δ avg ~0). D-15 boost-zeroing implemented behaviorally; D-15b legacy non-roster paths patched per Codex MEDIUM-4
 
 ### Pending Todos
 
@@ -114,6 +116,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T20:27:30.956Z
-Stopped at: Completed 01-06-PLAN.md (KS-07 PROMOTED — positional RZ catch rate WR/TE/RB; 2nd plan to clear relaxed full-stack gate cleanly with new code path active)
+Last session: 2026-04-26T21:09:53.222Z
+Stopped at: Completed 01-07-PLAN.md (KS-15 PROMOTED — final RZ-stack commit; bug fix correct, KS movement below detection threshold)
 Resume file: None
