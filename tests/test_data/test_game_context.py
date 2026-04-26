@@ -760,3 +760,242 @@ class TestGameContextBuilder:
         )
 
         mock_tc_engine.compute.assert_not_called()
+
+
+# === KS-03: per-player dist-mean anchor ===
+#
+# These tests target the three call sites patched in Plan 01-03 (KS-03):
+#   1. `GameContextBuilder._apply_matchup` receiving branch (D-16)
+#   2. `GameContextBuilder._apply_matchup` rushing branch (D-16b)
+#   3. `GameContextBuilder._apply_coverage` (D-16)
+#
+# Production default for `phase1_ks_flags.ks03_dynamic_yard_anchor.enabled`
+# is `false`, so the tests monkeypatch the module-level
+# `_KS03_DYNAMIC_YARD_ANCHOR` constant to True to exercise the new code path
+# directly (mirrors the KS-01 / KS-04 test conventions in
+# `tests/test_engine/test_play_resolver.py`).
+class TestKs03DistMeanAnchor:
+    @staticmethod
+    def _make_player(
+        player_id, position, *, target_share=0.0, carry_share=0.0,
+        receiving_yards_dist=None, rushing_yards_dist=None,
+    ):
+        import numpy as np
+        from fantasy_sim.models.player import (
+            PlayerModel, PlayerUsage, PlayerOutcomes,
+        )
+        return PlayerModel(
+            player_id=player_id,
+            name=player_id,
+            position=position,
+            team="KC",
+            usage=PlayerUsage(target_share=target_share, carry_share=carry_share),
+            outcomes=PlayerOutcomes(
+                receiving_yards_dist=(
+                    np.asarray(receiving_yards_dist, dtype=float)
+                    if receiving_yards_dist is not None
+                    else None
+                ),
+                rushing_yards_dist=(
+                    np.asarray(rushing_yards_dist, dtype=float)
+                    if rushing_yards_dist is not None
+                    else None
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _make_dists():
+        """Sentinel `dists` object passed positionally to `_apply_matchup`.
+
+        `_apply_matchup` only reads / writes `dists.turnover_rates.sack_rate`
+        and `.int_rate`, and only when `combined_sack != 1.0` or
+        `int_rate_factor != 1.0`. KS-03 tests use a MatchupContext with all
+        non-target factors == 1.0, so the dists path is never reached.
+        Passing `None` keeps the test focused on the receiver / rusher
+        branches without a dependency on the heavy TeamDistributions
+        constructor.
+        """
+        return None
+
+    def test_ks03_apply_matchup_uses_dist_mean_for_pass_yards(self, monkeypatch):
+        """WR (mean=10) shifts +1.0 and TE (mean=4) shifts +0.4 for a
+        +10% `pass_yards_factor`. The distinct shifts prove the per-player
+        anchor is in use (legacy hardcoded `*10.0` would shift both by +1.0).
+        """
+        import numpy as np
+        from fantasy_sim.data import game_context as gc
+        from fantasy_sim.data.pff.models import MatchupContext
+        from fantasy_sim.models.player import TeamRoster
+
+        monkeypatch.setattr(gc, "_KS03_DYNAMIC_YARD_ANCHOR", True)
+
+        wr = self._make_player(
+            "WR1", "WR",
+            target_share=0.25,
+            receiving_yards_dist=[5, 10, 15],  # mean = 10.0
+        )
+        te = self._make_player(
+            "TE1", "TE",
+            target_share=0.20,
+            receiving_yards_dist=[2, 4, 6],  # mean = 4.0
+        )
+        roster = TeamRoster(team="KC", players=[wr, te])
+        dists = self._make_dists()
+
+        ctx = MatchupContext(pass_yards_factor=1.10)
+
+        gc.GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        # WR shift = (1.10 - 1.0) * 10.0 = +1.0
+        np.testing.assert_allclose(
+            wr.outcomes.receiving_yards_dist,
+            np.array([6.0, 11.0, 16.0]),
+        )
+        # TE shift = (1.10 - 1.0) * 4.0 = +0.4
+        np.testing.assert_allclose(
+            te.outcomes.receiving_yards_dist,
+            np.array([2.4, 4.4, 6.4]),
+        )
+
+    def test_ks03_apply_matchup_uses_dist_mean_for_rush_yards(self, monkeypatch):
+        """RB (mean=5) shifts +0.5 for `combined_rush=1.10`."""
+        import numpy as np
+        from fantasy_sim.data import game_context as gc
+        from fantasy_sim.data.pff.models import MatchupContext
+        from fantasy_sim.models.player import TeamRoster
+
+        monkeypatch.setattr(gc, "_KS03_DYNAMIC_YARD_ANCHOR", True)
+
+        rb = self._make_player(
+            "RB1", "RB",
+            carry_share=0.6,
+            rushing_yards_dist=[1, 5, 9],  # mean = 5.0
+        )
+        roster = TeamRoster(team="KC", players=[rb])
+        dists = self._make_dists()
+
+        # `combined_rush = rush_yards_factor * ol_run_block_factor`
+        ctx = MatchupContext(rush_yards_factor=1.10, ol_run_block_factor=1.0)
+
+        gc.GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        # RB shift = (1.10 - 1.0) * 5.0 = +0.5
+        np.testing.assert_allclose(
+            rb.outcomes.rushing_yards_dist,
+            np.array([1.5, 5.5, 9.5]),
+        )
+
+    def test_ks03_apply_coverage_uses_dist_mean_for_ypr(self, monkeypatch):
+        """WR (mean=10) shifts +0.5 for a +5% `ypr_modifier`."""
+        import numpy as np
+        from fantasy_sim.data import game_context as gc
+        from fantasy_sim.data.pff.models import CoverageModifiers
+        from fantasy_sim.models.player import TeamRoster
+
+        monkeypatch.setattr(gc, "_KS03_DYNAMIC_YARD_ANCHOR", True)
+
+        wr = self._make_player(
+            "WR1", "WR",
+            target_share=0.25,
+            receiving_yards_dist=[5, 10, 15],  # mean = 10.0
+        )
+        roster = TeamRoster(team="KC", players=[wr])
+        modifiers = {
+            "WR1": CoverageModifiers(
+                catch_rate_modifier=1.0,
+                ypr_modifier=1.05,
+            )
+        }
+
+        gc.GameContextBuilder._apply_coverage(roster, modifiers)
+
+        # WR shift = (1.05 - 1.0) * 10.0 = +0.5
+        np.testing.assert_allclose(
+            wr.outcomes.receiving_yards_dist,
+            np.array([5.5, 10.5, 15.5]),
+        )
+
+    def test_ks03_apply_matchup_skips_empty_dist(self, monkeypatch):
+        """Players with `receiving_yards_dist is None` or `len(...)==0`
+        must NOT trigger the anchor computation (avoids `np.mean` on an
+        empty array and preserves the empty-state). Same guard for the
+        rushing branch.
+        """
+        import numpy as np
+        from fantasy_sim.data import game_context as gc
+        from fantasy_sim.data.pff.models import MatchupContext
+        from fantasy_sim.models.player import TeamRoster
+
+        monkeypatch.setattr(gc, "_KS03_DYNAMIC_YARD_ANCHOR", True)
+
+        none_recv = self._make_player(
+            "WR_NONE", "WR",
+            target_share=0.25,
+            receiving_yards_dist=None,
+        )
+        empty_recv = self._make_player(
+            "WR_EMPTY", "WR",
+            target_share=0.25,
+            receiving_yards_dist=[],
+        )
+        none_rush = self._make_player(
+            "RB_NONE", "RB",
+            carry_share=0.5,
+            rushing_yards_dist=None,
+        )
+        empty_rush = self._make_player(
+            "RB_EMPTY", "RB",
+            carry_share=0.5,
+            rushing_yards_dist=[],
+        )
+        roster = TeamRoster(
+            team="KC",
+            players=[none_recv, empty_recv, none_rush, empty_rush],
+        )
+        dists = self._make_dists()
+
+        ctx = MatchupContext(
+            pass_yards_factor=1.10,
+            rush_yards_factor=1.10,
+            ol_run_block_factor=1.0,
+        )
+
+        # Must not raise on `np.mean` of empty / None.
+        gc.GameContextBuilder._apply_matchup(dists, roster, ctx)
+
+        assert none_recv.outcomes.receiving_yards_dist is None
+        assert len(empty_recv.outcomes.receiving_yards_dist) == 0
+        assert none_rush.outcomes.rushing_yards_dist is None
+        assert len(empty_rush.outcomes.rushing_yards_dist) == 0
+
+    def test_ks03_apply_coverage_skips_empty_dist(self, monkeypatch):
+        """Coverage path: WR with `receiving_yards_dist is None` or
+        `len(...)==0` must NOT trigger the anchor computation.
+        """
+        from fantasy_sim.data import game_context as gc
+        from fantasy_sim.data.pff.models import CoverageModifiers
+        from fantasy_sim.models.player import TeamRoster
+
+        monkeypatch.setattr(gc, "_KS03_DYNAMIC_YARD_ANCHOR", True)
+
+        none_wr = self._make_player(
+            "WR_NONE", "WR",
+            target_share=0.25,
+            receiving_yards_dist=None,
+        )
+        empty_wr = self._make_player(
+            "WR_EMPTY", "WR",
+            target_share=0.25,
+            receiving_yards_dist=[],
+        )
+        roster = TeamRoster(team="KC", players=[none_wr, empty_wr])
+        modifiers = {
+            "WR_NONE": CoverageModifiers(catch_rate_modifier=1.0, ypr_modifier=1.05),
+            "WR_EMPTY": CoverageModifiers(catch_rate_modifier=1.0, ypr_modifier=1.05),
+        }
+
+        gc.GameContextBuilder._apply_coverage(roster, modifiers)
+
+        assert none_wr.outcomes.receiving_yards_dist is None
+        assert len(empty_wr.outcomes.receiving_yards_dist) == 0
