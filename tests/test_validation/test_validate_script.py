@@ -566,6 +566,7 @@ def test_print_header_renders_comparison_metadata_and_coverage_summary():
     validate = _load_validate_module()
     args = SimpleNamespace(
         baseline="defaults",
+        arm_b_base="defaults",
         overrides=[],
         sims=50,
         seasons=[2022, 2023, 2024],
@@ -694,6 +695,7 @@ def test_main_uses_top_level_market_history_coverage_for_promotion_scope():
 
     args = SimpleNamespace(
         baseline="defaults",
+        arm_b_base="defaults",
         overrides=[],
         sims=50,
         seasons=[2023, 2024],
@@ -849,6 +851,7 @@ def test_print_header_renders_phase_two_coverage_families():
     validate = _load_validate_module()
     args = SimpleNamespace(
         baseline="defaults",
+        arm_b_base="defaults",
         overrides=[],
         sims=50,
         seasons=[2023, 2024],
@@ -1677,6 +1680,7 @@ def test_main_records_schema_metadata_and_coverage_summary_for_defaults_baseline
     validate = _load_validate_module()
     args = SimpleNamespace(
         baseline="defaults",
+        arm_b_base="defaults",
         overrides=[],
         sims=50,
         seasons=[2024],

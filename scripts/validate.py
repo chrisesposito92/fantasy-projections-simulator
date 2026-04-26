@@ -1,7 +1,7 @@
 """Unified A/B validation script.
 
 Replaces validate_pff_signal.py and validate_weekly_signal.py.
-Runs Arm A (bare baseline or defaults) vs Arm B (defaults + overrides)
+Runs Arm A (bare baseline or defaults) vs Arm B (defaults + overrides | bare + overrides)
 and reports season-level and/or weekly metrics.
 
 Usage:
@@ -9,6 +9,9 @@ Usage:
     uv run python scripts/validate.py --sims 50 --label "baseline-v1"
     uv run python scripts/validate.py --sims 50 --set usage.ngs.enabled=true --label "test-ngs"
     uv run python scripts/validate.py --sims 50 --baseline defaults --set usage.ngs.enabled=true
+    # True isolation (Phase 1 D-29):
+    uv run python scripts/validate.py --sims 200 --baseline bare --arm-b-base bare \\
+      --set usage.ngs.enabled=true --label "test-ngs-isolated"
     uv run python scripts/validate.py --show-ledger
 """
 
@@ -38,6 +41,7 @@ from fantasy_sim.validation.coverage import SignalCoverage, collect_signal_cover
 from fantasy_sim.validation.cache import cache_path, load_cache, save_cache
 from fantasy_sim.validation.config import (
     apply_overrides,
+    bare_config_dict,
     build_bare_engine_configs,
     build_engine_configs,
     build_game_config_kwargs,
@@ -337,6 +341,17 @@ def build_cli() -> argparse.ArgumentParser:
         choices=["bare", "defaults"],
         default="bare",
         help="Arm A config: 'bare' (all engines off, default) or 'defaults' (defaults.yaml as-is).",
+    )
+    parser.add_argument(
+        "--arm-b-base",
+        choices=["defaults", "bare"],
+        default="defaults",
+        help=(
+            "Arm B base config: 'defaults' (current behavior — Arm B = defaults + --set "
+            "overrides) or 'bare' (Arm B = bare engines + --set overrides, for true "
+            "isolation). Combine with --baseline bare for true (bare) vs (bare + KS) "
+            "isolation A/B per Phase 1 D-29."
+        ),
     )
     parser.add_argument("--sims", type=int, default=50, metavar="N", help="Sims per game (default: 50).")
     parser.add_argument("--seasons", type=int, nargs="+", default=[2022, 2023, 2024], metavar="YEAR")
@@ -1058,10 +1073,21 @@ def main() -> int:
         ):
             arm_a_ensemble_config = None
 
-    if args.overrides:
-        arm_b_dict = apply_overrides(defaults, args.overrides)
+    # Arm B construction (D-29 — HIGH-1 fix from 01-REVIEWS.md):
+    # When --arm-b-base bare, Arm B starts from a bare config (all engines disabled)
+    # and applies --set overrides on top. Provides true (bare) vs (bare + overrides)
+    # isolation. Default --arm-b-base defaults preserves the legacy behavior.
+    if args.arm_b_base == "bare":
+        bare_dict = bare_config_dict(defaults)
+        if args.overrides:
+            arm_b_dict = apply_overrides(bare_dict, args.overrides)
+        else:
+            arm_b_dict = bare_dict
     else:
-        arm_b_dict = defaults
+        if args.overrides:
+            arm_b_dict = apply_overrides(defaults, args.overrides)
+        else:
+            arm_b_dict = defaults
     arm_b_configs = build_engine_configs(arm_b_dict)
     arm_b_ensemble_config = load_ensemble_config(arm_b_dict)
     if not (
