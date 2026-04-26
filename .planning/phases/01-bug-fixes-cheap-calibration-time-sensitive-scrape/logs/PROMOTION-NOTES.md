@@ -1312,3 +1312,85 @@ inside the `TestApplyTeamContext` class (no `team_context` substring in the
 test name itself). Used the explicit nodeid
 `tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_qb_unchanged`
 instead.
+
+---
+
+## KS-29 sweep results
+
+Wall-clock: 2026-04-26T21:14:52Z → 2026-04-26T22:17:32Z (62 min, 6 A/B runs).
+Bare runs ~2 min (cache hit), full runs ~18 min (Arm B context build).
+
+### Ledger entries (3 sensitivities × 2 modes = 6)
+
+| Label | baseline | mode | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks |
+|-------|----------|------|------------:|-------------:|-------------:|----------:|
+| p1.ks29.s003.bare | bare | total_lift | +0.0508 | -0.259 | -3.457 | +0.027 |
+| p1.ks29.s003.full | defaults | marginal_lift | -0.0007 | -0.005 | -0.014 | -0.000 |
+| p1.ks29.s005.bare | bare | total_lift | +0.0510 | -0.266 | -3.491 | +0.026 |
+| p1.ks29.s005.full | defaults | marginal_lift | -0.0013 | +0.002 | +0.044 | -0.001 |
+| p1.ks29.s008.bare | bare | total_lift | +0.0513 | -0.263 | -3.562 | +0.026 |
+| p1.ks29.s008.full | defaults | marginal_lift | -0.0010 | -0.006 | -0.075 | +0.000 |
+
+### Hard-floor evaluation (relaxed gate — full-stack only)
+
+Per `## Gate Relaxation Decision` above: Phase 1 bug-fix work uses the full-stack
+hard floor only. Bare-isolation deltas are informational because legacy bugs in
+unrelated layers can mask or expose the change being measured.
+
+| Sensitivity | full Δ rank_corr | full Δ weekly_mae | Full hard floor? |
+|-------------|-----------------:|------------------:|:----------------:|
+| 0.03 | -0.0007 | -0.005 | ✅ PASS (rank_corr ≥ -0.005, weekly_mae ≤ +0.05) |
+| 0.05 | -0.0013 | +0.002 | ✅ PASS |
+| 0.08 | -0.0010 | -0.006 | ✅ PASS |
+
+All three sensitivities pass the relaxed hard floor.
+
+### Per-position primary targets (WR/TE receiving_yards KS, full-stack rows)
+
+| Sensitivity | WR recv_yds KS (2022 / 2023 / 2024) | TE recv_yds KS (2022 / 2023 / 2024) |
+|-------------|-------------------------------------|-------------------------------------|
+| 0.03 | +0.00 / +0.00 / -0.00 | -0.00 / +0.00 / +0.00 |
+| 0.05 | +0.00 / -0.00 / +0.00 | +0.00 / -0.01 / +0.00 |
+| 0.08 | -0.00 / -0.00 / +0.00 | +0.00 / +0.00 / -0.00 |
+
+All three are non-regressive on WR/TE receiving_yards KS — D-30 small-gain
+"any non-regression KS delta on the primary target" is met by all three.
+
+### Bare-mode informational read (NOT promotion gate)
+
+Bare runs all show large rank_corr improvements (+0.0508 to +0.0513) and big
+MAE wins (-0.259 to -0.266), which is the team_context layer doing real work
+in isolation. But they also show QB pass_yards KS regressions of +0.07 to +0.10
+across seasons (e.g. s005.bare 2024: QB pass_yards KS 0.38 → 0.47, +0.10) and
+TE recv_yds KS regressions of +0.04 to +0.07. Two reasons this is collateral and
+not blocking:
+
+1. The bare-mode QB pass_yards regression mirrors the same pattern observed for
+   KS-04, KS-05, KS-06, KS-07 (see Gate Relaxation Decision above): without
+   compensating layers (props, market_history, dynamic_blend, residual_calib),
+   any per-engine activation re-allocates yards such that the QB under-projection
+   becomes more visible. Phase 1 bug-fix work does not close that under-projection.
+2. The full-stack rows show the QB pass_yards KS staying essentially flat
+   (Δ -0.00 / -0.01 / -0.01 across all three sensitivities). The compensating
+   stack absorbs the redistribution cleanly.
+
+### Promotion-bar evaluation (D-30 — small-gain item)
+
+Bar: hard floor passes (✓ all three, full-stack) AND any non-regression KS
+delta on the primary target (✓ WR/TE recv_yds non-regressive across all three).
+
+### Selection rule (D-21 + D-30)
+
+1. Filter to sensitivities passing both hard floor → all three (0.03, 0.05, 0.08)
+2. Pick best Δ rank_corr on full row → **0.03 wins** (-0.0007 vs -0.0013/-0.0010)
+3. Tiebreaker (WR/TE recv_yds KS) → all three flat; no tie to break
+4. Secondary tiebreaker (Δ weekly_mae on full row) → 0.03 also best (-0.005)
+
+### CHOSEN SENSITIVITY: 0.03
+
+`pff.team_context.enabled = true`, `pff.team_context.pass_rate_sensitivity = 0.03`.
+
+### Logs
+
+- Orchestration: `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/ks29_sweep_orchestration.log`
+- Per-run: `p1.ks29.s003.bare.log`, `p1.ks29.s003.full.log`, `p1.ks29.s005.bare.log`, `p1.ks29.s005.full.log`, `p1.ks29.s008.bare.log`, `p1.ks29.s008.full.log`

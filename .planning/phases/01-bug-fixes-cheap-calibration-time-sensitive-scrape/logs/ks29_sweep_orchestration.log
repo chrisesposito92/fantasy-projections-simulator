@@ -1,0 +1,21 @@
+=== KS-29 sweep started: 2026-04-26T21:14:52Z ===
+
+=== 2026-04-26T21:14:52Z — running p1.ks29.s003.bare (sensitivity=0.03, mode=bare) ===
+=== 2026-04-26T21:17:04Z — p1.ks29.s003.bare exit=0 ===
+
+=== 2026-04-26T21:17:04Z — running p1.ks29.s003.full (sensitivity=0.03, mode=full) ===
+=== 2026-04-26T21:35:46Z — p1.ks29.s003.full exit=0 ===
+
+=== 2026-04-26T21:35:46Z — running p1.ks29.s005.bare (sensitivity=0.05, mode=bare) ===
+=== 2026-04-26T21:37:59Z — p1.ks29.s005.bare exit=0 ===
+
+=== 2026-04-26T21:37:59Z — running p1.ks29.s005.full (sensitivity=0.05, mode=full) ===
+=== 2026-04-26T21:56:33Z — p1.ks29.s005.full exit=0 ===
+
+=== 2026-04-26T21:56:33Z — running p1.ks29.s008.bare (sensitivity=0.08, mode=bare) ===
+=== 2026-04-26T21:58:47Z — p1.ks29.s008.bare exit=0 ===
+
+=== 2026-04-26T21:58:47Z — running p1.ks29.s008.full (sensitivity=0.08, mode=full) ===
+=== 2026-04-26T22:17:32Z — p1.ks29.s008.full exit=0 ===
+
+=== KS-29 sweep finished: 2026-04-26T22:17:32Z ===
