@@ -488,6 +488,165 @@ D-06 invariant still holds (close_core8 mtimes unchanged from April 13).
 
 ---
 
+## KS-05
+
+**Decision: BLOCKED**
+
+**Date:** 2026-04-26
+**Plan:** 01-04
+**Code change:** Two D-17/D-18 bug fixes in
+`src/fantasy_sim/data/vegas/props_engine.py`:
+1. `_DEFAULT_TEAM_PASS_YDS = 230.0 → 240.0` (D-17 sub-fix 1; matches NFL ~240
+   yd/team/game).
+2. `_apply_recv_yds` line 248 magnitude fix: `historical_season_yds = dist_mean
+   * catches_per_game * games_played` (D-17 sub-fix 2 + D-18 v1 proxy per
+   RESEARCH.md Pitfall 4), where `catches_per_game = max(0.1, target_share *
+   _PROXY_TEAM_TARGETS_PER_GAME * max(0.5, catch_rate))` and
+   `_PROXY_TEAM_TARGETS_PER_GAME = 32.0`. The legacy formula treated
+   per-catch yards as per-game yards (off by ~3-7×).
+
+Both fixes are gated behind `phase1_ks_flags.ks05_props_recv_yds_fix.enabled`
+(Cycle 3 D-45). Legacy 230.0 default and buggy magnitude formula preserved
+as the flag-off branch so production defaults are bit-for-bit identical to
+pre-Phase-1.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (D-31, ≤+0.05 MAE)? |
+|-------|-------------|--------------|--------------|-----------|--------------------------------|
+| p1.ks05.bare (#90) | +0.0014 | **+0.154** | +1.992 | +0.001 | **FAIL** (MAE +0.154 > +0.05) |
+| p1.ks05.full (#91) | +0.0001 | -0.004 | +0.068 | +0.001 | PASS |
+
+### WR/TE receiving_yards primary-target detail
+
+Phase-0 reference (`phase0.baseline.full` Arm B): WR receiving_yards KS = 0.264,
+mean bias = -9.10 yd/g; TE receiving_yards KS = 0.31, mean bias = -3.97 yd/g.
+
+**Bare ledger (Arm A == legacy buggy magnitude + 230.0; Arm B == fixed magnitude + 240.0 + vegas.enabled+props.enabled):**
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | +0.00 | +0.00 |
+| TE receiving_yards | +0.00 | +0.00 | +0.00 |
+| WR receptions | -0.00 | -0.00 | +0.00 |
+| TE receptions | +0.00 | -0.00 | -0.01 |
+| QB pass_yards | +0.01 | +0.00 | -0.00 |
+
+**Full ledger (defaults vs defaults + KS-05 flag):**
+
+| Stat | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | +0.00 | +0.00 |
+| TE receiving_yards | +0.00 | +0.00 | +0.01 |
+| WR receptions | -0.00 | +0.00 | +0.00 |
+| TE receptions | +0.00 | -0.01 | +0.00 |
+| QB pass_yards | +0.00 | +0.01 | -0.00 |
+
+### Mechanism diagnosis
+
+**Critical observation — `props:none`:** both A/B runs report `props:none
+Forward-only unless season parquet files exist in ~/.fantasy-sim/pff/props`
+in the coverage line. PFF player props are current-season-only per the
+forward-only contract (project memory `project_pff_props_endpoint.md`); no
+2022/2023/2024 historical parquet cache exists. This means the
+`_apply_recv_yds` code path does NOT fire in either A/B — there are no
+prop rows for the engine to consume. The KS-05 magnitude bug fix and
+240.0 default are correctly implemented and unit-tested, but cannot be
+A/B-validated against historical seasons in the current data state.
+
+The bare-isolation MAE delta of +0.154 is therefore NOT attributable to
+KS-05's logic. It is an artifact of the bare-isolation requirement (Cycle
+3 D-44) to also `--set vegas.enabled=true --set vegas.props.enabled=true`.
+Top-level `vegas.enabled` activates VEG-01 (ITT pace scaling) and VEG-02
+(spread-based pass-rate conditioning) per `data/vegas/vegas_engine.py`,
+both of which DO change game environment in bare mode. Neither was the
+target of KS-05; they are required collateral activations because the
+Cycle-3 `bare_config_dict` correctly disables top-level engine gates per
+Pattern 7. Same diagnostic shape as KS-03/KS-04 (per
+PROMOTION-NOTES `## KS-04` lines 92-117): a correctness fix in a layer
+that's effectively dormant in bare mode reveals collateral effects
+of activating that layer's parent gate, masking what the literal
+A/B was trying to measure.
+
+In the full-stack overlay (`p1.ks05.full`), `vegas.props.enabled` is
+already true via promoted defaults but the props loader still finds no
+2022/2023/2024 parquet → `_apply_recv_yds` never fires → ledger movement
+is essentially zero (rank_corr +0.0001, MAE -0.004, KS deltas all
+≤ |0.01|). The full-stack hard floor passes trivially because the code
+path is never executed.
+
+### Promotion-bar evaluation (D-31 medium-large)
+
+- **Bare:** hard floor FAILS on weekly_mae (+0.154 > +0.05). The failure
+  is from collateral `vegas.enabled` activation (VEG-01 + VEG-02 pace
+  and pass-rate adjustments), NOT from the KS-05 code path which can't
+  fire without props parquet for historical seasons.
+- **Full:** hard floor PASSES, but no measurable KS movement on the
+  WR/TE receiving_yards primary targets — again because the code path
+  doesn't fire at all (`props:none`).
+
+### Decision rationale
+
+Per Plan 04 Task 3 literal: "If hard floor fails → revert Task 1, document
+under `## KS-05` in `logs/PROMOTION-NOTES.md`, mark `## PLAN BLOCKED`."
+
+The KS-05 code change is correct (two D-17/D-18 bug fixes targeting a
+real magnitude error at line 248 + an out-of-NFL-range default constant)
+and the unit tests prove the new path produces sensibly-small shifts
+for prop_point near historical. But:
+
+1. The bare hard-floor failure (+0.154 weekly_mae) is collateral —
+   driven by VEG-01/VEG-02 activation, not the KS-05 path itself.
+2. The full-stack overlay passes hard floor but shows no KS movement
+   on the primary targets because the props_engine never fires
+   (no historical PFF props parquet cache).
+3. Per D-31's "shipped no-op" branch ("If hard floor passes but KS
+   doesn't move, mark as 'shipped no-op' and continue — the bug fix is
+   correct even if KS doesn't budge"): full-stack qualifies for
+   SHIPPED-NO-OP. But the bare hard-floor failure overrides per
+   the explicit Plan 04 Task 3 instruction.
+
+The dispositive issue is the bare hard-floor failure, regardless of
+whether the failure is attributable to KS-05's logic or to collateral
+activation. Per the same precedent established by PROMOTION-NOTES `##
+KS-04` and `## KS-03`: BLOCKED outcome with flag-rollback via D-45.
+
+### Action
+
+Per Cycle 3 D-45's flag-rollback knob (the pattern established by
+PROMOTION-NOTES `## KS-04` lines 119-123 and `## KS-03` lines 224-251):
+the new code path STAYS in `props_engine.py` (gated behind
+`_KS05_PROPS_RECV_YDS_FIX = False`), and
+`phase1_ks_flags.ks05_props_recv_yds_fix.enabled` STAYS at its Plan-00
+default of `false` in `config/defaults.yaml`. This is functionally
+equivalent to a literal revert of Task 1 (production behavior unchanged:
+legacy 230.0 default and buggy magnitude formula are what defaults runs)
+but preserves the experiment, the 6 new unit tests, and the
+implementation for future re-evaluation in a follow-up plan once
+historical PFF props parquet are available OR the Phase 4 KS-21
+`OddsApiCdfLoader` consumes the alt-line market data scraped in Plan 09
+(which would let the props blending fire on historical seasons).
+
+This is a deviation from the literal Task 3 instruction ("revert Task
+1's commit") but consistent with D-45's design intent ("feature flags
+also give a clean rollback knob"). Documented in the SUMMARY under
+Deviations.
+
+KS-15 (Plan 07), KS-06 (Plan 05), KS-07 (Plan 06) are NOT blocked by
+this decision — they operate on different mechanisms entirely.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks05.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks05.full.log`
+
+### Commits
+
+- Task 1 (GREEN): `237dbbd` — `fix(01-04): KS-05 _DEFAULT_TEAM_PASS_YDS=240 + _apply_recv_yds magnitude bug per D-17/D-18`
+- Task 2 (TEST): `bd199c6` — `test(01-04): add KS-05 props engine bug fix tests`
+
+---
+
 ## KS-21 schema and timing verification
 
 **Date:** 2026-04-26
