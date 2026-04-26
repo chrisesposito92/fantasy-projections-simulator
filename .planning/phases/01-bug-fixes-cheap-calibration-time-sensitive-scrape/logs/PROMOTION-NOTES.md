@@ -1285,3 +1285,30 @@ roster path.
 
 - Task 1 (RED): `f402414` — `test(01-07): add failing tests for KS-15 field-position clamping fix`
 - Task 2 (GREEN): `029e3af` — `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_BOOST=0 per D-15 + legacy paths per D-15b`
+
+---
+
+## KS-29 — pre-flight passed
+
+Behavior test: `tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_qb_unchanged`
+(line 829, formerly referenced as `:848` in plan text) **PASSED** along with the
+full 8-test `TestApplyTeamContext` class.
+
+Confirms `apply_team_context` does not mutate QB `target_share`, `catch_rate`,
+or `rushing_yards_dist`. Code at `src/fantasy_sim/data/pff/tier_engine.py:1196-1215`
+explicitly branches `if position in ("WR", "TE")` / `elif position == "RB"` —
+QB falls through to no-op, consistent with the docstring "QB: no adjustments
+(consistent with QB skip rule)".
+
+D-22 honored. KS-29 sweep cleared to proceed.
+
+**Codex LOW-2 fix:** replaced ad-hoc grep preflight with the existing
+behavior-level test that already asserts QBs are untouched (per D-43 acceptance
+checks tightened to behavior-level assertions).
+
+**Note on `-k` filter:** the plan-text `-k "team_context and qb"` selector
+matches by test *name* keywords; the canonical test is named `test_qb_unchanged`
+inside the `TestApplyTeamContext` class (no `team_context` substring in the
+test name itself). Used the explicit nodeid
+`tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_qb_unchanged`
+instead.

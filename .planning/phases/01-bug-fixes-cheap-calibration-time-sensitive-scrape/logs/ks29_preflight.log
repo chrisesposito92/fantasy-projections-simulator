@@ -1,0 +1,29 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0 -- /Users/chrisesposito/Documents/github/fantasy-projections-simulator/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/chrisesposito/Documents/github/fantasy-projections-simulator
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collecting ... collected 1 item
+
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_qb_unchanged PASSED [100%]
+
+============================== 1 passed in 0.03s ===============================
+============================= test session starts ==============================
+platform darwin -- Python 3.13.11, pytest-9.0.2, pluggy-1.6.0 -- /Users/chrisesposito/Documents/github/fantasy-projections-simulator/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/chrisesposito/Documents/github/fantasy-projections-simulator
+configfile: pyproject.toml
+plugins: xdist-3.8.0, anyio-4.13.0
+collecting ... collected 8 items
+
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_wr_target_share_scaled_by_pass_rate PASSED [ 12%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_wr_catch_rate_scaled_by_qb_quality PASSED [ 25%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_te_gets_same_adjustments_as_wr PASSED [ 37%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_rb_rushing_yards_shifted PASSED [ 50%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_rb_no_rushing_yards_dist_no_error PASSED [ 62%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_qb_unchanged PASSED [ 75%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_neutral_context_no_changes PASSED [ 87%]
+tests/test_data/test_pff/test_tier_engine.py::TestApplyTeamContext::test_apply_tiers_with_none_context_unchanged PASSED [100%]
+
+============================== 8 passed in 0.03s ===============================
