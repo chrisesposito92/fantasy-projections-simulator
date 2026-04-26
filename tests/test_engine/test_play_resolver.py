@@ -1496,3 +1496,370 @@ def test_ks07_flag_off_rb_uses_legacy_scalar(monkeypatch):
         f"RB RZ catch rate under flag-off {rate:.3f} should match legacy 0.92, "
         f"not the flag-on 0.85"
     )
+
+
+# === KS-15: field-position clamping fix (D-14 + D-15 + D-15b, Cycle 3 D-45) ===
+#
+# Per Plan 07. KS-15 fixes the field-position clamping bug that drops upper-tail
+# values from QB pass_yards and WR receiving_yards distributions. Per D-14:
+# detect would-be-TD from the un-clamped sample BEFORE clamping; if it would
+# have crossed the goal, route through the TD gate (inside the 20) or score
+# unconditionally (outside the 20). Per D-15: in the same code path, drop
+# `CATCH_YARDS_BOOST` to 0 — the boost was a band-aid for clamping-induced
+# under-counting that KS-15 obviates at the mechanism level. Per D-15b: apply
+# the same `min(yard_line, sample)` + would-be-TD detection pattern to the
+# legacy non-roster paths in `_resolve_pass` (lines 461-480) and `_resolve_run`
+# (lines 558-575) so the two divergent clamping semantics inside the same
+# module are unified.
+#
+# All tests force the new code path on via `monkeypatch.setattr(pr,
+# "_KS15_UNCLAMP_FOR_TD_GATE", True)` so RED→GREEN is deterministic regardless
+# of the defaults.yaml value. Test 5 is a calibration regression guard that
+# does NOT depend on the flag (PASS_TD_GATE values are policy constants, not
+# behavioral wiring).
+
+
+def test_ks15_catch_yards_boost_zeroed_in_ks15_path(monkeypatch):
+    """D-15: when the KS-15 flag is on, the effective per-catch boost is 0.
+
+    Behavioral assertion (not a constant check, because per Cycle 3 D-45 the
+    legacy `CATCH_YARDS_BOOST = 1.5` constant stays in module scope as the
+    Arm A / flag-off path — it is the FLAG-ON path that zeroes the boost).
+    yard_line=80, dist samples 5; raw=5 < 80 (no clamp); KS-15 path adds 0
+    boost → observed mean ~5.5 (5 + 0.5 home-field expected).
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+    # Ensure KS-04 conditional path stays off so the test isolates the KS-15
+    # boost-zeroing behavior.
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    rng = np.random.default_rng(31)
+    roster = _make_ks04_wr_roster(receiving_yards_dist=[5, 5, 5, 5, 5])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(2000):
+        state = make_state(yard_line=80)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=True)
+        if result.is_complete and not result.is_touchdown and not result.is_fumble:
+            yards_seen.append(result.yards)
+
+    yards_arr = np.array(yards_seen)
+    assert len(yards_arr) > 0, "Expected non-TD completions"
+    mean = yards_arr.mean()
+    # Tight band catches both the legacy unconditional `+1` (~6.5) and the
+    # KS-04 conditional `+1.5` if either leaks into the KS-15 code path.
+    assert 5.3 <= mean <= 6.0, (
+        f"mean={mean:.3f} suggests boost was applied in the KS-15 code path "
+        f"(D-15 violation). Expected ~5.5 (5 + 0.5 home-field expected)."
+    )
+
+
+def _make_ks15_wr_roster(receiving_yards_dist, *, catch_rate=1.0, red_zone_catch_rate=1.0,
+                          receiving_td_factor=1.0):
+    """Single-WR roster for deterministic KS-15 yards/TD-gate testing."""
+    qb = PlayerModel(
+        "QB1", "QB", "QB", "T",
+        PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        PlayerOutcomes(),
+    )
+    wr = PlayerModel(
+        "WR1", "WR1", "WR", "T",
+        PlayerUsage(target_share=1.0),
+        PlayerOutcomes(
+            catch_rate=catch_rate,
+            red_zone_catch_rate=red_zone_catch_rate,
+            receiving_yards_dist=np.array(receiving_yards_dist),
+            fumble_rate=0.0,
+            receiving_td_factor=receiving_td_factor,
+        ),
+    )
+    return TeamRoster(team="T", players=[qb, wr])
+
+
+def _make_ks15_rb_roster(rushing_yards_dist, *, fumble_rate=0.0,
+                         rushing_td_factor=1.0, i5_rushing_td_factor=1.0):
+    """Single-RB roster for deterministic KS-15 run/safety testing."""
+    rb = PlayerModel(
+        "RB1", "RB1", "RB", "T",
+        PlayerUsage(carry_share=1.0),
+        PlayerOutcomes(
+            rushing_yards_dist=np.array(rushing_yards_dist),
+            fumble_rate=fumble_rate,
+            rushing_td_factor=rushing_td_factor,
+            i5_rushing_td_factor=i5_rushing_td_factor,
+        ),
+    )
+    return TeamRoster(team="T", players=[rb])
+
+
+def test_ks15_pass_long_catch_outside_rz_yields_td_when_flag_on(monkeypatch):
+    """D-14: yard_line=30, raw=35 (would-be TD outside RZ) → unconditional TD.
+
+    Outside the 20, the TD gate does not apply; any would-be TD scores. The
+    legacy clamp-then-check path also produced TDs here (clamping 35→30 still
+    triggers `state.yard_line - yards <= 0`), but this test pins the new
+    semantic explicitly so any future refactor cannot regress it.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    rng = np.random.default_rng(37)
+    roster = _make_ks15_wr_roster(receiving_yards_dist=[35, 35, 35, 35, 35])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    td_count = 0
+    n = 1000
+    for _ in range(n):
+        state = make_state(yard_line=30)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
+        if result.is_complete and result.is_touchdown:
+            td_count += 1
+    rate = td_count / n
+    assert rate >= 0.99, (
+        f"Outside-RZ would-be-TD rate {rate:.3f} not ~1.0; KS-15 D-14 requires "
+        f"unconditional TD when raw_sample > yard_line and yard_line > 20."
+    )
+
+
+def test_ks15_pass_long_catch_inside_rz_routes_through_gate_when_flag_on(monkeypatch):
+    """D-14: yard_line=10, raw=25 (would-be TD inside RZ) → routed through gate.
+
+    Inside the 20, the TD gate decides whether the would-be TD scores. With
+    yard_line=10, PASS_TD_GATE[(6,10)] = 0.45. With receiving_td_factor=1.0
+    and 5000 trials, observed TD rate should center on 0.45 ± ~0.014 (3 σ
+    band). Band [0.42, 0.48] separates cleanly from the legacy clamp-only
+    semantics (which would have produced ~1.0 TD rate because clamping 25→10
+    triggers `state.yard_line - yards <= 0` then proceeds to the gate anyway —
+    so this test is more about pinning the GATE rate after KS-15 than about
+    flag-on vs flag-off semantics; if the would-be detection is wrong, the
+    rate will skew sharply).
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    rng = np.random.default_rng(41)
+    roster = _make_ks15_wr_roster(receiving_yards_dist=[25, 25, 25, 25, 25])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    td_count = 0
+    n = 5000
+    for _ in range(n):
+        state = make_state(yard_line=10)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
+        if result.is_complete and result.is_touchdown:
+            td_count += 1
+    rate = td_count / n
+    # PASS_TD_GATE[(6,10)] = 0.45. ± 0.03 covers RNG noise at n=5000.
+    assert 0.42 <= rate <= 0.48, (
+        f"Inside-RZ TD gate rate {rate:.3f} not within [0.42, 0.48] expected "
+        f"for PASS_TD_GATE[(6,10)] = 0.45. KS-15 D-14: would-be TDs in RZ "
+        f"must be routed through the gate."
+    )
+
+
+def test_ks15_pass_short_catch_no_double_counted_yards_when_flag_on(monkeypatch):
+    """yard_line=80, raw=5; no clamp, no boost → mean ~5.5 (home-field expected).
+
+    Sister of test_ks15_catch_yards_boost_zeroed_in_ks15_path but with the
+    explicit framing of "no double-counted yards from boost stacking on top
+    of un-clamped sample". Tight upper bound 6.0 catches both `+1` and `+1.5`
+    leakage.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    rng = np.random.default_rng(43)
+    roster = _make_ks15_wr_roster(receiving_yards_dist=[5, 5, 5, 5, 5])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(2000):
+        state = make_state(yard_line=80)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=True)
+        if result.is_complete and not result.is_touchdown and not result.is_fumble:
+            yards_seen.append(result.yards)
+
+    arr = np.array(yards_seen)
+    assert len(arr) > 0, "Expected non-TD completions"
+    mean = arr.mean()
+    assert 5.3 <= mean <= 6.0, (
+        f"mean={mean:.3f} suggests boost double-count in KS-15 path. Expected ~5.5."
+    )
+
+
+def test_ks15_pass_td_gate_calibration_unchanged():
+    """Regression guard: PASS_TD_GATE[(1,3)] = 0.55 over 100k trials.
+
+    Independent of the KS-15 flag — this guards the gate constants themselves,
+    which KS-15 must not perturb during the refactor. Mirrors the KS-01 guard.
+    """
+    rng = np.random.default_rng(0)
+    n = 100_000
+    successes = sum(1 for _ in range(n) if _red_zone_td_gate(3, "pass", rng))
+    rate = successes / n
+    assert 0.54 <= rate <= 0.56, f"PASS_TD_GATE[(1,3)] regressed: rate={rate}"
+
+
+def test_ks15_run_long_carry_outside_rz_yields_td_when_flag_on(monkeypatch):
+    """D-14: yard_line=25, raw=30 (would-be TD outside RZ) → unconditional TD."""
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+
+    rng = np.random.default_rng(47)
+    roster = _make_ks15_rb_roster(rushing_yards_dist=[30, 30, 30, 30, 30])
+    outcomes = make_outcomes(run_yards=[5])
+    rates = make_turnover_rates()
+
+    td_count = 0
+    n = 1000
+    for _ in range(n):
+        state = make_state(yard_line=25)
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=roster, is_home=False)
+        if result.is_touchdown:
+            td_count += 1
+    rate = td_count / n
+    assert rate >= 0.99, (
+        f"Outside-RZ would-be-TD rate {rate:.3f} not ~1.0 for runs; KS-15 D-14 "
+        f"requires unconditional TD when raw_yards > yard_line and yard_line > 20."
+    )
+
+
+def test_ks15_run_safety_branch_preserved_when_flag_on(monkeypatch):
+    """yard_line=98 (own 2), raw_yards=-100 → is_safety=True must still fire.
+
+    Critical regression guard: the safety branch detects a massive backward
+    play (yard_line - raw_yards >= 100) BEFORE any clamping. The KS-15
+    refactor must not mask this detection. Per the existing safety semantics
+    in `_resolve_run`, raw_yards is the home-field-adjusted sample; a
+    distribution sampling -100 with yard_line=98 hits 98 - (-100) = 198 >= 100
+    → safety.
+
+    Note: real PBP rushing distributions almost never sample -100, but the
+    safety branch must remain reachable as a defensive guard. Use a
+    deterministic distribution to force the path.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+
+    rng = np.random.default_rng(53)
+    # Deterministic large negative loss; is_home=False removes home-field +1
+    # so raw_yards == player_yards == -100 every play.
+    roster = _make_ks15_rb_roster(rushing_yards_dist=[-100])
+    outcomes = make_outcomes(run_yards=[-100])
+    rates = make_turnover_rates()
+
+    safety_count = 0
+    n = 200
+    for _ in range(n):
+        state = make_state(yard_line=98)
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=roster, is_home=False)
+        if result.is_safety:
+            safety_count += 1
+    # Every play should fire is_safety=True (deterministic distribution).
+    assert safety_count == n, (
+        f"is_safety fired on {safety_count}/{n} plays; KS-15 must preserve the "
+        f"safety detection on raw_yards before clamping."
+    )
+
+
+def test_ks15_legacy_pass_path_preserves_distribution_when_flag_on(monkeypatch):
+    """D-15b (MEDIUM-4): legacy non-roster `_resolve_pass` path also uses the
+    KS-15 would-be-TD detection pattern. With roster=None, yard_line=30, and
+    `play_outcomes` returning 35-yard pass samples: TD rate ~100% AND yards
+    saturate at 30 (the goal — NOT silently truncated to a smaller value).
+
+    Pre-fix legacy path also produced TDs (clamping 35→30 then `yard_line -
+    yards <= 0`), so this test pins the post-fix yards == yard_line saturation
+    AND TD rate, both of which would survive a wrong refactor only if the
+    legacy semantics were carefully preserved. Without `roster=None`, the
+    test would route through the roster path covered by Tests 2-7.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+
+    rng = np.random.default_rng(59)
+    # Deterministic 35-yd pass sample regardless of bucket.
+    outcomes = make_outcomes(pass_yards=[35, 35, 35, 35, 35])
+    rates = make_turnover_rates()  # no sacks, no INTs, no fumbles
+
+    td_count = 0
+    yards_seen = []
+    n = 1000
+    for _ in range(n):
+        state = make_state(yard_line=30)
+        # roster=None forces the legacy non-roster branch at lines 461-480.
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=None, is_home=False)
+        if result.is_complete:
+            yards_seen.append(result.yards)
+            if result.is_touchdown:
+                td_count += 1
+    rate = td_count / n
+    arr = np.array(yards_seen)
+    assert len(arr) > 0, "Expected at least one completion in legacy path"
+    assert rate >= 0.99, (
+        f"Legacy pass path TD rate {rate:.3f} not ~1.0 for raw 35 > yard_line 30."
+    )
+    # Yards must saturate at yard_line=30 (the TD), never silently truncated
+    # below 30 by a wrong refactor.
+    assert arr.max() == 30, f"Legacy pass path yards.max={arr.max()} != 30"
+    assert arr.min() == 30, (
+        f"Legacy pass path yards.min={arr.min()} != 30 — distribution should "
+        f"saturate at goal for would-be TDs."
+    )
+
+
+def test_ks15_legacy_run_path_preserves_distribution_when_flag_on(monkeypatch):
+    """D-15b (MEDIUM-4): legacy non-roster `_resolve_run` path symmetric test.
+
+    yard_line=25, sampler returns 30 → TD rate ~100% AND yards saturate at 25.
+    Also tests that yard_line=98 + raw=-100 still triggers is_safety=True via
+    the legacy path.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", True)
+
+    rng = np.random.default_rng(61)
+    outcomes = make_outcomes(run_yards=[30, 30, 30, 30, 30])
+    rates = make_turnover_rates()
+
+    td_count = 0
+    yards_seen = []
+    n = 500
+    for _ in range(n):
+        state = make_state(yard_line=25)
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=None, is_home=False)
+        yards_seen.append(result.yards)
+        if result.is_touchdown:
+            td_count += 1
+    rate = td_count / n
+    arr = np.array(yards_seen)
+    assert rate >= 0.99, (
+        f"Legacy run path TD rate {rate:.3f} not ~1.0 for raw 30 > yard_line 25."
+    )
+    assert arr.max() == 25, f"Legacy run path yards.max={arr.max()} != 25"
+    assert arr.min() == 25, (
+        f"Legacy run path yards.min={arr.min()} != 25 — distribution should "
+        f"saturate at goal for would-be TDs."
+    )
+
+    # Safety branch on the legacy path
+    safety_outcomes = make_outcomes(run_yards=[-100])
+    safety_count = 0
+    for _ in range(200):
+        state = make_state(yard_line=98)
+        result = resolve_play(state, "run", safety_outcomes, rates, rng, roster=None, is_home=False)
+        if result.is_safety:
+            safety_count += 1
+    assert safety_count == 200, (
+        f"Legacy run path is_safety fired {safety_count}/200; KS-15 D-15b must "
+        f"preserve the safety branch on the legacy path."
+    )
