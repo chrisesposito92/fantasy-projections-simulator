@@ -7,7 +7,7 @@ import numpy as np
 from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster, MIN_QB_CARRY_SHARE
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
-from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
+from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIERS, RZ_CATCH_RATE_MODIFIER
 
 # KS-06 D-19 sub-fix 3 (Cycle 3 D-45 flag-gated): the canonical module
 # constant is now 3 (the new path's value); the legacy threshold of 5 is
@@ -546,7 +546,21 @@ def _assemble_models(
             if rs["rz_targets"] >= MIN_RZ_TARGETS:
                 outcomes.red_zone_catch_rate = rs["rz_catches"] / rs["rz_targets"]
             elif outcomes.catch_rate > 0:
-                outcomes.red_zone_catch_rate = outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
+                # KS-07 D-20 (Cycle 3 D-45): when the flag is on, use the
+                # position-aware modifier (WR=0.92, TE=0.95, RB=0.85);
+                # unknown positions fall back to the WR rate. When the flag
+                # is off, use the legacy scalar 0.92 for every position so
+                # Arm A is bit-for-bit identical to pre-Phase-1 behavior.
+                # The flag is read at module import in play_resolver.py
+                # (`_KS07_POSITIONAL_RZ_CATCH_RATE`); we resolve it lazily
+                # here so monkeypatch in tests applies cleanly to the live
+                # value rather than a snapshot of the import-time bool.
+                from fantasy_sim.engine import play_resolver as _pr
+                if _pr._KS07_POSITIONAL_RZ_CATCH_RATE:
+                    rz_modifier = RZ_CATCH_RATE_MODIFIERS.get(position, RZ_CATCH_RATE_MODIFIERS["WR"])
+                else:
+                    rz_modifier = RZ_CATCH_RATE_MODIFIER
+                outcomes.red_zone_catch_rate = outcomes.catch_rate * rz_modifier
             if len(rs["yards"]) >= effective_min_player_plays:
                 outcomes.receiving_yards_dist = np.array(rs["yards"])
             # Red zone receiving yards distribution (catches inside the 20)
