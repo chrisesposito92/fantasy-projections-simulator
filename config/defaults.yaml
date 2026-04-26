@@ -22,7 +22,7 @@ phase1_ks_flags:
     fallback_low: 5
     fallback_high: 18
   ks07_positional_rz_catch_rate:
-    enabled: false   # KS-07 — positional RZ_CATCH_RATE_MODIFIERS dict
+    enabled: true   # KS-07 PROMOTED 2026-04-26 — full-stack passed (Δ rank_corr -0.0012, Δ weekly_mae +0.003, Δ fpts_ks +0.000); WR/TE recv non-regressive primary target; RB rush_yards Δ ≥ 0 (success criterion #3); bare-floor relaxed, see PROMOTION-NOTES.md ## KS-07
     rates:
       WR: 0.92
       TE: 0.95

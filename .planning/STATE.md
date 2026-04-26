@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 01-04-PLAN.md (KS-05 BLOCKED — flag stays false, production unchanged; KS-15/KS-06/KS-07 unblocked; props:none discovery — no historical PFF props parquet)"
-last_updated: "2026-04-26T19:34:11.794Z"
+stopped_at: Completed 01-06-PLAN.md (KS-07 PROMOTED — positional RZ catch rate WR/TE/RB; 2nd plan to clear relaxed full-stack gate cleanly with new code path active)
+last_updated: "2026-04-26T20:27:30.962Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 7
-  percent: 58
+  completed_plans: 8
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 7 of 12
+Plan: 8 of 12
 Status: Ready to execute
 Last activity: 2026-04-26
 
-Progress: [██████░░░░] 58%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [██████░░░░] 58%
 | Phase 01 P03 | 30 min | 4 tasks | 5 files |
 | Phase 01 P04 | 27min | 4 tasks | 5 files |
 | Phase 01 P05 | 90min | 4 tasks | 11 files |
+| Phase 01 P06 | 40min | 4 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 01]: Plan 01-03 KS-03: BLOCKED per D-31 hard floor — bare weekly_mae +0.164 > +0.05 limit. Same mechanism as KS-04: per-player anchor exposes bare-mode under-projection that legacy * 10.0 was masking. Flag-based rollback per D-45: phase1_ks_flags.ks03_dynamic_yard_anchor.enabled stays false in defaults.yaml; new code path stays in game_context.py but dormant. KS-15 (Plan 07) unblocked — operates on different mechanism per D-14/D-15.
 - [Phase ?]: [Phase 01]: Plan 01-04 KS-05: BLOCKED per D-31 hard floor — bare weekly_mae +0.154 > +0.05 limit. CRITICAL: both A/B runs report props:none (no historical PFF props parquet for 2022/2023/2024 per forward-only PFF endpoint contract); KS-05 _apply_recv_yds path never fires in either A/B. The bare-isolation MAE failure is collateral from required vegas.enabled+props.enabled activation per D-44 bare_config_dict pattern (VEG-01 ITT pace + VEG-02 spread pass-rate), NOT from KS-05 logic. Flag-based rollback per D-45: phase1_ks_flags.ks05_props_recv_yds_fix.enabled stays false in defaults.yaml; new code path stays in props_engine.py but dormant. KS-15/KS-06/KS-07 unblocked.
 - [Phase ?]: [Phase 01]: Plan 01-05 KS-06 PROMOTED under relaxed full-stack-only gate — full hard floor PASSES (Δ rank_corr +0.0008, Δ weekly_mae -0.004, Δ fpts_ks +0.000); WR/TE receiving_yards primary target non-regressive (Δ ≈ 0 across 3 seasons). Bare hard-floor failure (+0.068 weekly_mae) informational only per gate-relaxation decision. Three D-19 sub-fixes promoted: completion-only filter on team buckets (preprocessor.py), [5,18) integer fallback (play_resolver.py), MIN_PLAYER_PLAYS = 5 → 3 (player_builder.py). KS-06 is FIRST plan in Phase 1 to clear the relaxed full-stack hard floor cleanly with the new code path active. Flag default flipped to true in config/defaults.yaml. KS-07/15/29/32 unblocked.
+- [Phase ?]: [Phase 01]: Plan 01-06 KS-07 PROMOTED — full hard floor PASSES (Δ rank_corr -0.0012, Δ weekly_mae +0.003, Δ fpts_ks +0.000); D-30 small-gain primary-target non-regression bar met (WR Δ ≈ 0; TE flat in 2 of 3 seasons); success criterion #3 RB rush_yards Δ ≥ 0 across all 3 seasons. KS-07 is 2nd plan in Phase 1 to clear relaxed gate cleanly with new code active. Flag default flipped to true in config/defaults.yaml. Bare regression (+0.064 weekly_mae) informational per gate-relaxation decision. KS-15/29/32 unblocked.
 
 ### Pending Todos
 
@@ -112,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T19:33:40.726Z
-Stopped at: Completed 01-04-PLAN.md (KS-05 BLOCKED — flag stays false, production unchanged; KS-15/KS-06/KS-07 unblocked; props:none discovery — no historical PFF props parquet)
+Last session: 2026-04-26T20:27:30.956Z
+Stopped at: Completed 01-06-PLAN.md (KS-07 PROMOTED — positional RZ catch rate WR/TE/RB; 2nd plan to clear relaxed full-stack gate cleanly with new code path active)
 Resume file: None

@@ -695,12 +695,30 @@ class TestRedZoneCatchRate:
         assert re.outcomes.red_zone_catch_rate == pytest.approx(re.outcomes.catch_rate * 0.92, abs=0.01)
 
     def test_rz_catch_rate_fallback_below_threshold(self, expanded_pbp, sample_rosters):
-        """Players with < 10 RZ targets use catch_rate * 0.92 fallback."""
+        """Players with < 10 RZ targets use catch_rate * RZ_CATCH_RATE_MODIFIERS[position]
+        as the per-player fallback. Per KS-07 D-20 (PROMOTED 2026-04-26) the
+        modifier is now position-aware: WR=0.92, TE=0.95, RB=0.85. Reads the
+        live `_KS07_POSITIONAL_RZ_CATCH_RATE` flag so the test stays correct
+        whether the flag is on (production default after KS-07 promotion) or
+        off (rollback / Arm A bit-for-bit parity)."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.engine.play_resolver import (
+            RZ_CATCH_RATE_MODIFIER,
+            RZ_CATCH_RATE_MODIFIERS,
+        )
         models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
         tk = models.get("TK87")
         assert tk is not None
+        # TK87 is a TE per tests/conftest.py:81; under flag-on the modifier is
+        # 0.95, under flag-off it's the legacy scalar 0.92.
+        if pr._KS07_POSITIONAL_RZ_CATCH_RATE:
+            expected_modifier = RZ_CATCH_RATE_MODIFIERS.get(tk.position, RZ_CATCH_RATE_MODIFIERS["WR"])
+        else:
+            expected_modifier = RZ_CATCH_RATE_MODIFIER
         if tk.outcomes.catch_rate > 0:
-            assert tk.outcomes.red_zone_catch_rate == pytest.approx(tk.outcomes.catch_rate * 0.92, abs=0.01)
+            assert tk.outcomes.red_zone_catch_rate == pytest.approx(
+                tk.outcomes.catch_rate * expected_modifier, abs=0.01
+            )
 
     def test_rz_catch_rate_data_driven_with_enough_targets(self):
         """With >= 10 RZ targets, use actual RZ catch rate."""
