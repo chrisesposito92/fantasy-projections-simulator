@@ -17,7 +17,7 @@ from fantasy_sim.validation.weekly import (
 )
 
 DEFAULT_LEDGER_PATH = Path(__file__).resolve().parents[3] / "results" / "ab_ledger.json"
-CURRENT_LEDGER_SCHEMA_VERSION = 4
+CURRENT_LEDGER_SCHEMA_VERSION = 5  # Cycle 3 — added SeasonMetrics.stat_mean_bias
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
@@ -37,6 +37,15 @@ class SeasonMetrics:
     arm_b_calibration: float
     weekly_fpts_ks: dict[str, float | int] = field(default_factory=dict)
     stat_ks: dict[str, dict[str, dict[str, float | int]]] = field(default_factory=dict)
+    # NEW Cycle 3 (Codex 01-REVIEWS.md NEW HIGH #3): per-position-stat mean bias.
+    # Shape: {position: {stat_name: {"arm_a_bias": float, "arm_b_bias": float,
+    #                                 "bias_delta": float, "n": int}}}
+    # bias = mean(projected_per_game) - mean(actual_per_game) over the season.
+    # Plan 11 uses stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"] to evaluate
+    # success criterion 1.
+    stat_mean_bias: dict[str, dict[str, dict[str, float | int]]] = field(
+        default_factory=dict
+    )
 
     @property
     def rank_corr_delta(self) -> float:
@@ -130,6 +139,8 @@ def load_ledger(path: Path = DEFAULT_LEDGER_PATH) -> list[LedgerEntry]:
             sr["weekly_fpts_ks"] = _normalize_weekly_fpts_ks(
                 sr.get("weekly_fpts_ks", {})
             )
+            # NEW Cycle 3 — backward compat for pre-v5 entries that lack stat_mean_bias.
+            sr.setdefault("stat_mean_bias", {})
             season_results.append(SeasonMetrics(**sr))
         ws_raw = item.get("weekly_summaries")
         weekly_summaries = (

@@ -186,7 +186,22 @@ def _compute_distribution_ks(
     actual_by_pw: Mapping[str, Mapping[int, object]],
     actual_pos: Mapping[str, str],
     positions: list[str],
-) -> tuple[dict[str, float | int], dict[str, dict[str, dict[str, float | int]]]]:
+) -> tuple[
+    dict[str, float | int],
+    dict[str, dict[str, dict[str, float | int]]],
+    dict[str, dict[str, dict[str, float | int]]],
+]:
+    """Compute fpts KS, per-position-stat KS, and per-position-stat mean bias.
+
+    Returns (weekly_fpts_ks, stat_ks, stat_mean_bias).
+
+    NEW Cycle 3 (Codex 01-REVIEWS.md NEW HIGH #3): in addition to stat_ks, this
+    returns a parallel stat_mean_bias dict shaped like
+    ``{position: {stat: {arm_a_bias, arm_b_bias, bias_delta, n}}}``. Each
+    bias is the per-game mean projection delta vs actuals; ``bias_delta`` is
+    ``arm_b_bias - arm_a_bias`` (negative = bias narrowed in Arm B). Plan 11
+    reads this directly to evaluate Phase 1 success criterion 1.
+    """
     positions_set = set(positions)
     fpts_a: list[float] = []
     fpts_b: list[float] = []
@@ -243,6 +258,7 @@ def _compute_distribution_ks(
     )
 
     stat_ks: dict[str, dict[str, dict[str, float | int]]] = {}
+    stat_mean_bias: dict[str, dict[str, dict[str, float | int]]] = {}
     for pos, stat_map in stat_samples.items():
         for stat, samples in stat_map.items():
             summary = ks_distribution_summary(
@@ -253,7 +269,19 @@ def _compute_distribution_ks(
             if not summary:
                 continue
             stat_ks.setdefault(pos, {})[stat] = summary
-    return weekly_fpts_ks, stat_ks
+            # NEW Cycle 3: derive stat_mean_bias from the same triplet.
+            # ks_distribution_summary already computed mean_delta_a / mean_delta_b
+            # (per-sample mean projection - per-sample mean actual). Re-export as
+            # the dedicated stat_mean_bias structure for Plan 11 to read directly.
+            arm_a_bias = float(summary["mean_delta_a"])
+            arm_b_bias = float(summary["mean_delta_b"])
+            stat_mean_bias.setdefault(pos, {})[stat] = {
+                "arm_a_bias": arm_a_bias,
+                "arm_b_bias": arm_b_bias,
+                "bias_delta": arm_b_bias - arm_a_bias,
+                "n": int(summary["n"]),
+            }
+    return weekly_fpts_ks, stat_ks, stat_mean_bias
 
 
 def _filter_matchup_factors(position: str, ctx: object) -> dict[str, float]:
@@ -775,7 +803,7 @@ def run_season(
 
     a_wm, a_sm, a_rc, a_cal = _compute_arm_metrics(dict(arm_a_proj))
     b_wm, b_sm, b_rc, b_cal = _compute_arm_metrics(dict(arm_b_proj))
-    weekly_fpts_ks, stat_ks = _compute_distribution_ks(
+    weekly_fpts_ks, stat_ks, stat_mean_bias = _compute_distribution_ks(
         arm_a_rows,
         arm_b_rows,
         actual_row_by_pw,
@@ -791,6 +819,7 @@ def run_season(
         arm_a_calibration=a_cal, arm_b_calibration=b_cal,
         weekly_fpts_ks=weekly_fpts_ks,
         stat_ks=stat_ks,
+        stat_mean_bias=stat_mean_bias,  # NEW Cycle 3
     )
 
     # --- Compute weekly records ---
