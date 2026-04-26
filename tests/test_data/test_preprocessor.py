@@ -297,6 +297,126 @@ class TestRecencyWeighting:
         assert kc_default.default["run"] == pytest.approx(kc_none.default["run"])
 
 
+# === KS-06: completed-play filter for team buckets (D-19 sub-fix 1) ===
+
+class TestKs06CompletedPlayFilter:
+    """KS-06 D-19 sub-fix 1: when phase1_ks_flags.ks06_backup_receiver_fix.enabled
+    is true, the team pass-yards bucket distribution must be filtered to completed
+    plays only. Incompletions (yards_gained=0) drag the team bucket mean down,
+    biasing the backup-receiver fallback path low for receivers who lack their
+    own per-player distribution.
+    """
+
+    def _make_completion_pbp(self) -> pl.DataFrame:
+        """5 completed pass plays at 10 yards + 5 incomplete pass plays at 0 yards.
+
+        All in the same bucket so we can read the team distribution mean directly.
+        Without the filter: mean = 5.0 (mixed). With the filter: mean = 10.0
+        (completions only).
+        """
+        completion = {
+            "season": 2024,
+            "week": 1,
+            "game_id": "2024_01_KC_BUF",
+            "play_type": "pass",
+            "posteam": "KC",
+            "defteam": "BUF",
+            "down": 1,
+            "ydstogo": 10,
+            "yardline_100": 75,
+            "score_differential": 0,
+            "qtr": 1,
+            "yards_gained": 10,
+            "complete_pass": 1,
+            "pass_attempt": 1,
+            "rush_attempt": 0,
+            "interception": 0,
+            "fumble_lost": 0,
+            "sack": 0,
+            "touchdown": 0,
+            "penalty": 0,
+            "penalty_yards": 0,
+            "passer_player_id": "PM15",
+            "receiver_player_id": "TK87",
+            "rusher_player_id": None,
+        }
+        plays = []
+        # 5 completions at 10 yards
+        for i in range(5):
+            plays.append({**completion, "week": i + 1})
+        # 5 incompletions at 0 yards
+        for i in range(5):
+            plays.append({
+                **completion,
+                "week": i + 6,
+                "yards_gained": 0,
+                "complete_pass": 0,
+            })
+        # Pad rushing plays to satisfy other downstream expectations
+        run_template = {
+            **completion,
+            "play_type": "run",
+            "yards_gained": 4,
+            "complete_pass": 0,
+            "pass_attempt": 0,
+            "rush_attempt": 1,
+            "passer_player_id": None,
+            "receiver_player_id": None,
+            "rusher_player_id": "IP01",
+        }
+        for i in range(10):
+            plays.append({**run_template, "week": i + 11})
+        return pl.DataFrame(plays)
+
+    def test_team_pass_bucket_excludes_incompletions_when_flag_on(
+        self, monkeypatch
+    ):
+        """Flag-on: team-bucket pass yards mean ~ 10 (completions only)."""
+        # Force the flag on for this test, regardless of defaults.yaml state
+        from fantasy_sim.data import preprocessor as pre_mod
+        monkeypatch.setattr(
+            pre_mod, "_KS06_BACKUP_RECEIVER_FIX", True, raising=False
+        )
+        pbp = self._make_completion_pbp()
+        pre = pre_mod.Preprocessor()
+        outcomes = pre.compute_play_outcomes(pbp)
+
+        # Pull out the single (pass, bucket) entry that was built. With
+        # MIN_BUCKET_PLAYS=10 and the filter on, only the 5 completions
+        # contribute to the bucket — which falls UNDER MIN_BUCKET_PLAYS, so
+        # the bucket entry will not exist and we should sample from defaults.
+        # Sample many times from the pass default and confirm the mean is ~10.
+        rng = np.random.default_rng(0)
+        bucket = GameStateBucket(1, "long", "tied", 1, "own_territory")
+        samples = [outcomes.sample_yards("pass", bucket, rng) for _ in range(2000)]
+        mean = float(np.mean(samples))
+        assert 9.0 <= mean <= 11.0, (
+            f"With flag on, team bucket mean should be ~10 (completions only); got {mean}"
+        )
+
+    def test_team_pass_bucket_includes_incompletions_when_flag_off(
+        self, monkeypatch
+    ):
+        """Flag-off: legacy behavior — team-bucket pass yards mean ~ 5 (mixed)."""
+        from fantasy_sim.data import preprocessor as pre_mod
+        monkeypatch.setattr(
+            pre_mod, "_KS06_BACKUP_RECEIVER_FIX", False, raising=False
+        )
+        pbp = self._make_completion_pbp()
+        pre = pre_mod.Preprocessor()
+        outcomes = pre.compute_play_outcomes(pbp)
+
+        # Same shape: with flag off, all 10 plays (5 complete + 5 incomplete)
+        # are included so the mean ~ 5.0.
+        rng = np.random.default_rng(0)
+        bucket = GameStateBucket(1, "long", "tied", 1, "own_territory")
+        samples = [outcomes.sample_yards("pass", bucket, rng) for _ in range(2000)]
+        mean = float(np.mean(samples))
+        assert 4.0 <= mean <= 6.0, (
+            f"With flag off, team bucket mean should be ~5 (mixed); got {mean}"
+        )
+
+
 class TestComputePenaltyRates:
     def _make_penalty_pbp(self) -> pl.DataFrame:
         """PBP data with some penalty plays for KC and BUF."""
