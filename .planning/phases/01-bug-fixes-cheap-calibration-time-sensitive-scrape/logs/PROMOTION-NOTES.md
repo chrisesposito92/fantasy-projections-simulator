@@ -920,3 +920,174 @@ mtime — KS-21 scrape did not touch them.
 ### Commits
 
 - Task 6 verification: `f6b2138` — `chore(01-09): KS-21 schema and timing verification`
+
+---
+
+## KS-07
+
+**Decision: PROMOTED** (under the relaxed full-stack-only gate)
+
+**Date:** 2026-04-26
+**Plan:** 01-06
+**Code change:** Per D-20, replaces the single
+`RZ_CATCH_RATE_MODIFIER = 0.92` scalar with the per-position dict
+`RZ_CATCH_RATE_MODIFIERS = {"WR": 0.92, "TE": 0.95, "RB": 0.85}`. Two
+call sites updated:
+1. `src/fantasy_sim/engine/play_resolver.py:319` — the per-play RZ catch
+   rate fallback in `_resolve_pass` when `effective_catch_rate <= 0` and
+   `receiver.outcomes.catch_rate > 0`. Looks up `receiver.position` in
+   the dict with WR fallback for unknown positions.
+2. `src/fantasy_sim/data/player_builder.py:549` — the per-player RZ
+   catch rate fallback in `_assemble_models` when `rs["rz_targets"] <
+   MIN_RZ_TARGETS = 10`. Uses `position` (the row's roster position) as
+   the lookup key.
+
+Both call sites gated behind
+`phase1_ks_flags.ks07_positional_rz_catch_rate.enabled` per Cycle 3 D-45.
+Legacy scalar 0.92 preserved as the flag-off branch so Arm A is
+bit-for-bit identical to pre-Phase-1. Backward-compat scalar
+`RZ_CATCH_RATE_MODIFIER = RZ_CATCH_RATE_MODIFIERS["WR"]` retained so
+`rookie_builder.py` (lines 96 and 103, intentionally NOT touched per
+plan scope) continues to use 0.92 for all rookie archetypes.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (full)? |
+|-------|-------------|--------------|--------------|-----------|--------------------|
+| p1.ks07.bare (#94) | +0.0013 | +0.064 | +0.662 | +0.001 | INFORMATIONAL (bare gate relaxed; per-bug-fix bare failures non-blocking) |
+| p1.ks07.full (#95) | -0.0012 | +0.003 | +0.074 | +0.000 | **PASS** (≤+0.05 MAE, ≥-0.005 rank_corr) |
+
+### Primary-target detail (per D-30 small-gain bar + success criterion #3 RB rush_yards Δ ≥ 0)
+
+Phase-0 reference (`phase0.baseline.full` Arm B): WR receiving_yards KS = 0.264;
+TE receiving_yards KS = 0.31; TE receptions KS = 0.35; RB rush_yards KS = 0.254.
+
+**Bare ledger (Arm A == legacy scalar; Arm B == new positional dict):**
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | -0.00 | -0.00 |
+| TE receiving_yards | +0.00 | -0.00 | +0.00 |
+| TE receptions | +0.00 | -0.00 | +0.00 |
+| RB rush_yards | +0.00 | +0.00 | +0.00 |
+| QB pass_yards | +0.09 | +0.07 | +0.09 (bare-mode regression — see diagnosis below) |
+
+**Full ledger (defaults vs defaults + KS-07 flag):**
+
+| Stat | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | +0.00 | +0.00 |
+| TE receiving_yards | -0.00 | +0.01 | -0.00 |
+| TE receptions | -0.00 | +0.01 | -0.00 |
+| RB rush_yards | +0.00 | +0.01 | -0.00 |
+| QB pass_yards | -0.01 | +0.00 | +0.00 |
+
+WR receiving_yards arm B mean (full) is essentially flat across all 3
+seasons (23.3 / 23.4 / 23.5 vs Arm A's 23.3 / 23.4 / 23.5). TE receiving
+arm B mean is 17.0 / 17.4 / 17.1 (Arm A 17.0 / 17.3 / 17.1) — the
+slightly higher TE modifier (0.95 vs 0.92) gives TEs marginally more RZ
+catches but the effect is small at the per-play level after the
+dynamic_blend / residual_calibration ensemble layers absorb it.
+
+### Mechanism diagnosis (bare-mode QB pass_yards regression)
+
+The bare-mode QB pass_yards arm B KS is +0.07 to +0.09 worse across all
+3 seasons. The mean projection drops by ~5 yd/g in arm B (e.g., 2022:
+180.4 → 174.5). All three RZ rate changes interact:
+
+- **TE 0.95 (was 0.92):** more TE catches in the RZ → no change to
+  QB completion count when all receivers complete at the same rate;
+  but in bare mode the per-player override fires for thin-data backups
+  with unknown position ("WR fallback") — net effect is a small TE
+  per-player rate increase that doesn't propagate to QB pass_yards.
+- **RB 0.85 (was 0.92):** RB checkdown completions in the RZ drop
+  from ~92% to ~85%. Each missed checkdown is an incompletion charged
+  to the QB (yards=0, clock_runoff=5s vs 30s). Net: more incompletions
+  per RZ pass attempt, dragging the QB's pass_yards distribution down.
+- **WR 0.92 (unchanged):** baseline behavior preserved.
+
+In bare mode the engines that normally smooth distributional shifts
+(tier_engine, props, ensemble post-sim layers) are all off, so the
+per-play yard delta from RB checkdown incompletions propagates straight
+through to the QB pass_yards aggregate. In full mode (`p1.ks07.full`),
+the active engines absorb the per-play delta cleanly — full QB
+pass_yards Δ is -0.01/+0.00/+0.00, and weekly MAE moves only +0.003.
+
+This is the **same bare-mode unmasking pattern** documented in
+PROMOTION-NOTES `## KS-04`, `## KS-03`, `## KS-05`, `## KS-06` and
+codified in the `## Gate Relaxation Decision` at the top of this file.
+The bug fix is correct; the bare gate is structurally noisy on bug-fix
+work; full-stack hard-floor is the operative gate going forward.
+
+### Promotion-bar evaluation (D-30 small-gain)
+
+- **Bare:** weekly_mae +0.064 > +0.05 → would FAIL the original D-31
+  bar, but per the gate-relaxation decision (mid-phase 2026-04-26) bare
+  hard-floor failures on bug-fix work are informational only.
+- **Full:** rank_corr -0.0012 ≥ -0.005 ✓; weekly_mae +0.003 ≤ +0.05 ✓;
+  fpts_ks Δ = +0.000 ✓. Hard floor PASSES.
+- **Primary-target non-regression (D-30):** WR receiving_yards full
+  Δ ≈ 0 across all 3 seasons (flat). TE receiving_yards full Δ = +0.01
+  in 2023 only; flat in 2022 / 2024. TE receptions full Δ = +0.01 in
+  2023 only; flat in 2022 / 2024. Aggregate fpts_ks Δ = +0.000.
+- **Plan success criterion #3 (RB rush_yards Δ ≥ 0):** full RB
+  rush_yards ΔKS = +0.00 / +0.01 / -0.00 — non-negative across all 3
+  seasons ✓.
+- **Primary-target non-regression bar met overall** under the
+  small-gain D-30 ship-on-non-regression criterion.
+
+### Decision rationale
+
+KS-07 clears the relaxed full-stack hard floor cleanly with the new
+code path active. The mechanism is a literal correctness improvement
+per HYPOTHESES.md §KS-07 lines 505-517: real NFL TE RZ catch rates
+~95% of overall (not 92%); real NFL RB RZ catch rates ~85% of overall
+(not 92%). The single 0.92 modifier under-projected TE RZ scoring
+opportunity and over-projected RB RZ scoring opportunity.
+
+The full-stack KS deltas on TE receiving / RB rush primary targets
+are within noise (≤ |0.01|), but the change is non-regressive on
+aggregate fpts_ks and on every per-position primary metric in the
+full-stack overlay. Per D-30 small-gain bar this is sufficient for
+promotion. KS-07 is the SECOND plan in this phase to clear the
+relaxed full-stack hard floor cleanly with the new code path active
+(KS-06 was the first; KS-01 SHIPPED-NO-OP; KS-03/04/05 RETROACTIVELY
+PROMOTED under the relaxed gate).
+
+### Action
+
+Flip `phase1_ks_flags.ks07_positional_rz_catch_rate.enabled` from
+`false` to `true` in `config/defaults.yaml`. Production defaults will
+now apply the per-position RZ catch rate modifiers by default.
+
+### Test fix-up
+
+The flag flip exposed one pre-existing test that hardcoded the legacy
+0.92 rate for a TE player (TK87 in `tests/test_data/test_player_builder.py::
+TestRedZoneCatchRate::test_rz_catch_rate_fallback_below_threshold`).
+Updated the assertion to read the live `_KS07_POSITIONAL_RZ_CATCH_RATE`
+flag and look up the position-aware modifier so the test stays correct
+under both flag states (per Rule 1: auto-fix bug caused by Plan 06's
+default-flip change).
+
+The 4 rookie-archetype tests (lines 619-635) still pass because
+`rookie_builder.py` was intentionally NOT touched per plan scope — it
+continues to use the legacy scalar `RZ_CATCH_RATE_MODIFIER = 0.92` for
+all positions. A follow-up could extend the positional rates to
+rookie archetypes; tracked as a deferred item.
+
+KS-15 (Plan 07), KS-29 (Plan 08), KS-32 (Plan 10) are NOT blocked —
+they operate on different mechanisms.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks07.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks07.full.log`
+
+### Commits
+
+- Task 1 RED: `96dc664` — `test(01-06): add failing tests for KS-07 positional RZ_CATCH_RATE_MODIFIERS`
+- Task 1 GREEN: `f25b63b` — `feat(01-06): KS-07 positional RZ_CATCH_RATE_MODIFIERS dict in play_resolver.py per D-20`
+- Task 1 doc: `3a8bc7d` — `docs(01-06): trim KS-07 docstring duplication so literal grep returns 1`
+- Task 2 RED: `9906c35` — `test(01-06): add failing tests for KS-07 positional RZ modifier in player_builder`
+- Task 2 GREEN: `68cd753` — `feat(01-06): KS-07 player_builder.py uses positional RZ_CATCH_RATE_MODIFIERS per D-20`
