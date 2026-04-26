@@ -121,8 +121,52 @@ RUN_TD_GATE = {
     (16, 20): 0.08,
 }
 
-# League-average red zone catch rate modifier (RZ completion % / overall %)
-RZ_CATCH_RATE_MODIFIER = 0.92
+# Phase 1 KS-07 feature flag (Cycle 3 D-45). Per D-20, replaces the single
+# `RZ_CATCH_RATE_MODIFIER = 0.92` scalar with the per-position dict
+# `RZ_CATCH_RATE_MODIFIERS = {"WR": 0.92, "TE": 0.95, "RB": 0.85}`. When the
+# flag is ON, both `_resolve_pass` (line ~319 below) and
+# `data/player_builder.py` (line ~549) look up the position-aware modifier;
+# when the flag is OFF, both call sites fall back to the legacy scalar
+# `RZ_CATCH_RATE_MODIFIER = 0.92` so Arm A is bit-for-bit identical to
+# pre-Phase-1 behavior. Mechanism: HYPOTHESES.md §KS-07 (lines 505-517) — TEs
+# catch RZ targets at slightly higher rates than WRs (~95% vs ~92% of overall
+# rate); RBs at lower rates (~85%, due to checkdowns under pressure). Single
+# 0.92 modifier under-estimates TE RZ production and over-estimates RB RZ
+# production.
+_KS07_POSITIONAL_RZ_CATCH_RATE = (
+    get_phase1_ks_flags()
+    .get("ks07_positional_rz_catch_rate", {})
+    .get("enabled", False)
+)
+# Canonical per-position rates per D-20 (KS-07 hypothesis). The literal values
+# below ARE the source of truth; the matching `phase1_ks_flags.ks07_positional_
+# rz_catch_rate.rates` block in `config/defaults.yaml` mirrors them and may
+# override at runtime via `--set` for A/B sweeps. Backward-compat scalar
+# `RZ_CATCH_RATE_MODIFIER` below points at the WR rate so legacy callers and
+# the flag-off code path continue to see 0.92 for every position.
+RZ_CATCH_RATE_MODIFIERS: dict[str, float] = {
+    "WR": 0.92,  # KS-07: real NFL WR RZ catch rate ~92% of overall
+    "TE": 0.95,  # KS-07: TEs catch RZ targets at slightly higher rates than WRs
+    "RB": 0.85,  # KS-07: RBs catch RZ targets at lower rates (checkdowns under pressure)
+}
+# Apply config overrides (D-45 — allows `--set phase1_ks_flags.ks07_positional_
+# rz_catch_rate.rates.TE=0.97` style overrides during A/B sweeps without
+# editing source).
+_KS07_RATES_OVERRIDE = (
+    get_phase1_ks_flags()
+    .get("ks07_positional_rz_catch_rate", {})
+    .get("rates", {})
+)
+for _pos, _rate in _KS07_RATES_OVERRIDE.items():
+    if _pos in RZ_CATCH_RATE_MODIFIERS:
+        RZ_CATCH_RATE_MODIFIERS[_pos] = float(_rate)
+
+# Backward-compat scalar (= WR rate). Preserved so any caller that imported
+# `RZ_CATCH_RATE_MODIFIER` directly (e.g., `data/rookie_builder.py` lines 96
+# and 103) continues to see 0.92 without code change. The flag-off branch in
+# both `_resolve_pass` and `player_builder._assemble_models` also uses this
+# scalar to keep Arm A bit-for-bit identical to pre-Phase-1.
+RZ_CATCH_RATE_MODIFIER = RZ_CATCH_RATE_MODIFIERS["WR"]
 
 
 def _red_zone_td_gate(yard_line: int, play_type: str, rng: np.random.Generator, td_factor: float = 1.0) -> bool:
@@ -315,8 +359,16 @@ def _resolve_pass(
         if state.yard_line <= 20:
             effective_catch_rate = receiver.outcomes.red_zone_catch_rate
             if effective_catch_rate <= 0 and receiver.outcomes.catch_rate > 0:
-                # Only fallback when RZ rate was never computed (not a valid 0.0 from data)
-                effective_catch_rate = receiver.outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
+                # Only fallback when RZ rate was never computed (not a valid 0.0 from data).
+                # KS-07 D-20 (Cycle 3 D-45): when the flag is on, look up the
+                # position-aware modifier (WR=0.92, TE=0.95, RB=0.85); unknown
+                # positions fall back to the WR rate. When the flag is off,
+                # use the legacy scalar 0.92 for every position (Arm A parity).
+                if _KS07_POSITIONAL_RZ_CATCH_RATE:
+                    modifier = RZ_CATCH_RATE_MODIFIERS.get(receiver.position, RZ_CATCH_RATE_MODIFIERS["WR"])
+                else:
+                    modifier = RZ_CATCH_RATE_MODIFIER
+                effective_catch_rate = receiver.outcomes.catch_rate * modifier
         else:
             effective_catch_rate = receiver.outcomes.catch_rate
 
