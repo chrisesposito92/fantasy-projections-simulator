@@ -1,0 +1,44 @@
+Reference (close_core8) columns: ['away_team', 'bookmaker_count', 'event_id', 'home_team', 'implied_prob', 'line', 'line_stddev', 'market_key', 'over_price', 'player_name', 'player_name_normalized', 'schedule_game_id', 'season', 'snapshot_label', 'snapshot_timestamp', 'under_price', 'week', 'yes_price']
+
+2023 prior_core8: rows=25000 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2023-09-10T11:50:41Z', '2023-09-10T11:50:41Z', '2023-09-10T11:50:41Z']
+2023 prior_alt6: rows=2415 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2023-10-08T11:50:40Z', '2023-10-08T11:50:40Z', '2023-10-08T11:50:40Z']
+2023 close_alt6: rows=2641 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2023-10-08T16:03:00Z', '2023-10-08T16:03:00Z', '2023-10-08T16:03:00Z']
+2024 prior_core8: rows=20622 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2024-09-08T11:50:39Z', '2024-09-08T11:50:39Z', '2024-09-08T11:50:39Z']
+2024 prior_alt6: rows=8054 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2024-09-08T11:50:39Z', '2024-09-08T11:50:39Z', '2024-09-08T11:50:39Z']
+2024 close_alt6: rows=8622 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2024-09-08T16:00:00Z', '2024-09-08T16:00:00Z', '2024-09-08T16:00:00Z']
+2025 prior_core8: rows=20163 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2025-09-07T11:50:38Z', '2025-09-07T11:50:38Z', '2025-09-07T11:50:38Z']
+2025 prior_alt6: rows=9104 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2025-09-07T11:50:38Z', '2025-09-07T11:50:38Z', '2025-09-07T11:50:38Z']
+2025 close_alt6: rows=9524 cols_match=True label_uniform=True ts_no_nulls=True
+  sample timestamps: ['2025-09-07T16:00:00Z', '2025-09-07T16:00:00Z', '2025-09-07T16:00:00Z']
+
+Total parquet files verified: 9/9
+All schemas match reference: True
+All snapshot_label uniform: True
+All snapshot_timestamp non-null: True
+
+=== PRIOR vs CLOSE TIMING COMPARISON ===
+(prior_* and close_* MUST have different snapshot_timestamps for the same event)
+
+2023: event=003f1b5d02fe699b7efae4b3af1df39c
+  prior_alt6 ts: 2023-12-10T11:50:39Z
+  close_alt6 ts: 2023-12-10T17:03:00Z
+  different? YES (good)
+
+2024: event=022add645ca37d612dbb69e8ef02f6b9
+  prior_alt6 ts: 2024-09-08T11:50:39Z
+  close_alt6 ts: 2024-09-08T16:00:00Z
+  different? YES (good)
+
+2025: event=016f76d8237e8d4eb62b9c2ef68381bb
+  prior_alt6 ts: 2025-11-02T11:50:38Z
+  close_alt6 ts: 2025-11-02T17:00:00Z
+  different? YES (good)
+

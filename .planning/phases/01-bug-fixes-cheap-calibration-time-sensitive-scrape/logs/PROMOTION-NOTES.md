@@ -354,4 +354,81 @@ D-06 invariant still holds (close_core8 mtimes unchanged from April 13).
 
 ### Commits
 
-- Task 5 build: (this commit) — `chore(01-09): KS-21 build processed parquet`
+- Task 5 build: `6c5546c` — `chore(01-09): KS-21 build processed parquet`
+
+---
+
+## KS-21 schema and timing verification
+
+**Date:** 2026-04-26
+**Plan:** 01-09 Task 6
+**Scope:** Verify all 9 new processed parquet files conform to the
+existing `player_markets_*` schema and that `prior_*` snapshots have
+distinct timestamps from their `close_*` counterparts (proving the
+prior-snapshot semantic is real, not just a label-only rename).
+
+### Schema match against close_core8 reference
+
+Reference (`player_markets_2024_close_core8.parquet`) columns:
+`away_team, bookmaker_count, event_id, home_team, implied_prob, line,
+line_stddev, market_key, over_price, player_name, player_name_normalized,
+schedule_game_id, season, snapshot_label, snapshot_timestamp, under_price,
+week, yes_price` (18 columns, matches `PLAYER_MARKET_SIGNAL_SCHEMA`
+defined in `player_markets.py:15`).
+
+| Check                                                       | Result |
+|-------------------------------------------------------------|:------:|
+| Total parquet files verified                                | 9 / 9  |
+| All schemas match reference (D-07 invariant)                | TRUE   |
+| All `snapshot_label` columns uniform per file               | TRUE   |
+| All `snapshot_label` values match the file's label suffix   | TRUE   |
+| All `snapshot_timestamp` columns non-null                   | TRUE   |
+
+### Prior-vs-close timing sanity (D-02 / D-06 honesty check)
+
+For each season, picked an event present in BOTH `prior_alt6` and
+`close_alt6` and compared snapshot timestamps:
+
+| Season | Event ID                          | prior_alt6 ts          | close_alt6 ts          | Different? | Δ (h)  |
+|--------|-----------------------------------|------------------------|------------------------|:----------:|------:|
+| 2023   | `003f1b5d02fe699b7efae4b3af1df39c` | 2023-12-10T11:50:39Z   | 2023-12-10T17:03:00Z   | YES        | ~5.2  |
+| 2024   | `022add645ca37d612dbb69e8ef02f6b9` | 2024-09-08T11:50:39Z   | 2024-09-08T16:00:00Z   | YES        | ~4.2  |
+| 2025   | `016f76d8237e8d4eb62b9c2ef68381bb` | 2025-11-02T11:50:38Z   | 2025-11-02T17:00:00Z   | YES        | ~5.2  |
+
+Per D-02 / D-06 honesty:
+- `prior_*` timestamps fall at **~11:50 UTC on gameday** (the API's
+  `previous_snapshot_timestamp` relative to the events_inventory's
+  noon-UTC crawl). For 1pm-ET kickoffs this is ~5 hours pre-kickoff;
+  for 8pm-ET kickoffs (BAL@KC season opener) it's ~12 hours pre-kickoff.
+- `close_*` timestamps fall at **`commence_time - 60min`** (the existing
+  close-snapshot convention).
+- The two ARE different snapshots (`Δ ≥ 4 hours` always); the `prior_*`
+  prefix honestly describes the API semantic. Phase 4's
+  `OddsApiCdfLoader` should treat `prior_*` as a "soft-open" estimate
+  of the line and `close_*` as the gold-standard close-of-market price,
+  consistent with the timestamp evidence above.
+
+NOTE on `prior_core8` for 2024: the first event (BAL@KC season opener
+at 8pm ET) has `prior` timestamp = `2024-09-05T11:50:38Z`, which is
+~12.5 hours pre-kickoff. The earlier-than-typical lead is real (the
+events_inventory always crawls at noon UTC regardless of kickoff time)
+and is captured faithfully by the `previous_snapshot_timestamp` field
+in the inventory parquet.
+
+### D-06 close_core8 invariant — final check
+
+```
+$ /usr/bin/find ~/.fantasy-sim/market-history/processed -name "player_markets_*_close_core8.parquet" -newer .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md
+0 hits
+```
+
+Existing `close_core8` parquets remain at their original April-13
+mtime — KS-21 scrape did not touch them.
+
+### Logs
+
+- `schema_and_timing_verification.log` — full verification output
+
+### Commits
+
+- Task 6 verification: (this commit) — `chore(01-09): KS-21 schema and timing verification`
