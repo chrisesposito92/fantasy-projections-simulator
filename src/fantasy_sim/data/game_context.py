@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 import polars as pl
 import numpy as np
+from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.data.loader import DataLoader, DEFAULT_CACHE_DIR
 from fantasy_sim.data.pipeline import DataPipeline
 from fantasy_sim.data.player_builder import (
@@ -42,6 +43,20 @@ from fantasy_sim.overrides.engine import apply_player_override, apply_team_overr
 from fantasy_sim.overrides.resolver import PlayerResolver
 
 logger = logging.getLogger(__name__)
+
+
+# Phase 1 KS-03 feature flag (Cycle 3 D-45). When enabled, replaces the legacy
+# hardcoded `* 10.0` yard anchor in `_apply_matchup` (both receiving and
+# rushing branches per D-16/D-16b) and `_apply_coverage` with a per-player
+# `* float(np.mean(player.outcomes.<dist>))` anchor, mirroring the canonical
+# `_apply_weather` reference at lines ~701-712. The flag-off path keeps the
+# legacy hardcoded anchor so Arm A is bit-for-bit identical to pre-Phase-1
+# behavior — preserving the genuine two-arm A/B contract per D-45.
+_KS03_DYNAMIC_YARD_ANCHOR = (
+    get_phase1_ks_flags()
+    .get("ks03_dynamic_yard_anchor", {})
+    .get("enabled", False)
+)
 
 
 def _seasons_with_target(training_seasons: list[int], target_season: int | None) -> list[int]:
@@ -531,28 +546,43 @@ class GameContextBuilder:
             )
 
         # --- Receiving yards: additive shift on each receiver's distribution ---
+        # KS-03 D-16 (Cycle 3 D-45): when the flag is on, anchor the shift on
+        # the per-player dist mean (mirrors `_apply_weather`). When the flag
+        # is off, fall back to the legacy hardcoded `* 10.0` so Arm A is
+        # bit-for-bit identical to pre-Phase-1 behavior.
         if ctx.pass_yards_factor != 1.0:
-            shift = (ctx.pass_yards_factor - 1.0) * 10.0
             for player in roster.players:
                 if (
                     player.usage.target_share > 0
                     and player.outcomes.receiving_yards_dist is not None
                     and len(player.outcomes.receiving_yards_dist) > 0
                 ):
+                    if _KS03_DYNAMIC_YARD_ANCHOR:
+                        mean_yards = float(np.mean(player.outcomes.receiving_yards_dist))
+                        shift = (ctx.pass_yards_factor - 1.0) * mean_yards
+                    else:
+                        shift = (ctx.pass_yards_factor - 1.0) * 10.0
                     player.outcomes.receiving_yards_dist = (
                         player.outcomes.receiving_yards_dist + shift
                     )
 
         # --- Rushing yards: additive shift on each rusher's distribution ---
+        # KS-03 D-16b (Cycle 3 D-45): per-player rushing-yards-dist mean when
+        # the flag is on; legacy `* 10.0` when off. Same flag-gating contract
+        # as the receiving branch above.
         combined_rush = ctx.rush_yards_factor * ctx.ol_run_block_factor
         if combined_rush != 1.0:
-            shift = (combined_rush - 1.0) * 10.0
             for player in roster.players:
                 if (
                     player.usage.carry_share > 0
                     and player.outcomes.rushing_yards_dist is not None
                     and len(player.outcomes.rushing_yards_dist) > 0
                 ):
+                    if _KS03_DYNAMIC_YARD_ANCHOR:
+                        mean_yards = float(np.mean(player.outcomes.rushing_yards_dist))
+                        shift = (combined_rush - 1.0) * mean_yards
+                    else:
+                        shift = (combined_rush - 1.0) * 10.0
                     player.outcomes.rushing_yards_dist = (
                         player.outcomes.rushing_yards_dist + shift
                     )
@@ -588,7 +618,14 @@ class GameContextBuilder:
                     player.outcomes.receiving_yards_dist is not None
                     and len(player.outcomes.receiving_yards_dist) > 0
                 ):
-                    shift = (mods.ypr_modifier - 1.0) * 10.0
+                    # KS-03 D-16 (Cycle 3 D-45): per-player dist mean when the
+                    # flag is on; legacy `* 10.0` when off (matches the
+                    # `_apply_weather` reference pattern).
+                    if _KS03_DYNAMIC_YARD_ANCHOR:
+                        mean_yards = float(np.mean(player.outcomes.receiving_yards_dist))
+                        shift = (mods.ypr_modifier - 1.0) * mean_yards
+                    else:
+                        shift = (mods.ypr_modifier - 1.0) * 10.0
                     player.outcomes.receiving_yards_dist = (
                         player.outcomes.receiving_yards_dist + shift
                     )
