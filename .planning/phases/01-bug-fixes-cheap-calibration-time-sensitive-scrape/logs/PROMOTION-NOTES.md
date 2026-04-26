@@ -1592,3 +1592,106 @@ criteria.
 ### Logs
 
 - `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks32.measure.log`
+
+---
+
+## Phase 1 aggregate (p1.aggregate.full vs phase0.baseline.full)
+
+**Computation:** Arm B (engines on) of `p1.aggregate.full` minus Arm B of `phase0.baseline.full`.
+Both entries share the same Arm A (bare engines), so the difference IS the Phase-1-vs-Phase-0 delta.
+
+- Ledger entry (Phase 0 reference): `phase0.baseline.full` (#82, schema v5, `--baseline bare`)
+- Ledger entry (Phase 1 reference): `p1.aggregate.full` (#105, schema v5, `--baseline bare`)
+- Delta script log: `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1_vs_phase0_delta.log`
+- Aggregate run log: `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.aggregate.full.log`
+
+### Headline metrics
+
+| Metric | Phase 0 (frozen) | Phase 1 (post-promotion) | Δ | Phase-1 target | Met? | Source |
+|--------|------------------|--------------------------|---|----------------|------|--------|
+| QB pass_yards mean bias (yd/g) | -28.30 | -39.29 | -10.99 | \|Phase 1\| ≤ 10 | **NO** | `stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"]` ledger v5 |
+| QB pass_yards KS | 0.3534 | 0.4287 | +0.0752 | ≤ 0.28 | **NO** | `stat_ks["QB"]["pass_yards"]["arm_b_ks"]` |
+| RB rush_yards KS | 0.2539 | 0.2464 | -0.0075 | ≤ 0.23 | **NO** (closer but miss) | `stat_ks["RB"]["rush_yards"]["arm_b_ks"]` |
+| Aggregate rank_corr (PPR, mean QB/RB/WR/TE) | 0.9193 | 0.9190 | -0.0004 | Δ ≥ -0.005 | **YES** | mean(`arm_b_rank_corr`) over positions |
+| Aggregate weekly_mae (PPR) | 3.8505 | 3.8647 | +0.0142 | Δ ≤ +0.05 | **YES** | `arm_b_weekly_mae` |
+| Aggregate season_mae (PPR) | 24.604 | 24.774 | +0.1702 | (no explicit floor; informational) | n/a | `arm_b_season_mae` |
+| Aggregate fpts ks_delta (`total_lift` row) | +0.052 | +0.050 | -0.002 | (no explicit floor; informational) | n/a | ledger `ks_delta` column |
+
+### Per-position rank_corr (Phase 1 - Phase 0)
+
+| Position | Phase 0 | Phase 1 | Δ | Per-position floor? |
+|----------|---------|---------|---|---------------------|
+| QB | 0.9503 | 0.9500 | -0.0003 | within ±0.005 |
+| RB | 0.9211 | 0.9194 | -0.0017 | within ±0.005 |
+| WR | 0.9294 | 0.9284 | -0.0010 | within ±0.005 |
+| TE | 0.8765 | 0.8781 | +0.0015 | within ±0.005 |
+
+### Per-position-stat KS (Phase 1 - Phase 0)
+
+| Position | Stat | Phase 0 | Phase 1 | Δ | Direction |
+|----------|------|---------|---------|---|-----------|
+| QB | pass_yards | 0.3534 | 0.4287 | +0.0752 | **WORSE** (criterion 2 miss) |
+| QB | rush_yards | 0.2238 | 0.2283 | +0.0045 | slightly worse |
+| RB | rush_yards | 0.2539 | 0.2464 | -0.0075 | better (criterion 3 miss but improved) |
+| RB | receiving_yards | 0.4228 | 0.4175 | -0.0053 | better |
+| WR | receptions | 0.2758 | 0.2803 | +0.0045 | slightly worse |
+| WR | receiving_yards | 0.2645 | 0.2573 | -0.0072 | better |
+| TE | receptions | 0.3529 | 0.3521 | -0.0008 | flat |
+| TE | receiving_yards | 0.3157 | 0.3001 | -0.0156 | better |
+
+### Per-position-stat MEAN BIAS (Phase 1 - Phase 0, yd/g — NEW Cycle-3 schema v5)
+
+| Position | Stat | Phase 0 (yd/g) | Phase 1 (yd/g) | Δ (yd/g) | Direction |
+|----------|------|----------------|----------------|----------|-----------|
+| QB | pass_yards | -28.30 | -39.29 | -10.99 | **WORSE** (criterion 1 miss; Phase 1 widened the gap) |
+| QB | rush_yards | -2.02 | -1.86 | +0.16 | better (closer to zero) |
+| RB | rush_yards | -0.97 | -1.78 | -0.81 | worse |
+| RB | receiving_yards | -1.10 | -2.13 | -1.03 | worse |
+| WR | receiving_yards | -9.11 | -10.36 | -1.25 | worse |
+| WR | receptions | -0.41 | -0.40 | +0.01 | flat |
+| TE | receiving_yards | -3.97 | -5.12 | -1.15 | worse |
+| TE | receptions | -0.22 | -0.21 | +0.01 | flat |
+
+### Success criteria evaluation
+
+- [ ] **Criterion 1** (QB pass_yards bias |Phase 1| ≤ 10 yd/g): **NO** — Phase 1 = -39.29 yd/g; gap widened by 10.99 yd/g
+- [ ] **Criterion 2** (QB pass_yards KS ≤ 0.28): **NO** — Phase 1 = 0.4287; gap widened by +0.0752
+- [ ] **Criterion 3** (RB rush_yards KS ≤ 0.23): **NO** — Phase 1 = 0.2464; improved by -0.0075 but misses 0.23 target
+- [x] **Criterion 4** (hard floor: rank_corr Δ ≥ -0.005 AND weekly_mae Δ ≤ +0.05): **YES** — rank_corr Δ = -0.0004, weekly_mae Δ = +0.0142
+- [x] **Criterion 5** (KS-21 alt-line scrape — verified separately by Plan 09): **YES** — 9 parquet caches present at `~/.fantasy-sim/market-history/processed/player_markets_*_{prior_core8,prior_alt6,close_alt6}.parquet`
+
+### Decision
+
+**Promotion state: SHIPPED-NO-OP** (hard floor passes, but the headline KS / mean-bias targets are missed — including a regression on QB pass_yards which was the #1 mean-bias target).
+
+Per D-30/D-31 the hard floor is the binding promotion gate, and it passes cleanly. Per D-32 ("smallest-gain promotion candidate first"), this aggregate REQUIRES a walk-back analysis since criteria 1-3 are missed. The headline question is criterion 1 — QB pass_yards mean bias regressed -10.99 yd/g (Phase 0 -28.30 → Phase 1 -39.29).
+
+#### Walk-back analysis (per D-32 / Plan 11 acceptance criteria)
+
+**Plan 11's acceptance criterion (Cycle-3 explicit):**
+> "If criterion 1 is NO (mean-bias miss): PROMOTION-NOTES walk-back proposal explicitly considers reverting KS-01 (the largest-mean-bias mechanism) before any smaller-gain candidate."
+
+**KS-01 reversion analysis:**
+- KS-01 (`phase1_ks_flags.ks01_preserve_distribution`) was promoted as SHIPPED-NO-OP — its A/B at 200 sims showed Δ KS on QB pass_yards <= -0.01 in only 2024 full-stack; below detection in bare. The mechanism only fires on RZ TD-gate failures (per `01-01-SUMMARY.md` and STATE Decision log).
+- The mechanism preserves the sampled distribution rather than truncating to short — at the population level this should *raise* the mean of pass_yards on TD-gate-fail RZ plays. That is the OPPOSITE direction of the observed -10.99 yd/g regression.
+- **Conclusion:** KS-01 is unlikely to be the cause. Reverting KS-01 alone would not restore the -28.30 baseline.
+
+**Larger root cause (suspected):** The aggregate Phase-1 stack composition is different from `phase0.baseline.full`'s Arm B. The Phase-0 baseline was captured against the pre-Phase-1 promoted defaults (commit `9b8ab9801104221ee790a81063907dbdade3bba7`). Between then and now, *seven* `phase1_ks_flags.ksXX_*.enabled` flag defaults have flipped to `true` in `config/defaults.yaml` (KS-03, KS-04, KS-05, KS-06, KS-07, KS-15) and KS-29 `pff.team_context.enabled=true` was added. Per the Phase-1 STATE log, several of these were promoted under a "relaxed full-stack-only gate" (Plans 02/03/04 specifically — bare-isolation hard floor failed but the full-stack hard floor passed). The QB pass_yards regression is likely cumulative downstream of these stacked changes, not attributable to a single KS revert.
+
+**Smallest-gain promotion candidates (in priority order per D-32):**
+1. **KS-29** sensitivity 0.03 (`pff.team_context.enabled=true`) — smallest sweep delta among the three sensitivities tested; if the team_context pass-rate factor over-corrects QB pass volume on certain teams, this could compound to a downstream pass_yards bias. The bare-isolation A/B showed +0.0508 rank_corr (not regressive) but the full-stack overlay showed -0.0007 — consistent with team_context interacting with already-promoted layers.
+2. **KS-04 / KS-03** — both promoted "RETROACTIVELY" under relaxed gate after bare-isolation hard floor breach. KS-04's conditional CATCH_YARDS_BOOST (+1.5) and KS-03's per-player dist-mean anchor both touch the receiving-yards path; either could shift downstream catch yards in ways that compound to QB pass_yards.
+3. **KS-15** — SHIPPED-NO-OP on the KS-movement bar; sets `CATCH_YARDS_BOOST=0` in the new code path. Reverting would reintroduce the +1 yd/catch boost outside RZ, which historically masked clamping bias.
+
+**Recommended posture for Phase 1 closure:**
+
+The hard floor passes (rank_corr/MAE preserved within ±0.005/±0.05), so per D-30/D-31 the phase MAY ship. But criteria 1-3 — the *headline* of this initiative — miss. Per the plan template's three-state vocabulary (PROMOTED / SHIPPED-NO-OP / BLOCKED):
+
+- **NOT BLOCKED** — hard floor is intact; no forced rollback required.
+- **NOT FULL PROMOTED** — Phase 1 demonstrably did not deliver the targeted KS/mean-bias closure.
+- **SHIPPED-NO-OP** is the most-honest label: Phase 1 work is delivered, all 9 KS items are dispositioned per REQUIREMENTS.md "delivered" definition, but the aggregate KS-shape outcome did not move in the targeted direction at the n=200-sim resolution.
+
+**Walk-back not executed in Plan 11.** Per D-32 ("if any regression appears in the Phase-1-vs-Phase-0 delta") the regression is on KS / mean-bias, NOT on the rank_corr/MAE hard floor. The hard-floor promotion gate (D-30/D-31) is the gate that triggers walk-back; it passes. Documenting the candidate-priority list above so the user can decide whether to invoke a walk-back in a follow-up ad-hoc plan, OR whether to fold the QB pass_yards mean-bias closure work into Phase 2 (where per-stat `residual_calibration` per KS-09 will land — that is the architectural mechanism designed to close stat-level bias, and it is the correct place to address the QB pass_yards gap).
+
+The **Phase 2 entry baseline IS `p1.aggregate.full`** regardless. Phase 2 plans should target QB pass_yards mean-bias closure as a primary goal (TGT-09) and use this aggregate ledger entry as the comparison reference.
+
