@@ -48,6 +48,8 @@ Signals available but unused. KS-19 / KS-20 reuse already-cached PFF data; KS-21
 - [ ] **KS-20**: Cross-stat consistency from PFF `projections_json` (already cached) for QB pass_yards/attempts/completions/TDs. → Impacts TGT-01, TGT-02, TGT-09
 - [ ] **KS-21**: Build Odds API alternate-line CDF pipeline + historical backfill (multi-line over/under markets define a CDF directly). **Time-sensitive** — front-load scrape while ~4.93M of 5M-credit tier is still active (~2 weeks). Engine consumption can land later but raw scrape must happen ASAP. → Impacts TGT-01, TGT-02, TGT-07, TGT-09, TGT-10
 
+  **Note on phase split:** The KS-21 *requirement* is delivered when the engine integration ships in Phase 4. The *scrape* sub-deliverable runs in Phase 1 as time-sensitive infrastructure (see ROADMAP.md Phase 1 success criterion #5). The requirement remains mapped to a single phase (Phase 4) per the 100% coverage rule; Phase 1 carries the data-acquisition work.
+
 ### E. Calibration Constant Retuning
 
 Cheap parameter changes ranked by ROI. Shipped alongside bug fixes.
@@ -87,38 +89,49 @@ P5 long-tail items deferred to a follow-up initiative. 10 items, mostly engineer
 
 ## Traceability
 
-Phase mapping is set by `gsd-roadmapper` during ROADMAP.md creation. Initial table (empty status):
+Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). The Odds API alternate-line scrape — a sub-deliverable of KS-21 — runs in Phase 1 as time-sensitive infrastructure even though the KS-21 requirement is mapped to Phase 4 (engine integration is the canonical "delivered" work).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KS-01 | TBD | Pending |
-| KS-02 | TBD | Pending |
-| KS-03 | TBD | Pending |
-| KS-04 | TBD | Pending |
-| KS-05 | TBD | Pending |
-| KS-06 | TBD | Pending |
-| KS-07 | TBD | Pending |
-| KS-08 | TBD | Pending |
-| KS-09 | TBD | Pending |
-| KS-10 | TBD | Pending |
-| KS-11 | TBD | Pending |
-| KS-12 | TBD | Pending |
-| KS-13 | TBD | Pending |
-| KS-14 | TBD | Pending |
-| KS-15 | TBD | Pending |
-| KS-16 | TBD | Pending |
-| KS-17 | TBD | Pending |
-| KS-18 | TBD | Pending |
-| KS-19 | TBD | Pending |
-| KS-20 | TBD | Pending |
-| KS-21 | TBD | Pending |
-| KS-29 | TBD | Pending |
-| KS-32 | TBD | Pending |
+| KS-01 | Phase 1 | Pending |
+| KS-02 | Phase 3 | Pending |
+| KS-03 | Phase 1 | Pending |
+| KS-04 | Phase 1 | Pending |
+| KS-05 | Phase 1 | Pending |
+| KS-06 | Phase 1 | Pending |
+| KS-07 | Phase 1 | Pending |
+| KS-08 | Phase 2 | Pending |
+| KS-09 | Phase 2 | Pending |
+| KS-10 | Phase 2 | Pending |
+| KS-11 | Phase 2 | Pending |
+| KS-12 | Phase 2 | Pending |
+| KS-13 | Phase 2 | Pending |
+| KS-14 | Phase 2 | Pending |
+| KS-15 | Phase 1 | Pending |
+| KS-16 | Phase 3 | Pending |
+| KS-17 | Phase 3 | Pending |
+| KS-18 | Phase 3 | Pending |
+| KS-19 | Phase 4 | Pending |
+| KS-20 | Phase 4 | Pending |
+| KS-21 | Phase 4 (scrape sub-deliverable runs in Phase 1) | Pending |
+| KS-29 | Phase 1 | Pending |
+| KS-32 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 23 total
-- Mapped to phases: 0 (filled by roadmapper)
-- Unmapped: 23 ⚠️ (will be 0 after ROADMAP.md is created)
+- Mapped to phases: 23
+- Unmapped: 0
+
+**Phase-by-phase counts:**
+
+| Phase | KS-XX Items | Count |
+|-------|-------------|-------|
+| Phase 1 | KS-01, KS-03, KS-04, KS-05, KS-06, KS-07, KS-15, KS-29, KS-32 | 9 |
+| Phase 2 | KS-08, KS-09, KS-10, KS-11, KS-12, KS-13, KS-14 | 7 |
+| Phase 3 | KS-02, KS-16, KS-17, KS-18 | 4 |
+| Phase 4 | KS-19, KS-20, KS-21 | 3 |
+| Phase 5 | (validation / wrap-up; no new KS-XX) | 0 |
+| **Total** | | **23** |
 
 ## Outcome Targets (TGT-XX)
 
@@ -139,4 +152,4 @@ For convenience — full text in `PROJECT.md`. Each requirement above lists whic
 
 ---
 *Requirements defined: 2026-04-26*
-*Last updated: 2026-04-26 after initial definition*
+*Last updated: 2026-04-25 — phase mappings populated by `gsd-roadmapper`*
