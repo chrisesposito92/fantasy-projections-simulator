@@ -123,7 +123,7 @@ RUN_TD_GATE = {
 
 # Phase 1 KS-07 feature flag (Cycle 3 D-45). Per D-20, replaces the single
 # `RZ_CATCH_RATE_MODIFIER = 0.92` scalar with the per-position dict
-# `RZ_CATCH_RATE_MODIFIERS = {"WR": 0.92, "TE": 0.95, "RB": 0.85}`. When the
+# `RZ_CATCH_RATE_MODIFIERS` (defined below). When the
 # flag is ON, both `_resolve_pass` (line ~319 below) and
 # `data/player_builder.py` (line ~549) look up the position-aware modifier;
 # when the flag is OFF, both call sites fall back to the legacy scalar
