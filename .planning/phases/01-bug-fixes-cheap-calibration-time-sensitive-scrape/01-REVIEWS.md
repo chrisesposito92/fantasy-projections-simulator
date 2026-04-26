@@ -54,6 +54,24 @@ cycles:
       - 09-ks21-altline-scrape-PLAN.md
       - 10-ks32-clock-runoff-measure-PLAN.md
       - 11-phase1-aggregate-validation-PLAN.md
+  - cycle: 4
+    reviewers: [codex]
+    reviewed_at: 2026-04-26
+    model: gpt-5.4
+    bundle_commit: 256f0fe
+    plans_reviewed:
+      - 00-validation-harness-and-phase0-baseline-PLAN.md
+      - 01-ks01-rz-tdgate-fix-PLAN.md
+      - 02-ks04-catch-yards-boost-PLAN.md
+      - 03-ks03-matchup-coverage-anchor-PLAN.md
+      - 04-ks05-props-engine-bugs-PLAN.md
+      - 05-ks06-backup-receiver-fallback-PLAN.md
+      - 06-ks07-positional-rz-catch-rate-PLAN.md
+      - 07-ks15-clamping-fix-PLAN.md
+      - 08-ks29-team-context-enable-PLAN.md
+      - 09-ks21-altline-scrape-PLAN.md
+      - 10-ks32-clock-runoff-measure-PLAN.md
+      - 11-phase1-aggregate-validation-PLAN.md
 ---
 
 # Cross-AI Plan Review — Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape
@@ -394,3 +412,110 @@ Phase 1 is **NEAR safe to execute** — only one mechanical doc-edit blocks full
 2. **Path B (escalate with conditional approval):** Escalate to the user with the explicit recommendation that Phase 1 is structurally safe to execute as-is, conditional on a one-line `01-RESEARCH.md:98` documentation cleanup before any executor reads that file. The cleanup is mechanical and does not affect any plan body or harness contract.
 
 Per the workflow's max-cycles escalation gate: this is the third cycle, and the convergence loop has clearly resumed (HIGH count: 4 → 6 → 1). The user can decide whether the single remaining HIGH (a documentation-polish issue, not a plan-defect issue) warrants a fourth cycle or constitutes acceptable escalation criteria for SAFE-TO-EXECUTE.
+
+---
+
+# Cycle 4 (2026-04-26 — post-fix verification at commit `256f0fe`)
+
+External reviewer: **OpenAI Codex CLI (gpt-5.4)**, invoked with the FULL post-fix Phase 1 bundle (PROJECT.md, ROADMAP.md, REQUIREMENTS.md, STATE.md, the updated `01-CONTEXT.md` / `01-RESEARCH.md` / `01-VALIDATION.md`, and all 12 PLAN.md files). Codex was explicitly framed as a Cycle 4 verification pass: confirm the lone Cycle-3 HIGH (`01-RESEARCH.md:98` stale "Tuesday 12pm ET") is fully resolved post-fix at commit `256f0fe`, and surface any new issues the one-line edit may have introduced — or any pre-existing issues the prior cycles missed.
+
+Bundle commits in scope:
+- `256f0fe` — `docs(01): close Codex Cycle-3 HIGH (RESEARCH.md:98 stale Tuesday-12pm-ET)`
+- `56e33ca` — `docs(state): mark phase 1 planned (convergence loop converged)`
+
+## Codex Review (Cycle 4)
+
+> Reviewed at `256f0fe`. The Cycle-3 lone HIGH at `01-RESEARCH.md:98` is FULLY RESOLVED at the line level. However, Cycle 4 surfaced one NEW HIGH that the prior cycles' reconciliation pass missed: stale `open_*` snapshot labels and a stale "Tuesday 12pm ET" reference still survive in `01-CONTEXT.md` (a canonical "MUST read" execution doc), while `01-VALIDATION.md` falsely claims those stale references were removed.
+
+### Cycle 4 Verification Verdict
+
+The lone Cycle-3 HIGH at `01-RESEARCH.md:98` is fully resolved as a line-item. The live bullet now reads: `Specific snapshot timestamps within the API previous_timestamp window (timezone, DST), labelled prior_*.` That wording is consistent with the surrounding reconciliation in `01-RESEARCH.md:500-509`, which explicitly says the pipeline does not persist a real Tuesday line-release marker. However, the bundle as a whole is not yet safe to execute because stale active guidance still survives elsewhere in canonical planning docs.
+
+### New Issues Introduced
+
+No new issues were introduced by the one-line edit itself. It is narrow, accurate, and stylistically aligned with the rest of `01-RESEARCH.md`. The remaining problem is bundle-level: other active docs still contradict the new `prior_*` / `previous_timestamp` story.
+
+### Strengths
+
+- The exact `01-RESEARCH.md:98` fix landed cleanly and matches the doc's broader reconciliation language.
+- `01-RESEARCH.md:500-509` now explains the timing semantics clearly and honestly.
+- `09-ks21-altline-scrape-PLAN.md:23-29` is aligned with the corrected `prior_*` labeling and the raw-fetch → parquet-build split.
+- The Plan 00 / Plan 11 validation-harness work is thorough and materially improves execution safety around A/B isolation and ledger-backed phase comparison.
+
+### Remaining Concerns
+
+- **`[HIGH]` Active canonical context still reintroduces the stale snapshot semantics.** [`01-CONTEXT.md:244`](./01-CONTEXT.md) still says new snapshot labels are `open_core8`, `close_alt6`, `open_alt6`, and [`01-CONTEXT.md:292`](./01-CONTEXT.md) still says "D-02 picks Tuesday 12pm ET." This is not just historical commentary: [`01-CONTEXT.md:152-155`](./01-CONTEXT.md) says downstream agents "MUST read these before planning or implementing." That means stale guidance is still live in the execution bundle.
+- **`[MEDIUM]` `01-VALIDATION.md` overclaims closure.** It says HIGH-3 is resolved "across CONTEXT" and that stale `open_*` / `Tuesday 12pm ET` wording was removed ([`01-VALIDATION.md:120`](./01-VALIDATION.md)), which is factually false given `01-CONTEXT.md:244,292`. That weakens trust in the verification checklist.
+- **`[MEDIUM]` `STATE.md` is internally inconsistent about readiness.** The frontmatter still says `status: executing` and `stopped_at: Phase 1 context gathered` ([`STATE.md:5-6`](../../STATE.md)), while the body says `Status: Ready to execute` and `Last activity: ... planning complete` ([`STATE.md:30-31`](../../STATE.md)). Any tool reading YAML only could make the wrong routing decision.
+
+> Note: The reviewer is NOT counting `01-DISCUSSION-LOG.md` or `01-REVIEWS.md` historical mentions of Tuesday timing as defects; those are retrospective context, not live execution guidance.
+
+### Suggestions
+
+- Fix `01-CONTEXT.md:244` to use `prior_core8`, `prior_alt6`, `close_alt6`.
+- Fix `01-CONTEXT.md:292` to describe a future "prior-snapshot timing follow-up," not "Tuesday 12pm ET."
+- Update `01-VALIDATION.md:120` after the `01-CONTEXT.md` cleanup so the closure claim is actually true.
+- Normalize `STATE.md` so the frontmatter and body both say the same thing.
+
+### Risk Assessment
+
+**HIGH.** The exact `RESEARCH.md:98` concern is fixed, but a canonical must-read execution doc still contains the stale `open_*` / `Tuesday 12pm ET` semantics, and the validation doc incorrectly claims that contradiction is gone. That is the kind of doc-level inconsistency that can leak directly into downstream execution.
+
+### Cycle 4 Disposition
+
+| Concern | Status | Evidence (file:line) |
+|---------|--------|----------------------|
+| Cycle-3 lone HIGH (RESEARCH.md:98 stale Tuesday-12pm-ET) | FULLY RESOLVED | [`01-RESEARCH.md:98`](./01-RESEARCH.md) |
+| Active canonical context still uses stale `open_*` / Tuesday semantics, while validation claims cleanup is complete | NEW HIGH | [`01-CONTEXT.md:244`](./01-CONTEXT.md), [`01-CONTEXT.md:292`](./01-CONTEXT.md), [`01-VALIDATION.md:120`](./01-VALIDATION.md) |
+| `STATE.md` frontmatter vs body readiness inconsistency | NEW MEDIUM | [`STATE.md:5-6`](../../STATE.md) vs [`STATE.md:30-31`](../../STATE.md) |
+| `01-VALIDATION.md:120` overclaims HIGH-3 closure | NEW MEDIUM | [`01-VALIDATION.md:120`](./01-VALIDATION.md) (subsumed by the HIGH above) |
+
+UNRESOLVED_HIGHS: 1
+
+---
+
+## Consensus Summary (Cycle 4)
+
+Single external reviewer (Codex / gpt-5.4) again, so "consensus" is the synthesis of that single pass into actionable severity buckets.
+
+### Net Cycle-4 disposition (HIGH only)
+
+| Concern source | Disposition | Counts toward CYCLE_SUMMARY? |
+|----------------|-------------|------------------------------|
+| Cycle-3 lone HIGH (`01-RESEARCH.md:98` stale "Tuesday 12pm ET") | FULLY RESOLVED — bullet now reads `Specific snapshot timestamps within the API \`previous_timestamp\` window (timezone, DST), labelled \`prior_*\`.` | NO |
+| **NEW HIGH (Cycle 4):** active canonical `01-CONTEXT.md` still uses stale `open_*` / Tuesday-12pm-ET semantics, while `01-VALIDATION.md:120` claims cleanup is complete | UNRESOLVED — needs a Cycle 5 doc-level reconciliation pass on `01-CONTEXT.md` (lines 244, 292) and `01-VALIDATION.md` (line 120) | YES |
+
+**Total unresolved HIGHs heading into Cycle 5: 1.**
+
+### Cycle-3 → Cycle-4 progress
+
+- The targeted line-fix at `256f0fe` did exactly what it claimed: closed `01-RESEARCH.md:98`.
+- Convergence is NOT yet reached: a previously-unflagged consistency gap in `01-CONTEXT.md` was surfaced for the first time. The prior cycles focused exclusively on `01-RESEARCH.md` because that's what the explicit per-concern check pointed at; the broader canonical-doc audit was not performed until Cycle 4.
+- HIGH count went 4 (Cycle 1) → 6 (Cycle 2) → 1 (Cycle 3) → **1 (Cycle 4)**. The COUNT is unchanged but the CONCERN itself is different (different file, different line, different fix).
+
+### Surviving / new gaps
+
+The single remaining HIGH is again a documentation-consistency issue, not a structural plan defect. The fix is mechanical:
+1. Replace `open_core8` and `open_alt6` with `prior_core8` and `prior_alt6` in `01-CONTEXT.md:244` (and any other surrounding lines that share the stale labels).
+2. Replace "D-02 picks Tuesday 12pm ET" in `01-CONTEXT.md:292` with prior-snapshot-timing language.
+3. After the fix lands, update `01-VALIDATION.md:120` so its closure claim is actually true.
+
+### Divergent Views
+
+Single-reviewer pass; no divergence to record.
+
+---
+
+## Recommended Next Action (Cycle 4)
+
+Phase 1 is **NOT YET safe to execute**. The Cycle-3 fix is good, but the broader canonical-doc reconciliation it triggered is incomplete. Recommended path:
+
+1. **Apply the Cycle-4 corrective edits:**
+   - `01-CONTEXT.md:244`: rename `open_core8` → `prior_core8`, `open_alt6` → `prior_alt6` (keep `close_alt6` as-is — that label is honest); also re-check the surrounding D-02..D-08 narrative for any other stale `open_*` references.
+   - `01-CONTEXT.md:292`: rewrite "D-02 picks Tuesday 12pm ET" to describe a future "prior-snapshot timing follow-up" consistent with `01-RESEARCH.md:98`.
+   - `01-VALIDATION.md:120`: update the HIGH-3 closure claim so it accurately reflects the post-fix state.
+   - `STATE.md`: normalize frontmatter `status` / `stopped_at` to match the body's "Ready to execute" / "planning complete".
+2. Commit those edits.
+3. Re-run `gsd-review --phase 1 --codex` for Cycle 5 to confirm convergence.
+
+Per the workflow's max-cycles escalation guidance: the convergence-loop count is now at 4 cycles. The remaining gap is purely doc-consistency, not plan-structure or harness-design, so the user can reasonably choose between (a) one more cycle to drive HIGH count to 0, or (b) escalating with explicit conditional approval — the executor must read the corrected `01-CONTEXT.md` before touching `09-ks21-altline-scrape-PLAN.md`. **Recommended:** path (a) — one more cycle is cheap and the doc-level inconsistency in a "MUST read" file is a real execution risk for any future agent that picks Plan 09 cold.
