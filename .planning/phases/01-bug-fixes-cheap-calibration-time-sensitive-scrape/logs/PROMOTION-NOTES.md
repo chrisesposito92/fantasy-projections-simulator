@@ -1394,3 +1394,85 @@ delta on the primary target (✓ WR/TE recv_yds non-regressive across all three)
 
 - Orchestration: `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/ks29_sweep_orchestration.log`
 - Per-run: `p1.ks29.s003.bare.log`, `p1.ks29.s003.full.log`, `p1.ks29.s005.bare.log`, `p1.ks29.s005.full.log`, `p1.ks29.s008.bare.log`, `p1.ks29.s008.full.log`
+
+---
+
+## KS-32 measurement (post-Phase-1-bug-fixes baseline)
+
+**Date:** 2026-04-26
+**Plan:** 01-10
+**Scope:** Per D-23, run `scripts/validate_passing.py` against the post-Phase-1
+baseline (after KS-01..KS-29 have all shipped) to decide whether reducing
+`CLOCK_PASS_INCOMPLETE` from 5 → 3 is motivated. KS-15 promoted on 2026-04-26
+fixed the field-position clamping bug that may have been suppressing pass
+attempts; KS-29 promoted `pff.team_context.enabled = true`. The measurement
+runs after this stack has stabilized.
+
+### Measurement command
+
+```bash
+uv run python scripts/validate_passing.py --sims 50 \
+  2>&1 | tee .../logs/ks32_measurement.log
+```
+
+NOTE: `scripts/validate_passing.py` does not accept a `--seasons` flag (the
+plan text and VALIDATION.md row 66 both incorrectly include `--seasons 2024`
+as a CLI argument). The actual signature is `[--real] [--sims SIMS]`. The
+demo path exercises `monte_carlo.run_simulations` end-to-end, which honors
+the module-level `CLOCK_PASS_INCOMPLETE` constant in `play_resolver.py` —
+sufficient for the gate measurement (deviation Rule 3 — invalid plan-supplied
+CLI flag; documented under Deviations in 01-10-SUMMARY.md).
+
+### Observed metrics (averaged across home + away teams; 50 sims of demo roster)
+
+| Metric                       | Observed | Target band     | In band? |
+|------------------------------|---------:|-----------------|:--------:|
+| plays_per_team               | **66.2** | (63, 65)        | NO (above) |
+| called_passes (incl scram)   | 38.1     | [37, 40]        | YES |
+| scrambles/team/game          | 2.3      | [1.5, 3.5]      | YES |
+| sacks/team/game              | 2.0      | [1.5, 3.0]      | YES |
+| **nfl_pass_attempts**        | **33.8** | **[32, 37]**    | **YES** |
+| completions/team/game        | 20.8     | [20, 24]        | YES |
+| completion_rate (NFL conv)   | 61.6%    | [62%, 67%]      | NO (below) |
+| yards/completion             | 10.1     | [10.5, 12.5]    | NO (below) |
+| pass_yards/team/game         | 209.5    | [210, 250]      | NO (below) |
+
+5/9 metrics in NFL range overall. The two metrics directly relevant to the
+KS-32 retune decision are `plays_per_team` and `nfl_pass_attempts` per the
+plan's decision rule.
+
+### Decision rule (from plan Task 1)
+
+- If `plays_per_team` ≥ 62 AND `nfl_pass_attempts` ≥ 33 → **NO CHANGE** (skip
+  Tasks 2+3, jump to Task 4: record `p1.ks32.measure` ledger entry).
+- If `plays_per_team` < 62 OR `nfl_pass_attempts` < 33 → **RETUNE TO 3**
+  (proceed to Tasks 2+3).
+
+### Decision: **NO CHANGE**
+
+- `plays_per_team` = 66.2 → ≥ 62 ✓ (in fact ABOVE the upper bound 65 — reducing
+  CLOCK_PASS_INCOMPLETE would push this even higher, worsening the upper-bound
+  FAIL).
+- `nfl_pass_attempts` = 33.8 → ≥ 33 ✓ (in band, no shortfall to motivate the
+  retune).
+
+The original D-23 hypothesis ("pass attempts demonstrably low (32-33 instead
+of 35-36)") is NOT supported by the post-Phase-1 measurement. The current
+`CLOCK_PASS_INCOMPLETE = 5` is appropriate; further reduction is contraindicated.
+
+The other FAIL metrics (completion_rate slightly low at 61.6% vs ≥62%,
+yards/completion slightly low at 10.1 vs ≥10.5, pass_yards slightly low at
+209.5 vs ≥210, plays_per_team above the upper bound at 66.2 vs ≤65) are out
+of scope for KS-32 — they reflect the underlying QB pass_yards mean-bias
+gap (-28 yd/g per Phase-0 baseline; documented as outside Phase 1 scope per
+PROMOTION-NOTES `## KS-15`) and the demo roster's particular stat
+distributions. Phase 2+ mechanism layers (props, market_history, residual
+calibration) and the Phase 4 KS-21 Odds API CDF loader will address those
+gaps. The clock-runoff lever is not the right tool here.
+
+### Action
+
+Skip Tasks 2 + 3 (no code change). Proceed to Task 4: record
+`p1.ks32.measure` ledger entry per D-24 to complete the KS-32 deliverable
+("delivered" per REQUIREMENTS.md = implemented + tested + ledgered +
+promotion decision documented).
