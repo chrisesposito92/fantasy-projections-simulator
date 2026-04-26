@@ -46,7 +46,7 @@ Signals available but unused. KS-19 / KS-20 reuse already-cached PFF data; KS-21
 
 - [ ] **KS-19**: Parse + blend `~/.fantasy-sim/pff/props/props_*.parquet` `last_ten_json` empirical CDF into per-player distribution sampling. Cached signal — zero new scrape cost. → Impacts every prop stat
 - [ ] **KS-20**: Cross-stat consistency from PFF `projections_json` (already cached) for QB pass_yards/attempts/completions/TDs. → Impacts TGT-01, TGT-02, TGT-09
-- [ ] **KS-21**: Build Odds API alternate-line CDF pipeline + historical backfill (multi-line over/under markets define a CDF directly). **Time-sensitive** — front-load scrape while ~4.93M of 5M-credit tier is still active (~2 weeks). Engine consumption can land later but raw scrape must happen ASAP. → Impacts TGT-01, TGT-02, TGT-07, TGT-09, TGT-10
+- [x] **KS-21**: Build Odds API alternate-line CDF pipeline + historical backfill (multi-line over/under markets define a CDF directly). **Time-sensitive** — front-load scrape while ~4.93M of 5M-credit tier is still active (~2 weeks). Engine consumption can land later but raw scrape must happen ASAP. → Impacts TGT-01, TGT-02, TGT-07, TGT-09, TGT-10
 
   **Note on phase split:** The KS-21 *requirement* is delivered when the engine integration ships in Phase 4. The *scrape* sub-deliverable runs in Phase 1 as time-sensitive infrastructure (see ROADMAP.md Phase 1 success criterion #5). The requirement remains mapped to a single phase (Phase 4) per the 100% coverage rule; Phase 1 carries the data-acquisition work.
 
@@ -113,7 +113,7 @@ Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). T
 | KS-18 | Phase 3 | Pending |
 | KS-19 | Phase 4 | Pending |
 | KS-20 | Phase 4 | Pending |
-| KS-21 | Phase 4 (scrape sub-deliverable runs in Phase 1) | Pending |
+| KS-21 | Phase 4 (scrape sub-deliverable runs in Phase 1) | Complete |
 | KS-29 | Phase 1 | Pending |
 | KS-32 | Phase 1 | Pending |
 
