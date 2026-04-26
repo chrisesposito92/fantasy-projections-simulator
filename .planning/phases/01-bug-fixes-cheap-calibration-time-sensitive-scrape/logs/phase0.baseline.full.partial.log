@@ -1,0 +1,22 @@
+====================================================================
+  A/B VALIDATION
+====================================================================
+  baseline    : bare
+  arm B       : defaults
+  sims        : 200
+  seasons     : [2022, 2023, 2024]
+  scoring     : ppr
+  comparison  : total_lift
+  seed mode   : deterministic_game_id_crc32_shared_between_arms
+  coverage   : availability=full(2022,2023,2024) | availability.depth_charts=full(2022,2023,2024) | availability.injuries=disabled | availability.usage_fallback=full(2022,2023,2024) | ensemble.ff_opportunity=full(2022,2023,2024) | goal_line_concentration=disabled | market_history=partial(2023,2024) | market_history.anytime_td=partial(2023,2024) | market_history.crosswalk=partial(2023,2024) | market_history.dispersion=partial(2023,2024) | market_history.pass_tds=partial(2023,2024) | market_history.pass_yards=partial(2023,2024) | market_history.receiving_yards=partial(2023,2024) | market_history.receptions=partial(2023,2024) | market_history.rush_yards=partial(2023,2024) | pff=full(2022,2023,2024) | pff.depth_role=disabled | pff.depth_role.efficiency=disabled | pff.depth_role.te=disabled | pff.depth_role.wr=disabled | pff.qb_split=disabled | pff.rb_scheme_fit=disabled | pff.team_context=disabled | play_call_model=disabled | props=none | qb_rushing.designed_runs=disabled | qb_rushing.scramble=disabled | role_trend=disabled | target_selection=disabled | td_tendency=full(2022,2023,2024) | td_tendency.i5=full(2022,2023,2024) | tracking=disabled | tracking.qb_context=disabled | tracking.rb_efficiency=disabled | tracking.receiver_participation=disabled | usage=full(2022,2023,2024) | usage.ngs=disabled | usage.route_rate=disabled | weather=full(2022,2023,2024)
+  coverage notes: market_history:partial player_markets_<season>_<snapshot_label>.parquet plus rosters_weekly cache to build the crosswalk | market_history.crosswalk:partial player_markets_<season>_<snapshot_label>.parquet plus rosters_weekly cache to resolve The Odds players to nflverse IDs | props:none Forward-only unless season parquet files exist in ~/.fantasy-sim/pff/props
+  bare cache  : MISS (2022, 2023, 2024)
+====================================================================
+  workers     : 4 per season
+
+Running 3 seasons in parallel...
+  [2023] Building 272 game pairs (dual-arm)...
+  [2024] Building 272 game pairs (dual-arm)...
+  [2022] Building 271 game pairs (dual-arm)...
+Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']
