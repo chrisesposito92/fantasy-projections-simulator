@@ -1476,3 +1476,119 @@ Skip Tasks 2 + 3 (no code change). Proceed to Task 4: record
 `p1.ks32.measure` ledger entry per D-24 to complete the KS-32 deliverable
 ("delivered" per REQUIREMENTS.md = implemented + tested + ledgered +
 promotion decision documented).
+
+---
+
+## KS-32 final decision: MEASURED-NO-CHANGE (per D-24)
+
+**Date:** 2026-04-26
+**Plan:** 01-10 Task 4
+**Scope:** Per D-24, log a single `p1.ks32.measure` ledger entry to record
+the post-Phase-1 baseline state and document that KS-32 was evaluated and
+not promoted. This satisfies the REQUIREMENTS.md "delivered" definition for
+the KS-32 hypothesis.
+
+### Validation command (per HIGH-4-fix per Plan 10 Task 4 action)
+
+```bash
+uv run python scripts/validate.py \
+  --sims 200 --seasons 2022 2023 2024 --scoring ppr --positions QB RB WR TE \
+  --baseline bare \
+  --label "p1.ks32.measure" \
+  2>&1 | tee .../logs/p1.ks32.measure.log
+```
+
+`--baseline bare` (no `--set`) — Arm A = bare engines, Arm B = current
+post-Phase-1 promoted defaults. Per the HIGH-4 fix in plan Task 4, this
+is structurally equivalent to `phase0.baseline.full` from Wave 0, but
+captures the post-Phase-1 defaults state in Arm B (vs Wave 0's pre-Phase-1
+defaults state). Differencing the two ledger entries' Arm B metrics gives
+the Phase-1-vs-Phase-0 delta.
+
+NOTE: this is NOT the same as Plan 11's `p1.aggregate.full` — Plan 11 will
+re-run with the same command after KS-32 ships (which it just did, as a
+no-code-change ship via this measure entry) to capture the FINAL Phase 1
+defaults state. The `p1.ks32.measure` entry captures the state immediately
+after KS-29 promotion (before Plan 11 runs) and is the per-KS deliverable
+for KS-32 per D-24.
+
+### Ledger entry (#104)
+
+| Entry              | baseline | mode        | overrides | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks |
+|--------------------|----------|-------------|-----------|------------:|-------------:|-------------:|----------:|
+| p1.ks32.measure    | bare     | total_lift  | (none)    | +0.2039     | -1.460       | -19.837      | +0.049    |
+
+### Phase-1-vs-Phase-0 delta (Arm B — current promoted defaults)
+
+| Metric        | phase0.baseline.full (#82) | p1.ks32.measure (#104) | Δ (Phase 1 - Phase 0) |
+|---------------|---------------------------:|-----------------------:|----------------------:|
+| Δ rank_corr   | +0.2048                    | +0.2039                | -0.0009               |
+| Δ weekly_mae  | -1.474                     | -1.460                 | +0.014                |
+| Δ season_mae  | -20.017                    | -19.837                | +0.180                |
+| Δ fpts_ks     | +0.052                     | +0.049                 | -0.003                |
+
+The post-Phase-1 stack matches the Phase-0 baseline within noise on
+headline metrics. This confirms KS-32's "no change" decision: nothing in
+the Phase 1 stack (KS-06, KS-07, KS-15, KS-29 promoted; others SHIPPED-OFF
+behind flags) caused pass-attempt drift that would justify reducing
+`CLOCK_PASS_INCOMPLETE`.
+
+### Per-position headline (Season 2024 — most recent)
+
+| Position | rank_corr A→B | weekly_mae A→B | season_mae A→B |
+|----------|:--------------|:---------------|:---------------|
+| QB | 0.704 → 0.955 (+0.252) | — | — |
+| RB | 0.786 → 0.963 (+0.177) | — | — |
+| WR | 0.716 → 0.952 (+0.236) | — | — |
+| TE | 0.680 → 0.909 (+0.229) | — | — |
+| weekly_mae (all positions) | — | 5.36 → 3.35 (-2.01) | — |
+| season_mae (all positions) | — | — | 45.21 → 17.16 (-28.05) |
+
+Headline KS metrics on 2024 (closest to the absolute targets per
+PROJECT.md): QB pass_yards KS = 0.43 (target 0.31, gap 0.12); WR
+receiving_yards KS = 0.27 (target 0.27, **at target**); TE receiving_yards
+KS = 0.31 (target 0.31, **at target**). The TGT-09 QB pass_yards mean
+bias of -36.0 yd/g (-22.5 from KS-01 commit notes) remains the largest
+KS gap and is explicitly out of scope for Phase 1 per PROMOTION-NOTES
+`## KS-15` — addressed in Phase 2 (per-stat residual_calibration), Phase 3
+(PFF Phase 5 slices), and Phase 4 (Odds API CDF loader on the alt-line
+markets scraped in Plan 09).
+
+### Promotion state: MEASURED-NO-CHANGE (per D-24)
+
+KS-32 satisfies the REQUIREMENTS.md "delivered" definition:
+- **Implemented:** code path is unchanged (no source modification motivated
+  by the measurement); `CLOCK_PASS_INCOMPLETE = 5` retained.
+- **Tested:** full 2,131-test suite still green (no source change to break).
+- **Ledgered:** `p1.ks32.measure` ledger entry #104 captures the
+  post-Phase-1 baseline state.
+- **Promotion decision documented:** this PROMOTION-NOTES.md
+  `## KS-32 measurement` (Task 1) + `## KS-32 final decision` (Task 4)
+  + commit `4c338a0` (Task 1) + the Task 4 commit recording the ledger
+  entry + the Task 5 promotion-state commit.
+
+### Phase 1 last per-KS plan completion
+
+KS-32 is the final per-KS plan in Phase 1 before Plan 11 (aggregate
+validation). Phase 1 KS dispositions:
+
+| KS | State | Notes |
+|----|-------|-------|
+| KS-01 | SHIPPED-NO-OP (PROMOTED gate; below KS-detection at 200 sims) | Plan 01 |
+| KS-03 | RETROACTIVELY PROMOTED (relaxed gate; flag flipped) | Plan 03 |
+| KS-04 | RETROACTIVELY PROMOTED (relaxed gate; flag flipped) | Plan 02 |
+| KS-05 | RETROACTIVELY PROMOTED (relaxed gate; flag flipped, but `_apply_recv_yds` doesn't fire on historical seasons due to props:none) | Plan 04 |
+| KS-06 | PROMOTED | Plan 05 |
+| KS-07 | PROMOTED | Plan 06 |
+| KS-15 | PROMOTED (SHIPPED-NO-OP on KS-movement bar) | Plan 07 |
+| KS-21 | DELIVERED (data scrape only; engine integration in Phase 4) | Plan 09 |
+| KS-29 | PROMOTED (sensitivity 0.03) | Plan 08 |
+| KS-32 | MEASURED-NO-CHANGE | Plan 10 (this) |
+
+Plan 11 closes Phase 1 with the aggregate `p1.aggregate.full` ledger
+entry + Phase-1-vs-Phase-0 delta evaluation against ROADMAP success
+criteria.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks32.measure.log`
