@@ -822,3 +822,160 @@ class TestRedZoneRunResolution:
         avg = sum(non_td_yards) / len(non_td_yards)
         # Player dist is 10, should average close to 10 (not capped by team dist)
         assert avg >= 8
+
+
+# === KS-01: RZ TD-gate distribution preservation ===
+#
+# Per Plan 01 Task 1 (RED phase). These tests cover the new
+# `_tackled_short_preserve_distribution` helper introduced by Task 2 (GREEN)
+# to replace the punitive `_tackled_short()` rewrite that fires when the red
+# zone TD gate denies a touchdown. Per D-09: yards = max(1, min(yard_line - 1,
+# sampled_yards_pre_clamp)) — preserves the sampled distribution and reserves
+# 1 yard short of the goal so the play does not score.
+#
+# The helper is callable directly regardless of the
+# `phase1_ks_flags.ks01_preserve_distribution.enabled` flag (the flag only
+# controls whether the call sites use the helper or the legacy
+# `_tackled_short` path). Tests 3 & 4 are calibration regression guards on
+# PASS_TD_GATE / RUN_TD_GATE that protect against accidental gate edits.
+
+from fantasy_sim.engine import play_resolver as _pr
+from fantasy_sim.engine.play_resolver import (
+    PASS_TD_GATE,
+    RUN_TD_GATE,
+    _red_zone_td_gate,
+)
+
+
+def _ks01_helper():
+    """Dynamic accessor for the KS-01 new helper.
+
+    Returns the `_tackled_short_preserve_distribution` callable from
+    `play_resolver` if it has been added (Task 2 GREEN), else raises
+    AttributeError so the dependent tests FAIL (not skip) in the RED state.
+    Calibration regression tests (Tests 3 & 4) do not call this and therefore
+    PASS in RED, satisfying the TDD acceptance criteria for Task 1.
+    """
+    return _pr._tackled_short_preserve_distribution
+
+
+def test_ks01_tackled_short_variant_preserves_distribution_at_goal_line():
+    helper = _ks01_helper()
+    # yard_line=3, sample within band → returns the sample (preserves the dist)
+    assert helper(yard_line=3, sampled_yards_pre_clamp=1) == 1
+    # yard_line=3, sample exceeds the (yard_line - 1) cap → returns yard_line - 1
+    assert helper(yard_line=3, sampled_yards_pre_clamp=8) == 2
+    assert helper(yard_line=3, sampled_yards_pre_clamp=20) == 2
+
+
+def test_ks01_tackled_short_variant_clamps_zero_to_one():
+    helper = _ks01_helper()
+    # sample == 0 (or negative) → floor at 1 per D-09 "1 yard short" semantics
+    assert helper(yard_line=3, sampled_yards_pre_clamp=0) == 1
+    assert helper(yard_line=3, sampled_yards_pre_clamp=-2) == 1
+
+
+def test_ks01_pass_td_gate_calibration_unchanged_after_fix():
+    """Regression guard: PASS_TD_GATE[(1,3)] = 0.55 must hold over 100k trials."""
+    rng = np.random.default_rng(0)
+    n = 100_000
+    successes = sum(1 for _ in range(n) if _red_zone_td_gate(3, "pass", rng))
+    rate = successes / n
+    assert 0.54 <= rate <= 0.56, f"PASS_TD_GATE[(1,3)] regressed: rate={rate}"
+
+
+def test_ks01_run_td_gate_calibration_unchanged_after_fix():
+    """Regression guard: RUN_TD_GATE[(1,3)] = 0.35 must hold over 100k trials."""
+    rng = np.random.default_rng(0)
+    n = 100_000
+    successes = sum(1 for _ in range(n) if _red_zone_td_gate(3, "run", rng))
+    rate = successes / n
+    assert 0.34 <= rate <= 0.36, f"RUN_TD_GATE[(1,3)] regressed: rate={rate}"
+
+
+def test_ks01_resolve_pass_failed_gate_yields_yards_in_safe_band(monkeypatch):
+    """When the RZ pass TD gate fails, yards must land in [1, yard_line-1].
+
+    Forces the gate to always fail by monkeypatching `_red_zone_td_gate` to
+    return False. With the KS-01 flag on, the new helper should route yards
+    into the safe band [1, 2] for yard_line=3 regardless of the underlying
+    receiving_yards_dist.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+
+    # Force the new code path on for this test (regardless of defaults).
+    monkeypatch.setattr(pr, "_KS01_PRESERVE_DIST", True)
+    # Force every gate roll to deny the TD.
+    monkeypatch.setattr(pr, "_red_zone_td_gate", lambda *args, **kwargs: False)
+
+    rng = np.random.default_rng(7)
+    # High-mean WR — receiving distribution that would normally produce TDs in the RZ.
+    wr = PlayerModel(
+        "WR1", "WR1", "WR", "T",
+        PlayerUsage(target_share=1.0),
+        PlayerOutcomes(
+            catch_rate=1.0,
+            red_zone_catch_rate=1.0,
+            receiving_yards_dist=np.array([8, 10, 12, 15, 20]),
+            receiving_td_factor=1.0,
+        ),
+    )
+    qb = PlayerModel(
+        "QB1", "QB", "QB", "T",
+        PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        PlayerOutcomes(),
+    )
+    roster = TeamRoster(team="T", players=[qb, wr])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(5000):
+        state = make_state(yard_line=3)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
+        if result.is_complete and not result.is_touchdown and not result.is_fumble:
+            yards_seen.append(result.yards)
+
+    yards_arr = np.array(yards_seen)
+    assert len(yards_arr) > 0, "Expected at least one non-TD completion in the safe band"
+    assert yards_arr.min() >= 1, f"yards.min={yards_arr.min()} below D-09 floor of 1"
+    assert yards_arr.max() <= 2, f"yards.max={yards_arr.max()} above yard_line-1=2 cap"
+    # Sample mean should sit strictly inside (1.0, 2.0), proving the helper is
+    # *sampling* across the safe band rather than always returning the cap.
+    mean = yards_arr.mean()
+    assert 1.0 < mean < 2.0, f"mean={mean} suggests the helper is not sampling across [1, 2]"
+
+
+def test_ks01_resolve_run_failed_gate_yields_yards_in_safe_band(monkeypatch):
+    """When the RZ run TD gate fails, yards must land in [1, yard_line-1]."""
+    from fantasy_sim.engine import play_resolver as pr
+
+    monkeypatch.setattr(pr, "_KS01_PRESERVE_DIST", True)
+    monkeypatch.setattr(pr, "_red_zone_td_gate", lambda *args, **kwargs: False)
+
+    rng = np.random.default_rng(11)
+    rb = PlayerModel(
+        "RB1", "RB1", "RB", "T",
+        PlayerUsage(carry_share=1.0),
+        PlayerOutcomes(
+            rushing_yards_dist=np.array([5, 8, 10, 12, 15]),
+            fumble_rate=0.0,
+            rushing_td_factor=1.0,
+            i5_rushing_td_factor=1.0,
+        ),
+    )
+    roster = TeamRoster(team="T", players=[rb])
+    outcomes = make_outcomes(run_yards=[5])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(5000):
+        state = make_state(yard_line=3)
+        result = resolve_play(state, "run", outcomes, rates, rng, roster=roster)
+        if not result.is_touchdown and not result.is_fumble and not result.is_safety:
+            yards_seen.append(result.yards)
+
+    yards_arr = np.array(yards_seen)
+    assert len(yards_arr) > 0, "Expected at least one non-TD non-fumble run in the safe band"
+    assert yards_arr.min() >= 1, f"yards.min={yards_arr.min()} below D-09 floor of 1"
+    assert yards_arr.max() <= 2, f"yards.max={yards_arr.max()} above yard_line-1=2 cap"
