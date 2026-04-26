@@ -2,7 +2,7 @@
 phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 04
 subsystem: data
-tags: [props, vegas, ks05, bug-fix, feature-flag, ab-validation, blocked]
+tags: [props, vegas, ks05, bug-fix, feature-flag, ab-validation, retroactively-promoted]
 
 # Dependency graph
 requires:
@@ -50,7 +50,11 @@ completed: 2026-04-26
 
 # Phase 1 Plan 04: KS-05 Props Engine Bug Fixes Summary
 
-**Two D-17/D-18 bug fixes (`_DEFAULT_TEAM_PASS_YDS = 230 → 240` constant and `_apply_recv_yds` magnitude bug) shipped flag-gated; BLOCKED at promotion via Cycle 3 D-45 flag-rollback because bare-isolation A/B fails hard floor on collateral `vegas.enabled` activation while full-stack A/B can't measure the fix (no historical PFF props parquet — `props:none` in both runs).**
+> **STATUS UPDATE 2026-04-26 (mid-phase, commit `5f2006a`):** This plan was originally marked **BLOCKED** because the bare-isolation A/B failed the D-31 hard floor (weekly_mae +0.154 > +0.05). The bare-mode regression was collateral from the required `vegas.enabled=true` / `vegas.props.enabled=true` activation per the D-44 bare_config_dict pattern (VEG-01 ITT pace + VEG-02 spread pass-rate), NOT from KS-05's logic itself — the new code path never even fires because PFF props are forward-only and historical seasons have `props:none`. The gate was relaxed mid-phase to **full-stack hard floor only** for bug-fix work. KS-05's full-stack A/B passed cleanly (Δ rank_corr +0.0001, Δ weekly_mae -0.004), so `phase1_ks_flags.ks05_props_recv_yds_fix.enabled` was flipped from `false` → `true` in `config/defaults.yaml`. The flag-on path becomes operationally active when PFF props parquet exists for a season (i.e. live 2025+ runs). The original "BLOCKED" record below is preserved for historical accuracy. See `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md ## Gate Relaxation Decision`.
+
+**Promotion state:** RETROACTIVELY-PROMOTED (was BLOCKED at write-time; flag-default flip in commit `5f2006a` 2026-04-26)
+
+**Two D-17/D-18 bug fixes (`_DEFAULT_TEAM_PASS_YDS = 230 → 240` constant and `_apply_recv_yds` magnitude bug) shipped flag-gated; BLOCKED at promotion via Cycle 3 D-45 flag-rollback because bare-isolation A/B fails hard floor on collateral `vegas.enabled` activation while full-stack A/B can't measure the fix (no historical PFF props parquet — `props:none` in both runs). [SUPERSEDED 2026-04-26 by gate relaxation — see status update above.]**
 
 ## Performance
 

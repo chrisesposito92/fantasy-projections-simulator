@@ -2,7 +2,7 @@
 phase: 01-bug-fixes-cheap-calibration-time-sensitive-scrape
 plan: 03
 subsystem: simulation
-tags: [game-context, matchup, coverage, distribution-anchor, ks-03, phase1-ks-flag, validate-py]
+tags: [game-context, matchup, coverage, distribution-anchor, ks-03, phase1-ks-flag, validate-py, retroactively-promoted]
 
 # Dependency graph
 requires:
@@ -53,7 +53,11 @@ completed: 2026-04-26
 
 # Phase 01 Plan 03: KS-03 Matchup/Coverage Yard Anchor Fix Summary
 
-**Per-player `np.mean(<dist>)` anchor wired into `_apply_matchup` (pass + rush branches) and `_apply_coverage` per D-16/D-16b, gated behind `phase1_ks_flags.ks03_dynamic_yard_anchor`; BLOCKED at promotion (bare A/B weekly_mae +0.164 > +0.05 floor) — flag default stays `false`, production unchanged.**
+> **STATUS UPDATE 2026-04-26 (mid-phase, commit `5f2006a`):** This plan was originally marked **BLOCKED** because the bare-isolation A/B failed the D-31 hard floor (weekly_mae +0.164 > +0.05). The gate was relaxed mid-phase to **full-stack hard floor only** for bug-fix work — the bare-isolation A/B was structurally mismatched (one bug fix in isolation exposes other bugs that bare's broken behavior was masking). KS-03's full-stack A/B passed cleanly (Δ rank_corr +0.0002, Δ weekly_mae +0.001), so `phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` was flipped from `false` → `true` in `config/defaults.yaml`. The original "BLOCKED" record below is preserved for historical accuracy. See `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md ## Gate Relaxation Decision`.
+
+**Promotion state:** RETROACTIVELY-PROMOTED (was BLOCKED at write-time; flag-default flip in commit `5f2006a` 2026-04-26)
+
+**Per-player `np.mean(<dist>)` anchor wired into `_apply_matchup` (pass + rush branches) and `_apply_coverage` per D-16/D-16b, gated behind `phase1_ks_flags.ks03_dynamic_yard_anchor`; BLOCKED at promotion (bare A/B weekly_mae +0.164 > +0.05 floor) — flag default stays `false`, production unchanged. [SUPERSEDED 2026-04-26 by gate relaxation — see status update above.]**
 
 ## Performance
 

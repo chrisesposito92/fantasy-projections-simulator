@@ -850,7 +850,12 @@ class TestGameContextIntegration:
         assert wr_2.outcomes.red_zone_catch_rate == pytest.approx(0.55, abs=1e-4)
 
     def test_apply_coverage_shifts_receiving_yards(self):
-        """Applying ypr_modifier shifts receiving_yards_dist additively."""
+        """Applying ypr_modifier shifts receiving_yards_dist additively.
+
+        Post-KS-03 promotion (config/defaults.yaml flag ks03_dynamic_yard_anchor.enabled=true,
+        commit 5f2006a 2026-04-26): shift uses per-player float(np.mean(<dist>))
+        instead of the legacy hardcoded *10.0 magnitude.
+        """
         from fantasy_sim.data.game_context import GameContextBuilder
         from fantasy_sim.data.pff.models import CoverageModifiers
         import numpy as np
@@ -869,8 +874,8 @@ class TestGameContextIntegration:
 
         wr_1 = next(p for p in roster.players if p.player_id == "wr_1")
 
-        # shift = (1.03 - 1.0) * 10.0 = 0.3
-        expected = original_yards + 0.3
+        # KS-03 promoted: shift = (1.03 - 1.0) * np.mean(original_yards) = 0.03 * 12.5 = 0.375
+        expected = original_yards + 0.375
         np.testing.assert_array_almost_equal(
             wr_1.outcomes.receiving_yards_dist, expected, decimal=4
         )

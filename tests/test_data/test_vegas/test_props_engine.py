@@ -523,56 +523,83 @@ class TestPlayerPropsEngine:
         assert player.usage.target_share == pytest.approx(0.20)
 
     def test_uses_pff_crosswalk_for_matching(self):
-        """PlayerPropsEngine matches via pff_crosswalk, not name matching."""
-        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
-        from fantasy_sim.data.vegas.models import PropsConfig
+        """PlayerPropsEngine matches via pff_crosswalk, not name matching.
 
-        base_dist = np.array([8.0, 10.0, 12.0, 15.0])
-        original_mean = float(np.mean(base_dist))
+        Tests crosswalk routing (orthogonal to KS-05 magnitude). Pinned to the
+        legacy flag-off code path so the assertion has a deterministic direction
+        — the corrected KS-05 formula produces small/sensible shifts whose sign
+        depends on the proxy estimate of historical, not on whether the engine
+        fired. KS-05's magnitude correctness is validated separately by
+        TestKs05PropsEngineFixes.
+        """
+        import importlib
 
-        player = _make_wr(recv_yds_dist=base_dist)
-        roster = _make_roster(players=[player])
+        import fantasy_sim.data.vegas.props_engine as pe_mod
 
-        # Use PFF player_id to match, consensus_line for blending
-        props_df = self._make_pff_props_df([
-            self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
-        ])
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": False}}):
+            importlib.reload(pe_mod)
+        try:
+            base_dist = np.array([8.0, 10.0, 12.0, 15.0])
+            original_mean = float(np.mean(base_dist))
 
-        mock_loader = MagicMock()
-        mock_loader.load_props.return_value = props_df
+            player = _make_wr(recv_yds_dist=base_dist)
+            roster = _make_roster(players=[player])
 
-        config = PropsConfig(enabled=True, prior_strength=10.0)
-        engine = PlayerPropsEngine(config, loader=mock_loader)
-        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+            # Use PFF player_id to match, consensus_line for blending
+            props_df = self._make_pff_props_df([
+                self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
+            ])
 
-        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
-        assert new_mean > original_mean, "PFF ID match should shift dist mean up"
+            mock_loader = MagicMock()
+            mock_loader.load_props.return_value = props_df
+
+            config = pe_mod.PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=mock_loader)
+            engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+            new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            assert new_mean > original_mean, "PFF ID match should shift dist mean up (legacy magnitude)"
+        finally:
+            importlib.reload(pe_mod)
 
     def test_reads_consensus_line_not_point(self):
-        """Engine uses consensus_line column (D-05), not old 'point' column."""
-        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
-        from fantasy_sim.data.vegas.models import PropsConfig
+        """Engine uses consensus_line column (D-05), not old 'point' column.
 
-        base_dist = np.array([8.0, 10.0, 12.0, 15.0])
-        player = _make_wr(recv_yds_dist=base_dist)
-        roster = _make_roster(players=[player])
+        Tests column-routing (orthogonal to KS-05 magnitude). Pinned to legacy
+        flag-off path for a deterministic-direction assertion (see
+        ``test_uses_pff_crosswalk_for_matching`` rationale).
+        """
+        import importlib
 
-        # consensus_line is the signal for blending
-        props_df = self._make_pff_props_df([
-            self._prop_row(self._PFF_TK, "recv_yd", 300.0, "Travis", "Kelce"),
-        ])
+        import fantasy_sim.data.vegas.props_engine as pe_mod
 
-        mock_loader = MagicMock()
-        mock_loader.load_props.return_value = props_df
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": False}}):
+            importlib.reload(pe_mod)
+        try:
+            base_dist = np.array([8.0, 10.0, 12.0, 15.0])
+            player = _make_wr(recv_yds_dist=base_dist)
+            roster = _make_roster(players=[player])
 
-        config = PropsConfig(enabled=True, prior_strength=10.0)
-        engine = PlayerPropsEngine(config, loader=mock_loader)
-        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+            # consensus_line is the signal for blending
+            props_df = self._make_pff_props_df([
+                self._prop_row(self._PFF_TK, "recv_yd", 300.0, "Travis", "Kelce"),
+            ])
 
-        # If the engine tried to read "point" it would crash or not adjust
-        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
-        original_mean = 11.25
-        assert new_mean > original_mean, "consensus_line should be used for blending"
+            mock_loader = MagicMock()
+            mock_loader.load_props.return_value = props_df
+
+            config = pe_mod.PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=mock_loader)
+            engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+            # If the engine tried to read "point" it would crash or not adjust
+            new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            original_mean = 11.25
+            assert new_mean > original_mean, "consensus_line should be used for blending"
+        finally:
+            importlib.reload(pe_mod)
 
     def test_min_divergence_skip(self):
         """Near-identical prop/historical -> no adjustment (below min_divergence)."""
@@ -599,30 +626,41 @@ class TestPlayerPropsEngine:
         assert player.usage.carry_share == pytest.approx(original_carry_share, abs=0.01)
 
     def test_recv_yd_shifts_dist(self):
-        """recv_yd prop (via PFF_TO_ENGINE_MARKET) shifts receiving_yards_dist."""
-        from fantasy_sim.data.vegas.props_engine import PlayerPropsEngine
-        from fantasy_sim.data.vegas.models import PropsConfig
+        """recv_yd prop (via PFF_TO_ENGINE_MARKET) shifts receiving_yards_dist.
 
-        base_dist = np.array([8.0, 10.0, 12.0, 15.0])
-        original_mean = float(np.mean(base_dist))
+        Tests market-to-engine routing (orthogonal to KS-05 magnitude). Pinned
+        to legacy flag-off path for a deterministic-direction assertion.
+        """
+        import importlib
 
-        player = _make_wr(recv_yds_dist=base_dist)
-        roster = _make_roster(players=[player])
+        import fantasy_sim.data.vegas.props_engine as pe_mod
 
-        props_df = self._make_pff_props_df([
-            self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
-        ])
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": False}}):
+            importlib.reload(pe_mod)
+        try:
+            base_dist = np.array([8.0, 10.0, 12.0, 15.0])
+            original_mean = float(np.mean(base_dist))
 
-        mock_loader = MagicMock()
-        mock_loader.load_props.return_value = props_df
+            player = _make_wr(recv_yds_dist=base_dist)
+            roster = _make_roster(players=[player])
 
-        config = PropsConfig(enabled=True, prior_strength=10.0)
-        engine = PlayerPropsEngine(config, loader=mock_loader)
-        roster = _make_roster(players=[player])
-        engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+            props_df = self._make_pff_props_df([
+                self._prop_row(self._PFF_TK, "recv_yd", 230.0, "Travis", "Kelce"),
+            ])
 
-        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
-        assert new_mean > original_mean
+            mock_loader = MagicMock()
+            mock_loader.load_props.return_value = props_df
+
+            config = pe_mod.PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=mock_loader)
+            roster = _make_roster(players=[player])
+            engine.apply(roster, "KC", 2024, 6, pff_crosswalk=self._pff_crosswalk())
+
+            new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            assert new_mean > original_mean
+        finally:
+            importlib.reload(pe_mod)
 
     def test_receptions_adjusts_target_share(self):
         """recv_rec prop adjusts target_share via Bayesian blend."""
@@ -923,11 +961,22 @@ class TestKs05PropsEngineFixes:
             importlib.reload(pe_mod)
 
     def test_ks05_default_team_pass_yds_flag_off_is_230(self):
-        """Flag-off path keeps the legacy 230.0 default for bit-for-bit production parity."""
+        """Flag-off path keeps the legacy 230.0 default — verifies the legacy
+        code path is still reachable (preserved by Cycle 3 D-45 flag-rollback
+        knob even after KS-05 promotion 2026-04-26 commit 5f2006a).
+        """
+        import importlib
+
         import fantasy_sim.data.vegas.props_engine as pe_mod
-        # Default is flag-off (config/defaults.yaml ships ks05 enabled=false)
-        assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
-        assert pe_mod._DEFAULT_TEAM_PASS_YDS == 230.0
+
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": False}}):
+            importlib.reload(pe_mod)
+        try:
+            assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
+            assert pe_mod._DEFAULT_TEAM_PASS_YDS == 230.0
+        finally:
+            importlib.reload(pe_mod)
 
     def test_ks05_proxy_team_targets_per_game_is_32(self):
         """D-18 v1 proxy: NFL teams average ~32 pass attempts/game (per RESEARCH.md Pitfall 4)."""
@@ -995,36 +1044,47 @@ class TestKs05PropsEngineFixes:
         Shift ≈ (2.81 - 1) * 12 ≈ +21.7 yd per element — the wildly-wrong shift
         the magnitude bug produces. This regression test documents the legacy
         behavior so anyone changing the flag-off path knows what they're doing.
+
+        After KS-05 promotion (commit 5f2006a 2026-04-26) the default flag is
+        TRUE; this test pins to flag-off explicitly to prove the legacy code
+        path is still callable via the Cycle 3 D-45 rollback knob.
         """
+        import importlib
+
         import fantasy_sim.data.vegas.props_engine as pe_mod
-        from unittest.mock import MagicMock
-        from fantasy_sim.data.vegas.models import PropsConfig
 
-        # Default ships flag-off
-        assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": False}}):
+            importlib.reload(pe_mod)
+        try:
+            from fantasy_sim.data.vegas.models import PropsConfig
 
-        base_dist = np.array([8.0, 12.0, 16.0])  # mean = 12
-        player = _make_wr(
-            target_share=0.25,
-            recv_yds_dist=base_dist,
-            games_played=14,
-        )
-        player.outcomes.catch_rate = 0.65
-        original_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
 
-        config = PropsConfig(enabled=True, prior_strength=10.0)
-        engine = pe_mod.PlayerPropsEngine(config, loader=MagicMock())
-        engine._apply_recv_yds(player, prop_point=900.0)
+            base_dist = np.array([8.0, 12.0, 16.0])  # mean = 12
+            player = _make_wr(
+                target_share=0.25,
+                recv_yds_dist=base_dist,
+                games_played=14,
+            )
+            player.outcomes.catch_rate = 0.65
+            original_mean = float(np.mean(player.outcomes.receiving_yards_dist))
 
-        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
-        shift = new_mean - original_mean
-        # Legacy buggy shift is large (~+22 yd); regression-bound at >5 yd to
-        # detect anyone "fixing" the flag-off path back to flag-on behavior
-        # (which would invalidate the A/B test premise).
-        assert shift > 5.0, (
-            f"Legacy magnitude bug must produce a large shift (>5 yd) when "
-            f"flag is off — that's the bug we're regressing against. Got {shift:.3f}"
-        )
+            config = PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=MagicMock())
+            engine._apply_recv_yds(player, prop_point=900.0)
+
+            new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            shift = new_mean - original_mean
+            # Legacy buggy shift is large (~+22 yd); regression-bound at >5 yd
+            # to detect anyone "fixing" the flag-off path back to flag-on
+            # behavior (which would invalidate the A/B test premise).
+            assert shift > 5.0, (
+                f"Legacy magnitude bug must produce a large shift (>5 yd) when "
+                f"flag is off — that's the bug we're regressing against. Got {shift:.3f}"
+            )
+        finally:
+            importlib.reload(pe_mod)
 
     def test_ks05_apply_recv_yds_skips_zero_targets_no_crash(self):
         """target_share=0 → catches_per_game floors at 0.1; function does not crash."""

@@ -2,7 +2,7 @@
 phase: 01
 plan: 02
 subsystem: engine.play_resolver
-tags: [ks-04, rz-stack, calibration, conditional-boost, phase1-ks-flag, blocked]
+tags: [ks-04, rz-stack, calibration, conditional-boost, phase1-ks-flag, retroactively-promoted]
 dependency-graph:
   requires:
     - phase: "00 — validation harness + Phase-0 baseline + phase1_ks_flags scaffolding"
@@ -37,12 +37,22 @@ metrics:
   tasks_total: 4
   tasks_completed: 4
   ledger_entries: 2
-  promotion_state: "BLOCKED"
+  promotion_state: "RETROACTIVELY-PROMOTED"
+  promotion_state_history:
+    - state: "BLOCKED"
+      date: "2026-04-26"
+      reason: "Bare-isolation A/B failed hard floor (weekly_mae +0.167 > +0.05). Per D-31 original gate."
+    - state: "RETROACTIVELY-PROMOTED"
+      date: "2026-04-26"
+      commit: "5f2006a"
+      reason: "Mid-phase gate relaxation: bare-isolation hard floor dropped because Phase 1 is bug-fix work and the bare A/B was structurally mismatched (one bug fix in isolation exposes other bugs that bare's broken behavior was masking). Full-stack A/B passed cleanly (Δ rank_corr +0.0001, Δ weekly_mae +0.001). Flag default flipped false → true. See PROMOTION-NOTES.md ## Gate Relaxation Decision."
 ---
 
 # Phase 1 Plan 02: KS-04 CATCH_YARDS_BOOST conditional retune — Summary
 
-**Promotion state:** BLOCKED
+> **STATUS UPDATE 2026-04-26 (mid-phase, commit `5f2006a`):** This plan was originally marked **BLOCKED** because the bare-isolation A/B failed the D-31 hard floor (weekly_mae +0.167 > +0.05). After consulting on the broader Phase 1 strategy, the gate was relaxed to **full-stack hard floor only** for bug-fix work. The bare-isolation A/B was structurally mismatched: when one bug is fixed in isolation, other bugs that bare's broken behavior was quietly compensating for become visible, inflating regression metrics even when the fix is correct. KS-04's full-stack A/B passed cleanly (Δ rank_corr +0.0001, Δ weekly_mae +0.001), so `phase1_ks_flags.ks04_conditional_catch_boost.enabled` was flipped from `false` → `true` in `config/defaults.yaml`. The original "BLOCKED" record below is preserved for historical accuracy. See `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md ## Gate Relaxation Decision` for full rationale.
+
+**Promotion state:** RETROACTIVELY-PROMOTED (was BLOCKED at write-time; flag-default flip in commit `5f2006a` 2026-04-26)
 **Phase:** 1
 **Wave:** 2
 **Final commit (Task 4):** see commits table

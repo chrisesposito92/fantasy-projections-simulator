@@ -186,7 +186,12 @@ class TestApplyMatchup:
         np.testing.assert_allclose(wr.outcomes.receiving_yards_dist, base + shift)
 
     def test_rushing_yards_shifted(self):
-        """rush_yards_factor=0.90 produces a negative shift on rushing_yards_dist."""
+        """rush_yards_factor=0.90 produces a negative shift on rushing_yards_dist.
+
+        Post-KS-03 promotion (config/defaults.yaml flag ks03_dynamic_yard_anchor.enabled=true,
+        commit 5f2006a 2026-04-26): shift uses per-player float(np.mean(<dist>)) instead
+        of the legacy hardcoded *10.0 magnitude.
+        """
         base = np.array([2.0, 3.0, 4.0, 5.0, 6.0])
         dists = _make_dists()
         roster = _make_roster(rush_yards=base)
@@ -195,11 +200,16 @@ class TestApplyMatchup:
         GameContextBuilder._apply_matchup(dists, roster, ctx)
 
         rb = next(p for p in roster.players if p.player_id == "TST_RB")
-        shift = (0.90 - 1.0) * 10.0  # -1.0
+        # KS-03 promoted: shift = (0.90 - 1.0) * np.mean(base) = -0.1 * 4.0 = -0.4
+        shift = (0.90 - 1.0) * float(np.mean(base))
         np.testing.assert_allclose(rb.outcomes.rushing_yards_dist, base + shift)
 
     def test_rushing_yards_combined_ol_factor(self):
-        """rush_yards_factor and ol_run_block_factor combine multiplicatively."""
+        """rush_yards_factor and ol_run_block_factor combine multiplicatively.
+
+        Post-KS-03 promotion (commit 5f2006a 2026-04-26): shift uses per-player
+        float(np.mean(<dist>)).
+        """
         base = np.array([3.0, 5.0, 7.0])
         dists = _make_dists()
         roster = _make_roster(rush_yards=base)
@@ -209,7 +219,8 @@ class TestApplyMatchup:
 
         rb = next(p for p in roster.players if p.player_id == "TST_RB")
         combined = 0.95 * 1.05
-        shift = (combined - 1.0) * 10.0
+        # KS-03 promoted: shift = (combined - 1.0) * np.mean(base) = -0.0025 * 5.0 = -0.0125
+        shift = (combined - 1.0) * float(np.mean(base))
         np.testing.assert_allclose(rb.outcomes.rushing_yards_dist, base + shift, rtol=1e-9)
 
     def test_neutral_context_changes_nothing(self):
