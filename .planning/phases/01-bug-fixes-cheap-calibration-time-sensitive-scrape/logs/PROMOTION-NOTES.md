@@ -1091,3 +1091,197 @@ they operate on different mechanisms.
 - Task 1 doc: `3a8bc7d` — `docs(01-06): trim KS-07 docstring duplication so literal grep returns 1`
 - Task 2 RED: `9906c35` — `test(01-06): add failing tests for KS-07 positional RZ modifier in player_builder`
 - Task 2 GREEN: `68cd753` — `feat(01-06): KS-07 player_builder.py uses positional RZ_CATCH_RATE_MODIFIERS per D-20`
+
+---
+
+## KS-15
+
+**Decision: PROMOTED** (under the relaxed full-stack-only gate; SHIPPED-NO-OP
+on KS-movement bar)
+
+**Date:** 2026-04-26
+**Plan:** 01-07
+**Code change:** Field-position clamping fix per D-14 + `CATCH_YARDS_BOOST`
+zeroing per D-15 + legacy-non-roster-path patch per D-15b. Gated behind
+`phase1_ks_flags.ks15_unclamp_for_td_gate.enabled` per Cycle 3 D-45.
+
+The roster-aware `_resolve_pass`/`_resolve_run` and the legacy non-roster
+counterparts both now branch on the flag:
+- **Flag-on path:** `player_yards = raw_sample` (boost zeroed per D-15);
+  apply home-field; detect `would_be_td = (state.yard_line - raw_yards_post_home_field) <= 0`
+  BEFORE any clamping; outside the RZ a would-be-TD scores unconditionally
+  with `yards = state.yard_line`; inside the RZ it routes through the
+  existing `_red_zone_td_gate` (gate pass → TD with `yards = state.yard_line`;
+  gate fail → `_tackled_short_preserve_distribution(state.yard_line, player_yards)`
+  per KS-01); not-would-be-TD takes `raw_yards_post_home_field` directly
+  with NO clamping (the original mechanism for the upper-tail truncation).
+- **Flag-off path:** legacy `_clamp_yards` + post-clamp TD-gate logic +
+  legacy `+1` outside-RZ boost (or KS-04 conditional `+1.5` if KS-04 is
+  also on). Bit-for-bit identical to pre-Phase-1 Arm A.
+
+Roster-aware `_resolve_run` preserves the safety branch (`is_safety =
+(state.yard_line - raw_yards) >= 100`) BEFORE the would-be-TD check so the
+deep-loss safety case never collapses into a would-be-TD by accident. The
+legacy non-roster `_resolve_run` does the same.
+
+`CATCH_YARDS_BOOST = 1.5` module constant kept in scope for the flag-OFF
+Arm A path (KS-04 conditional path still references it). The KS-15
+flag-on branch zeroes the boost by simply NOT adding it (`player_yards =
+raw_sample` instead of `raw_sample + boost`) — equivalent to D-15's
+"drop to 0" intent without breaking the literal `CATCH_YARDS_BOOST == 1.5`
+regression guard from `tests/test_engine/test_play_resolver.py::test_ks04_boost_value_is_1_5`.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (full)? |
+|-------|-------------|--------------|--------------|-----------|--------------------|
+| p1.ks15.bare (#96) | +0.0000 | +0.056 | +0.649 | +0.001 | INFORMATIONAL (bare gate relaxed; +0.056 just barely above +0.05) |
+| p1.ks15.full (#97) | -0.0006 | -0.002 | -0.029 | -0.000 | **PASS** (≤+0.05 MAE, ≥-0.005 rank_corr) |
+
+### Primary-target detail (per D-31 medium-large bar: QB pass_yards / WR receiving_yards ≤ -0.01)
+
+Phase-0 reference (`phase0.baseline.full` Arm B): QB pass_yards KS = 0.353,
+mean bias = -28.32 yd/g (TGT-09 target ±5; biggest gap in the entire phase).
+WR receiving_yards KS = 0.264, mean bias = -9.10 yd/g (TGT-10 target ±2).
+
+**Bare ledger (Arm A == legacy clamp + legacy `+1` boost; Arm B == KS-15 path + boost zeroed):**
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| QB pass_yards | +0.08 | +0.07 | +0.09 (bare-mode regression — see diagnosis below) |
+| WR receiving_yards | +0.00 | -0.00 | -0.00 |
+| TE receiving_yards | +0.00 | -0.00 | +0.00 |
+| RB rush_yards | -0.00 | +0.00 | -0.00 |
+
+**Full ledger (Arm A == defaults [post-promotion stack incl. KS-04 conditional `+1.5`]; Arm B == defaults + KS-15 flag):**
+
+| Stat | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| QB pass_yards | -0.01 | +0.01 | +0.00 |
+| WR receiving_yards | +0.00 | -0.00 | +0.00 |
+| TE receiving_yards | +0.00 | +0.00 | +0.00 |
+| RB rush_yards | -0.00 | -0.00 | -0.00 |
+| TE receptions | +0.00 | -0.00 | -0.01 |
+
+QB pass_yards Arm B mean projections (full) = 177.2 / 181.4 / 184.9 yd/g
+across 2022/2023/2024 (vs Phase-0 baseline 189.7 / 192.0 / 196.0). Mean
+bias is essentially unchanged from the post-KS-06/KS-07 stacked baseline —
+KS-15 did not move the QB pass_yards mean bias materially in the full-stack
+overlay. The headline QB pass_yards KS Δ averages to ~0 across seasons
+(2022 -0.01, 2023 +0.01, 2024 +0.00). The medium-large promotion bar of
+"≤ -0.01 on the primary target" is barely met in 2022 only; not cleanly met.
+
+WR receiving_yards Arm B mean = 23.3 / 23.4 / 23.4 yd/g (vs Phase-0 24.1
+average) — essentially unchanged across all 3 seasons.
+
+### Mechanism diagnosis (bare-mode QB pass_yards regression)
+
+The bare-mode QB pass_yards Arm B mean drops by ~10-13 yd/g vs Arm A
+(174.7 / 181.3 / 176.9 in Arm B vs ~190 in Arm A). Two interacting effects:
+
+1. **The legacy `+1` outside-RZ boost is dropped** in the KS-15 path (per
+   D-15: `player_yards = raw_sample` directly). In bare mode all KS flags
+   are off in Arm A, so Arm A applies the legacy unconditional `+1`
+   outside-RZ boost. At ~30 completions/game outside the RZ, this is
+   ~-30 yd/game on the QB stat. KS-04's conditional `+1.5` is also off in
+   bare mode (no defaults engine activates it).
+2. **The would-be-TD detection on un-clamped samples** correctly preserves
+   distribution shape but in bare mode no other engines compensate the
+   per-play yard delta from removing the legacy boost. Net: QB pass_yards
+   distribution shifts DOWN ~10-13 yd/g across all three seasons in bare,
+   producing the +0.07 to +0.09 KS regression vs Arm A.
+
+In the full-stack overlay (Arm A includes KS-04 conditional `+1.5` and the
+ensemble post-sim layers), the legacy `+1` boost is already replaced by
+the KS-04 `+1.5` conditional path which fires only on clamp-fires plays.
+The KS-15 flag-on path zeroes the boost entirely, and the engine stack
+(tier_engine, props, ensemble.dynamic_blend, residual_calibration, etc.)
+absorbs the per-play yard delta cleanly: Arm B - Arm A weekly MAE = -0.002
+(actually slightly improves), KS deltas are essentially flat.
+
+This is the **same bare-mode unmasking pattern** documented in
+PROMOTION-NOTES `## KS-04` lines 92-117, `## KS-03` lines 224-251, and
+`## KS-06` lines 765-797 and codified in the `## Gate Relaxation Decision`
+at the top of this file. The bug fix is correct (per D-14: HYPOTHESES KS-15
+"convert truncated samples into TDs rather than truncating to goal line");
+the bare gate is structurally noisy on bug-fix work; full-stack hard-floor
+is the operative gate.
+
+### Promotion-bar evaluation
+
+- **Bare:** weekly_mae +0.056 just barely above +0.05 → would FAIL the
+  original D-31 bar by 0.006, but per the gate-relaxation decision (mid-phase
+  2026-04-26) bare hard-floor failures on bug-fix work are informational
+  only.
+- **Full:** rank_corr -0.0006 ≥ -0.005 ✓; weekly_mae -0.002 ≤ +0.05 ✓
+  (slight improvement); fpts_ks Δ = -0.000 ✓. Hard floor PASSES.
+- **Primary-target KS bar (D-31 medium-large):** QB pass_yards full Δ
+  averages to ~0 across seasons (2022 -0.01, 2023 +0.01, 2024 +0.00). The
+  ≤ -0.01 expectation is barely met in 2022 only; not cleanly met. Per
+  D-31's "shipped no-op" branch: "If hard floor passes but KS doesn't move,
+  mark as 'shipped no-op' and continue — the bug fix is correct even if
+  KS doesn't budge."
+
+### Decision rationale
+
+KS-15 is the third plan in this phase to clear the relaxed full-stack hard
+floor cleanly with the new code path active (KS-06 first, KS-07 second).
+Both the hard-floor pass and the slight WR/TE primary-target stability
+(non-regressive across all seasons) qualify under D-30's small-gain
+ship-on-non-regression bar. The QB pass_yards primary-target KS movement
+is below the D-31 medium-large detection threshold but per D-31's
+"shipped no-op" clause this still ships.
+
+The bug fix is correct per the D-14 / D-15 mechanism analysis in
+HYPOTHESES.md §KS-15: the legacy `_clamp_yards` truncated upper-tail
+samples (a 30-yd catch from the 20-yd line clamped to a 20-yd catch + no
+TD), losing distribution mass at the upper end. The new path detects
+that the un-clamped sample WOULD have crossed the goal and routes through
+the TD gate (or unconditional TD outside the RZ) — preserving shape AND
+correctly converting upper-tail catches into TDs.
+
+The mean-bias gap on QB pass_yards (-37 yd/g full B vs actual) survives
+because the underlying simulator under-projection comes from BUCKETS
+WHERE NO TD-CLAMP FIRES — i.e., short-to-medium completions where
+neither the legacy clamp nor the KS-15 would-be-TD path produces any
+arithmetic difference. The mean-bias closure work belongs to other
+mechanism layers (props, ensemble residual calibration, market_history,
+the Phase 4 Odds API CDF loader on the alt-line markets scraped in Plan 09).
+
+KS-15 is the FINAL RZ-stack commit (D-26 dependency-mandatory order:
+KS-01 → KS-04 → KS-15 within the RZ stack). Plans 08 (KS-29 team_context
+re-enable) and 10 (KS-32 clock runoff measure) are NOT blocked by this
+decision.
+
+### Action
+
+Flip `phase1_ks_flags.ks15_unclamp_for_td_gate.enabled` from `false` to
+`true` in `config/defaults.yaml`. Production defaults will now apply the
+KS-15 would-be-TD detection + boost-zeroing in both the roster path and
+the legacy non-roster path.
+
+### Codex MEDIUM-4 fix note
+
+Original Plan 07 only patched the roster paths in `_resolve_pass`/
+`_resolve_run`. Codex review (`01-REVIEWS.md` MEDIUM-4) flagged that
+keeping two divergent clamping semantics in the same module is a foot-gun
+even if the validation harness only exercises the roster path in
+production. Resolution per D-15b: patch BOTH paths with the same `min(yard_line,
+sample)` + would-be-TD detection pattern; add 2 new tests
+(`test_ks15_legacy_pass_path_preserves_distribution_when_flag_on` and
+`test_ks15_legacy_run_path_preserves_distribution_when_flag_on`) that
+exercise the legacy non-roster code path explicitly via `roster=None`.
+The legacy path does NOT route through the RZ TD gate (no roster receiver
+to look up `td_factor` on) — would-be-TDs simply score; the codebase-
+consistency hygiene fix is the goal, not feature-equivalence with the
+roster path.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks15.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks15.full.log`
+
+### Commits
+
+- Task 1 (RED): `f402414` — `test(01-07): add failing tests for KS-15 field-position clamping fix`
+- Task 2 (GREEN): `029e3af` — `feat(01-07): KS-15 field-position clamping fix per D-14 + CATCH_YARDS_BOOST=0 per D-15 + legacy paths per D-15b`

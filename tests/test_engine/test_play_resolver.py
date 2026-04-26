@@ -1136,6 +1136,13 @@ def test_ks04_boost_conditional_when_clamp_fires(monkeypatch):
     from fantasy_sim.engine import play_resolver as pr
     monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", True)
     monkeypatch.setattr(pr, "_KS04_BOOST_VALUE", 1.5)
+    # Force the KS-15 flag OFF — this test instruments the legacy
+    # `_clamp_yards` call site for KS-04's conditional-boost branch, which
+    # KS-15's flag-on path bypasses entirely (per D-15: KS-15 zeroes the
+    # boost AND skips clamping in favor of would-be-TD detection). When
+    # KS-15 is promoted (flag default true in defaults.yaml), this KS-04
+    # test must explicitly select the legacy path to remain meaningful.
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", False)
 
     captured_clamp_inputs: list[int] = []
     real_clamp = pr._clamp_yards
@@ -1208,6 +1215,12 @@ def test_ks06_backup_receiver_fallback_branch_uses_new_range_when_flag_on(
     # not perturbed by an extra `+1.5` boost (this test only exercises the
     # raw_sample range, not the post-boost arithmetic).
     monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+    # Force the KS-15 flag OFF — this test spies on the legacy `_clamp_yards`
+    # call site for KS-06's fallback range, which KS-15's flag-on path
+    # bypasses entirely (no clamping in the would-be-TD pattern). When KS-15
+    # is promoted (flag default true in defaults.yaml), this KS-06 test must
+    # explicitly select the legacy path to remain meaningful.
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", False)
 
     captured: list[int] = []
     real_clamp = pr._clamp_yards
@@ -1290,6 +1303,11 @@ def test_ks06_backup_receiver_fallback_branch_uses_legacy_range_when_flag_off(
     from fantasy_sim.engine import play_resolver as pr
     monkeypatch.setattr(pr, "_KS06_BACKUP_RECEIVER_FIX", False, raising=False)
     monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+    # Force the KS-15 flag OFF — this test spies on the legacy `_clamp_yards`
+    # call site for KS-06's fallback range, which KS-15's flag-on path
+    # bypasses entirely. Same parity rationale as the KS-06 flag-on test
+    # above.
+    monkeypatch.setattr(pr, "_KS15_UNCLAMP_FOR_TD_GATE", False)
 
     captured: list[int] = []
     real_clamp = pr._clamp_yards
