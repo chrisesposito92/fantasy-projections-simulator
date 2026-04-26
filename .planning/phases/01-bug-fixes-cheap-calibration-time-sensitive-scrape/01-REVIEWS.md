@@ -36,6 +36,24 @@ cycles:
       - 09-ks21-altline-scrape-PLAN.md
       - 10-ks32-clock-runoff-measure-PLAN.md
       - 11-phase1-aggregate-validation-PLAN.md
+  - cycle: 3
+    reviewers: [codex]
+    reviewed_at: 2026-04-26
+    model: gpt-5.4
+    bundle_commit: e641a06
+    plans_reviewed:
+      - 00-validation-harness-and-phase0-baseline-PLAN.md
+      - 01-ks01-rz-tdgate-fix-PLAN.md
+      - 02-ks04-catch-yards-boost-PLAN.md
+      - 03-ks03-matchup-coverage-anchor-PLAN.md
+      - 04-ks05-props-engine-bugs-PLAN.md
+      - 05-ks06-backup-receiver-fallback-PLAN.md
+      - 06-ks07-positional-rz-catch-rate-PLAN.md
+      - 07-ks15-clamping-fix-PLAN.md
+      - 08-ks29-team-context-enable-PLAN.md
+      - 09-ks21-altline-scrape-PLAN.md
+      - 10-ks32-clock-runoff-measure-PLAN.md
+      - 11-phase1-aggregate-validation-PLAN.md
 ---
 
 # Cross-AI Plan Review — Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape
@@ -250,3 +268,129 @@ The next step is `gsd-plan-phase 1 --reviews` to incorporate the Cycle-2 finding
 5. **Address MEDIUM #2** (Plan 09 credit logging) — small change to `fetch_market_history_props.py`'s response-header logging.
 
 Once Cycle 3 lands, re-run `gsd-review --phase 1 --codex` to confirm convergence.
+
+---
+
+# Cycle 3 (2026-04-26 — post-replan at commit `e641a06`)
+
+External reviewer: **OpenAI Codex CLI (gpt-5.4)**, invoked with the FULL post-Cycle-3-replan Phase 1 bundle (PROJECT.md, ROADMAP.md, REQUIREMENTS.md, the Cycle 1 + Cycle 2 `01-REVIEWS.md`, the updated `01-CONTEXT.md` / `01-RESEARCH.md` / `01-VALIDATION.md`, and all 12 PLAN.md files). Codex was explicitly given the six unresolved HIGHs from Cycle 2 and asked to verify each against the Cycle-3 replan; reviewer was warned this is the LAST cycle before the workflow's max-cycles escalation gate fires.
+
+## Codex Review (Cycle 3)
+
+> Reviewed at `e641a06`. Five of six carry-over HIGHs are FULLY RESOLVED; one is PARTIALLY RESOLVED via a single stale "Tuesday 12pm ET" reference in `01-RESEARCH.md:98`.
+
+### Summary
+
+Cycle 3 closes the structural plan defects around true-isolation A/B, exhaustive bare-config construction, and ledger-backed mean-bias evaluation. The only carry-over HIGH that is not fully closed is the `01-RESEARCH.md` timing-language cleanup: the doc is mostly reconciled to `prior_*` / `previous_timestamp`, but one live bullet still anchors to `"Tuesday 12pm ET"`, so the documentation is not internally clean enough to count as fully resolved.
+
+### Per-Concern Verification
+
+#### Concern 1: per-KS code-change A/B no-op (D-45 feature-flag pattern) — FULLY RESOLVED
+
+- **Evidence:** [`01-VALIDATION.md`](./01-VALIDATION.md) line 95; [`01-ks01-rz-tdgate-fix-PLAN.md`](./01-ks01-rz-tdgate-fix-PLAN.md) line 16; [`02-ks04-catch-yards-boost-PLAN.md`](./02-ks04-catch-yards-boost-PLAN.md) line 16; [`03-ks03-matchup-coverage-anchor-PLAN.md`](./03-ks03-matchup-coverage-anchor-PLAN.md) line 20; [`04-ks05-props-engine-bugs-PLAN.md`](./04-ks05-props-engine-bugs-PLAN.md) line 19; [`05-ks06-backup-receiver-fallback-PLAN.md`](./05-ks06-backup-receiver-fallback-PLAN.md) line 23; [`06-ks07-positional-rz-catch-rate-PLAN.md`](./06-ks07-positional-rz-catch-rate-PLAN.md) line 19; [`07-ks15-clamping-fix-PLAN.md`](./07-ks15-clamping-fix-PLAN.md) line 19; [`10-ks32-clock-runoff-measure-PLAN.md`](./10-ks32-clock-runoff-measure-PLAN.md) line 16.
+- **Reasoning:** The Cycle-3 plans consistently switch from "source-code itself" behavior to explicit feature-gated behavior with default `false` and Arm B enabling the new path via `phase1_ks_flags`. That fixes the same-code/no-op A/B structure at the plan level.
+
+#### Concern 2: `bare_config_dict()` completeness (D-44 helper enumeration + hard-gate test) — FULLY RESOLVED
+
+- **Evidence:** [`00-validation-harness-and-phase0-baseline-PLAN.md`](./00-validation-harness-and-phase0-baseline-PLAN.md) lines 27, 81, 225, 256, 308, 640, 695, 809.
+- **Reasoning:** The plan now explicitly enumerates top-level gates, sub-engine gates, and KS flags, and it hardens `test_bare_config_dict_produces_all_None_engines` into the enforcement point. The prior "loosen the test" escape hatch is explicitly removed.
+
+#### Concern 3: Plan 11 mean-bias evaluation (D-46 ledger schema v5) — FULLY RESOLVED
+
+- **Evidence:** [`00-validation-harness-and-phase0-baseline-PLAN.md`](./00-validation-harness-and-phase0-baseline-PLAN.md) lines 29, 83, 966, 1004; [`11-phase1-aggregate-validation-PLAN.md`](./11-phase1-aggregate-validation-PLAN.md) lines 14, 100, 106, 251, 287.
+- **Reasoning:** Plan 00 now defines the schema bump and write path; Plan 11 explicitly reads `stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"]` from persisted ledger entries. Success criterion 1 is now evaluable from the planned artifact, not from an external or ad-hoc computation.
+
+#### Concern 4: `01-RESEARCH.md` raw vs parquet pipeline reconciliation — FULLY RESOLVED
+
+- **Evidence:** [`01-RESEARCH.md`](./01-RESEARCH.md) lines 21, 217, 227, 403, 900, 1007.
+- **Reasoning:** Active guidance now consistently describes a two-step pipeline: raw JSON fetch first, parquet build second, with acceptance gated on both artifacts. No remaining live instruction says the fetch script writes parquet directly.
+
+#### Concern 5: `01-RESEARCH.md` `prior_*` / `previous_timestamp` reconciliation — PARTIALLY RESOLVED
+
+- **Evidence:** [`01-RESEARCH.md`](./01-RESEARCH.md) lines 15, 19, 209, 411, 509, 962 (all reconciled), but **also line 98 (still stale).**
+- **Reasoning:** Most of the document is reconciled correctly: `prior_*` labels are used, and `previous_timestamp` is described honestly as not being a true Tuesday line-release marker. But [`01-RESEARCH.md:98`](./01-RESEARCH.md) still contains a live discretion bullet referencing `"Tuesday 12pm ET"`:
+
+  ```
+  - Specific snapshot timestamps within "Tuesday 12pm ET" (timezone, DST).
+  ```
+
+  That preserves the stale semantic anchor inside the active guidance ("Claude's Discretion" section). By the strict bar (partial fixes do NOT count as fully resolved), this is PARTIALLY RESOLVED.
+
+#### Concern 6: per-KS plans actually invoke `--set phase1_ks_flags.ksXX_*.enabled=true` — FULLY RESOLVED
+
+- **Evidence:** [`01-ks01-rz-tdgate-fix-PLAN.md`](./01-ks01-rz-tdgate-fix-PLAN.md) lines 20, 354; [`02-ks04-catch-yards-boost-PLAN.md`](./02-ks04-catch-yards-boost-PLAN.md) lines 17, 273; [`03-ks03-matchup-coverage-anchor-PLAN.md`](./03-ks03-matchup-coverage-anchor-PLAN.md) lines 21, 326; [`04-ks05-props-engine-bugs-PLAN.md`](./04-ks05-props-engine-bugs-PLAN.md) lines 20, 320; [`05-ks06-backup-receiver-fallback-PLAN.md`](./05-ks06-backup-receiver-fallback-PLAN.md) lines 24, 285; [`06-ks07-positional-rz-catch-rate-PLAN.md`](./06-ks07-positional-rz-catch-rate-PLAN.md) lines 20, 248; [`07-ks15-clamping-fix-PLAN.md`](./07-ks15-clamping-fix-PLAN.md) lines 20, 423; [`10-ks32-clock-runoff-measure-PLAN.md`](./10-ks32-clock-runoff-measure-PLAN.md) lines 17, 208.
+- **Reasoning:** All listed per-KS plans now show explicit Arm B `--set phase1_ks_flags...enabled=true` invocations in the actual command blocks, not just in prose.
+
+### NEW Concerns Introduced by Cycle-3 Replan
+
+None. The Cycle-3 replan did not introduce any new HIGH/MEDIUM/LOW issues that were not present in Cycle 2.
+
+### Carry-Over MEDIUM/LOW Concerns
+
+- **LOW:** [`01-RESEARCH.md:98`](./01-RESEARCH.md) still uses `"Tuesday 12pm ET"` in a live discretion bullet, which keeps Concern 5 from being fully closed. (Same finding as Concern 5; tracked here at LOW because it is documentation polish in a non-canonical bullet, but counted as 1 HIGH against `UNRESOLVED_HIGHS` per the strict-bar rule.)
+
+### Strengths
+
+- The plan bundle now has a coherent D-44 / D-45 / D-46 story across `01-VALIDATION.md`, Plan 00, Plan 11, and the per-KS plans.
+- The bare-isolation contract is materially stronger because it now accounts for top-level gates, not just sub-engine toggles.
+- The per-KS feature-flag pattern is applied consistently across all affected plans, including the conditional KS-32 retune branch.
+- Plan 11 now has a real persisted data path for mean-bias evaluation instead of a narrative-only success criterion.
+
+### Risk Assessment
+
+**Overall risk level:** MEDIUM
+
+The execution-critical plan defects are fixed, but one of the six carry-over HIGHs is still only partially resolved because the research doc retains stale timing language in active guidance. That is a documentation-consistency problem, not a harness-design problem, but by the stated strict bar it still blocks a clean convergence closeout.
+
+### Recommendation
+
+**NEEDS-CYCLE-4** (with the caveat that Cycle 4 is BLOCKED by the workflow's max-cycles gate — see Consensus Summary below for the escalation discussion).
+
+Specific deltas needed:
+
+1. Remove or rewrite [`01-RESEARCH.md:98`](./01-RESEARCH.md) so it no longer references `"Tuesday 12pm ET"` as a live semantic anchor. Replace with `"prior-snapshot timing within the API previous_timestamp window (timezone, DST)"` or remove the bullet entirely if Claude's discretion no longer applies.
+2. Re-run the Cycle-3 sign-off after that doc cleanup so Concern 5 can be marked FULLY RESOLVED instead of PARTIALLY RESOLVED.
+
+---
+
+## Consensus Summary (Cycle 3)
+
+Single external reviewer (Codex / gpt-5.4) again, so "consensus" is the synthesis of that single pass into actionable severity buckets.
+
+### Net Cycle-3 disposition (HIGH only)
+
+| Concern source | Disposition | Counts toward CYCLE_SUMMARY? |
+|----------------|-------------|------------------------------|
+| Cycle-2 NEW HIGH #1 (per-KS code-change A/B no-op) | FULLY RESOLVED — D-45 feature-flag pattern wired through Plan 00 Task 8 + 8 per-KS plans | NO |
+| Cycle-2 NEW HIGH #2 (`bare_config_dict()` incomplete) | FULLY RESOLVED — D-44 enumerates all gates; Plan 00 Task 4 hard-gate test; escape hatch removed | NO |
+| Cycle-2 NEW HIGH #3 (Plan 11 mean-bias not in ledger) | FULLY RESOLVED — D-46 schema v5 + `SeasonMetrics.stat_mean_bias` + Plan 11 reads it directly | NO |
+| Cycle-1 HIGH-2 partial (RESEARCH.md raw vs parquet) | FULLY RESOLVED — two-step pipeline now consistent across active guidance | NO |
+| Cycle-1 HIGH-3 partial (RESEARCH.md `open_*` / Tuesday 12pm ET) | PARTIALLY RESOLVED — most occurrences fixed, but [`01-RESEARCH.md:98`](./01-RESEARCH.md) "Claude's Discretion" bullet still references `"Tuesday 12pm ET"` | YES |
+| Cycle-2 NEW HIGH #1 (sub-facet: per-KS plans actually use `--set`) | FULLY RESOLVED — every per-KS plan has the `--set phase1_ks_flags` command in its A/B block | NO |
+
+**Total unresolved HIGHs heading into Cycle 4 / escalation: 1.**
+
+### Cycle-2 → Cycle-3 progress (positive)
+
+- All three NEW HIGHs from Cycle 2 are now FULLY RESOLVED (D-44, D-45, D-46 all landed coherently).
+- Both partial-resolves of Cycle-1 HIGH-2 / HIGH-3 are now MOSTLY closed, with only one stale wording leak in `01-RESEARCH.md:98`.
+- HIGH count went 4 (Cycle 1) → 6 (Cycle 2) → **1 (Cycle 3)**. Convergence is no longer stalled — it has resumed.
+
+### Surviving / new gaps
+
+The single remaining HIGH is a documentation-consistency issue, not a structural plan defect. The fix is mechanical (one-line edit to `01-RESEARCH.md:98`) and does not require a full replan cycle — it can be addressed via a small targeted edit and re-review.
+
+### Divergent Views
+
+Single-reviewer pass; no divergence to record.
+
+---
+
+## Recommended Next Action (Cycle 3)
+
+Phase 1 is **NEAR safe to execute** — only one mechanical doc-edit blocks full convergence. Two viable paths from here:
+
+1. **Path A (mechanical fix + targeted re-review):** Apply the one-line `01-RESEARCH.md:98` cleanup, commit, re-run `gsd-review --phase 1 --codex` for Cycle 4 (if the workflow allows a fourth cycle for a pure documentation correction), then Phase 1 is SAFE-TO-EXECUTE.
+2. **Path B (escalate with conditional approval):** Escalate to the user with the explicit recommendation that Phase 1 is structurally safe to execute as-is, conditional on a one-line `01-RESEARCH.md:98` documentation cleanup before any executor reads that file. The cleanup is mechanical and does not affect any plan body or harness contract.
+
+Per the workflow's max-cycles escalation gate: this is the third cycle, and the convergence loop has clearly resumed (HIGH count: 4 → 6 → 1). The user can decide whether the single remaining HIGH (a documentation-polish issue, not a plan-defect issue) warrants a fourth cycle or constitutes acceptable escalation criteria for SAFE-TO-EXECUTE.
