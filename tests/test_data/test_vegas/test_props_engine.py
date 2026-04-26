@@ -873,3 +873,185 @@ class TestPropsIntegration:
 
         sig = inspect.signature(build_games_parallel)
         assert "props_config" in sig.parameters
+
+
+# ---------------------------------------------------------------------------
+# TestKs05PropsEngineFixes — KS-05 D-17/D-18/D-45 (Cycle 3) bug-fix coverage
+#
+# Two bugs fixed by Plan 04:
+#   1. _DEFAULT_TEAM_PASS_YDS was 230.0 (NFL average is ~240 yd/team/game)
+#   2. _apply_recv_yds line 248 multiplied per-catch dist_mean by games_played
+#      (treating per-catch yards as per-game yards — off by ~3-7×).
+#
+# Both fixes are flag-gated behind phase1_ks_flags.ks05_props_recv_yds_fix.enabled
+# (default false in defaults.yaml until promotion). The flag is read at module
+# import time, so flag-state-dependent tests use unittest.mock.patch on the
+# module-level constants to flip behavior within a single test.
+# ---------------------------------------------------------------------------
+
+
+class TestKs05PropsEngineFixes:
+    """KS-05 D-17/D-18 props_engine bug fix tests (D-45 flag-gated)."""
+
+    # PFF crosswalk for Travis Kelce
+    _PFF_TK = 12345
+
+    def _crosswalk(self) -> dict[int, str]:
+        return {self._PFF_TK: "TK"}
+
+    def test_ks05_default_team_pass_yds_flag_on_is_240(self):
+        """D-17 sub-fix 1: when ks05 flag is on, _DEFAULT_TEAM_PASS_YDS = 240.0.
+
+        Reads the value via importlib.reload with the flag flipped, so the
+        module-level constant picks up the flag-on branch.
+        """
+        import importlib
+        from unittest.mock import patch
+
+        import fantasy_sim.data.vegas.props_engine as pe_mod
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": True}}):
+            importlib.reload(pe_mod)
+        try:
+            assert pe_mod._DEFAULT_TEAM_PASS_YDS == 240.0, (
+                f"D-17 sub-fix 1: flag-on default must be 240.0, got "
+                f"{pe_mod._DEFAULT_TEAM_PASS_YDS}"
+            )
+            assert pe_mod._KS05_PROPS_RECV_YDS_FIX is True
+        finally:
+            # Restore module to flag-off default state for subsequent tests
+            importlib.reload(pe_mod)
+
+    def test_ks05_default_team_pass_yds_flag_off_is_230(self):
+        """Flag-off path keeps the legacy 230.0 default for bit-for-bit production parity."""
+        import fantasy_sim.data.vegas.props_engine as pe_mod
+        # Default is flag-off (config/defaults.yaml ships ks05 enabled=false)
+        assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
+        assert pe_mod._DEFAULT_TEAM_PASS_YDS == 230.0
+
+    def test_ks05_proxy_team_targets_per_game_is_32(self):
+        """D-18 v1 proxy: NFL teams average ~32 pass attempts/game (per RESEARCH.md Pitfall 4)."""
+        from fantasy_sim.data.vegas.props_engine import _PROXY_TEAM_TARGETS_PER_GAME
+        assert _PROXY_TEAM_TARGETS_PER_GAME == 32.0
+
+    def test_ks05_apply_recv_yds_uses_catches_per_game_in_historical(self):
+        """Flag-on: historical_season_yds = dist_mean * catches_per_game * games_played.
+
+        Builds a WR with target_share=0.25, catch_rate=0.65, games_played=14,
+        per-catch dist mean = 12. Expected catches_per_game = 0.25 * 32 * 0.65 = 5.2.
+        Expected historical = 12 * 5.2 * 14 = 873.6.
+
+        With prop_point=900 (close to historical), prop_ratio ≈ 1.030 and the
+        Bayesian blend toward 1.0 with prior_strength=10, n_obs=14 yields
+        blended ≈ (14 * 1.0 + 10 * 1.030) / (14 + 10) ≈ 1.0125. Shift =
+        (1.0125 - 1.0) * 12 ≈ 0.15 yd — small, sensible magnitude.
+
+        The legacy buggy code would compute historical = 12 * 14 = 168 (treating
+        per-catch yards as per-game yards), making prop_ratio = 900/168 ≈ 5.36
+        and shifting the dist by ~+22 yd per element — wildly wrong.
+        """
+        import importlib
+        from unittest.mock import MagicMock, patch
+
+        import fantasy_sim.data.vegas.props_engine as pe_mod
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": True}}):
+            importlib.reload(pe_mod)
+        try:
+            from fantasy_sim.data.vegas.models import PropsConfig
+
+            base_dist = np.array([8.0, 12.0, 16.0])  # mean = 12
+            player = _make_wr(
+                target_share=0.25,
+                recv_yds_dist=base_dist,
+                games_played=14,
+            )
+            player.outcomes.catch_rate = 0.65
+            original_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+
+            config = PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=MagicMock())
+            engine._apply_recv_yds(player, prop_point=900.0)
+
+            new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+            # Shift should be very small (within ~+1 yd) — proves the
+            # magnitude is now sensible, not wildly inflated like the bug
+            shift = new_mean - original_mean
+            assert -0.5 <= shift <= 1.0, (
+                f"D-17 sub-fix 2 + D-18 v1 proxy: expected small shift "
+                f"~+0.15 yd for prop_point near historical, got {shift:.3f} yd"
+            )
+        finally:
+            importlib.reload(pe_mod)
+
+    def test_ks05_apply_recv_yds_legacy_inflates_historical_by_design(self):
+        """Flag-off (legacy) path: the bug is preserved for production parity.
+
+        Same player setup as the previous test, but with the flag OFF the
+        legacy `historical = dist_mean * games_played` formula applies.
+        For dist_mean=12, games_played=14, legacy historical = 168 yd "season".
+        With prop_point=900, prop_ratio = 900 / 168 ≈ 5.36, blended toward 1.0
+        with prior_strength=10, n_obs=14: blended ≈ (14*1 + 10*5.36)/24 ≈ 2.81.
+        Shift ≈ (2.81 - 1) * 12 ≈ +21.7 yd per element — the wildly-wrong shift
+        the magnitude bug produces. This regression test documents the legacy
+        behavior so anyone changing the flag-off path knows what they're doing.
+        """
+        import fantasy_sim.data.vegas.props_engine as pe_mod
+        from unittest.mock import MagicMock
+        from fantasy_sim.data.vegas.models import PropsConfig
+
+        # Default ships flag-off
+        assert pe_mod._KS05_PROPS_RECV_YDS_FIX is False
+
+        base_dist = np.array([8.0, 12.0, 16.0])  # mean = 12
+        player = _make_wr(
+            target_share=0.25,
+            recv_yds_dist=base_dist,
+            games_played=14,
+        )
+        player.outcomes.catch_rate = 0.65
+        original_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+
+        config = PropsConfig(enabled=True, prior_strength=10.0)
+        engine = pe_mod.PlayerPropsEngine(config, loader=MagicMock())
+        engine._apply_recv_yds(player, prop_point=900.0)
+
+        new_mean = float(np.mean(player.outcomes.receiving_yards_dist))
+        shift = new_mean - original_mean
+        # Legacy buggy shift is large (~+22 yd); regression-bound at >5 yd to
+        # detect anyone "fixing" the flag-off path back to flag-on behavior
+        # (which would invalidate the A/B test premise).
+        assert shift > 5.0, (
+            f"Legacy magnitude bug must produce a large shift (>5 yd) when "
+            f"flag is off — that's the bug we're regressing against. Got {shift:.3f}"
+        )
+
+    def test_ks05_apply_recv_yds_skips_zero_targets_no_crash(self):
+        """target_share=0 → catches_per_game floors at 0.1; function does not crash."""
+        import importlib
+        from unittest.mock import MagicMock, patch
+
+        import fantasy_sim.data.vegas.props_engine as pe_mod
+        with patch("fantasy_sim.config.loader.get_phase1_ks_flags",
+                   return_value={"ks05_props_recv_yds_fix": {"enabled": True}}):
+            importlib.reload(pe_mod)
+        try:
+            from fantasy_sim.data.vegas.models import PropsConfig
+
+            base_dist = np.array([8.0, 12.0, 16.0])
+            player = _make_wr(
+                target_share=0.0,
+                recv_yds_dist=base_dist,
+                games_played=14,
+            )
+            player.outcomes.catch_rate = 0.65
+
+            config = PropsConfig(enabled=True, prior_strength=10.0)
+            engine = pe_mod.PlayerPropsEngine(config, loader=MagicMock())
+            # Must not crash; either applies the (large) shift or filters
+            # via _should_apply
+            engine._apply_recv_yds(player, prop_point=900.0)
+            assert player.outcomes.receiving_yards_dist is not None
+            assert len(player.outcomes.receiving_yards_dist) == 3
+        finally:
+            importlib.reload(pe_mod)
