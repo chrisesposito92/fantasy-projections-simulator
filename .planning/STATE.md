@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-09-PLAN.md (KS-21 PROMOTED)
-last_updated: "2026-04-26T18:01:21.834Z"
+stopped_at: Completed 01-03-PLAN.md (KS-03 BLOCKED — flag stays false, production unchanged; KS-15/Plan 07 unblocked)
+last_updated: "2026-04-26T18:11:20.668Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 4
-  percent: 33
+  completed_plans: 5
+  percent: 42
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Status: Ready to execute
 Last activity: 2026-04-26
 
-Progress: [███░░░░░░░] 33%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 01 P01 | 28.5 min | 4 tasks | 3 files |
 | Phase 01 P02 | 95min | 4 tasks | 3 files |
 | Phase 01 P09 | 2h 5m | 7 tasks | 13 files |
+| Phase 01 P03 | 30 min | 4 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Plan 01-01 KS-01: SHIPPED-NO-OP per D-31 — _tackled_short_preserve_distribution per D-09 ships behind phase1_ks_flags.ks01_preserve_distribution=true; hard floor passes both A/B entries (Δ rank_corr +0.0011/+0.0004, Δ weekly_mae -0.002/+0.003), KS Δ on QB pass_yards <= -0.01 promotion bar barely met (only 2024 full -0.01); bug fix is a correct precondition for KS-04/KS-15. — Mechanism only fires on RZ TD-gate failures; per-game stat impact below detection threshold at 200 sims; KS-04+KS-15 will stack on this foundation per dependency-mandatory order in D-26.
 - [Phase ?]: Plan 01-02 KS-04: BLOCKED per D-31 hard floor — bare weekly_mae +0.167 > +0.05 limit. Conditional boost (D-11) correctly removes fictitious yards but exposes underlying under-projection in bare mode. Flag-based rollback via D-45: phase1_ks_flags.ks04_conditional_catch_boost.enabled stays false in defaults.yaml; new code path stays in play_resolver.py but dormant. KS-15 (Plan 07) unblocked — removes boost entirely per D-15.
 - [Phase ?]: Plan 01-09 KS-21 PROMOTED: 9 raw cache trees + 9 processed parquet under ~/.fantasy-sim/market-history/ — Consumed 132K of ~4.93M Odds API credits (~2.7%); remaining 4.80M. Phase 4 OddsApiCdfLoader contract: accept snapshot_label param (default prior_alt6, fallback close_alt6); gracefully degrade by available alt markets per (season,event) — 4 of 6 in 2023, 5 of 6 in 2024, all 6 in 2025.
+- [Phase ?]: [Phase 01]: Plan 01-03 KS-03: BLOCKED per D-31 hard floor — bare weekly_mae +0.164 > +0.05 limit. Same mechanism as KS-04: per-player anchor exposes bare-mode under-projection that legacy * 10.0 was masking. Flag-based rollback per D-45: phase1_ks_flags.ks03_dynamic_yard_anchor.enabled stays false in defaults.yaml; new code path stays in game_context.py but dormant. KS-15 (Plan 07) unblocked — operates on different mechanism per D-14/D-15.
 
 ### Pending Todos
 
@@ -106,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T18:01:21.828Z
-Stopped at: Completed 01-09-PLAN.md (KS-21 PROMOTED)
+Last session: 2026-04-26T18:11:20.662Z
+Stopped at: Completed 01-03-PLAN.md (KS-03 BLOCKED — flag stays false, production unchanged; KS-15/Plan 07 unblocked)
 Resume file: None
