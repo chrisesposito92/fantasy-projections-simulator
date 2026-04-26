@@ -217,4 +217,75 @@ end-to-end across all 3 snapshot labels.
 
 - Task 1: `aba324a` — `feat(01-09): add ALT_PROP_MARKETS tuple per KS-21 D-04`
 - Task 3 deviation: `398f926` — `fix(01-09): treat Odds API HTTP 422 as skippable no-data signal`
-- Task 3 dry-run: (this commit) — `chore(01-09): KS-21 dry-run`
+- Task 3 dry-run: `985e40c` — `chore(01-09): KS-21 dry-run`
+
+---
+
+## KS-21 raw scrape
+
+**Date:** 2026-04-26
+**Plan:** 01-09 Task 4
+**Scope:** Full raw fetch — 3 seasons × 3 snapshot labels = 9 raw cache trees,
+each with 272 events.
+
+### Per-season raw-file count + credit-balance table
+
+| Season | Snapshot     | Raw JSON files | Credits before | Credits after | Δ      |
+|--------|--------------|---------------:|---------------:|---------------:|-------:|
+| 2023   | prior_core8  | 272            | 4,932,638      | 4,911,388     | 21,250 |
+| 2024   | prior_core8  | 272            | 4,911,308      | 4,890,218     | 21,090 |
+| 2025   | prior_core8  | 272            | 4,890,138      | 4,868,538     | 21,600 |
+| 2023   | prior_alt6   | 272            | 4,868,538      | 4,863,228     |  5,310 |
+| 2024   | prior_alt6   | 272            | 4,863,188      | 4,851,178     | 12,010 |
+| 2025   | prior_alt6   | 272            | 4,851,118      | 4,835,078     | 16,040 |
+| 2023   | close_alt6   | 272            | 4,835,078      | 4,829,608     |  5,470 |
+| 2024   | close_alt6   | 272            | 4,829,568      | 4,817,488     | 12,080 |
+| 2025   | close_alt6   | 272            | 4,817,428      | 4,801,368     | 16,060 |
+| **Total** |          | **2,448**      | —              | **4,801,368** | **130,910** |
+
+(Note: 2024 raw_file count = 267 saved + 5 dry-run skip = 272 total events covered.
+The 5 dry-run JSONs were re-used unchanged so the total directory count is 272.)
+
+### Credit-balance trajectory
+
+- Pre-Plan-09 baseline (post Task 1): ~4,933,438 (per Task 3 first observation)
+- Post-Phase-3 (close_alt6 2025): **4,801,368**
+- **Total credits consumed by Task 4: 132,070** (~2.7% of pre-Plan-09 budget)
+- Within projected envelope (~130K) — no scope adjustments needed
+
+### Existing close_core8 cache invariant
+
+```
+$ /usr/bin/find ~/.fantasy-sim/market-history/processed -name "player_markets_*_close_core8.parquet" -newer .planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/01-CONTEXT.md
+0 hits
+```
+
+D-06 invariant holds — existing main-line `close_core8` parquets unmodified
+(mtime: April 13, predates this scrape).
+
+### 2025 prior_alt6 / 2024 prior_alt6 credit asymmetry
+
+The 2023 prior_alt6 scrape consumed only ~5K credits while 2025 consumed ~16K
+(3× difference). Hypothesis: alt-line market depth grew significantly between
+2023 and 2025 — earlier-season alt6 snapshots return only `player_pass_yds_alternate`
++ `player_reception_yds_alternate` from a single bookmaker (~20 credits/event),
+while 2025 returns 4 markets across 5-7 books (~60 credits/event). Same pattern
+for close_alt6. This is consistent with The Odds API expanding alt-line
+coverage over time and is data-quality-positive for Phase 4 — more 2025
+data per event for the CDF loader.
+
+### Logs
+
+- `scrape_2023_prior_core8.log`
+- `scrape_2024_prior_core8.log`
+- `scrape_2025_prior_core8.log`
+- `scrape_2023_prior_alt6.log`
+- `scrape_2024_prior_alt6.log`
+- `scrape_2025_prior_alt6.log`
+- `scrape_2023_close_alt6.log`
+- `scrape_2024_close_alt6.log`
+- `scrape_2025_close_alt6.log`
+
+### Commits
+
+- Task 4 raw scrape: (this commit) — `chore(01-09): KS-21 raw fetch`
