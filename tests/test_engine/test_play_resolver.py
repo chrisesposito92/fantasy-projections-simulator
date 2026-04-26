@@ -982,3 +982,194 @@ def test_ks01_resolve_run_failed_gate_yields_yards_in_safe_band(monkeypatch):
     assert len(yards_arr) > 0, "Expected at least one non-TD non-fumble run in the safe band"
     assert yards_arr.min() >= 1, f"yards.min={yards_arr.min()} below D-09 floor of 1"
     assert yards_arr.max() <= 2, f"yards.max={yards_arr.max()} above yard_line-1=2 cap"
+
+
+# === KS-04: CATCH_YARDS_BOOST conditional retune ===
+#
+# Per Plan 02 Task 1 (RED phase). KS-04 retunes `CATCH_YARDS_BOOST` from `+1`
+# to `+1.5` (D-12) AND applies it conditionally only when `_clamp_yards` would
+# actually fire (D-11). The new behavior is gated behind the
+# `phase1_ks_flags.ks04_conditional_catch_boost.enabled` flag (Cycle 3 D-45);
+# the implementation reads the flag at module import into
+# `_KS04_CONDITIONAL_BOOST` and `_KS04_BOOST_VALUE`. Tests that exercise the
+# new code path monkeypatch `_KS04_CONDITIONAL_BOOST = True` regardless of the
+# defaults.yaml value so RED→GREEN behavior is deterministic. Test 1 asserts
+# the boost-value constant directly (independent of the flag).
+#
+# Anti-clamp deterministic fixture: state.yard_line=80 with a single-value WR
+# distribution sampling 5. Pre-clamp = 5; clamp upper bound = 80; clamp does
+# NOT fire. With the new conditional policy, no boost is added regardless of
+# the boost magnitude. Expected observed mean ≈ 5 + 0.5 (home-field expected)
+# = 5.5 over many trials. The OLD unconditional policy adds the full boost so
+# observed mean would be ~6.5 (pre-Task-2) or ~7.0 once the constant becomes
+# 1.5 (post-Task-2 if conditional check is missing). Test 2 catches both
+# regressions.
+
+
+def test_ks04_boost_value_is_1_5():
+    """D-12: CATCH_YARDS_BOOST must be 1.5 (low end of 1.5-2.0 range)."""
+    from fantasy_sim.engine.play_resolver import CATCH_YARDS_BOOST
+    assert CATCH_YARDS_BOOST == 1.5, (
+        f"D-12 requires +1.5 boost, got {CATCH_YARDS_BOOST}"
+    )
+
+
+def _make_ks04_wr_roster(receiving_yards_dist, catch_rate=1.0, red_zone_catch_rate=1.0):
+    """Single-WR roster for deterministic catch-yards testing.
+
+    Forces 100% catch + neutral RZ catch rate so every pass play in the test
+    completes and lands in the player-yards branch. `receiving_td_factor=1.0`
+    keeps the RZ TD gate at its default rate so yards-band assertions stay
+    decoupled from gate noise.
+    """
+    qb = PlayerModel(
+        "QB1", "QB", "QB", "T",
+        PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        PlayerOutcomes(),
+    )
+    wr = PlayerModel(
+        "WR1", "WR1", "WR", "T",
+        PlayerUsage(target_share=1.0),
+        PlayerOutcomes(
+            catch_rate=catch_rate,
+            red_zone_catch_rate=red_zone_catch_rate,
+            receiving_yards_dist=np.array(receiving_yards_dist),
+            fumble_rate=0.0,
+            receiving_td_factor=1.0,
+        ),
+    )
+    return TeamRoster(team="T", players=[qb, wr])
+
+
+def test_ks04_boost_zero_when_no_clamp(monkeypatch):
+    """D-11: no clamp fires (raw <= yard_line) → no boost added.
+
+    With dist=[5] and yard_line=80, every raw sample is 5 (well below the 80
+    upper-bound clamp). The new conditional policy adds NO boost. Expected
+    observed mean is ~5.5 (5 + 0.5 home-field expected over many trials).
+    The pre-Task-2 unconditional `+1` policy yields mean ~6.5; the post-Task-2
+    `+1.5` if conditional check is missing yields mean ~7.0. The strict upper
+    bound of 6.2 catches both regressions while leaving room for home-field
+    sampling noise.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", True)
+    monkeypatch.setattr(pr, "_KS04_BOOST_VALUE", 1.5)
+
+    rng = np.random.default_rng(13)
+    roster = _make_ks04_wr_roster(receiving_yards_dist=[5, 5, 5, 5, 5])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(2000):
+        state = make_state(yard_line=80)  # plenty of field; no clamp
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=True)
+        if result.is_complete and not result.is_touchdown and not result.is_fumble:
+            yards_seen.append(result.yards)
+
+    yards_arr = np.array(yards_seen)
+    assert len(yards_arr) > 0, "Expected non-TD completions to count yards"
+    mean = yards_arr.mean()
+    # Tight band around 5.5 catches both pre-Task-2 (`+1` unconditional → ~6.5)
+    # and a missing-conditional regression on the new `+1.5` constant (~7.0).
+    assert 5.3 <= mean <= 6.0, (
+        f"mean={mean:.3f} suggests boost was applied when no clamp fires "
+        f"(D-11 violation). Expected ~5.5 (5 + 0.5 home-field expected)."
+    )
+
+
+def test_ks04_boost_zero_in_red_zone(monkeypatch):
+    """RZ branch (yard_line ≤ 20): boost stays 0 (preserved KS-04 behavior).
+
+    KS-04 keeps the RZ no-boost rule from the original code (line 278:
+    `boost = CATCH_YARDS_BOOST if state.yard_line > 20 else 0`). Inside the
+    20, the TD gate controls scoring; adding yards there would inflate TDs.
+    With dist=[5] and yard_line=15, raw sample is 5; clamp does NOT fire (5
+    <= 15) AND we're in the RZ — both gates keep boost = 0. Expected mean
+    ~5.5 (5 + 0.5 home-field).
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", True)
+    monkeypatch.setattr(pr, "_KS04_BOOST_VALUE", 1.5)
+
+    rng = np.random.default_rng(17)
+    roster = _make_ks04_wr_roster(receiving_yards_dist=[5, 5, 5, 5, 5])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    yards_seen = []
+    for _ in range(3000):
+        state = make_state(yard_line=15)  # RZ
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=True)
+        if result.is_complete and not result.is_touchdown and not result.is_fumble:
+            yards_seen.append(result.yards)
+
+    yards_arr = np.array(yards_seen)
+    assert len(yards_arr) > 0, "Expected non-TD completions inside the 20"
+    mean = yards_arr.mean()
+    assert 5.3 <= mean <= 6.0, (
+        f"mean={mean:.3f} suggests RZ branch is no longer boost-zero "
+        f"(KS-04 must preserve RZ no-boost rule). Expected ~5.5."
+    )
+
+
+def test_ks04_boost_conditional_when_clamp_fires(monkeypatch):
+    """D-11: when raw_sample > yard_line, boost IS applied before _clamp_yards.
+
+    Captures the input to `_clamp_yards` via monkeypatch and verifies the
+    BRANCH was taken. With dist=[25] and yard_line=10:
+    - raw_sample = 25
+    - 25 > 10 → boost fires; player_yards = 25 + 1.5 = 26.5 (or rounded
+      depending on implementation choice — the spec allows a float-to-int
+      coercion at the boundary)
+    - _clamp_yards receives a value >= 25 (the boost may round; we tolerate
+      either ceil/floor/round). Without boost it would be exactly 25.
+
+    The test asserts the recorded `_clamp_yards` input is in {25, 26, 27}
+    (raw + nothing = 25, raw + boost = 26 or 27 depending on home-field +
+    rounding) BUT critically NEVER < 25. With the OLD unconditional policy +
+    OLD constant `+1` it could be 25 or 26 (boost int-added). With the NEW
+    conditional policy + NEW `+1.5`, it's 25 (no clamp would fire — wait, 25
+    > 10 SO clamp WOULD fire) → 26 or 27. So this test detects whether the
+    boost branch was taken when raw > yard_line.
+
+    Easiest deterministic check: at minimum, observe at least one trial
+    where the recorded clamp input is strictly > 25 (the raw sample), proving
+    the boost was added on top of raw before clamp.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", True)
+    monkeypatch.setattr(pr, "_KS04_BOOST_VALUE", 1.5)
+
+    captured_clamp_inputs: list[int] = []
+    real_clamp = pr._clamp_yards
+
+    def _spy_clamp(yard_line, yards):
+        captured_clamp_inputs.append(yards)
+        return real_clamp(yard_line, yards)
+
+    monkeypatch.setattr(pr, "_clamp_yards", _spy_clamp)
+
+    rng = np.random.default_rng(23)
+    roster = _make_ks04_wr_roster(receiving_yards_dist=[25, 25, 25, 25, 25])
+    outcomes = make_outcomes(pass_yards=[10])
+    rates = make_turnover_rates()
+
+    for _ in range(200):
+        state = make_state(yard_line=10)  # raw 25 > 10 → boost fires
+        # is_home=False to remove home-field noise — every clamp input is
+        # exactly raw + boost (or raw if no boost).
+        resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
+
+    assert captured_clamp_inputs, "Expected at least one _clamp_yards call"
+    # All raw samples are 25; boost adds 1.5 → 26 or 27 after coercion.
+    # Without the conditional branch (i.e., if boost never fires when it
+    # should), every recorded input would be exactly 25.
+    boosted = [v for v in captured_clamp_inputs if v > 25]
+    assert len(boosted) > 0, (
+        f"_clamp_yards inputs = {sorted(set(captured_clamp_inputs))}; "
+        f"expected at least some > 25 proving boost fired before clamp "
+        f"(D-11). All inputs ≤ 25 means the conditional boost branch was "
+        f"never taken."
+    )
