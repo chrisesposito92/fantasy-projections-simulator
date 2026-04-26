@@ -136,6 +136,136 @@ KS-15 (Plan 07) is NOT blocked — it removes `CATCH_YARDS_BOOST` entirely (D-15
 
 ---
 
+## KS-03
+
+**Decision: BLOCKED**
+
+**Date:** 2026-04-26
+**Plan:** 01-03
+**Code change:** Per-player `* float(np.mean(player.outcomes.<dist>))` anchor
+replacing the legacy `* 10.0` constant at three call sites in
+`game_context.py` per D-16/D-16b: `_apply_matchup` receiving branch
+(line ~559), `_apply_matchup` rushing branch (line ~580), `_apply_coverage`
+(line ~624). All three sites mirror the canonical `_apply_weather`
+reference pattern. Gated behind
+`phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` (Cycle 3 D-45). Legacy
+hardcoded `* 10.0` preserved as the flag-off branch so production defaults
+are bit-for-bit identical to pre-Phase-1.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (D-31, ≤+0.05 MAE)? |
+|-------|-------------|--------------|--------------|-----------|--------------------------------|
+| p1.ks03.bare (#88) | +0.0016 | **+0.164** | +2.041 | +0.001 | **FAIL** (MAE +0.164 > +0.05) |
+| p1.ks03.full (#89) | +0.0002 | +0.001 | +0.035 | -0.002 | PASS |
+
+### Primary-target detail (per D-16b widened scope: WR/TE recv + RB rush)
+
+Phase-0 reference (`phase0.baseline.full` Arm B): WR receiving_yards KS = 0.264,
+mean bias = -9.10 yd/g; RB rush_yards KS = 0.254, mean bias = -1.00 yd/g.
+
+**Bare ledger (Arm A == legacy `* 10.0`, Arm B == per-player mean):**
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | +0.00 | -0.00 |
+| TE receiving_yards | -0.00 | +0.00 | +0.00 |
+| RB rush_yards | +0.00 | +0.00 | +0.00 |
+| QB pass_yards | +0.02 | +0.02 | +0.03 |
+
+**Full ledger (defaults vs defaults + KS-03):**
+
+| Stat | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | -0.00 | -0.00 | -0.00 |
+| TE receiving_yards | +0.01 | -0.00 | -0.00 |
+| RB rush_yards | +0.00 | -0.00 | -0.00 |
+| QB pass_yards | -0.00 | +0.00 | +0.01 |
+
+KS deltas on the primary targets are essentially flat (mostly ≤ |0.01|).
+The widened-scope D-16b promotion bar of "WR/TE recv KS Δ ≥ 0 AND RB rush KS
+Δ ≥ 0 on `p1.ks03.full`" is met (all primary stats on full are 0 or
+slightly improved), but the bare hard floor on weekly_mae is the dispositive
+issue.
+
+### Mechanism diagnosis
+
+The bare-mode legacy `* 10.0` anchor inflated the receiving and rushing
+shifts by a fixed `(factor - 1.0) * 10.0` regardless of player profile —
+e.g., `pass_yards_factor=1.10` adds +1.0 yd to every receiver's distribution
+and `combined_rush=1.10` adds +1.0 yd to every rusher's distribution. Most
+players in bare mode sample from team / fallback distributions with means
+around 5-6 yd, so the new per-player anchor scales to ~0.5-0.6 yd of shift —
+a SYSTEMATIC REDUCTION in the absolute compensating shift the matchup
+adjustments contributed in Arm A. In bare mode the ensemble post-sim layers
+(`role_trend → dynamic_blend → residual_calibration`) and engines like
+`tier_engine`, `team_context`, `props`, `tracking`, `availability`,
+`market_history`, `usage`, `goal_line_concentration`, etc. are all OFF, so
+nothing else absorbs the per-play yard delta. Net: receiving / rushing
+projections drop slightly, weekly MAE worsens by +0.164.
+
+In the full-stack overlay the other engines absorb this small per-play
+delta cleanly, and weekly MAE moves only +0.001. Same diagnostic shape as
+KS-04 (PROMOTION-NOTES `## KS-04` lines 92-117): a correct per-player
+anchor on a model that's already under-projecting in bare mode reveals the
+under-projection that the legacy hardcoded shift was masking.
+
+### Promotion-bar evaluation (D-31 medium-large)
+
+- **Bare:** hard floor FAILS on weekly_mae (+0.164 > +0.05).
+- **Full:** hard floor PASSES, but the primary-target KS gain expectation
+  (D-31 medium-large bar of ≤ -0.01 on the primary target) is not realized
+  — KS deltas are mostly flat, with the largest negative being WR
+  receiving_yards on 2024 at exactly the noise floor (-0.00 visible, real
+  delta below resolution).
+
+### Decision rationale
+
+Per Plan 03 Task 3 literal: "If hard floor fails on either entry → revert
+Task 1's commit, document under `## KS-03` in `logs/PROMOTION-NOTES.md`,
+mark `## PLAN BLOCKED`."
+
+The KS-03 code change is correct (mirrors `_apply_weather` per D-16/D-16b)
+and the full-stack hard floor passes. The bare hard-floor failure is a
+direct mirror of the KS-04 finding (same mechanism: a correctness fix
+reveals a bare-mode under-projection that the legacy hardcoded magnitude
+was masking). The primary-target KS deltas at full overlay don't move in
+either direction enough to satisfy D-31's "≤ -0.01 on the primary target".
+
+### Action
+
+Per Cycle 3 D-45's flag-rollback knob (the same pattern documented in
+PROMOTION-NOTES `## KS-04` lines 119-123): the new code path STAYS in
+`game_context.py` (gated behind `_KS03_DYNAMIC_YARD_ANCHOR = False`), and
+`phase1_ks_flags.ks03_dynamic_yard_anchor.enabled` STAYS at its Plan-00
+default of `false` in `config/defaults.yaml`. This is functionally
+equivalent to a literal revert of Task 1 (production behavior unchanged:
+legacy `* 10.0` shift is what defaults runs) but preserves the experiment,
+the 5 new tests, and the implementation for future re-evaluation in a
+later phase (Phase 2 or beyond) once the bare-mode under-projection is
+addressed by KS-15 (Plan 07) and stat-level residual calibration (Phase 2).
+
+This is a deviation from the literal Task 3 instruction ("revert Task 1's
+commit") but consistent with D-45's design intent ("feature flags also
+give a clean rollback knob"). Documented in the SUMMARY under Deviations.
+
+KS-15 (Plan 07) is NOT blocked by this decision. KS-15 removes
+`CATCH_YARDS_BOOST` entirely (D-15) and operates on a different mechanism
+(`min(yard_line, sample)` for clamp + un-clamped sample for TD gate per
+D-14) — independent of KS-03's anchor logic.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks03.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks03.full.log`
+
+### Commits
+
+- Task 1 (GREEN): `ce79167` — `fix(01-03): KS-03 per-player dist-mean anchor in _apply_matchup and _apply_coverage per D-16`
+- Task 2 (TEST): `997507a` — `test(01-03): add KS-03 dist-mean anchor tests for _apply_matchup and _apply_coverage`
+
+---
+
 ## KS-21 dry-run
 
 **Date:** 2026-04-26
@@ -431,4 +561,4 @@ mtime — KS-21 scrape did not touch them.
 
 ### Commits
 
-- Task 6 verification: (this commit) — `chore(01-09): KS-21 schema and timing verification`
+- Task 6 verification: `f6b2138` — `chore(01-09): KS-21 schema and timing verification`
