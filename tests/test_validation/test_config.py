@@ -531,3 +531,152 @@ class TestBareConfigDict:
         snapshot = copy.deepcopy(defaults)
         bare_config_dict(defaults)
         assert defaults == snapshot, "bare_config_dict mutated its input"
+
+    def test_arm_b_construction_bare_base_with_one_engine_override(self):
+        """End-to-end: bare_config_dict + apply_overrides + build_engine_configs
+        produces a one-engine config.
+
+        REVISED Cycle 3: callers must flip BOTH the top-level gate (pff.enabled)
+        AND the sub-engine flag (pff.team_context.enabled) because
+        build_engine_configs at validation/config.py:118-138 keys off pff.enabled.
+        This is the canonical contract for per-KS isolation A/Bs that need to
+        enable a single PFF sub-engine.
+        """
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        isolated = apply_overrides(
+            bare,
+            [
+                "pff.enabled=true",
+                "pff.tier_engine.enabled=true",
+                "pff.team_context.enabled=true",
+            ],
+        )
+        configs = build_engine_configs(isolated)
+
+        # PFF config exists and reflects the sub-engine flip
+        assert configs["pff_config"] is not None
+        assert configs["pff_config"].team_context.enabled is True
+
+        # All other engines should be None
+        other_engine_keys = (
+            "weather_config",
+            "vegas_config",
+            "props_config",
+            "usage_config",
+            "tracking_config",
+            "availability_config",
+            "role_trend_config",
+            "market_history_config",
+            "game_script_config",
+            "goal_line_concentration_config",
+            "td_tendency_config",
+            "target_selection_config",
+            "play_call_model_config",
+            "qb_rushing_config",
+        )
+        for key in other_engine_keys:
+            assert configs.get(key) is None, (
+                f"engine {key} should be None on bare base, got {configs.get(key)}"
+            )
+
+    # === HARD GATE (Cycle 3 — Codex Cycle-2 NEW HIGH #2 fix) ===
+
+    def test_bare_config_dict_produces_all_None_engines(self):
+        """HARD GATE: bare_config_dict(load_defaults()) must produce a config where
+        EVERY engine returns None from build_engine_configs.
+
+        REVISED Cycle 3 (replaces Cycle-2 'loosen the test' escape hatch):
+        if this test fails, bare_config_dict is incomplete. EXTEND THE HELPER
+        (add the missing top-level gate or sub-engine flag to the
+        enabled_keys_to_disable tuple), DO NOT loosen this test. The Cycle-2
+        disposition explicitly allowed 'loosen the test' as a fallback; Codex
+        Cycle-2 NEW HIGH #2 flagged that as the reason HIGH-1 wasn't actually
+        closed. Cycle 3 forbids the escape hatch.
+        """
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        configs = build_engine_configs(bare)
+
+        # Every engine must be None — no exceptions
+        all_engine_keys = (
+            "pff_config",
+            "weather_config",
+            "vegas_config",
+            "props_config",
+            "usage_config",
+            "tracking_config",
+            "availability_config",
+            "role_trend_config",
+            "market_history_config",
+            "game_script_config",
+            "goal_line_concentration_config",
+            "td_tendency_config",
+            "target_selection_config",
+            "play_call_model_config",
+            "qb_rushing_config",
+        )
+        failures = []
+        for key in all_engine_keys:
+            if configs.get(key) is not None:
+                failures.append(key)
+        assert not failures, (
+            f"bare_config_dict() is INCOMPLETE — engines still active after the "
+            f"helper: {failures}. Fix bare_config_dict in "
+            f"src/fantasy_sim/validation/config.py by adding the missing "
+            f"top-level .enabled gate or sub-engine flag to the "
+            f"enabled_keys_to_disable tuple. DO NOT loosen this test "
+            f"(Cycle 3 acceptance contract; see plan 00 Task 4)."
+        )
+
+    # === NEW Cycle 3 — Phase-1 KS feature flag coverage ===
+
+    def test_bare_config_dict_disables_all_phase1_ks_flags(self):
+        """All 8 Phase-1 KS feature flags must be False after bare_config_dict()."""
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        ks_flags = bare.get("phase1_ks_flags", {})
+        expected_flags = (
+            "ks01_preserve_distribution",
+            "ks03_dynamic_yard_anchor",
+            "ks04_conditional_catch_boost",
+            "ks05_props_recv_yds_fix",
+            "ks06_backup_receiver_fix",
+            "ks07_positional_rz_catch_rate",
+            "ks15_unclamp_for_td_gate",
+            "ks32_clock_pass_incomplete_3s",
+        )
+        for flag in expected_flags:
+            block = ks_flags.get(flag, {})
+            assert block.get("enabled", True) is False, (
+                f"phase1_ks_flags.{flag}.enabled is {block.get('enabled')}, "
+                f"expected False"
+            )
+
+    def test_apply_overrides_on_bare_config_dict_flips_one_phase1_ks_flag(self):
+        """Per-KS bare-isolation A/B contract: bare base + one --set flips exactly
+        one KS flag."""
+        defaults = load_defaults()
+        bare = bare_config_dict(defaults)
+        isolated = apply_overrides(
+            bare,
+            ["phase1_ks_flags.ks01_preserve_distribution.enabled=true"],
+        )
+        assert (
+            isolated["phase1_ks_flags"]["ks01_preserve_distribution"]["enabled"]
+            is True
+        )
+        # Other 7 flags must still be False
+        for flag in (
+            "ks03_dynamic_yard_anchor",
+            "ks04_conditional_catch_boost",
+            "ks05_props_recv_yds_fix",
+            "ks06_backup_receiver_fix",
+            "ks07_positional_rz_catch_rate",
+            "ks15_unclamp_for_td_gate",
+            "ks32_clock_pass_incomplete_3s",
+        ):
+            assert isolated["phase1_ks_flags"][flag]["enabled"] is False, (
+                f"phase1_ks_flags.{flag} should still be False, got "
+                f"{isolated['phase1_ks_flags'][flag]}"
+            )
