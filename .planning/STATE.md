@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 1 planning complete
-last_updated: "2026-04-26T14:01:44.964Z"
-last_activity: 2026-04-26 -- Phase 1 planning complete
+last_updated: "2026-04-26T14:29:46.782Z"
+last_activity: 2026-04-26 -- Phase 01 execution started
 progress:
   total_phases: 5
   completed_phases: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-26)
 
 **Core value:** Distribution shape (KS) on stat outputs that matters for season-long projections — without giving back the rank_corr / MAE wins we already shipped. Hard floor: any change must NOT regress rank_corr by >0.005 or MAE by >0.05.
-**Current focus:** Phase 1 — Bug Fixes, Cheap Calibration & Time-Sensitive Scrape (REPLANNED 2026-04-26 Cycle 3 — final cycle before max-cycles escalation gate)
+**Current focus:** Phase 01 — bug-fixes-cheap-calibration-time-sensitive-scrape
 
 ## Current Position
 
-Phase: 1 of 5 (Bug Fixes, Cheap Calibration & Time-Sensitive Scrape)
-Plan: 0 of 12 in current phase (Plan 00 = Wave 0 prerequisite per Cycle 3 replan; expanded with Tasks 8 + 9)
-Status: Ready to execute
-Last activity: 2026-04-26 -- Phase 1 planning complete
+Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
+Plan: 1 of 12
+Status: Executing Phase 01
+Last activity: 2026-04-26 -- Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
