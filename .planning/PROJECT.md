@@ -29,20 +29,20 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 
 ### Active
 
-<!-- Hypotheses for this initiative. Populated after deep-dive research. -->
+<!-- Outcome targets (TGT-XX) for this initiative. The 25 in-scope hypotheses live in REQUIREMENTS.md (KS-01..KS-21, KS-29, KS-32, traced back to HYPOTHESES.md). -->
 
-- [ ] **KS-01**: QB `pass_yards` KS reduced from ~0.36 to ≤ 0.20 across 2022-2024
-- [ ] **KS-02**: WR `receiving_yards` KS reduced from ~0.26 to ≤ 0.20 across 2022-2024
-- [ ] **KS-03**: WR `receptions` KS reduced from ~0.28 to ≤ 0.22
-- [ ] **KS-04**: TE `receptions` KS reduced from ~0.35 to ≤ 0.25 (largest defaults-vs-bare regression)
-- [ ] **KS-05**: TE `receiving_yards` KS reduced from ~0.31 to ≤ 0.25
-- [ ] **KS-06**: RB `rush_yards` KS reduced from ~0.26 to ≤ 0.22 (defaults currently regresses vs bare)
-- [ ] **KS-07**: RB `receiving_yards` KS reduced from ~0.42 to ≤ 0.30
-- [ ] **KS-08**: Aggregate `fpts` KS held ≤ 0.18 across all positions (currently 0.15-0.25)
-- [ ] **KS-09**: QB pass_yards mean bias closed from -28 yd/game to within ±5 yd/game
-- [ ] **KS-10**: WR receiving_yards mean bias closed from -9 yd/game to within ±2 yd/game
+- [ ] **TGT-01**: QB `pass_yards` KS reduced from ~0.36 to ≤ 0.20 across 2022-2024
+- [ ] **TGT-02**: WR `receiving_yards` KS reduced from ~0.26 to ≤ 0.20 across 2022-2024
+- [ ] **TGT-03**: WR `receptions` KS reduced from ~0.28 to ≤ 0.22
+- [ ] **TGT-04**: TE `receptions` KS reduced from ~0.35 to ≤ 0.27 (largest defaults-vs-bare regression; target relaxed from ≤0.25 after sanity-check flagged budget as tightest)
+- [ ] **TGT-05**: TE `receiving_yards` KS reduced from ~0.31 to ≤ 0.25
+- [ ] **TGT-06**: RB `rush_yards` KS reduced from ~0.26 to ≤ 0.22 (defaults currently regresses vs bare)
+- [ ] **TGT-07**: RB `receiving_yards` KS reduced from ~0.42 to ≤ 0.34 (target relaxed from ≤0.30 after sanity-check flagged largest gap with least-direct levers)
+- [ ] **TGT-08**: Aggregate `fpts` KS held ≤ 0.18 across all positions (currently 0.15-0.25)
+- [ ] **TGT-09**: QB pass_yards mean bias closed from -28 yd/game to within ±5 yd/game
+- [ ] **TGT-10**: WR receiving_yards mean bias closed from -9 yd/game to within ±2 yd/game
 
-(Targets are stretch goals. Deep-dive research will surface concrete hypotheses + revised, achievable targets per stat. Targets may be relaxed or sharpened after research.)
+(Outcome targets — TGT-04 and TGT-07 relaxed after sanity-check; others held. The hypothesis backlog `.planning/research/HYPOTHESES.md` shows plausible 70-100% closure across these targets through P1-P4. **Hypothesis IDs (KS-XX) and outcome target IDs (TGT-XX) are different namespaces — don't conflate.**)
 
 ### Out of Scope
 
@@ -51,6 +51,7 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 - **Auction values, lineup optimization, draft tooling** — projection accuracy only
 - **UI / dashboard work** — CLI output stays as-is
 - **Replacing nflverse / PFF / Open-Meteo / The Odds API as data providers** — gaps will be closed by adding signals from existing providers, not switching providers
+- **P5 long-tail signal integration** (KS-22..KS-33 in HYPOTHESES.md) — deferred to a follow-up initiative. Includes the per-zone QB depth engine (KS-22, 5-10 days), aDOT/time-to-throw priors (KS-23), per-target CB matchup (KS-25), and other engineering-heavy items. v1 scope is P1-P4 (25 hypotheses).
 
 ## Context
 
@@ -69,17 +70,23 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 
 **Pattern:** KS is bad two ways — (1) **mean bias** (stats systematically projected low; QB pass_yards & WR receiving_yards worst) and (2) **distribution-shape regression where defaults make KS worse than bare** (TE receptions/yards 0.20→0.32, RB rush_yards 0.22→0.29, WR receptions 0.21→0.31). Ensemble is winning on rank/MAE but compressing or shifting variance at the stat level.
 
-**Open hypotheses to investigate** (the deep dive will produce the real list):
-- `residual_calibration` and `dynamic_blend` adjust **fpts only** — stat-level distributions never get post-sim correction. Possibly the largest single gap.
-- Phase 5 off-by-default slices (`pff.depth_role`, `pff.depth_role.efficiency`, `pff.rb_scheme_fit`, `pff.qb_split`, `qb_rushing.scramble`) may be the missing distribution-shape signal.
-- Per-play yards distributions are sampled via `rng.choice(arr)` — empirical and non-parametric. Mean bias suggests distributions are correct but a downstream multiplier shrinks them.
-- The Odds API props are blended Bayesian-style on the **mean only** — they could inform the **tails** if wired through over/under at multiple lines.
-- Catch-yards boost (`+1 outside RZ`) may be too small for WR but sized for the league average.
+**Confirmed root causes** (from deep-dive research, full backlog in `.planning/research/HYPOTHESES.md`):
+- **Bug**: `_tackled_short()` in `play_resolver.py` overwrites clamped yards with strictly shorter values when RZ TD-gate fails — accounts for ~10-15 yd/game on QB pass_yards alone (KS-01).
+- **Bug**: `_apply_recv_yds` at `props_engine.py:248` multiplies per-catch dist_mean by games_played — magnitude bug shifting WR/TE/RB receiving_yards distributions DOWN (KS-05).
+- **Bug**: `_apply_matchup` and `_apply_coverage` use a hardcoded 10-yd anchor instead of `np.mean(receiving_yards_dist)`, narrowing the dynamic range of receiver-yards adjustments (KS-03).
+- **Structural**: `residual_calibration` and `dynamic_blend` adjust **fpts only** — stat-level distributions never get post-sim correction (KS-09). This is THE architectural blocker for stat-level KS work.
+- **Structural**: `dynamic_blend` zeroes simulator weight in `weights_2024.json` (sim ≤ 0.05 for nearly every TE/WR/RB bucket), replacing fpts with the point-estimate `ff_opportunity` prior — biggest fpts compressor (KS-08).
+- **Structural**: `tier_engine._merge_thin_tiers` collapses 5 TE tiers into 1-2 fat-middle pools, so the `TE|high|*` correction bucket is *empty* in calibration_2024.json (root of the TE 0.20→0.32 regression).
+- **Off-by-default slices**: All 7 are dormant (not broken). `rb_scheme_fit` already shows positive rank_corr/MAE deltas in its decision artifact but was never KS-measured (KS-02). `depth_role.efficiency` is the only WR/TE-specific layer that scales `receiving_yards_dist` (KS-16).
+- **Time-sensitive signal**: The Odds API has alternate-line markets that define a CDF directly — currently we only consume mean lines (KS-21).
 
 **Recently completed work informing this initiative:**
 - QB designed-run chain (just merged) — separates designed runs from scrambles; may be a piece of the QB rush distribution puzzle
 - Phase 1 / 2 / 6 promoted: ff_opportunity ensemble, availability, market_history close_core8
 - Phase 3 executing: PFF Phase 3 signals (snap blend +0.147 rank_corr was best; CPOE marginal; NGS/route_rate kept off)
+
+**Time-sensitive data acquisition window:**
+- The Odds API tier currently active is generous (5M credits, ~66k used; ~4.93M remaining; ~2 weeks left at this tier). KS-19, KS-20, KS-21 (alternate-line markets + props historical backfill) all require Odds API scraping. Phase ordering must front-load Odds API data collection while the high tier is active — once dropped to a lower tier next month, historical backfill would be cost-prohibitive.
 
 ## Constraints
 
@@ -101,6 +108,9 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 | All four positions in scope (QB, RB, WR, TE) | TE has the largest defaults-vs-bare regression; ignoring it leaves the ensemble distorting variance for that position | — Pending |
 | Discarded prior 1,500-line KS roadmap (commit 103b711) | Was outdated; ground research in current code state and current backtest, not a frozen plan | — Pending |
 | Brownfield mapping refreshed before scoping | All 7 docs in `.planning/codebase/` regenerated 2026-04-26 to anchor research | ✓ Good |
+| v1 scope = P1-P4 (25 hypotheses); P5 deferred | P5 long-tail items are mostly 5-10 day engineering with most-uncertain payoff. Cleaner v1 boundary; P5 items become follow-up initiative if results warrant | — Pending |
+| TE receptions and RB receiving_yards targets relaxed | Sanity check flagged both as borderline against the structural-fix budget. Avoids initiative being declared partial-fail on these two single metrics | — Pending |
+| Front-load Odds API scraping while high tier is active | 5M-credit budget expires in ~2 weeks; historical backfill would be cost-prohibitive on a lower tier. Affects phase ordering — data acquisition for KS-19/KS-20/KS-21 happens earliest practical opportunity | — Pending |
 
 ## Evolution
 
