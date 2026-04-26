@@ -1,4 +1,37 @@
 # config/defaults.yaml
+
+# Phase 1 KS code-change feature flags (added Cycle 3 — see RESEARCH.md Pattern 4b).
+# Each flag gates one per-KS code change so per-KS A/B can perform a real (legacy)
+# vs (new) two-arm comparison via `--set phase1_ks_flags.ksXX_<name>.enabled=true`.
+# Default false everywhere; per-KS promotion commits flip the flag to `true` after
+# the A/B passes hard floor + promotion bar.
+phase1_ks_flags:
+  ks01_preserve_distribution:
+    enabled: false   # KS-01 — _tackled_short_preserve_distribution variant in play_resolver.py
+  ks03_dynamic_yard_anchor:
+    enabled: false   # KS-03 — _apply_matchup/_apply_coverage use np.mean(<dist>) instead of *10.0
+  ks04_conditional_catch_boost:
+    enabled: false   # KS-04 — CATCH_YARDS_BOOST = 1.5 only when _clamp_yards would fire
+    boost_value: 1.5
+  ks05_props_recv_yds_fix:
+    enabled: false   # KS-05 — _apply_recv_yds magnitude fix + DEFAULT_TEAM_PASS_YDS=240
+    default_team_pass_yds: 240.0
+  ks06_backup_receiver_fix:
+    enabled: false   # KS-06 — completed-play filter + integer fallback (5,18) + MIN_PLAYER_PLAYS=3
+    min_player_plays: 3
+    fallback_low: 5
+    fallback_high: 18
+  ks07_positional_rz_catch_rate:
+    enabled: false   # KS-07 — positional RZ_CATCH_RATE_MODIFIERS dict
+    rates:
+      WR: 0.92
+      TE: 0.95
+      RB: 0.85
+  ks15_unclamp_for_td_gate:
+    enabled: false   # KS-15 — min(yard_line, sample) clamp + un-clamped sample drives TD gate
+  ks32_clock_pass_incomplete_3s:
+    enabled: false   # KS-32 — CLOCK_PASS_INCOMPLETE = 3 (only set if measurement motivates)
+
 simulation:
   num_sims: 1000
   training_years: 4

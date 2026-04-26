@@ -93,3 +93,19 @@ def get_defaults_path() -> Path:
 def load_defaults() -> dict:
     """Load the default configuration."""
     return load_config(get_defaults_path())
+
+
+def get_phase1_ks_flags() -> dict:
+    """Return the phase1_ks_flags block from the loaded defaults.yaml.
+
+    Used by per-KS code-change sites to branch on whether the new code path is
+    enabled. Read at module import time (not per call) for performance — flag
+    flips during a single Python process require a process restart anyway, since
+    validate.py's two arms are a single process.
+
+    Returns an empty dict if the block is missing (so callers'
+    ``.get(...).get('enabled', False)`` chains stay defensive against older
+    defaults snapshots that pre-date Cycle 3).
+    """
+    defaults = load_defaults()
+    return defaults.get("phase1_ks_flags", {})
