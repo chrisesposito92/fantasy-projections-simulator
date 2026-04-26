@@ -95,7 +95,7 @@
 - Specific test-case enumeration for TDD on KS-01/04/15.
 - Per-team rolling-mean window length for KS-05 D-18.
 - KS-21 scrape execution sequencing (which season/week pages first).
-- Specific snapshot timestamps within "Tuesday 12pm ET" (timezone, DST).
+- Specific snapshot timestamps within the API `previous_timestamp` window (timezone, DST), labelled `prior_*`.
 
 ## Summary
 
