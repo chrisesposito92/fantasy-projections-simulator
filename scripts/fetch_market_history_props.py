@@ -13,6 +13,7 @@ from fantasy_sim.data.market_history.events_inventory import (
 )
 from fantasy_sim.data.market_history.props_backfill import (
     DEFAULT_PROP_MARKETS,
+    OddsApiNoDataError,
     build_snapshot_timestamp,
     fetch_historical_event_props,
     load_events_inventory,
@@ -72,6 +73,7 @@ def main() -> int:
         inventory = inventory.head(args.limit)
 
     client = build_client(api_key)
+    skipped_no_data = 0
     try:
         for row in inventory.iter_rows(named=True):
             season = int(row["season"])
@@ -90,13 +92,28 @@ def main() -> int:
                 date_source=args.date_source,
                 offset_minutes=args.offset_minutes,
             )
-            payload, headers = fetch_historical_event_props(
-                client,
-                event_id=event_id,
-                date=snapshot_timestamp,
-                markets=tuple(args.markets),
-                regions=args.regions,
-            )
+            try:
+                payload, headers = fetch_historical_event_props(
+                    client,
+                    event_id=event_id,
+                    date=snapshot_timestamp,
+                    markets=tuple(args.markets),
+                    regions=args.regions,
+                )
+            except OddsApiNoDataError as exc:
+                # The Odds API has no historical data for this (event, date,
+                # markets) combination — typical for prior-snapshot timestamps
+                # that predate the markets being listed for the event. Skip
+                # the event and continue rather than aborting the entire scrape.
+                skipped_no_data += 1
+                console.print(
+                    f"[yellow]no-data[/yellow] season={season} week={row['week']} "
+                    f"event={event_id} snapshot={args.snapshot_label} "
+                    f"date={snapshot_timestamp} ({exc})"
+                )
+                if args.delay > 0:
+                    time.sleep(args.delay)
+                continue
             save_raw_props_snapshot(
                 path,
                 event_row=row,
@@ -111,7 +128,8 @@ def main() -> int:
             console.print(
                 f"[green]saved[/green] season={season} week={row['week']} "
                 f"event={event_id} snapshot={args.snapshot_label} bookmakers={bookmakers} "
-                f"cost={headers.get('x-requests-last')}"
+                f"cost={headers.get('x-requests-last')} "
+                f"remaining={headers.get('x-requests-remaining')}"
             )
             if args.delay > 0:
                 time.sleep(args.delay)
@@ -121,6 +139,11 @@ def main() -> int:
     finally:
         client.close()
 
+    if skipped_no_data:
+        console.print(
+            f"[yellow]Summary:[/yellow] skipped {skipped_no_data} event(s) "
+            f"with no data at the requested snapshot timestamp."
+        )
     return 0
 
 

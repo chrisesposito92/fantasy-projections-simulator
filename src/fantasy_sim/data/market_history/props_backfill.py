@@ -17,6 +17,13 @@ from fantasy_sim.data.market_history.events_inventory import (
     SPORT_KEY,
 )
 
+
+class OddsApiNoDataError(Exception):
+    """Raised when The Odds API returns 422 Unprocessable Entity for a historical
+    snapshot — the (event_id, date, markets) combination has no data available
+    yet (typical when querying a prior-snapshot timestamp before markets were
+    listed for that event). Caller may treat as skippable."""
+
 DEFAULT_MARKET_HISTORY_RAW_PROPS_DIR = DEFAULT_MARKET_HISTORY_DIR / "raw" / "props"
 
 DEFAULT_PROP_MARKETS: tuple[str, ...] = (
@@ -130,6 +137,17 @@ def fetch_historical_event_props(
         if response.status_code in (401, 403):
             raise OddsApiAuthError(
                 f"Authentication failed (HTTP {response.status_code}). Check THE_ODDS_API_KEY."
+            )
+        if response.status_code == 422:
+            # 422 from /v4/historical/.../odds means the API has no data for this
+            # (event_id, date, markets) combination — typically because the prior
+            # snapshot timestamp is before any of the requested markets had been
+            # listed for the event. Surface as a distinct exception so the caller
+            # can choose to skip rather than abort the entire scrape (KS-21
+            # discovery during Plan 01-09 dry run).
+            raise OddsApiNoDataError(
+                f"No data available (HTTP 422) for event_id={event_id} "
+                f"date={date} markets={markets}"
             )
         if response.status_code == 429 or response.status_code >= 500:
             if attempt < max_retries - 1:
