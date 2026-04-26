@@ -14,7 +14,7 @@ This initiative closes the distribution-shape (KS) gap that survives our current
 - Integer phases (1, 2, 3, 4, 5): Planned milestone work
 - Decimal phases (e.g. 2.1): Reserved for urgent insertions if discovered
 
-- [ ] **Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape** — Confirmed code defects + cheap calibration constants + Odds API alt-line historical scrape (data only, no engine yet)
+- [x] **Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape** — Confirmed code defects + cheap calibration constants + Odds API alt-line historical scrape (data only, no engine yet) (completed 2026-04-26)
 - [ ] **Phase 2: Structural Per-Stat Calibration** — Architectural changes (per-stat residual_calibration, dynamic_blend simulator-weight floor, tier_engine reliability, share normalization, ff_opportunity width, thin-bucket shrinkage, clamping fix)
 - [ ] **Phase 3: Phase 5 Slice Activation (KS-Priority Retune)** — Retune off-by-default PFF slices (rb_scheme_fit, depth_role.efficiency, qb_split, designed-run/rb_efficiency re-measurement) under KS-priority validation
 - [ ] **Phase 4: New Signal Integration (Including Odds API Engine)** — Integrate `last_ten_json` empirical CDF, PFF `projections_json` cross-stat consistency, and Odds API alt-line CDF engine (consumes Phase 1 scrape)
@@ -156,7 +156,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Bug Fixes, Cheap Calibration & Scrape | 10/12 | In Progress|  |
+| 1. Bug Fixes, Cheap Calibration & Scrape | 12/12 | Complete   | 2026-04-26 |
 | 2. Structural Per-Stat Calibration | 0/TBD | Not started | - |
 | 3. Phase 5 Slice Activation (KS-Priority) | 0/TBD | Not started | - |
 | 4. New Signal Integration | 0/TBD | Not started | - |
