@@ -53,3 +53,12 @@ Phase-1 success criterion 4 (hard floor: rank_corr Δ ≥ -0.005 AND MAE Δ ≤ 
   rank_corr Δ = -0.0004
   weekly_mae Δ = +0.0142
   Criterion 4: YES (PASS)
+
+---
+Source: per-position-stat mean bias values above were read from
+ledger field stat_mean_bias[<position>][<stat>]["arm_b_bias"]
+(SeasonMetrics, schema v5, populated by Plan 00 Task 9).
+The "Per-stat MEAN BIAS deltas" block proves the script successfully
+read the stat_mean_bias field from both phase0.baseline.full and
+p1.aggregate.full; if the field had been empty/missing, the block
+would have printed nothing.
