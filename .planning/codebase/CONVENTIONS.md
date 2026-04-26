@@ -1,159 +1,214 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-04-24
+**Analysis Date:** 2026-04-26
 
 ## Naming Patterns
 
 **Files:**
-- Use lowercase snake_case Python modules under `src/fantasy_sim/`: examples include `src/fantasy_sim/data/game_context.py`, `src/fantasy_sim/engine/play_resolver.py`, `src/fantasy_sim/scoring/residual_calibration.py`, and `src/fantasy_sim/validation/parallel.py`.
-- Keep subsystem-specific implementations in matching package directories: PFF code goes in `src/fantasy_sim/data/pff/`, Vegas code in `src/fantasy_sim/data/vegas/`, weather code in `src/fantasy_sim/data/weather/`, scoring layers in `src/fantasy_sim/scoring/`, and validation utilities in `src/fantasy_sim/validation/`.
-- Use `models.py` for subsystem dataclasses such as `src/fantasy_sim/data/pff/models.py`, `src/fantasy_sim/data/vegas/models.py`, `src/fantasy_sim/data/weather/models.py`, and `src/fantasy_sim/data/market_history/models.py`.
-- Use `config.py` for typed config loaders and dataclass resolution, such as `src/fantasy_sim/data/pff/config.py`, `src/fantasy_sim/data/weather/config.py`, `src/fantasy_sim/data/vegas/config.py`, and `src/fantasy_sim/validation/config.py`.
+- Module files use snake_case: `game_context.py`, `play_resolver.py`, `player_builder.py`
+- Packages group related functionality: `data/pff/`, `data/weather/`, `engine/`, `scoring/`
+- Test files mirror source structure with `test_` prefix: `tests/test_data/test_player_builder.py`
 
 **Functions:**
-- Use snake_case for functions and methods: `bucket_play()` in `src/fantasy_sim/models/game_state.py`, `run_simulations()` in `src/fantasy_sim/engine/monte_carlo.py`, `build_player_projections()` in `src/fantasy_sim/scoring/projections.py`, and `ks_distribution_summary()` in `src/fantasy_sim/validation/metrics.py`.
-- Use a leading underscore for private helpers scoped to a module or class: `_parse_value()` in `src/fantasy_sim/validation/config.py`, `_red_zone_td_gate()` in `src/fantasy_sim/engine/play_resolver.py`, `_filter_available()` in `src/fantasy_sim/engine/player_selector.py`, and `_normalize_weekly_fpts_ks()` in `src/fantasy_sim/validation/ledger.py`.
-- Loader functions follow `load_*` names when reading config/data: `load_defaults()` in `src/fantasy_sim/config/loader.py`, `load_pff_config()` in `src/fantasy_sim/data/pff/config.py`, `load_weather_config()` in `src/fantasy_sim/data/weather/config.py`, and `load_weekly()` in `src/fantasy_sim/data/market_history/loader.py`.
-- Builder/aggregation functions follow `build_*` or `compute_*`: `DataPipeline.build()` in `src/fantasy_sim/data/pipeline.py`, `Preprocessor.compute_play_outcomes()` in `src/fantasy_sim/data/preprocessor.py`, `build_engine_configs()` in `src/fantasy_sim/validation/config.py`, and `build_detailed_projections()` in `src/fantasy_sim/scoring/projections.py`.
+- snake_case for all function names: `simulate_game()`, `build_player_models()`, `resolve_play()`
+- Private/internal functions prefixed with single underscore: `_red_zone_td_gate()`, `_scale_clock_runoff()`, `_aggregate_pbp_stats()`
+- Engine methods follow `compute()` or `apply()` patterns for consistency with engine pattern
 
 **Variables:**
-- Use descriptive snake_case for local values and dict keys: `training_seasons`, `target_season`, `season_weights`, `cache_path`, `weekly_fpts_ks`, and `stat_ks` appear in `src/fantasy_sim/data/preprocessor.py`, `src/fantasy_sim/data/loader.py`, `src/fantasy_sim/validation/ledger.py`, and `scripts/validate.py`.
-- Use domain abbreviations only where they are established: `pbp` in `src/fantasy_sim/data/preprocessor.py`, `pff_config` in `src/fantasy_sim/data/game_context.py`, `rng` in `src/fantasy_sim/engine/game_sim.py`, and `fpts` in `src/fantasy_sim/scoring/projections.py`.
-- Use all-caps module constants for calibrated values and schemas: `MIN_BUCKET_PLAYS` in `src/fantasy_sim/data/preprocessor.py`, `PASS_TD_GATE` in `src/fantasy_sim/engine/play_resolver.py`, `PLAYER_MARKET_SOURCE_SCHEMA` in `src/fantasy_sim/data/market_history/loader.py`, and `CURRENT_LEDGER_SCHEMA_VERSION` in `src/fantasy_sim/validation/ledger.py`.
+- snake_case for variables: `carry_share`, `target_share`, `rng`, `yard_line`, `score_differential`
+- Numpy arrays: `_dist` suffix for distribution arrays: `receiving_yards_dist`, `rushing_yards_dist`, `scramble_yards_dist`
+- Boolean flags: descriptive names with `is_` or `has_` prefix: `is_red_zone`, `has_scramble_data`, `is_home`
 
-**Types:**
-- Use PascalCase for dataclasses and protocol types: `GameStateBucket` in `src/fantasy_sim/models/game_state.py`, `TeamDistributions` in `src/fantasy_sim/engine/types.py`, `PffConfig` in `src/fantasy_sim/data/pff/models.py`, and `TargetSelectionContextProtocol` in `src/fantasy_sim/engine/types.py`.
-- Use `Config`, `Context`, `Factors`, `Model`, and `Result` suffixes consistently: `WeatherConfig`, `WeatherContext`, and `GameWeather` in `src/fantasy_sim/data/weather/models.py`; `VegasConfig` and `VegasContext` in `src/fantasy_sim/data/vegas/models.py`; `GameSpec` and `GameSimResult` in `src/fantasy_sim/validation/parallel.py`.
-- Use `@dataclass(frozen=True)` for hashable value objects used as dict keys or immutable raw records: `GameStateBucket` in `src/fantasy_sim/models/game_state.py` and `GameWeather` in `src/fantasy_sim/data/weather/models.py`.
+**Types & Classes:**
+- PascalCase for all classes: `PlayerModel`, `PlayerUsage`, `PlayerOutcomes`, `TeamRoster`, `GameState`, `GameResult`
+- Exception classes also PascalCase: `ConfigError`, `AmbiguousMatchError`
+- Dataclass fields use snake_case with type hints (Python 3.12+ union syntax): `player_id: str`, `carry_share: float`, `receiving_yards_dist: np.ndarray | None`
 
 ## Code Style
 
 **Formatting:**
-- No formatter config is detected in `pyproject.toml`; follow the existing 4-space Python style used across `src/fantasy_sim/engine/game_sim.py`, `src/fantasy_sim/data/preprocessor.py`, and `src/fantasy_sim/validation/metrics.py`.
-- Keep function signatures typed and explicit. Most production modules use Python 3.12 union syntax such as `TeamRoster | None`, `dict[str, float]`, and `tuple[list[PlayerModel], np.ndarray]` in `src/fantasy_sim/engine/player_selector.py`, `src/fantasy_sim/models/player.py`, and `src/fantasy_sim/validation/config.py`.
-- Prefer `from __future__ import annotations` in newer modules that use forward references or heavy type imports, as in `src/fantasy_sim/engine/types.py`, `src/fantasy_sim/engine/game_sim.py`, `src/fantasy_sim/data/pff/config.py`, `src/fantasy_sim/data/weather/provider.py`, and `scripts/validate.py`.
-- Use `TYPE_CHECKING` blocks to avoid runtime circular imports or expensive imports, as in `src/fantasy_sim/engine/types.py`, `src/fantasy_sim/engine/game_sim.py`, `src/fantasy_sim/engine/play_resolver.py`, and `src/fantasy_sim/validation/parallel.py`.
+- No explicit formatter enforced; code is readable and consistent
+- 4-space indentation (standard Python)
+- Line length is practical (under 120 characters typical)
 
 **Linting:**
-- Not detected. `pyproject.toml` defines pytest settings and dependencies but has no `[tool.ruff]`, `[tool.black]`, or `[tool.mypy]` sections.
-- Keep style aligned with existing code instead of introducing new lint-only churn in `src/fantasy_sim/` or `tests/`.
+- No explicit linter in pyproject.toml (ESLint/Pylint not configured)
+- Type hints on all function signatures are mandatory
+- Union types use Python 3.12+ syntax: `X | None` (not `Optional[X]`)
+
+**Type Hints:**
+Example from `src/fantasy_sim/models/player.py`:
+```python
+def select_receiver(
+    self, rng: np.random.Generator, is_red_zone: bool = False
+) -> PlayerModel:
+    """Randomly select a pass target, weighted by target share."""
+```
+
+Example from `src/fantasy_sim/engine/play_resolver.py`:
+```python
+def _red_zone_td_gate(
+    yard_line: int, 
+    play_type: str, 
+    rng: np.random.Generator, 
+    td_factor: float = 1.0
+) -> bool:
+    """Check if a would-be TD actually scores, based on field position."""
+```
 
 ## Import Organization
 
 **Order:**
-1. Standard library imports first: examples include `json`, `logging`, `Path`, `dataclass`, `field`, and `TYPE_CHECKING` in `src/fantasy_sim/validation/ledger.py`, `src/fantasy_sim/data/weather/provider.py`, and `src/fantasy_sim/validation/parallel.py`.
-2. Third-party imports next: `numpy as np`, `polars as pl`, `httpx`, `yaml`, and `scipy.stats` appear in `src/fantasy_sim/data/preprocessor.py`, `src/fantasy_sim/data/loader.py`, `src/fantasy_sim/data/weather/provider.py`, `src/fantasy_sim/config/loader.py`, and `src/fantasy_sim/validation/metrics.py`.
-3. Local `fantasy_sim.*` imports last: examples include `src/fantasy_sim/engine/game_sim.py`, `src/fantasy_sim/data/pipeline.py`, `src/fantasy_sim/scoring/projections.py`, and `src/fantasy_sim/validation/config.py`.
-- Deferred local imports are acceptable to avoid cycles or subprocess import issues, such as `from fantasy_sim.engine.player_selector import select_passer, select_receiver` inside `src/fantasy_sim/engine/play_resolver.py` and deferred `GameContextBuilder` imports in `src/fantasy_sim/validation/parallel.py`.
+1. Future annotations (for Python 3.12+ compatibility): `from __future__ import annotations`
+2. Standard library: `import logging`, `from pathlib import Path`, `from typing import TYPE_CHECKING`
+3. Third-party packages: `import numpy as np`, `import polars as pl`, `import yaml`
+4. Local imports: `from fantasy_sim.models.player import PlayerModel`, `from fantasy_sim.engine.types import GameState`
+
+**Circular Import Prevention:**
+- Use `TYPE_CHECKING` guard for type hints only:
+```python
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from fantasy_sim.models.player import TeamRoster
+```
+- Functions receive protocol types or concrete types at runtime, avoiding circular dependencies
 
 **Path Aliases:**
-- Use package imports rooted at `fantasy_sim`, not relative imports, throughout `src/fantasy_sim/`.
-- `pyproject.toml` sets `pythonpath = ["src"]` for tests, so tests import `fantasy_sim.*` directly, as in `tests/test_engine/test_player_selector.py`, `tests/test_data/test_loader.py`, and `tests/test_validation/test_metrics.py`.
-- Script tests that target files in `scripts/` add the script directory to `sys.path`, as in `tests/test_scripts/test_scrape_pff.py` and `tests/test_scripts/test_scrape_pff_props.py`.
-
-## Type Hints And Data Models
-
-**Dataclasses:**
-- Use dataclasses for domain records, simulation state, config, and validation ledger entries. Examples: `PlayerModel`, `PlayerUsage`, and `TeamRoster` in `src/fantasy_sim/models/player.py`; `GameState`, `PlayResult`, and `GameResult` in `src/fantasy_sim/engine/types.py`; `SeasonMetrics` and `LedgerEntry` in `src/fantasy_sim/validation/ledger.py`.
-- Use `field(default_factory=...)` for mutable defaults such as lists, dicts, and nested config objects. Examples: `weeks_missed` in `src/fantasy_sim/models/player.py`, `defensive_td_rates` in `src/fantasy_sim/engine/types.py`, config dict defaults in `src/fantasy_sim/data/pff/models.py`, and `stat_ks` in `src/fantasy_sim/validation/ledger.py`.
-- Avoid mutable literal defaults in dataclasses. Use factories like `field(default_factory=dict)` and `field(default_factory=WeatherConfig)` patterns shown in `src/fantasy_sim/data/pff/models.py`, `src/fantasy_sim/data/weather/models.py`, and `src/fantasy_sim/validation/parallel.py`.
-
-**Type Hints:**
-- Use precise container types on public functions and dataclass fields: `dict[str, PlayCallingDist]` in `src/fantasy_sim/data/preprocessor.py`, `list[GameSpec]` in `src/fantasy_sim/validation/parallel.py`, `Mapping[str, object]` in `scripts/validate.py`, and `Sequence[float]` in `src/fantasy_sim/validation/metrics.py`.
-- Use `object` or `dict` only at boundaries where config, JSON, or projection row shapes are intentionally dynamic: `apply_overrides()` in `src/fantasy_sim/validation/config.py`, `LedgerEntry.config_snapshot` in `src/fantasy_sim/validation/ledger.py`, and projection rows in `src/fantasy_sim/scoring/projections.py`.
-- Use protocols for optional extension surfaces instead of concrete imports when the engine consumes a narrow interface. `TargetSelectionContextProtocol` in `src/fantasy_sim/engine/types.py` defines the learned target-selection hook used by `src/fantasy_sim/engine/player_selector.py`.
-
-## DataFrame And Numeric Conventions
-
-**Polars:**
-- Use `polars as pl` for all DataFrame work. Examples include `src/fantasy_sim/data/loader.py`, `src/fantasy_sim/data/preprocessor.py`, `src/fantasy_sim/data/market_history/loader.py`, `src/fantasy_sim/data/pff/tier_engine.py`, `scripts/validate.py`, and tests under `tests/test_data/`.
-- Do not introduce pandas. No `import pandas` usage is detected in `src/`, `scripts/`, or `tests/`; keep all DataFrame fixtures and transformations in polars.
-- Use polars expressions for filtering, casting, joining, schema stabilization, and parquet IO: `pl.col(...).is_in(...)` in `src/fantasy_sim/data/preprocessor.py`, `pl.read_parquet()` and `write_parquet()` in `src/fantasy_sim/data/loader.py`, `pl.concat(..., how="diagonal_relaxed")` in `src/fantasy_sim/data/loader.py`, and schema casts in `src/fantasy_sim/data/market_history/loader.py`.
-- Return typed empty `pl.DataFrame(schema=...)` from data loaders when data is missing but the pipeline can continue. Examples: `PropsLoader._empty_df()` in `src/fantasy_sim/data/vegas/props_loader.py` and `MarketHistoryLoader.load_weekly()` in `src/fantasy_sim/data/market_history/loader.py`.
-
-**Numpy:**
-- Use `numpy as np` for numerical arrays, random sampling, percentiles, correlations, and simulation summaries. Examples include `src/fantasy_sim/models/distributions.py`, `src/fantasy_sim/engine/monte_carlo.py`, `src/fantasy_sim/scoring/projections.py`, and `src/fantasy_sim/validation/metrics.py`.
-- Empirical distributions are stored as `np.ndarray` fields and sampled with `rng.choice(...)`, as in `PlayOutcomeDist.sample_yards()` in `src/fantasy_sim/models/distributions.py`, `PlayerOutcomes` in `src/fantasy_sim/models/player.py`, and `src/fantasy_sim/engine/play_resolver.py`.
-- Convert numpy scalar outputs to plain Python floats before writing projection rows or JSON-facing metrics, as in `src/fantasy_sim/scoring/projections.py` and `src/fantasy_sim/validation/metrics.py`.
-
-**RNG Handling:**
-- Pass `np.random.Generator` explicitly through simulation code. `run_simulations()` in `src/fantasy_sim/engine/monte_carlo.py` creates `rng = np.random.default_rng(seed)` and passes it into `simulate_game()` in `src/fantasy_sim/engine/game_sim.py`.
-- Public play-level functions accept `rng: np.random.Generator` rather than using global random state: `resolve_play()` in `src/fantasy_sim/engine/play_resolver.py`, `select_receiver()` and `select_rusher()` in `src/fantasy_sim/engine/player_selector.py`, and `DriveStartModel.sample_start_yardline()` in `src/fantasy_sim/models/distributions.py`.
-- Use deterministic seeds in tests and validation harnesses. Examples: `np.random.default_rng(42)` in `tests/test_engine/test_player_selector.py`, `run_simulations(..., seed=42)` in `tests/test_engine/test_statistical_validation.py`, and CRC32 game seeds in `scripts/validate.py`.
-- Avoid `np.random.RandomState` in production. It appears in fixture generation in `tests/conftest.py` for legacy deterministic sample data; new production code should use `np.random.default_rng()`.
-
-## Config And Loader Patterns
-
-**YAML Config Loading:**
-- Load raw YAML through `load_config()` and `load_defaults()` in `src/fantasy_sim/config/loader.py`; raise `ConfigError` for missing files, invalid mappings, unknown scoring formats, and circular scoring inheritance.
-- Resolve feature-specific dataclasses from the full defaults dict through subsystem loaders: `load_pff_config()` in `src/fantasy_sim/data/pff/config.py`, `load_weather_config()` in `src/fantasy_sim/data/weather/config.py`, `load_vegas_config()` and `load_props_config()` in `src/fantasy_sim/data/vegas/config.py`, and `build_engine_configs()` in `src/fantasy_sim/validation/config.py`.
-- Treat disabled or missing config sections as neutral config dataclasses or `None` engine kwargs. `build_engine_configs()` in `src/fantasy_sim/validation/config.py` returns `None` for disabled engines; `build_bare_engine_configs()` returns all engine configs disabled.
-
-**Override Parsing:**
-- Use dot-notation overrides for validation configs through `apply_overrides()` in `src/fantasy_sim/validation/config.py`.
-- Validate override keys by requiring every path segment and leaf to already exist. Unknown keys raise `KeyError` with the full dotted path in `src/fantasy_sim/validation/config.py`.
-- Parse CLI override values into bool, int, float, list, or string via `_parse_value()` in `src/fantasy_sim/validation/config.py`.
-
-**Cache And IO:**
-- Use `Path` for filesystem paths, create cache directories in constructors, and keep cache roots configurable for tests. Examples: `DataLoader` in `src/fantasy_sim/data/loader.py`, `WeatherProvider` in `src/fantasy_sim/data/weather/provider.py`, and `MarketHistoryLoader` in `src/fantasy_sim/data/market_history/loader.py`.
-- Do not read secret files during normal mapping or documentation. Secret-bearing runtime paths such as `~/.fantasy-sim/pff/.env` and `~/.fantasy-sim/props/.env` are external configuration, not codebase documentation inputs.
+- No path aliases configured; absolute imports from `fantasy_sim.` root package
+- All tests use absolute imports: `from fantasy_sim.data.player_builder import build_player_models`
 
 ## Error Handling
 
 **Patterns:**
-- Raise specific exceptions for invalid inputs that should fail fast: `ConfigError` in `src/fantasy_sim/config/loader.py`, `ValueError` for invalid `n_sims` in `src/fantasy_sim/engine/monte_carlo.py`, `ValueError` for bad `play_type` in `src/fantasy_sim/engine/play_resolver.py`, and `KeyError` for unknown override paths in `src/fantasy_sim/validation/config.py`.
-- Include the offending value in exception messages. Examples: `n_sims must be positive` in `src/fantasy_sim/engine/monte_carlo.py`, `Unexpected play_type` in `src/fantasy_sim/engine/play_resolver.py`, and `Invalid projection fpts` in `scripts/validate.py`.
-- Use safe fallback returns for optional external data paths where absence is allowed: `WeatherProvider.get_weather()` returns `None` on API error in `src/fantasy_sim/data/weather/provider.py`; `PropsLoader.load_props()` returns an empty schema DataFrame when disabled or missing cache in `src/fantasy_sim/data/vegas/props_loader.py`.
-- Use worker-level exception capture in validation parallelism so one bad game can be skipped with diagnostic metadata while the run continues. Examples: `_do_build_single()` and `_do_build_dual()` in `src/fantasy_sim/validation/parallel.py`.
-- Re-raise process-pool infrastructure failures as actionable runtime errors. `simulate_games_parallel()` and build helpers in `src/fantasy_sim/validation/parallel.py` raise `RuntimeError("Worker process crashed. Try --workers 1 for sequential mode.")` on `BrokenExecutor`.
+- Custom exceptions inherit from Python built-ins: `class ConfigError(Exception):`
+- Exceptions include descriptive messages: `raise ConfigError(f"Config file not found: {path}")`
+- Validation errors on circular inheritance: `raise ConfigError(f"Circular _inherit detected: '{format_name}' already in chain")`
+- Safe fallback returns instead of exceptions where appropriate:
+  - `ValueError` for missing required data: `raise ValueError(f"No QB found on roster for {self.team}")`
+  - Division by zero prevented with condition checks: `if weights.sum() == 0: weights = np.ones(len(eligible))`
+- Option handling: functions accept `| None` types and check explicitly before use
 
 ## Logging
 
-**Framework:** `logging`
+**Framework:** Python's built-in `logging` module
 
 **Patterns:**
-- Use module loggers with `logger = logging.getLogger(__name__)`, as in `src/fantasy_sim/validation/parallel.py`, `src/fantasy_sim/validation/coverage.py`, `src/fantasy_sim/data/weather/provider.py`, `src/fantasy_sim/data/vegas/engine.py`, and `src/fantasy_sim/data/vegas/props_loader.py`.
-- Use `logger.warning(..., exc_info=True)` when swallowing exceptions that should be visible during diagnostics, as in `src/fantasy_sim/validation/parallel.py` and `src/fantasy_sim/data/weather/provider.py`.
-- Use `logger.debug()` for cache miss/hit messages and low-noise diagnostics, such as PFF props cache messages in `src/fantasy_sim/data/vegas/props_loader.py` and Vegas schedule diagnostics in `src/fantasy_sim/data/vegas/engine.py`.
-- Avoid `print()` in library modules under `src/fantasy_sim/`; reserve console output for CLI and scripts such as `scripts/validate.py`, `scripts/validate_sim.py`, and `scripts/validate_players.py`.
+- Logger created per module: `logger = logging.getLogger(__name__)` at module level
+- Used in data loading and context building: `logger.debug()`, `logger.warning()`, `logger.info()`
+- No aggressive logging in hot paths (simulation, scoring)
 
 ## Comments
 
 **When to Comment:**
-- Use comments for domain calibration constants and physics assumptions that are not self-evident, such as `PASS_TD_GATE`, `RUN_TD_GATE`, `CATCH_YARDS_BOOST`, and `RZ_CATCH_RATE_MODIFIER` in `src/fantasy_sim/engine/play_resolver.py`.
-- Use comments to explain compatibility and fallback behavior, such as schema migration in `src/fantasy_sim/validation/ledger.py`, worker initialization in `src/fantasy_sim/validation/parallel.py`, and PFF props cache behavior in `src/fantasy_sim/data/vegas/props_loader.py`.
-- Keep inline comments targeted to domain rules and avoid restating simple assignments. Existing comments in `src/fantasy_sim/models/player.py`, `src/fantasy_sim/engine/types.py`, and `src/fantasy_sim/data/preprocessor.py` are domain-oriented.
+- Comments explain WHY, not WHAT: "Field-position clamping bias fixed with boost" not "Add 1 yard"
+- Domain-specific constants documented inline:
+```python
+# Red zone TD gate probabilities — per-play probability that a would-be TD
+# actually scores. Calibrated so that drive-level TD rates match NFL averages
+# (~55% of RZ drives end in TD) given realistic RZ drive progression.
+PASS_TD_GATE = {
+    (1, 3): 0.55,
+    (4, 5): 0.50,
+    ...
+}
+```
+- Regression notes in tests: "Regression: when former players had carries in training data but aren't on the current roster..."
 
 **JSDoc/TSDoc:**
-- Not applicable. This is a Python codebase.
-- Use Python docstrings on public classes, dataclasses, and public functions. Examples: `TeamRoster` in `src/fantasy_sim/models/player.py`, `WeatherProvider` in `src/fantasy_sim/data/weather/provider.py`, `DataPipeline.build()` in `src/fantasy_sim/data/pipeline.py`, and `run_season()` in `scripts/validate.py`.
-- Keep docstrings short for simple helpers and expand them for public interfaces with non-obvious fallback or side-effect behavior, such as `MarketHistoryLoader` in `src/fantasy_sim/data/market_history/loader.py` and `PropsLoader` in `src/fantasy_sim/data/vegas/props_loader.py`.
+- Google-style docstrings on all public functions and classes:
+```python
+def resolve_play(
+    state: GameState,
+    off_dists: TeamDistributions,
+    def_dists: TeamDistributions,
+    runtime_script: RuntimeGameScript | None = None,
+    rng: np.random.Generator | None = None,
+) -> PlayResult:
+    """Resolve a single play and return player stats.
+    
+    Args:
+        state: Current game state (down, distance, field position).
+        off_dists: Offensive team distributions.
+        def_dists: Defensive team distributions.
+        rng: Random number generator (seeded for reproducibility).
+        
+    Returns:
+        PlayResult with yards_gained, touchdown, turnover, and player stats.
+    """
+```
+- Docstrings include Args, Returns, Raises sections
 
 ## Function Design
 
-**Size:** Use small helpers for single concerns when logic is domain-specific, and keep orchestration functions explicit when they document pipeline order.
-- Small helpers: `_numeric_value()` and `_compute_distribution_ks()` in `scripts/validate.py`, `_scale_clock_runoff()` and `_apply_home_field()` in `src/fantasy_sim/engine/play_resolver.py`, `_receiver_usage_weight()` in `src/fantasy_sim/engine/player_selector.py`.
-- Orchestrators: `simulate_game()` in `src/fantasy_sim/engine/game_sim.py`, `run_season()` in `scripts/validate.py`, and `GameContextBuilder.build_game()` in `src/fantasy_sim/data/game_context.py`.
+**Size:** 
+- Functions are typically 20-50 lines (short, focused)
+- Complex logic (e.g., `resolve_play()`) can reach 150+ lines with clear internal structure
+- Engine pattern: class with `__init__(config, loader)` + `compute() -> context/result object`
 
-**Parameters:** Prefer explicit typed dependencies over hidden globals.
-- Pass dataframes directly for testability in `DataPipeline.build()` in `src/fantasy_sim/data/pipeline.py`.
-- Pass `cache_dir`, `config`, loaders, crosswalks, and providers into constructors for testability in `src/fantasy_sim/data/loader.py`, `src/fantasy_sim/data/market_history/loader.py`, and `src/fantasy_sim/data/weather/provider.py`.
-- Pass all simulation randomness through `rng` parameters in `src/fantasy_sim/engine/game_sim.py`, `src/fantasy_sim/engine/play_resolver.py`, and `src/fantasy_sim/engine/player_selector.py`.
+**Parameters:**
+- RNG always passed explicitly: `rng: np.random.Generator` (never global state)
+- Config objects passed as constructor parameters: `GameContextBuilder(pff_config, weather_config, vegas_config, ...)`
+- Protocol types for optional dependencies: `runtime_script: RuntimeGameScript | None = None`
 
-**Return Values:** Prefer typed dataclasses for domain results and plain dict/list rows for projection/report outputs.
-- Dataclass returns: `SimulationSummary` from `src/fantasy_sim/engine/monte_carlo.py`, `GameWeather` from `src/fantasy_sim/data/weather/provider.py`, and `LedgerEntry` from `src/fantasy_sim/validation/ledger.py`.
-- Dict/list projection rows: `build_player_projections()` and `build_detailed_projections()` in `src/fantasy_sim/scoring/projections.py`, `run_season()` in `scripts/validate.py`, and `format_ledger_table()` in `src/fantasy_sim/validation/ledger.py`.
+**Return Values:**
+- Dataclass instances for structured data: `PlayerModel`, `GameResult`, `PlayResult`
+- Tuples for unrelated outputs: `tuple[list[PlayerModel], np.ndarray]` from `rusher_candidates_and_weights()`
+- Dicts for lookups: `dict[GameStateBucket, dict[str, float]]` for distributions
+- `| None` for optional results, explicitly checked before use
 
 ## Module Design
 
 **Exports:**
-- Package `__init__.py` files are light and used only when a subsystem intentionally exposes a public surface, such as `src/fantasy_sim/data/ensemble/__init__.py`, `src/fantasy_sim/data/target_selection/__init__.py`, and `src/fantasy_sim/scoring/__init__.py`.
-- Keep most imports direct from implementation modules in tests and production. Examples: `from fantasy_sim.engine.player_selector import select_receiver` in `tests/test_engine/test_player_selector.py` and `from fantasy_sim.validation.metrics import ks_distribution_summary` in `tests/test_validation/test_metrics.py`.
+- `__init__.py` files are minimal; import what users need
+- Public API is explicit: `from fantasy_sim.data.player_builder import build_player_models`
+- Internal functions (leading underscore) not exported
 
 **Barrel Files:**
-- Limited use. Prefer direct module imports unless an existing subsystem `__init__.py` already exports the object.
-- Do not add broad barrel exports across unrelated subsystems; keep module boundaries aligned with `src/fantasy_sim/data/`, `src/fantasy_sim/engine/`, `src/fantasy_sim/scoring/`, and `src/fantasy_sim/validation/`.
+- Used in test modules for multiple imports from same package: `from fantasy_sim.data.player_builder import (build_player_models, build_team_roster, ...)`
+- Source packages avoid barrel imports; import specific functions only
+
+## Domain Patterns
+
+**Key Constants:**
+- Module-level constants in UPPER_SNAKE_CASE: `CLOCK_RUN = 35`, `CATCH_YARDS_BOOST = 1`, `MIN_QB_CARRY_SHARE = 0.10`
+- Documented with comments explaining domain meaning:
+```python
+# Home-field advantage: 50% chance of +1 yard per play
+HOME_FIELD_YARDS_BONUS = 0.5
+```
+
+**Factors & Multipliers:**
+- Factors are multiplicative, centered on 1.0, clamped to configurable range
+- Example: `td_factor: float = 1.0` with clamping: `rng.random() < min(1.0, prob * td_factor)`
+- Used consistently across all engine layers (PFF, weather, Vegas)
+
+**Bayesian Blending:**
+- Standard formula used throughout: `adjusted = (n * observed + prior_strength * prior) / (n + prior_strength)`
+- Applied in PFF tier engine, kicker model, DST baseline
+- Shrinkage toward league average when sample size is low
+
+**Dataclass Usage:**
+- Frozen dataclasses used as dict keys: `@dataclass(frozen=True)` on `GameStateBucket`
+- Mutable dataclasses for player models: `@dataclass` on `PlayerModel` (deepcopy for roster)
+- Field defaults in constructor: `games_played: int = 17`, `weeks_missed: list[int] = field(default_factory=list)`
+
+## Configuration Patterns
+
+**YAML Inheritance:**
+- Config files at `config/defaults.yaml`, `config/season.2025.yaml`, custom configs
+- `_inherit` directive in YAML enables preset chains: PPR → half_ppr → standard
+- Resolution logic in `config/loader.py`: `resolve_scoring()` with cycle detection
+
+**Config Classes:**
+- Domain configs are dataclasses: `PffConfig`, `WeatherConfig`, `VegasConfig`, `AvailabilityConfig`
+- Loaded via `DataLoader` and `GameContextBuilder` constructor
+- Boolean flags enable/disable features: `pff.tier_engine.enabled`, `weather.enabled`, `vegas.props.enabled`
+
+**CLI Integration:**
+- Click CLI in `cli.py`: commands `demo`, `week`, `season`, `game`, `player`, `backtest`
+- Flag mapping: `--pff/--no-pff`, `--weather/--no-weather`, `--scoring ppr`
+- Override syntax: `--override "name.field=value"` for dotted paths in config
 
 ---
 
-*Convention analysis: 2026-04-24*
+*Convention analysis: 2026-04-26*

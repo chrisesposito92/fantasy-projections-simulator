@@ -1,229 +1,349 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-04-24
+**Analysis Date:** 2026-04-26
 
 ## Test Framework
 
 **Runner:**
-- pytest 9.0.2 in the active dev dependency group in `pyproject.toml`; optional dev metadata also lists pytest >=8.0 in `pyproject.toml`.
-- Config: `pyproject.toml`
-- Test paths: `tests`
-- Python path: `src`
-- Import mode: `--import-mode=importlib`
-- Markers: `integration` and `statistical` registered in `pyproject.toml`.
+- pytest 8.0+ (defined in `pyproject.toml`)
+- pytest-xdist 3.0+ for parallel test execution
+- pytest-hypothesis 6.0+ for property-based testing
+- Config: `tests/` directory, Python path includes `src`
+
+**pytest Configuration:**
+```toml
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib"]
+markers = [
+    "integration: tests that call nflreadpy (slow, requires network)",
+    "statistical: tests that run bulk simulations (slow)",
+]
+```
 
 **Assertion Library:**
-- pytest assertions and `pytest.approx`, as used in `tests/test_validation/test_metrics.py`, `tests/test_engine/test_types.py`, `tests/test_data/test_actuals.py`, and `tests/test_validation/test_weekly.py`.
-- `unittest.mock.patch` and `MagicMock` for dependency mocking, as used in `tests/test_data/test_loader.py`, `tests/test_cli.py`, `tests/test_data/test_weather/test_provider.py`, and `tests/test_scripts/test_scrape_pff.py`.
+- pytest built-in assertions: `assert`, `assert X == Y`, `pytest.approx()`
+- numpy testing: `np.testing.assert_array_almost_equal()` for float arrays
 
 **Run Commands:**
 ```bash
+# All tests (default)
 uv run pytest tests/ -v
-uv run pytest tests/ -v -m statistical
-uv run pytest tests/ -v -m integration
-uv run pytest tests/test_validation/test_metrics.py -v
-uv run pytest tests/test_engine/test_player_selector.py -v
-```
 
-**Validation Commands:**
-```bash
-uv run python scripts/validate.py --sims 50 --label "run-name"
-uv run python scripts/validate.py --set usage.ngs.enabled=true --sims 50 --label "test-ngs"
-uv run python scripts/validate.py --baseline defaults --set usage.ngs.enabled=true --sims 50
-uv run python scripts/validate.py --show-ledger
-uv run python scripts/validate_sim.py
-uv run python scripts/validate_players.py
-uv run python scripts/validate_data.py
+# Statistical validation tests only (simulation-heavy)
+uv run pytest tests/ -v -m statistical
+
+# Unit tests excluding integration + statistical
+uv run pytest tests/ -v -m "not integration and not statistical"
+
+# Watch mode with pytest-watch (if installed)
+pytest-watch tests/ -- -v
+
+# Coverage report
+pytest --cov=src/fantasy_sim tests/
 ```
 
 ## Test File Organization
 
 **Location:**
-- Tests live under `tests/` and mirror the `src/fantasy_sim/` subsystem layout.
-- Model tests: `tests/test_models/` maps to `src/fantasy_sim/models/`.
-- Engine tests: `tests/test_engine/` maps to `src/fantasy_sim/engine/`.
-- Data-layer tests: `tests/test_data/` maps to `src/fantasy_sim/data/`, with nested packages like `tests/test_data/test_pff/`, `tests/test_data/test_weather/`, `tests/test_data/test_vegas/`, `tests/test_data/test_tracking/`, and `tests/test_data/test_market_history/`.
-- Scoring tests: `tests/test_scoring/` maps to `src/fantasy_sim/scoring/`.
-- Validation tests: `tests/test_validation/` maps to `src/fantasy_sim/validation/` and `scripts/validate.py`.
-- Script tests: `tests/test_scripts/` maps to files under `scripts/`.
-- CLI tests: `tests/test_cli.py` covers `src/fantasy_sim/cli.py`.
+- Tests co-located with source: `tests/test_data/test_player_builder.py` mirrors `src/fantasy_sim/data/player_builder.py`
+- Top-level test files: `tests/test_smoke.py`, `tests/test_cli.py`, `tests/test_edge_cases.py`
+- Subdirectories for complex modules: `tests/test_engine/`, `tests/test_data/test_pff/`, `tests/test_data/test_ensemble/`
 
 **Naming:**
-- Test files use `test_*.py`: examples include `tests/test_engine/test_play_resolver.py`, `tests/test_data/test_pff/test_tier_engine.py`, `tests/test_scoring/test_dynamic_blend.py`, and `tests/test_validation/test_ledger.py`.
-- Test classes use `Test...` names grouped by behavior, such as `TestBucketDistance` in `tests/test_models/test_game_state.py`, `TestDataLoaderCaching` in `tests/test_data/test_loader.py`, and `TestWeatherProvider` in `tests/test_data/test_weather/test_provider.py`.
-- Test functions use `test_...` names that state expected behavior, such as `test_dynamic_blend_missing_artifact_falls_back_to_fixed_equivalent()` in `tests/test_scoring/test_dynamic_blend.py` and `test_filters_non_finite_triplets()` in `tests/test_validation/test_metrics.py`.
+- Test files: `test_*.py` prefix (e.g., `test_player_builder.py`, `test_td_tendency_engine.py`)
+- Test classes: `Test[ModuleName]` (e.g., `TestBuildPlayerModels`, `TestRedZoneCatchRate`, `TestTdTendencyBayesianBlend`)
+- Test methods: `test_[specific_behavior]` (e.g., `test_returns_dict_of_player_models`, `test_wr_has_target_share`, `test_target_shares_per_team_sum_near_one`)
 
-**Structure:**
-```text
+**Directory Structure:**
+```
 tests/
-├── conftest.py
-├── test_cli.py
+├── conftest.py                          # Shared fixtures (PBP, rosters, schedules, kickoffs, field goals)
+├── test_smoke.py                        # Import smoke tests
+├── test_cli.py                          # CLI integration tests
+├── test_edge_cases.py                   # Edge cases
 ├── test_config/
+│   └── test_loader.py                   # Config loading and inheritance
 ├── test_data/
+│   ├── test_player_builder.py           # Player model building (1200+ tests across codebase)
+│   ├── test_loader.py                   # Data loading
+│   ├── test_pipeline.py                 # Data pipeline
+│   ├── test_availability/
+│   │   ├── test_engine.py
+│   │   └── test_loader.py
+│   ├── test_ensemble/
+│   │   ├── test_config.py
+│   │   ├── test_loader.py
+│   │   └── test_normalizer.py
 │   ├── test_pff/
-│   ├── test_vegas/
-│   ├── test_weather/
-│   ├── test_tracking/
+│   │   ├── test_tier_engine.py
+│   │   ├── test_matchup.py
+│   │   ├── test_coverage.py
+│   │   ├── test_qb_split.py
+│   │   ├── test_rb_scheme_fit.py
+│   │   └── test_talent.py
 │   └── test_market_history/
-├── test_engine/
-├── test_models/
-├── test_scoring/
-├── test_scripts/
-└── test_validation/
+│       ├── test_loader.py
+│       └── test_importer.py
+└── test_engine/
+    ├── test_statistical_validation.py   # @pytest.mark.statistical
+    ├── test_player_validation.py        # Statistical validation of player outputs
+    └── test_play_caller.py              # Play calling logic
 ```
 
 ## Test Structure
 
 **Suite Organization:**
 ```python
-class TestSelectReceiver:
-    def test_wr1_most_frequent(self):
-        rng = np.random.default_rng(42)
-        roster = make_roster()
-        state = make_state()
-        ids = [select_receiver(roster, state, rng).player_id for _ in range(200)]
-        assert ids.count("WR1") > ids.count("TE1")
-        assert ids.count("WR1") > ids.count("RB1")
+# tests/test_data/test_player_builder.py
+import numpy as np
+import polars as pl
+import pytest
+from fantasy_sim.data.player_builder import (
+    build_player_models, build_team_roster, blend_with_archetype,
+    _aggregate_pbp_stats, build_kicker_model, _assemble_models,
+    _build_season_weights,
+)
+from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster
+
+
+class TestBuildPlayerModels:
+    """Test player model construction from PBP data."""
+    
+    def test_returns_dict_of_player_models(self, expanded_pbp, sample_rosters):
+        models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
+        assert isinstance(models, dict)
+        assert "PM15" in models
 ```
-Use this class-plus-behavior pattern for domain tests, as in `tests/test_engine/test_player_selector.py`, `tests/test_models/test_game_state.py`, and `tests/test_config/test_loader.py`.
 
 **Patterns:**
-- Build small local factories near the tests they serve. Examples: `make_state()` and `make_roster()` in `tests/test_engine/test_player_selector.py`, `_make_test_dists()` and `_make_test_roster()` in `tests/test_cli.py`, and `_make_entry()` in `tests/test_validation/test_ledger.py`.
-- Use shared fixtures for broadly reused NFL-like data in `tests/conftest.py`: `sample_pbp`, `sample_schedules`, `sample_rosters`, `expanded_pbp`, `rz_pbp`, `air_yards_pbp`, and trade/roster fixtures.
-- Use deterministic seeds for stochastic tests. Examples: `np.random.default_rng(42)` in `tests/test_engine/test_player_selector.py`, `np.random.default_rng(12345)` in `tests/test_engine/test_dst_defensive_tds.py`, and `run_simulations(..., seed=42)` in `tests/test_engine/test_statistical_validation.py`.
-- Use `pytest.approx` for floating-point and statistical comparisons in `tests/test_validation/test_metrics.py`, `tests/test_validation/test_weekly.py`, `tests/test_engine/test_types.py`, and `tests/test_data/test_actuals.py`.
-- Use `tmp_path` for filesystem cache, parquet, JSON, and artifact tests, as in `tests/test_data/test_loader.py`, `tests/test_data/test_weather/test_provider.py`, `tests/test_validation/test_ledger.py`, `tests/test_scoring/test_dynamic_blend.py`, and `tests/test_scoring/test_residual_calibration.py`.
+
+1. **Setup/Fixtures:**
+   - Fixtures in `tests/conftest.py` provide sample data
+   - Fixture scope: `function` (default, fresh per test), `class` (shared in class), `scope="class"` for expensive setup
+   - Example: `@pytest.fixture` decorated functions returning sample DataFrames
+
+2. **Assertions:**
+   - Exact match: `assert pm.name == "P.Mahomes"`
+   - Float approx: `assert total_ts == pytest.approx(1.0, abs=0.05)` (within 0.05 absolute tolerance)
+   - Range checks: `assert 0.40 <= s["home_win_pct"] <= 0.60`
+   - Array checks: `assert len(tk.outcomes.receiving_yards_dist) > 0`
+
+3. **Parametrization:**
+   - `@pytest.mark.parametrize("source_seasons", [[], [2024], [2023, 2024], ["2023"]])`
+   - `@pytest.mark.parametrize("field", ["min_examples", "min_tail_samples"])`
+   - Used for testing multiple scenarios without code duplication
+
+4. **Error Testing:**
+   ```python
+   def test_raises_error_on_circular_inherit(self):
+       with pytest.raises(ConfigError, match="Circular _inherit detected"):
+           resolve_scoring(circular_presets, "format_a")
+   ```
 
 ## Mocking
 
-**Framework:** `unittest.mock`
+**Framework:** `unittest.mock.patch` from Python standard library
 
 **Patterns:**
+- Mock external data loaders to avoid network calls:
 ```python
-@patch("fantasy_sim.data.loader.nflreadpy")
-def test_load_pbp_caches_to_parquet(self, mock_nfl, loader, cache_dir):
-    mock_df = pl.DataFrame({"play_type": ["pass", "run"], "yards_gained": [10, 5]})
-    mock_nfl.load_pbp.return_value = mock_df
-    result = loader.load_pbp(seasons=[2024])
-    assert result.shape == mock_df.shape
-    assert (cache_dir / "pbp_2024.parquet").exists()
+@pytest.fixture
+def mock_pbp_loader(monkeypatch):
+    """Mock nflreadpy to prevent network calls in unit tests."""
+    def mock_load(season, weeks=None):
+        return sample_pbp()
+    monkeypatch.setattr("fantasy_sim.data.loader.nflreadpy.load_pbp", mock_load)
 ```
-- Patch the dependency at the module path where it is used. Examples: `fantasy_sim.data.loader.nflreadpy` in `tests/test_data/test_loader.py`, `fantasy_sim.cli.GameContextBuilder` in `tests/test_cli.py`, and `fantasy_sim.data.weather.provider.httpx` in `tests/test_data/test_weather/test_provider.py`.
-- Use `MagicMock` for HTTP response objects and clients in script/provider tests. Examples: `tests/test_scripts/test_scrape_pff.py`, `tests/test_scripts/test_scrape_pff_props.py`, and `tests/test_data/test_weather/test_provider.py`.
-- Use `monkeypatch` for module constants and functions when the test needs to override defaults without replacing whole classes, as in `tests/test_data/test_loader.py`, `tests/test_engine/test_game_sim.py`, and `tests/test_validation/test_coverage.py`.
-- Use `caplog` for logging assertions, as in `tests/test_data/test_usage/test_usage_engine.py`, `tests/test_data/test_vegas/test_props_engine.py`, and `tests/test_data/test_pff/test_qb_split_integration.py`.
+
+- Patch at module level where import occurs (not at definition):
+```python
+from unittest.mock import patch
+
+with patch("fantasy_sim.data.nflreadpy.load_pbp") as mock_load:
+    mock_load.return_value = sample_pbp
+```
 
 **What to Mock:**
-- Network and external SDK calls: nflreadpy in `tests/test_data/test_loader.py`, httpx calls in `tests/test_data/test_weather/test_provider.py`, and PFF scraper HTTP clients in `tests/test_scripts/test_scrape_pff.py` and `tests/test_scripts/test_scrape_pff_props.py`.
-- Expensive context building and simulation collaborators in CLI/validation tests: `GameContextBuilder`, `DataLoader`, `build_games_parallel`, `simulate_games_parallel`, and projection layer builders in `tests/test_cli.py`, `tests/test_validation/test_backtester.py`, and `tests/test_validation/test_validate_script.py`.
-- Filesystem roots and cache directories through `tmp_path`, `cache_dir`, constructor injection, or monkeypatching module constants in `tests/test_data/test_loader.py`, `tests/test_data/test_weather/test_provider.py`, and `tests/test_validation/test_coverage.py`.
+- External APIs (nflreadpy, PFF endpoints, weather, odds API)
+- File I/O that would require local data
+- Network calls in unit tests
 
 **What NOT to Mock:**
-- Core pure domain logic should be exercised directly with small data: bucket helpers in `tests/test_models/test_game_state.py`, scoring functions in `tests/test_scoring/test_engine.py`, metric functions in `tests/test_validation/test_metrics.py`, player selection in `tests/test_engine/test_player_selector.py`, and config parsing in `tests/test_config/test_loader.py`.
-- Polars transformations should run against real `pl.DataFrame` fixtures instead of mocked DataFrames, as in `tests/test_data/test_preprocessor.py`, `tests/test_data/test_market_history/test_loader.py`, `tests/test_data/test_tracking/test_inputs_loader.py`, and `tests/test_data/test_pff/test_tier_engine.py`.
-- RNG-driven selection should use deterministic `np.random.default_rng(seed)` rather than mocked random calls, as in `tests/test_engine/test_player_selector.py` and `tests/test_engine/test_dst_defensive_tds.py`.
+- Internal functions (test them directly)
+- Numpy/Polars (test actual computation)
+- Game simulation (statistical tests run full simulations)
+- Config loading (test YAML resolution with real files)
 
 ## Fixtures and Factories
 
 **Test Data:**
+From `tests/conftest.py`:
 ```python
 @pytest.fixture
 def sample_pbp() -> pl.DataFrame:
-    """Minimal PBP data mimicking nflreadpy output."""
-    return pl.DataFrame([...])
+    """Minimal PBP data mimicking nflreadpy output.
+    
+    Contains 20 plays: 12 passes, 8 runs across 2 teams (KC, BUF).
+    Enough to compute basic distributions but small enough to verify by hand.
+    """
+    plays = [
+        {"season": 2024, "week": 1, "game_id": "2024_01_KC_BUF", "play_type": "pass", 
+         "posteam": "KC", "defteam": "BUF", "down": 1, "ydstogo": 10, "yardline_100": 75, 
+         "score_differential": 0, "qtr": 1, "yards_gained": 12, "complete_pass": 1, ...},
+        # ... more plays
+    ]
+    return pl.DataFrame(plays)
+
+@pytest.fixture
+def expanded_pbp() -> pl.DataFrame:
+    """Larger PBP sample for player builder tests — 60 plays per team."""
+    rng = np.random.RandomState(42)
+    plays = []
+    # KC: 40 passes, 20 runs
+    # BUF: 30 passes, 30 runs
+    for i in range(...):
+        plays.append({...})
+    return pl.DataFrame(plays)
+
+@pytest.fixture
+def sample_rosters() -> pl.DataFrame:
+    """Minimal weekly roster data for KC and BUF."""
+    rows = []
+    for week in range(1, 4):
+        rows.extend([
+            {"season": 2024, "week": week, "player_id": "PM15", "player_name": "P.Mahomes", ...},
+            ...
+        ])
+    return pl.DataFrame(rows)
 ```
-- Put broad, shared fixtures in `tests/conftest.py`, especially PBP, schedules, kickoff/field goal data, rosters, red-zone samples, and traded-player fixtures.
-- Keep one-off factories local to the test file, such as `_make_dists()` and `_make_roster()` in `tests/test_validation/test_parallel.py`, `_make_prop()` in `tests/test_scripts/test_scrape_pff_props.py`, and `_config()` in `tests/test_scoring/test_residual_calibration.py`.
-- Use real dataclasses and domain objects in factories: `TeamDistributions`, `PlayCallingDist`, `PlayOutcomeDist`, `PlayerModel`, `PlayerUsage`, and `TeamRoster` in `tests/test_engine/test_player_selector.py`, `tests/test_engine/test_player_validation.py`, and `tests/test_validation/test_parallel.py`.
 
 **Location:**
-- Shared fixtures: `tests/conftest.py`
-- Subsystem-specific fixtures: individual test modules such as `tests/test_data/test_pff/test_matchup.py`, `tests/test_data/test_pff/test_coverage.py`, `tests/test_data/test_weather/test_provider.py`, and `tests/test_scoring/test_dynamic_blend.py`.
-- Script-specific fixtures and local imports: `tests/test_scripts/test_scrape_pff.py`, `tests/test_scripts/test_scrape_pff_props.py`, and `tests/test_scripts/test_fit_target_selection.py`.
+- Shared fixtures in `tests/conftest.py` (pytest auto-discovers)
+- Domain-specific fixtures in test files or their conftest subdirectories
+- PBP fixture variations: `sample_pbp` (20 plays), `expanded_pbp` (60 plays), `rz_pbp` (red zone), `air_yards_pbp`, `scramble_pbp`, `scramble_qb_pbp`
+- Roster fixtures: `sample_rosters`, `traded_player_rosters`, `midseason_trade_rosters`
 
 ## Coverage
 
-**Requirements:** None enforced in `pyproject.toml`
+**Requirements:** 
+- No explicit coverage requirement enforced in CI
+- Project maintains 1,200+ tests covering all major paths
+- Coverage focuses on domain logic (simulation, scoring, data loading)
 
 **View Coverage:**
 ```bash
-Not configured
+pytest --cov=src/fantasy_sim --cov-report=html tests/
+# Opens htmlcov/index.html
 ```
-- No coverage tool configuration is detected in `pyproject.toml`.
-- Use targeted pytest commands first for changed modules, then `uv run pytest tests/ -v` for broad verification when the change touches shared engine, data, scoring, or validation behavior.
 
 ## Test Types
 
 **Unit Tests:**
-- Unit tests dominate the suite and use small deterministic fixtures. Examples: `tests/test_models/test_game_state.py`, `tests/test_config/test_loader.py`, `tests/test_scoring/test_engine.py`, `tests/test_validation/test_metrics.py`, and `tests/test_data/test_loader.py`.
-- Unit tests assert exact values for pure helpers and use `pytest.approx` for floats. Examples: scoring and metric assertions in `tests/test_validation/test_metrics.py`, `tests/test_validation/test_weekly.py`, and `tests/test_data/test_actuals.py`.
-- Unit tests for loaders should assert cache behavior, schema behavior, and fallback behavior using `tmp_path` and mocked external calls, as in `tests/test_data/test_loader.py`, `tests/test_data/test_weather/test_provider.py`, and `tests/test_data/test_vegas/test_props_engine.py`.
+- Scope: Single function or method in isolation
+- Approach: Fixtures provide sample data, test logic with known inputs
+- Example: `test_wr_has_target_share()` checks WR usage calculation
+- Speed: <1ms per test
+- Markers: None (default)
 
 **Integration Tests:**
-- Integration-style tests live under both `tests/test_integration/` and subsystem-specific `*_integration.py` files, such as `tests/test_data/test_pff/test_matchup_integration.py`, `tests/test_data/test_pff/test_qb_split_integration.py`, `tests/test_data/test_pff/test_rb_scheme_fit_integration.py`, `tests/test_data/test_weather/test_integration.py`, and `tests/test_data/test_vegas/test_integration.py`.
-- Use integration tests to verify pipeline ordering, cross-module wiring, and config-driven engine activation. Examples: PFF integration tests in `tests/test_data/test_pff/`, weather integration tests in `tests/test_data/test_weather/test_integration.py`, and usage integration tests in `tests/test_data/test_usage/test_usage_integration.py`.
-- Mark external-network tests with `@pytest.mark.integration` when they call real external services. The marker is registered in `pyproject.toml`; unit tests should mock external calls by default.
+- Scope: Multiple components working together
+- Markers: `@pytest.mark.integration` (slow, requires external data)
+- Approach: Call real loaders (nflreadpy mocked in conftest), test data flow
+- Example: `test_game_context_builds_with_real_schedule()` loads nflverse data
+- Speed: 1-10 seconds per test (network calls mocked but data loading is real)
+- Run: `pytest -m integration` only when needed
 
-**E2E Tests:**
-- Lightweight end-to-end coverage exists in `tests/test_integration/test_end_to_end.py`, `tests/test_smoke.py`, and CLI flows in `tests/test_cli.py`.
-- Use `click.testing.CliRunner` for CLI entrypoint tests in `tests/test_cli.py`; patch expensive data loading/context building around CLI commands that should not hit network or slow caches.
+**Statistical Validation Tests:**
+- Scope: Bulk simulations (2000+ games) against NFL ground truth
+- Markers: `@pytest.mark.statistical`
+- Approach: `run_simulations()` with league-average distributions, verify summary stats
+- Example: `TestStatisticalValidation.test_average_total_points()` checks game totals are 30-65 points
+- Speed: 30-120 seconds per test (computationally intensive)
+- Run: `pytest -m statistical` for accuracy validation before merge
+- Fixture scope: `@pytest.fixture(scope="class")` to share 2000-game result across tests
 
-**Script Tests:**
-- Script tests import target scripts by adding `scripts/` to `sys.path`, as in `tests/test_scripts/test_scrape_pff.py` and `tests/test_scripts/test_scrape_pff_props.py`.
-- Script tests should mock HTTP, sleep, filesystem roots, and command-side dependencies. Examples: retry/auth tests in `tests/test_scripts/test_scrape_pff.py`, pagination/cache tests in `tests/test_scripts/test_scrape_pff_props.py`, and ledger tests in `tests/test_scripts/test_ab_ledger.py`.
-
-## Property And Statistical Testing
-
-**Property-Based Tests:**
-- Hypothesis is listed in optional dev dependencies in `pyproject.toml`, but no `@given`, `from hypothesis`, or `import hypothesis` tests are detected under `tests/`, `src/`, or `scripts/`.
-- Use invariant-style pytest tests for properties until Hypothesis tests are added. Examples: hash/equality invariants in `tests/test_models/test_game_state.py`, deterministic parallel-vs-sequential invariants in `tests/test_validation/test_parallel.py`, and no-negative-average invariants in `tests/test_engine/test_player_validation.py`.
-- New Hypothesis tests should live with the subsystem they exercise and use existing dataclasses/fixtures. Good candidates are scoring config invariants in `tests/test_config/test_loader.py`, yardline bounds in `tests/test_engine/test_game_flow.py`, and projection row numeric validity in `tests/test_validation/test_validate_script.py`.
-
-**Statistical Tests:**
+Example from `tests/test_engine/test_statistical_validation.py`:
 ```python
 @pytest.mark.statistical
-def test_defensive_td_statistical_rate_on_interceptions():
-    rng = np.random.default_rng(12345)
-    n_trials = 5000
-    ...
-    assert 0.15 <= rate <= 0.25
+class TestStatisticalValidation:
+    """Run 2000 simulated games and verify NFL-realistic averages."""
+    
+    @pytest.fixture(scope="class")
+    def sim_results(self):
+        dists = make_league_avg_dists()
+        return run_simulations(dists, dists, n_sims=2000, seed=42)
+    
+    def test_average_total_points(self, sim_results):
+        """NFL average is ~45-48 points per game."""
+        s = sim_results.summary()
+        assert 30 <= s["total_score_mean"] <= 65
 ```
-- Mark slow stochastic plausibility tests with `@pytest.mark.statistical`. Existing examples: `tests/test_engine/test_dst_defensive_tds.py`, `tests/test_engine/test_player_validation.py`, `tests/test_engine/test_statistical_validation.py`, and `tests/test_data/test_pff/test_tier_engine.py`.
-- Use deterministic seeds and wide domain-appropriate ranges for statistical tests. Examples: total points/play-count ranges in `tests/test_engine/test_statistical_validation.py`, player-level plausible ranges in `tests/test_engine/test_player_validation.py`, and defensive touchdown rate ranges in `tests/test_engine/test_dst_defensive_tds.py`.
-- Run statistical tests explicitly with `uv run pytest tests/ -v -m statistical` when changing simulation probabilities, RNG flow, calibration gates, player selection, or empirical distributions.
 
 ## Common Patterns
 
 **Async Testing:**
-```python
-Not detected
-```
-- No async test pattern is detected. Network-facing code such as `src/fantasy_sim/data/weather/provider.py` and scraper scripts uses synchronous `httpx` calls and is tested with synchronous mocks in `tests/test_data/test_weather/test_provider.py`, `tests/test_scripts/test_scrape_pff.py`, and `tests/test_scripts/test_scrape_pff_props.py`.
+- Not applicable (no async code in project)
+- All functions are synchronous with explicit RNG passing
 
 **Error Testing:**
 ```python
-with pytest.raises(ConfigError):
-    resolve_scoring(config["scoring"], "nonexistent")
+def test_raises_no_qb_on_roster(self, sample_rosters):
+    models = {
+        "TK87": PlayerModel(..., position="TE", team="KC", ...),
+        "IP01": PlayerModel(..., position="RB", team="KC", ...),
+    }
+    roster = TeamRoster("KC", list(models.values()))
+    
+    with pytest.raises(ValueError, match="No QB found on roster"):
+        roster.get_starting_qb()
 ```
-- Use `pytest.raises` for config and validation errors, as in `tests/test_config/test_loader.py`, `tests/test_edge_cases.py`, `tests/test_validation/test_config.py`, and `tests/test_validation/test_validate_script.py`.
-- Match exception text where behavior depends on actionable diagnostics, as in `tests/test_edge_cases.py`, `tests/test_validation/test_config.py`, and `tests/test_validation/test_backtester.py`.
-- Use return-value assertions for graceful fallbacks instead of exceptions. Examples: `WeatherProvider.get_weather()` returning `None` in `tests/test_data/test_weather/test_provider.py`, `PropsLoader.load_props()` returning an empty DataFrame in `tests/test_data/test_vegas/test_props_engine.py`, and `load_ledger()` returning `[]` for missing files in `tests/test_validation/test_ledger.py`.
 
-**DataFrame Testing:**
+**Fixture Usage - Clean Data:**
 ```python
-result = loader.load_props(season=2024, week=6)
-assert result.shape[0] == 1
-assert result["player_id"].to_list() == [101]
+def test_target_shares_per_team_sum_near_one(self, expanded_pbp, sample_rosters):
+    """Regression: target shares must sum to 1.0 per team after normalization."""
+    models = build_player_models(expanded_pbp, sample_rosters, training_seasons=[2024])
+    kc_players = [m for m in models.values() if m.team == "KC"]
+    total_ts = sum(p.usage.target_share for p in kc_players)
+    assert total_ts == pytest.approx(1.0, abs=0.05)
 ```
-- Use real `pl.DataFrame` fixtures and assert schema, column existence, shape, and exact lists. Examples: `tests/test_data/test_loader.py`, `tests/test_data/test_market_history/test_loader.py`, `tests/test_data/test_tracking/test_inputs_loader.py`, and `tests/test_data/test_pff/test_loader.py`.
-- Write parquet files into `tmp_path` for loader/cache tests, as in `tests/test_data/test_loader.py`, `tests/test_data/test_market_history/test_importer.py`, and `tests/test_scripts/test_scrape_pff_props.py`.
 
-**Validation Harness Testing:**
-- Use `tests/test_validation/test_metrics.py` for pure metric behavior including Spearman, MAE, boom/bust calibration, and KS distribution summaries.
-- Use `tests/test_validation/test_ledger.py` for ledger schema, legacy normalization, JSON round trips, and table formatting.
-- Use `tests/test_validation/test_parallel.py` for worker-count behavior, `GameSpec`/`GameSimResult` dataclasses, deterministic parallel/sequential simulation, and failure handling.
-- Use `tests/test_validation/test_validate_script.py` for `scripts/validate.py` behavior such as projection row validation, cache paths, config overrides, workers, and ledger integration.
+**Probabilistic Testing (Hypothesis):**
+- Uses `@given` decorator for property-based testing (not yet in project)
+- Example pattern (can be applied):
+```python
+from hypothesis import given, strategies as st
+
+@given(st.integers(min_value=1, max_value=99))
+def test_yardline_always_in_range(yardline):
+    """yardline_100 must always be 1-99."""
+    assert 1 <= yardline <= 99
+```
+
+**Regression Notes:**
+- Tests include comments explaining what they prevent:
+```python
+def test_roster_normalizes_carry_shares(self):
+    """Carry shares must sum to 1.0 after roster construction.
+    
+    Regression: when former players had carries in training data but
+    aren't on the current roster, raw carry_shares summed to <1.0.
+    select_rusher normalizes weights, amplifying each player's actual
+    selection probability beyond the intended share value.
+    """
+```
+
+## Validation Harness
+
+**A/B Testing Approach:**
+- Not automated in pytest (manual by user with scripts)
+- Ledger persistence: `scripts/validate.py --show-ledger` displays A/B results
+- Configuration: `--mode all`, `--mode vegas`, `--mode vegas+spread`, `--mode vegas+props`
+- Metrics: Spearman rank correlation, MAE, boom-bust differential, KS distribution test
+- Runs: 50-200+ simulations per A/B pair depending on accuracy needed
 
 ---
 
-*Testing analysis: 2026-04-24*
+*Testing analysis: 2026-04-26*
