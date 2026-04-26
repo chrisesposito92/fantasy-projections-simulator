@@ -157,3 +157,130 @@ def build_bare_engine_configs() -> dict:
         "play_call_model_config": None,
         "qb_rushing_config": None,
     }
+
+
+def bare_config_dict(defaults: dict) -> dict:
+    """Return a deepcopy of defaults with every .enabled gate forced false.
+
+    Used as the source dict for ``apply_overrides`` when ``--arm-b-base bare`` is set
+    on validate.py. Preserves the dict structure so user-requested overrides like
+    ``--set pff.team_context.enabled=true`` (or
+    ``--set phase1_ks_flags.ks01_preserve_distribution.enabled=true``) can locate
+    the same leaf paths.
+
+    REVISED Cycle 3 (Codex 01-REVIEWS.md NEW HIGH #2 fix): includes BOTH the
+    top-level engine gates that build_engine_configs at validation/config.py:118-138
+    keys off AND the sub-engine flags. The earlier (Cycle 2) version omitted the
+    top-level gates, which meant a 'bare' base still had pff.enabled=true (etc.),
+    so any --set pff.X.enabled=true override gave a config where many other PFF
+    sub-engines were still bound by their defaults. Cycle 3 makes this exhaustive.
+
+    REVISED Cycle 3 (Codex 01-REVIEWS.md NEW HIGH #1 fix): also disables every
+    phase1_ks_flags.ksXX_*.enabled flag so per-KS bare-isolation A/B can flip
+    exactly one flag in Arm B via --set.
+
+    Engines disabled here must match the truthiness checks in
+    ``build_engine_configs()`` above. The Task 4 integration test asserts this
+    exhaustively (every engine returns None from
+    build_engine_configs(bare_config_dict(load_defaults()))).
+    """
+    config = copy.deepcopy(defaults)
+
+    enabled_keys_to_disable = (
+        # === Top-level engine gates (NEW Cycle 3 — fixes Codex Cycle-2 NEW HIGH #2) ===
+        # Each of these is what build_engine_configs in validation/config.py:118-138
+        # keys off.
+        "pff.enabled",
+        "weather.enabled",
+        "vegas.enabled",
+        "props.enabled",  # Top-level props block (sibling to vegas; distinct from vegas.props.enabled)
+        "usage.enabled",
+        "tracking.enabled",
+        "availability.enabled",
+        "role_trend.enabled",
+        "market_history.enabled",
+        "game_script.enabled",
+        "goal_line_concentration.enabled",
+        "td_tendency.enabled",
+        "target_selection.enabled",
+        "play_call_model.enabled",
+        # qb_rushing: gate is `scramble.enabled OR designed_runs.enabled`,
+        # so disable BOTH
+        "qb_rushing.scramble.enabled",
+        "qb_rushing.designed_runs.enabled",
+
+        # === PFF sub-engines (Cycle 2 baseline; preserved) ===
+        "pff.tier_engine.enabled",
+        "pff.team_context.enabled",
+        "pff.matchup.enabled",
+        "pff.coverage.enabled",
+        "pff.kicker.enabled",
+        "pff.dst_baseline.enabled",
+        "pff.rb_scheme_fit.enabled",
+        "pff.qb_split.enabled",
+        "pff.depth_role.enabled",
+        "pff.depth_role.efficiency.enabled",
+        "pff.talent.enabled",
+        "pff.tier_engine.ncaa_rookie.enabled",
+        "pff.tier_engine.archetypes.enabled",
+
+        # === Vegas sub-engines (Cycle 2 baseline; preserved) ===
+        # Note: vegas.props.enabled is the sub-engine flag for the Vegas props
+        # integration, distinct from the top-level props.enabled block above.
+        "vegas.props.enabled",
+
+        # === Usage sub-engines (Cycle 2 baseline; preserved) ===
+        "usage.cpoe.enabled",
+        "usage.ngs.enabled",
+        "usage.route_rate.enabled",
+
+        # === Ensemble (Cycle 2 baseline; preserved) ===
+        "ensemble.enabled",
+        "ensemble.ff_opportunity.enabled",
+        "ensemble.ff_rankings.enabled",
+        "ensemble.dynamic_blend.enabled",
+        "ensemble.residual_calibration.enabled",
+
+        # === Tracking sub-engines (Cycle 2 baseline; preserved) ===
+        "tracking.receiver_participation.enabled",
+        "tracking.rb_efficiency.enabled",
+        "tracking.qb_context.enabled",
+
+        # === Availability sub-engines (Cycle 2 baseline; preserved) ===
+        "availability.injuries.enabled",
+        "availability.depth_charts.enabled",
+        "availability.usage_fallback.enabled",
+
+        # === Game-script sub-engines (Cycle 2 baseline; preserved) ===
+        "game_script.trailing_late.enabled",
+        "game_script.leading_late_rb.enabled",
+
+        # === Phase-1 KS feature flags (NEW Cycle 3 — fixes Codex Cycle-2 NEW HIGH #1) ===
+        # Each flag gates one per-KS code change; default false (Task 8 ships
+        # defaults.yaml block). Disabling them in bare_config_dict means per-KS
+        # bare A/B can flip exactly one in Arm B.
+        "phase1_ks_flags.ks01_preserve_distribution.enabled",
+        "phase1_ks_flags.ks03_dynamic_yard_anchor.enabled",
+        "phase1_ks_flags.ks04_conditional_catch_boost.enabled",
+        "phase1_ks_flags.ks05_props_recv_yds_fix.enabled",
+        "phase1_ks_flags.ks06_backup_receiver_fix.enabled",
+        "phase1_ks_flags.ks07_positional_rz_catch_rate.enabled",
+        "phase1_ks_flags.ks15_unclamp_for_td_gate.enabled",
+        "phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled",
+    )
+
+    for key_path in enabled_keys_to_disable:
+        keys = key_path.split(".")
+        target = config
+        try:
+            for k in keys[:-1]:
+                target = target[k]
+            if keys[-1] in target:
+                target[keys[-1]] = False
+        except (KeyError, TypeError):
+            # Leaf doesn't exist in this defaults snapshot — engine may not be
+            # configured yet. Skip silently; the corresponding load_X_config will
+            # produce a disabled instance anyway.
+            continue
+
+    return config
