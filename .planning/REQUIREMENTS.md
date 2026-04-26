@@ -56,7 +56,7 @@ Cheap parameter changes ranked by ROI. Shipped alongside bug fixes.
 
 - [x] **KS-04**: Retune `CATCH_YARDS_BOOST` (currently `+1` outside RZ, disabled in RZ). Likely undersized for WR; consider `+2` and/or enabling in RZ post-KS-01. → Impacts TGT-01, TGT-02, TGT-05, TGT-07, TGT-10
 - [x] **KS-07**: Retune RZ catch-rate / TD-gate constants stack. → Impacts TGT-02, TGT-05, TGT-07, TGT-10
-- [ ] **KS-29**: Retune sack-rate prior. → Impacts TGT-01, TGT-09
+- [x] **KS-29**: Retune sack-rate prior. → Impacts TGT-01, TGT-09
 - [ ] **KS-32**: Retune QB pass-volume prior (per-game pass attempts). → Impacts TGT-01, TGT-09
 
 ## v2 Requirements
@@ -114,7 +114,7 @@ Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). T
 | KS-19 | Phase 4 | Pending |
 | KS-20 | Phase 4 | Pending |
 | KS-21 | Phase 4 (scrape sub-deliverable runs in Phase 1) | Complete |
-| KS-29 | Phase 1 | Pending |
+| KS-29 | Phase 1 | Complete |
 | KS-32 | Phase 1 | Pending |
 
 **Coverage:**
