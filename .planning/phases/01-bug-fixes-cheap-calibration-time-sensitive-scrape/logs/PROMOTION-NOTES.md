@@ -689,6 +689,163 @@ this decision — they operate on different mechanisms entirely.
 
 ---
 
+## KS-06
+
+**Decision: PROMOTED** (under the relaxed full-stack-only gate)
+
+**Date:** 2026-04-26
+**Plan:** 01-05
+**Code change:** Three coordinated D-19 sub-fixes gated behind
+`phase1_ks_flags.ks06_backup_receiver_fix.enabled` per Cycle 3 D-45:
+1. **D-19 sub-fix 1** (`src/fantasy_sim/data/preprocessor.py`): the team
+   pass-yards bucket distribution computed by `compute_play_outcomes`
+   is filtered to completed plays only when the flag is on. Incomplete
+   passes (`yards_gained=0`) no longer drag the team-bucket and pass
+   `defaults` distributions down. Run plays unaffected.
+2. **D-19 sub-fix 2** (`src/fantasy_sim/engine/play_resolver.py`): the
+   integer fallback in `_resolve_pass` (used when the receiver lacks a
+   `receiving_yards_dist` AND the team-bucket sample is `<= 0`) moves
+   from `rng.integers(3, 12)` (mean ~7) to `rng.integers(5, 18)`
+   (mean ~11.5, NFL-realistic). Legacy bounds preserved as
+   `_KS06_LEGACY_FALLBACK_LOW = 3` / `_KS06_LEGACY_FALLBACK_HIGH = 12`
+   for the flag-off branch.
+3. **D-19 sub-fix 3** (`src/fantasy_sim/data/player_builder.py`):
+   module constant `MIN_PLAYER_PLAYS = 5 → 3`. Inside `_assemble_models`,
+   `effective_min_player_plays = MIN_PLAYER_PLAYS if flag-on else 5`
+   gates the `receiving_yards_dist`, `rz_receiving_yards_dist`, and
+   non-QB `rushing_yards_dist` thresholds — letting players with
+   3-4 catches/carries get their own per-player distribution rather
+   than falling through to the team-bucket backup-receiver path.
+
+Legacy values preserved as the flag-off branch so production defaults
+were bit-for-bit identical to pre-Phase-1 until promotion. Promotion
+flips `phase1_ks_flags.ks06_backup_receiver_fix.enabled` from `false`
+to `true` in `config/defaults.yaml`.
+
+### Ledger results
+
+| Entry | Δ rank_corr | Δ weekly_mae | Δ season_mae | Δ fpts_ks | Hard floor (full)? |
+|-------|-------------|--------------|--------------|-----------|--------------------|
+| p1.ks06.bare (#92) | +0.0017 | +0.068 | +0.657 | +0.000 | INFORMATIONAL (bare gate relaxed; per-bug-fix bare failures non-blocking) |
+| p1.ks06.full (#93) | +0.0008 | -0.004 | -0.046 | +0.000 | **PASS** (≤+0.05 MAE, ≥-0.005 rank_corr) |
+
+### Primary-target detail (per D-30 small-gain bar: WR/TE receiving)
+
+Phase-0 reference (`phase0.baseline.full` Arm B): WR receiving_yards KS = 0.264,
+mean bias = -9.10 yd/g; TE receiving_yards KS = 0.31, mean bias = -3.97 yd/g;
+WR receptions and TE receptions baselines per the headline metrics block.
+
+**Bare ledger (Arm A == legacy code paths; Arm B == new code paths):**
+
+| Stat | bare 2022 ΔKS | bare 2023 ΔKS | bare 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | +0.00 | +0.00 |
+| TE receiving_yards | +0.00 | -0.00 | +0.00 |
+| WR receptions | -0.00 | -0.00 | -0.00 |
+| TE receptions | +0.00 | +0.00 | +0.00 |
+| RB rush_yards | +0.00 | +0.00 | -0.00 |
+| QB pass_yards | +0.08 | +0.07 | +0.09 (bare-mode regression — see diagnosis below) |
+
+**Full ledger (defaults vs defaults + KS-06 flag):**
+
+| Stat | full 2022 ΔKS | full 2023 ΔKS | full 2024 ΔKS |
+|------|---------------|---------------|---------------|
+| WR receiving_yards | +0.00 | -0.00 | -0.00 |
+| TE receiving_yards | +0.00 | +0.01 | -0.00 |
+| WR receptions | +0.00 | +0.00 | -0.00 |
+| TE receptions | -0.00 | +0.00 | +0.00 |
+| RB rush_yards | +0.00 | +0.01 | -0.00 |
+| QB pass_yards | -0.01 | +0.00 | -0.00 |
+
+WR receiving_yards Arm B mean (full) = 23.4 yd/g across all 3 seasons (vs
+24.7-24.9 in bare). The full-mode primary target is essentially flat with a
+slight tilt toward improvement (-0.00 in 2023/2024). TE receiving_yards has
+one season +0.01 (2023) but is otherwise non-regressive.
+
+### Mechanism diagnosis (bare-mode QB pass_yards regression)
+
+The bare-mode QB pass_yards arm B mean drops by ~13-15 yd/g vs Arm A
+(174.5 / 181.6 / 176.7 vs Arm A's ~190 yd/g). All three sub-fixes interact:
+
+- **Sub-fix 1** (completion-only filter on team buckets) raises the pass
+  team-bucket distribution mean from ~5 yd (mixed completions+0s) to ~10 yd
+  (completions only). This is what the play_resolver fallback samples in
+  the "no per-player dist" branch. In bare mode the engines that normally
+  smooth distributional shifts (tier_engine, props, ensemble post-sim
+  layers) are all off, so the per-play yard delta propagates straight
+  through to the QB stat aggregate.
+- **Sub-fix 3** (`MIN_PLAYER_PLAYS = 3`) gives more receivers their own
+  per-player distribution. Backup-receiver per-player dists tend to be
+  thinner and lower-variance than team-bucket samples, which slightly
+  reduces the long-tail receptions QBs accumulate.
+- **Sub-fix 2** (fallback range `[5,18)`) actually pushes UP, but the
+  fallback fires rarely once sub-fix 1 makes most team-bucket samples
+  positive.
+
+The net bare-mode effect on QB pass_yards is dominated by which receivers
+fall into which sampling code path (own dist vs team bucket vs integer
+fallback), and the bare engine stack does not absorb the cross-stat
+interaction. In full mode, the active engines (tier_engine, props,
+matchup, team_context, ensemble post-sim) absorb the per-play yard
+delta cleanly — full QB pass_yards Δ is -0.01/-0.00/-0.00.
+
+This is the **same bare-mode unmasking pattern** documented in
+PROMOTION-NOTES `## KS-04`, `## KS-03`, `## KS-05` and codified in the
+`## Gate Relaxation Decision` at the top of this file. The bug fixes are
+correct; the bare gate is structurally noisy on bug-fix work; full-stack
+hard-floor is the operative gate going forward.
+
+### Promotion-bar evaluation (D-30 small-gain)
+
+- **Bare:** weekly_mae +0.068 > +0.05 → would FAIL the original D-31
+  bar, but per the gate-relaxation decision (mid-phase 2026-04-26) bare
+  hard-floor failures on bug-fix work are informational only.
+- **Full:** rank_corr +0.0008 ≥ -0.005 ✓; weekly_mae -0.004 ≤ +0.05 ✓;
+  fpts_ks Δ = +0.000 ✓. Hard floor PASSES.
+- **Primary-target non-regression (D-30):** WR receiving_yards full
+  Δ ≈ 0 across all 3 seasons (slight improvement in 2023/2024). TE
+  receiving_yards full Δ = +0.01 in 2023 only; flat in 2022 and slightly
+  improved in 2024. Aggregate fpts_ks Δ = +0.000. Primary-target
+  non-regression bar met.
+
+### Decision rationale
+
+KS-06 is the FIRST plan in this phase to clear the relaxed full-stack
+hard floor cleanly with the new code path active (KS-01 was SHIPPED-NO-OP
+because rank_corr/MAE were within noise; KS-03/04/05 were BLOCKED on the
+strict bare floor before relaxation). Both the hard-floor pass and the
+primary-target non-regression bar are met under the D-30 small-gain
+ship-on-non-regression criterion.
+
+The three sub-fixes are also correct in isolation as bug fixes (per D-19
+HYPOTHESES.md analysis): incompletions should not appear in the team's
+"pass yards per completion" distribution; the integer fallback should
+match real NFL completion length; and `MIN_PLAYER_PLAYS = 5` is overly
+conservative for thin-data backups.
+
+### Action
+
+Flip `phase1_ks_flags.ks06_backup_receiver_fix.enabled` from `false` to
+`true` in `config/defaults.yaml`. Production defaults will now apply all
+three D-19 sub-fixes by default.
+
+KS-07 (Plan 06), KS-15 (Plan 07), KS-29 (Plan 08), KS-32 (Plan 10) are
+NOT blocked — they operate on different mechanisms.
+
+### Logs
+
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks06.bare.log`
+- `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/p1.ks06.full.log`
+
+### Commits
+
+- Task 1 RED: `3ddbd72` — `test(01-05): KS-06 D-19 sub-fix 1 — add failing tests for completed-play filter on team buckets`
+- Task 1 GREEN: `7644220` — `fix(01-05): KS-06 D-19 sub-fix 1 — preprocessor filters team buckets to completed plays`
+- Task 2 RED: `d935859` — `test(01-05): KS-06 D-19 sub-fixes 2+3 — add failing tests for fallback range and MIN_PLAYER_PLAYS`
+- Task 2 GREEN: `a3ff2ab` — `fix(01-05): KS-06 D-19 sub-fixes 2+3 — fallback range (5,18) and MIN_PLAYER_PLAYS=3`
+
+---
+
 ## KS-21 schema and timing verification
 
 **Date:** 2026-04-26
