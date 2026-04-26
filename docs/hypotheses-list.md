@@ -109,6 +109,14 @@ Why it was not promoted:
 
 The completed lesson is narrow: do not repeat standalone scramble-probability modeling as-is. Continue QB rushing only as a broader chain that includes designed-run selection, scramble/designed-run separation, and rush-gain tails.
 
+### QB Designed-Run Chain
+
+Status: **NO_PROMOTION** for the designed-run selection and rush-gain tail slice. The model remains off by default.
+
+Smoke artifacts were fitted under `results/qb_rushing/designed_runs/smoke_v1` with prior-season labels only (`--min-source-season 2018`, `--training-years 4`). The 2022, 2023, and 2024 artifacts all had nonzero examples, source seasons strictly before the target season, and nonempty global tail buckets.
+
+The post-wiring-fix 50-sim smoke run `qb-designed-run-chain-s50-postfix` covered `qb_rushing.designed_runs=full(2022,2023,2024)` and completed successfully in 1267.4s. Average deltas were rank corr `-0.0007`, weekly MAE `+0.000`, season MAE `+0.056`, and fpts KS `+0.003`. Weekly QB metrics improved slightly (`rank_corr +0.0033`, weekly MAE `-0.001`), but TE weekly metrics regressed (`rank_corr -0.0049`, weekly MAE `+0.018`) and season-level metrics did not clear the smoke gate. A 200-sim decision run is not warranted for this v1 slice, and defaults remain unchanged.
+
 ## Hypotheses
 
 | # | Status | Hypothesis | Why It Has Sound Logic |
@@ -120,7 +128,7 @@ The completed lesson is narrow: do not repeat standalone scramble-probability mo
 | 5 | No Promotion | **Replace receiver selection with a learned target-share/candidate model.** | **Parked after v1.** Converged smoke artifacts regressed average rank corr `-0.0013` with neutral weekly MAE, and WR weekly rank corr moved `-0.0028`. Revisit only as part of a richer passing-chain or route/air-yards model. |
 | 6 | Open | **Split passing yards into learned air-yards, catch probability, and YAC nodes.** | Current completed-pass yards use a player receiving-yards distribution plus a fixed boost. Decomposing the pass chain should better capture QB/receiver/defense context and improve both QB and WR rankings. |
 | 7 | No Promotion | **Replace standalone QB scramble probability with a learned context model.** | **Completed and parked after v1.** The 50-sim smoke run regressed average rank corr `-0.0009`, barely moved QB weekly MAE, regressed RB weekly metrics, and did not improve QB rushing-yards KS. Do not repeat this slice as-is. |
-| 8 | Open | **Build the remaining QB rushing chain for designed-run selection and rush-gain tail behavior.** | QB weekly rank correlation remains a key gap, and mobile QB fantasy value is high-leverage. The next version should model designed runs and rushing-yard tails instead of only changing scramble probability. |
+| 8 | No Promotion | **Build the remaining QB rushing chain for designed-run selection and rush-gain tail behavior.** | **Completed and parked after v1.** The post-wiring-fix 50-sim smoke run regressed average rank corr `-0.0007`, season MAE `+0.056`, and fpts KS `+0.003`. QB weekly rank correlation improved `+0.0033`, but the broader validation did not justify a 200-sim decision run or default promotion. |
 | 9 | Open | **Build a learned RB/ball-carrier selection model for designed runs.** | RB usage is sensitive to injuries, depth chart shifts, game script, and committees. Current carry selection uses historical carry shares normalized onto current rosters, which can lag role changes. |
 | 10 | Open | **Replace fixed red-zone TD gates with a learned TD conversion model.** | TDs dominate fantasy error. Current gates are static tables plus player TD tendency factors; prior goal-line concentration hurt rank ordering, which suggests the concept matters but the heuristic is too blunt. |
 | 11 | Open | **Rework injury/availability as a hard-actives plus role-impact model, not a broad injury-status toggle.** | Availability without injuries won; injuries are still off. A stricter model using confirmed inactives/IR plus teammate role redistribution could capture real weekly role shocks without noisy questionable-status penalties. |
@@ -136,24 +144,24 @@ Recommended scoring scale:
 
 | Priority | Status | Hypothesis | Expected Lift | Cost | Data | Validation Clarity | Score | Recommended Use |
 |---:|---|---|---:|---:|---:|---:|---:|---|
-| 1 | Open | **Build the remaining QB rushing chain** | 4 | 2 | 4 | 4 | 14 | Good QB-specific upside and a clean pain point, but the standalone scramble-probability slice is done and not promoted. Continue only with designed-run selection, rush-gain tails, or a coupled QB-rushing chain. |
-| 2 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
-| 3 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than QB rushing or passing-chain decomposition. |
-| 4 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
-| 5 | Open | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
-| 6 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
+| 1 | Open | **Split passing yards into air yards, catch probability, and YAC** | 5 | 1 | 4 | 3 | 13 | Very high QB/WR upside. More promising than target selection alone because it models the pass-chain pieces that turn target allocation into fantasy points. |
+| 2 | Open | **Build learned ball-carrier selection for designed runs** | 3 | 2 | 4 | 4 | 13 | Useful RB role-drift work and a clean selector boundary, but likely lower top-line lift than passing-chain decomposition. |
+| 3 | Open | **Replace fixed red-zone TD gates** | 4 | 2 | 4 | 3 | 13 | TDs are high leverage, but prior goal-line concentration hurt rank ordering, so this needs a narrow learned conversion design. |
+| 4 | Open | **Backfill and expand market/props coverage** | 5 | 2 | 2 | 3 | 12 | High upside, but data acquisition and historical coverage are the blocker. Best run as a data-readiness phase before modeling. |
+| 5 | Open | **Rework injury/availability role impact** | 4 | 2 | 3 | 3 | 12 | Valuable if hard inactive/depth evidence is reliable, but avoid reviving noisy questionable-status logic. |
 | - | No Promotion | **Replace empirical pass/run choice with a learned play-call model** | 4 | 3 | 4 | 4 | 15 | Parked after decision run missed: rank corr `+0.0026`, weekly MAE `-0.018`, RB regression, and persistent QB pass-yards KS damage. Revisit only with richer passing-chain or volume calibration. |
 | - | No Promotion | **Replace receiver selection with a learned target model** | 5 | 2 | 4 | 4 | 15 | Parked after converged smoke run missed: average rank corr `-0.0013`, weekly MAE flat, WR rank corr `-0.0028`. Revisit only with richer pass-chain features/objective. |
-| - | No Promotion | **Replace standalone QB scramble probability with a learned context model** | 4 | 3 | 4 | 5 | 16 | Parked after 50-sim smoke run missed: average rank corr `-0.0009`, QB lift was tiny, RB metrics regressed, and QB rushing-yards KS did not improve. Do not repeat without designed-run and rushing-tail modeling. |
+| - | No Promotion | **Replace standalone QB scramble probability with a learned context model** | 4 | 3 | 4 | 5 | 16 | Parked after 50-sim smoke run missed: average rank corr `-0.0009`, QB lift was tiny, RB metrics regressed, and QB rushing-yards KS did not improve. Do not repeat as a standalone scramble-probability slice. |
+| - | No Promotion | **Build the remaining QB rushing chain** | 4 | 2 | 4 | 4 | 14 | Parked after the post-wiring-fix 50-sim smoke run missed: average rank corr `-0.0007`, season MAE `+0.056`, and fpts KS `+0.003`. QB weekly lift was not enough to justify a 200-sim decision run. |
 | - | Done | **Learn dynamic blend weights** | 5 | 4 | 4 | 5 | 18 | Promoted; keep as part of defaults and use as the source stack for future residual/model tests. |
 | - | Done | **Add residual calibration** | 4 | 4 | 5 | 5 | 18 | Promoted; monitor TE rank-corr sensitivity in future decision runs. |
 
 Recommended execution order:
 
-1. **QB rushing model**: clean QB-specific pain point; skip standalone scramble-probability v1 and continue with designed runs, gain tails, or a coupled QB-rushing chain.
-2. **Passing-chain decomposition**: high-upside QB/WR work that can revisit receiver allocation through air yards, catch probability, and YAC rather than target draw alone.
-3. **Learned ball-carrier selection**: useful RB role-drift work with a localized selector boundary.
-4. **Market/props backfill**: run once the exact missing data and historical coverage path is defined.
+1. **Passing-chain decomposition**: high-upside QB/WR work that can revisit receiver allocation through air yards, catch probability, and YAC rather than target draw alone.
+2. **Learned ball-carrier selection**: useful RB role-drift work with a localized selector boundary.
+3. **Market/props backfill**: run once the exact missing data and historical coverage path is defined.
+4. **Injury/availability role impact**: revisit only with hard actives and role redistribution, not broad questionable-status penalties.
 
 Planning recommendation:
 

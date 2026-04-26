@@ -8,7 +8,11 @@ import polars as pl
 import numpy as np
 from fantasy_sim.cli import main
 from fantasy_sim.data.play_call_model import PlayCallModelConfig
-from fantasy_sim.data.qb_rushing import QbRushingConfig, QbScrambleModelConfig
+from fantasy_sim.data.qb_rushing import (
+    QbDesignedRunModelConfig,
+    QbRushingConfig,
+    QbScrambleModelConfig,
+)
 
 
 from fantasy_sim.engine.types import TeamDistributions
@@ -113,6 +117,27 @@ class TestCliConfig:
         cli._make_builder(defaults={})
 
         assert MockBuilder.call_args.kwargs["play_call_model_config"] is config
+
+    @patch("fantasy_sim.cli.GameContextBuilder")
+    @patch("fantasy_sim.cli.DataLoader")
+    @patch("fantasy_sim.cli.load_qb_rushing_config")
+    def test_make_builder_threads_enabled_qb_designed_run_config_without_scramble(
+        self,
+        mock_load_qb_rushing_config,
+        MockLoader,
+        MockBuilder,
+    ):
+        from fantasy_sim import cli
+
+        qb_rushing_config = QbRushingConfig(
+            designed_runs=QbDesignedRunModelConfig(enabled=True)
+        )
+        mock_load_qb_rushing_config.return_value = qb_rushing_config
+        MockLoader.return_value.cache_dir = Path("/tmp/cache")
+
+        cli._make_builder(defaults={})
+
+        assert MockBuilder.call_args.kwargs["qb_rushing_config"] is qb_rushing_config
 
 
 class TestWeekCommand:
@@ -561,6 +586,29 @@ class TestBacktestCommand:
     ):
         qb_rushing_config = QbRushingConfig(
             scramble=QbScrambleModelConfig(enabled=True)
+        )
+        mock_load_qb_rushing_config.return_value = qb_rushing_config
+        MockBacktester.return_value.run.return_value = object()
+
+        result = runner.invoke(main, ["backtest", "--season", "2024", "--sims", "10"])
+
+        assert result.exit_code == 0
+        assert MockBacktester.call_args is not None
+        assert MockBacktester.call_args.kwargs["qb_rushing_config"] is qb_rushing_config
+        mock_format_report.assert_called_once()
+
+    @patch("fantasy_sim.cli.format_backtest_report", return_value="backtest report")
+    @patch("fantasy_sim.cli.Backtester")
+    @patch("fantasy_sim.cli.load_qb_rushing_config")
+    def test_backtest_passes_enabled_qb_designed_run_config_without_scramble(
+        self,
+        mock_load_qb_rushing_config,
+        MockBacktester,
+        mock_format_report,
+        runner,
+    ):
+        qb_rushing_config = QbRushingConfig(
+            designed_runs=QbDesignedRunModelConfig(enabled=True)
         )
         mock_load_qb_rushing_config.return_value = qb_rushing_config
         MockBacktester.return_value.run.return_value = object()

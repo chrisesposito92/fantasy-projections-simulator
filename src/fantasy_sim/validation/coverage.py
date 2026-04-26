@@ -12,6 +12,12 @@ from pathlib import Path
 
 import polars as pl
 
+from fantasy_sim.data.qb_rushing import (
+    DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR,
+    DEFAULT_QB_DESIGNED_RUN_FEATURES,
+    QB_DESIGNED_RUN_MODEL_TYPE,
+    QB_DESIGNED_RUN_SCHEMA_VERSION,
+)
 from fantasy_sim.data.play_call_model.models import (
     DEFAULT_ARTIFACT_DIR as PLAY_CALL_MODEL_DEFAULT_ARTIFACT_DIR,
     DEFAULT_PLAY_CALL_FEATURES,
@@ -38,6 +44,7 @@ DEFAULT_CACHE_DIR = Path.home() / ".fantasy-sim" / "cache"
 DEFAULT_MARKET_HISTORY_DIR = (
     Path.home() / ".fantasy-sim" / "market-history" / "processed"
 )
+QB_DESIGNED_RUN_DEFAULT_ARTIFACT_DIR = DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR
 PFF_CROSSWALK_COLUMNS = {"player_id", "player", "team"}
 TEAM_CONTEXT_OL_COLUMNS = {"team", "grades_run_block", "snap_counts_run_block"}
 TEAM_CONTEXT_QB_COLUMNS = {"team", "grades_pass", "passing_snaps"}
@@ -216,6 +223,19 @@ def _resolve_qb_scramble_artifacts_path(config: object) -> Path:
         if artifacts_dir is not None:
             return _path_or_default(artifacts_dir, QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR)
     return QB_SCRAMBLE_DEFAULT_ARTIFACT_DIR
+
+
+def _resolve_qb_designed_run_artifacts_path(config: object) -> Path:
+    for key in ("qb_rushing_config", "qb_rushing"):
+        qb_rushing_config = _config_section(config, key)
+        artifacts_dir = (
+            _config_get(qb_rushing_config, "designed_runs", "artifacts_dir", default=None)
+            if qb_rushing_config is not None
+            else None
+        )
+        if artifacts_dir is not None:
+            return _path_or_default(artifacts_dir, QB_DESIGNED_RUN_DEFAULT_ARTIFACT_DIR)
+    return QB_DESIGNED_RUN_DEFAULT_ARTIFACT_DIR
 
 
 def _resolve_market_history_snapshot_label(config: object) -> str:
@@ -480,6 +500,72 @@ def _qb_scramble_artifact_is_valid(
     return all(math.isfinite(value) for value in parsed)
 
 
+def _qb_designed_run_artifact_is_valid(
+    path: Path,
+    expected_season: int,
+    min_examples: int,
+) -> bool:
+    if not path.exists():
+        return False
+    try:
+        artifact = json.loads(path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(artifact, Mapping):
+        return False
+    if artifact.get("schema_version") != QB_DESIGNED_RUN_SCHEMA_VERSION:
+        return False
+    if artifact.get("model_type") != QB_DESIGNED_RUN_MODEL_TYPE:
+        return False
+    if artifact.get("target_season") != expected_season:
+        return False
+    if not _play_call_source_seasons_are_safe(
+        artifact.get("source_seasons"),
+        expected_season,
+    ):
+        return False
+    diagnostics = artifact.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        return False
+    num_examples = diagnostics.get("num_examples")
+    if (
+        not isinstance(num_examples, int)
+        or isinstance(num_examples, bool)
+        or num_examples < min_examples
+    ):
+        return False
+    feature_names = artifact.get("feature_names")
+    coefficients = artifact.get("coefficients")
+    if not isinstance(feature_names, list) or not feature_names:
+        return False
+    if not all(isinstance(name, str) for name in feature_names):
+        return False
+    if len(set(feature_names)) != len(feature_names):
+        return False
+    if any(name not in DEFAULT_QB_DESIGNED_RUN_FEATURES for name in feature_names):
+        return False
+    if not isinstance(coefficients, Mapping) or set(coefficients) != set(feature_names):
+        return False
+    try:
+        parsed = [float(value) for value in coefficients.values()]
+    except (TypeError, ValueError):
+        return False
+    if not all(math.isfinite(value) for value in parsed):
+        return False
+    tail_buckets = artifact.get("tail_buckets")
+    if not isinstance(tail_buckets, Mapping):
+        return False
+    parsed_tail_buckets: dict[str, tuple[int, ...]] = {}
+    for key, values in tail_buckets.items():
+        if not isinstance(key, str) or not isinstance(values, list):
+            return False
+        try:
+            parsed_tail_buckets[key] = tuple(int(value) for value in values)
+        except (TypeError, ValueError):
+            return False
+    return bool(parsed_tail_buckets.get("global"))
+
+
 def _covered_seasons_from_target_selection_artifacts(
     test_seasons: Iterable[int],
     paths_by_season: Mapping[int, Path],
@@ -514,6 +600,19 @@ def _covered_seasons_from_qb_scramble_artifacts(
         for season in test_seasons
         if (path := paths_by_season.get(season)) is not None
         and _qb_scramble_artifact_is_valid(path, season, min_examples)
+    ]
+
+
+def _covered_seasons_from_qb_designed_run_artifacts(
+    test_seasons: Iterable[int],
+    paths_by_season: Mapping[int, Path],
+    min_examples: int,
+) -> list[int]:
+    return [
+        season
+        for season in test_seasons
+        if (path := paths_by_season.get(season)) is not None
+        and _qb_designed_run_artifact_is_valid(path, season, min_examples)
     ]
 
 
@@ -662,6 +761,7 @@ def collect_signal_coverage(
     target_selection_artifacts_path = _resolve_target_selection_artifacts_path(config)
     play_call_model_artifacts_path = _resolve_play_call_model_artifacts_path(config)
     qb_scramble_artifacts_path = _resolve_qb_scramble_artifacts_path(config)
+    qb_designed_run_artifacts_path = _resolve_qb_designed_run_artifacts_path(config)
     market_history_snapshot_label = _resolve_market_history_snapshot_label(config)
 
     props_enabled = _signal_enabled(
@@ -859,6 +959,21 @@ def collect_signal_coverage(
             default=500,
         )
     )
+    qb_designed_run_enabled = _signal_enabled(
+        config,
+        ("qb_rushing_config", "qb_rushing"),
+        ("qb_rushing", "designed_runs"),
+        nested_path=("designed_runs",),
+    )
+    qb_designed_run_min_examples = int(
+        _config_value(
+            config,
+            ("qb_rushing_config", "qb_rushing"),
+            ("qb_rushing", "designed_runs", "min_examples"),
+            nested_path=("designed_runs", "min_examples"),
+            default=500,
+        )
+    )
     ensemble_enabled = _signal_enabled(
         config,
         ("ensemble_config", "ensemble"),
@@ -908,6 +1023,10 @@ def collect_signal_coverage(
     }
     qb_scramble_artifact_paths: dict[int, Path] = {
         season: qb_scramble_artifacts_path / f"qb_scramble_model_{season}.json"
+        for season in seasons
+    }
+    qb_designed_run_artifact_paths: dict[int, Path] = {
+        season: qb_designed_run_artifacts_path / f"qb_designed_run_model_{season}.json"
         for season in seasons
     }
     market_history_columns_by_season: dict[int, set[str]] = {
@@ -1517,6 +1636,20 @@ def collect_signal_coverage(
                 "Requires qb_scramble_model_<season>.json artifacts fitted from "
                 "prior-season PBP scramble labels; runtime falls back to base "
                 "QB scramble_rate when an artifact is missing or invalid"
+            ),
+        ),
+        "qb_rushing.designed_runs": _build_signal(
+            qb_designed_run_enabled,
+            seasons,
+            _covered_seasons_from_qb_designed_run_artifacts(
+                seasons,
+                qb_designed_run_artifact_paths,
+                qb_designed_run_min_examples,
+            ),
+            note=(
+                "Requires qb_designed_run_model_<season>.json artifacts fitted from "
+                "prior-season PBP designed-run labels; runtime falls back to legacy "
+                "rusher selection and QB rushing_yards_dist when an artifact is missing or invalid"
             ),
         ),
         "ensemble.ff_opportunity": _build_signal(

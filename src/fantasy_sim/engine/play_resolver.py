@@ -4,6 +4,7 @@ import numpy as np
 from fantasy_sim.engine.types import (
     GameState,
     PlayResult,
+    QbDesignedRunContextProtocol,
     QbScrambleContextProtocol,
     TargetSelectionContextProtocol,
 )
@@ -111,6 +112,7 @@ def resolve_play(
     script: RuntimeGameScript | None = None,
     target_selection_context: TargetSelectionContextProtocol | None = None,
     qb_scramble_context: QbScrambleContextProtocol | None = None,
+    qb_designed_run_context: QbDesignedRunContextProtocol | None = None,
 ) -> PlayResult:
     if play_type == "pass":
         return _resolve_pass(
@@ -137,6 +139,7 @@ def resolve_play(
             pace_factor,
             goal_line_concentration_enabled,
             script,
+            qb_designed_run_context,
         )
     raise ValueError(f"Unexpected play_type: {play_type!r}")
 
@@ -328,6 +331,7 @@ def _resolve_run(
     pace_factor: float = 1.0,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
+    qb_designed_run_context: QbDesignedRunContextProtocol | None = None,
 ) -> PlayResult:
     from fantasy_sim.engine.player_selector import select_rusher
 
@@ -340,14 +344,19 @@ def _resolve_run(
             rng,
             goal_line_concentration_enabled=goal_line_concentration_enabled,
             script=script,
+            qb_designed_run_context=qb_designed_run_context,
         )
         rusher_id = rusher.player_id
 
-        # Use player's rushing yards dist if available
-        if rusher.outcomes.rushing_yards_dist is not None and len(rusher.outcomes.rushing_yards_dist) > 0:
+        context_yards = None
+        if qb_designed_run_context is not None and rusher.position == "QB":
+            context_yards = qb_designed_run_context.designed_run_yards(state, rusher, rng, script=script)
+
+        if context_yards is not None:
+            player_yards = int(context_yards)
+        elif rusher.outcomes.rushing_yards_dist is not None and len(rusher.outcomes.rushing_yards_dist) > 0:
             player_yards = int(rng.choice(rusher.outcomes.rushing_yards_dist))
         else:
-            # Fall back to team distribution
             player_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
 
         raw_yards = _apply_home_field(player_yards, is_home, rng)

@@ -50,6 +50,28 @@ class QbScrambleContextProtocol(Protocol):
         ...
 
 
+class QbDesignedRunContextProtocol(Protocol):
+    """QB designed-run selector and yard-tail interface used by the engine."""
+
+    def rusher_weights(
+        self,
+        players: list["PlayerModel"],
+        legacy_weights: "np.ndarray",
+        state: "GameState",
+        script: "RuntimeGameScript | None" = None,
+    ) -> "np.ndarray | None":
+        ...
+
+    def designed_run_yards(
+        self,
+        state: "GameState",
+        rusher: "PlayerModel",
+        rng: "np.random.Generator",
+        script: "RuntimeGameScript | None" = None,
+    ) -> int | None:
+        ...
+
+
 @dataclass
 class DefensiveTdRates:
     """Team-specific defensive TD rates (replaces fixed constants in game_sim)."""
@@ -72,6 +94,7 @@ class TeamDistributions:
     game_script_profile: GameScriptProfile | None = None
     play_call_context: PlayCallContextProtocol | None = None
     qb_scramble_context: QbScrambleContextProtocol | None = None
+    qb_designed_run_context: QbDesignedRunContextProtocol | None = None
     target_selection_context: TargetSelectionContextProtocol | None = None
 
 

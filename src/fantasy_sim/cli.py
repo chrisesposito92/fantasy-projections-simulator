@@ -172,7 +172,12 @@ def _make_builder(
             play_call_model_config if play_call_model_config.enabled else None
         ),
         qb_rushing_config=(
-            qb_rushing_config if qb_rushing_config.scramble.enabled else None
+            qb_rushing_config
+            if (
+                qb_rushing_config.scramble.enabled
+                or qb_rushing_config.designed_runs.enabled
+            )
+            else None
         ),
     )
 
@@ -1516,7 +1521,12 @@ def backtest(season, sims, scoring, training_years, pff, weather, vegas, usage):
             play_call_model_config if play_call_model_config.enabled else None
         ),
         qb_rushing_config=(
-            qb_rushing_config if qb_rushing_config.scramble.enabled else None
+            qb_rushing_config
+            if (
+                qb_rushing_config.scramble.enabled
+                or qb_rushing_config.designed_runs.enabled
+            )
+            else None
         ),
     )
     result = bt.run(scoring_config)

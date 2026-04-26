@@ -11,7 +11,13 @@ from typing import Any
 
 from fantasy_sim.data.qb_rushing.models import (
     DEFAULT_ARTIFACT_DIR,
+    DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR,
+    DEFAULT_QB_DESIGNED_RUN_FEATURES,
     DEFAULT_QB_SCRAMBLE_FEATURES,
+    QB_DESIGNED_RUN_MODEL_TYPE,
+    QB_DESIGNED_RUN_SCHEMA_VERSION,
+    QbDesignedRunContext,
+    QbDesignedRunModelConfig,
     QB_SCRAMBLE_MODEL_TYPE,
     QB_SCRAMBLE_SCHEMA_VERSION,
     QbScrambleContext,
@@ -66,6 +72,7 @@ class QbScrambleModel:
             artifact,
             target_season,
             self.config.min_examples,
+            artifact_label="QB scramble artifact",
         ):
             return None
 
@@ -142,6 +149,130 @@ class QbScrambleModel:
         return artifact
 
 
+class QbDesignedRunModel:
+    """Loads learned QB designed-run artifacts and builds team runtime contexts."""
+
+    def __init__(self, config: QbDesignedRunModelConfig) -> None:
+        self.config = config
+        self.artifacts_dir = Path(config.artifacts_dir or DEFAULT_QB_DESIGNED_RUN_ARTIFACT_DIR)
+        self._artifact_cache: dict[int, dict[str, Any] | None] = {}
+
+    def build_context(
+        self,
+        roster: TeamRoster,
+        team: str,
+        opponent: str,
+        home_team: str,
+        away_team: str,
+        target_season: int,
+        week: int,
+        is_home: bool,
+        spread_line: float | None = None,
+        total_line: float | None = None,
+        implied_team_total: float | None = None,
+    ) -> QbDesignedRunContext | None:
+        del roster
+        if not self.config.enabled:
+            return None
+
+        artifact = self._load_artifact(target_season)
+        if artifact is None:
+            return None
+        if artifact.get("target_season") != target_season:
+            logger.warning(
+                "Invalid QB designed-run artifact for %s: target season mismatch",
+                target_season,
+            )
+            return None
+        if not _source_seasons_are_safe(artifact.get("source_seasons"), target_season):
+            logger.warning(
+                "Invalid QB designed-run artifact for %s: unsafe source seasons",
+                target_season,
+            )
+            return None
+        if not _artifact_meets_min_examples(
+            artifact,
+            target_season,
+            self.config.min_examples,
+            artifact_label="QB designed-run artifact",
+        ):
+            return None
+
+        parsed = _parse_designed_run_features_and_coefficients(artifact, target_season)
+        if parsed is None:
+            return None
+        feature_names, coefficients = parsed
+        tail_buckets = _parse_tail_buckets(artifact.get("tail_buckets"), target_season)
+        if tail_buckets is None:
+            return None
+
+        priors = artifact.get("priors")
+        league_prior = _prior_value(priors, "league", None, 0.05)
+        mobility_tiers = _mobility_tiers(priors)
+
+        return QbDesignedRunContext(
+            coefficients=coefficients,
+            feature_names=feature_names,
+            tail_buckets=tail_buckets,
+            global_tail_yards=tail_buckets.get("global", ()),
+            team=team,
+            opponent=opponent,
+            home_team=home_team,
+            away_team=away_team,
+            is_home=is_home,
+            target_season=target_season,
+            week=week,
+            spread_line=spread_line,
+            total_line=total_line,
+            implied_team_total=implied_team_total,
+            team_prior_designed_qb_run_rate=_prior_value(priors, "team", team, league_prior),
+            opponent_prior_designed_qb_run_allowed=_prior_value(
+                priors,
+                "opponent_allowed",
+                opponent,
+                league_prior,
+            ),
+            mobility_tiers=mobility_tiers,
+            factor_clamp=_artifact_clamp(
+                artifact.get("factor_clamp"),
+                fallback=self.config.factor_clamp,
+                min_value=0.0,
+                max_value=math.inf,
+            ),
+            min_tail_samples=self.config.min_tail_samples,
+        )
+
+    def _load_artifact(self, target_season: int) -> dict[str, Any] | None:
+        if target_season in self._artifact_cache:
+            return self._artifact_cache[target_season]
+
+        path = self.artifacts_dir / f"qb_designed_run_model_{target_season}.json"
+        artifact: dict[str, Any] | None = None
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                loaded = json.load(handle)
+        except FileNotFoundError:
+            logger.info("Missing QB designed-run artifact: %s", path)
+        except OSError:
+            logger.warning("Unable to read QB designed-run artifact: %s", path)
+        except UnicodeDecodeError:
+            logger.warning("Invalid QB designed-run artifact encoding: %s", path)
+        except json.JSONDecodeError:
+            logger.warning("Invalid QB designed-run artifact JSON: %s", path)
+        else:
+            if not isinstance(loaded, dict):
+                logger.warning("Invalid QB designed-run artifact payload: %s", path)
+            elif loaded.get("schema_version") != QB_DESIGNED_RUN_SCHEMA_VERSION:
+                logger.warning("Unsupported QB designed-run artifact schema: %s", path)
+            elif loaded.get("model_type") != QB_DESIGNED_RUN_MODEL_TYPE:
+                logger.warning("Unsupported QB designed-run artifact model type: %s", path)
+            else:
+                artifact = loaded
+
+        self._artifact_cache[target_season] = artifact
+        return artifact
+
+
 def _source_seasons_are_safe(source_seasons: object, target_season: int) -> bool:
     if not isinstance(source_seasons, list) or not source_seasons:
         return False
@@ -209,28 +340,98 @@ def _parse_features_and_coefficients(
     return parsed_features, coefficients
 
 
+def _parse_designed_run_features_and_coefficients(
+    artifact: dict[str, Any],
+    target_season: int,
+) -> tuple[tuple[str, ...], dict[str, float]] | None:
+    feature_names = artifact.get("feature_names")
+    coefficients_raw = artifact.get("coefficients")
+    if not isinstance(feature_names, list) or not isinstance(coefficients_raw, dict):
+        logger.warning(
+            "Invalid QB designed-run artifact for %s: missing feature_names/coefficients",
+            target_season,
+        )
+        return None
+    if not feature_names or not all(isinstance(name, str) for name in feature_names):
+        return None
+    if any(name not in DEFAULT_QB_DESIGNED_RUN_FEATURES for name in feature_names):
+        return None
+
+    parsed_features = tuple(feature_names)
+    if len(set(parsed_features)) != len(parsed_features):
+        return None
+    try:
+        coefficients = {str(name): float(value) for name, value in coefficients_raw.items()}
+    except (TypeError, ValueError):
+        return None
+    if set(coefficients) != set(parsed_features):
+        return None
+    if not all(math.isfinite(value) for value in coefficients.values()):
+        return None
+    return parsed_features, coefficients
+
+
+def _parse_tail_buckets(raw: object, target_season: int) -> dict[str, tuple[int, ...]] | None:
+    if not isinstance(raw, dict):
+        logger.warning(
+            "Invalid QB designed-run artifact for %s: missing tail_buckets",
+            target_season,
+        )
+        return None
+
+    parsed: dict[str, tuple[int, ...]] = {}
+    for key, values in raw.items():
+        if not isinstance(key, str) or not isinstance(values, list):
+            return None
+        try:
+            parsed[key] = tuple(int(value) for value in values)
+        except (TypeError, ValueError):
+            return None
+    if not parsed.get("global"):
+        return None
+    return parsed
+
+
+def _mobility_tiers(priors: object) -> dict[str, str]:
+    if not isinstance(priors, dict):
+        return {}
+    raw = priors.get("mobility_tiers")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(player_id): str(tier)
+        for player_id, tier in raw.items()
+        if str(tier) in {"low", "medium", "high"}
+    }
+
+
 def _artifact_meets_min_examples(
     artifact: dict[str, Any],
     target_season: int,
     min_examples: int,
+    *,
+    artifact_label: str,
 ) -> bool:
     diagnostics = artifact.get("diagnostics")
     if not isinstance(diagnostics, Mapping):
         logger.warning(
-            "Invalid QB scramble artifact for %s: missing diagnostics",
+            "Invalid %s for %s: missing diagnostics",
+            artifact_label,
             target_season,
         )
         return False
     num_examples = diagnostics.get("num_examples")
     if not isinstance(num_examples, int) or isinstance(num_examples, bool):
         logger.warning(
-            "Invalid QB scramble artifact for %s: malformed num_examples",
+            "Invalid %s for %s: malformed num_examples",
+            artifact_label,
             target_season,
         )
         return False
     if num_examples < min_examples:
         logger.warning(
-            "Invalid QB scramble artifact for %s: num_examples %s below minimum %s",
+            "Invalid %s for %s: num_examples %s below minimum %s",
+            artifact_label,
             target_season,
             num_examples,
             min_examples,

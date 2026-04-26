@@ -99,6 +99,7 @@ class TestSimulateGame:
             script=None,
             target_selection_context=None,
             qb_scramble_context=None,
+            qb_designed_run_context=None,
         ):
             seen["play_type"] = play_type
             seen["pace_factor"] = pace_factor
@@ -106,6 +107,7 @@ class TestSimulateGame:
             seen["resolve_script"] = script
             seen["target_selection_context"] = target_selection_context
             seen["qb_scramble_context"] = qb_scramble_context
+            seen["qb_designed_run_context"] = qb_designed_run_context
             state.game_over = True
             return PlayResult(play_type=play_type, yards=0, clock_runoff=0)
 
@@ -128,12 +130,15 @@ class TestSimulateGame:
         target_context = object()
         play_call_context = object()
         qb_scramble_context = object()
+        qb_designed_run_context = object()
         home_dists.target_selection_context = target_context
         away_dists.target_selection_context = target_context
         home_dists.play_call_context = play_call_context
         away_dists.play_call_context = play_call_context
         home_dists.qb_scramble_context = qb_scramble_context
         away_dists.qb_scramble_context = qb_scramble_context
+        home_dists.qb_designed_run_context = qb_designed_run_context
+        away_dists.qb_designed_run_context = qb_designed_run_context
         simulate_game(home_dists, away_dists, np.random.default_rng(42))
 
         assert seen["config"] is not None
@@ -143,6 +148,7 @@ class TestSimulateGame:
         assert seen["resolve_script"] is script
         assert seen["target_selection_context"] is target_context
         assert seen["qb_scramble_context"] is qb_scramble_context
+        assert seen["qb_designed_run_context"] is qb_designed_run_context
         assert seen["goal_line_concentration_enabled"] is True
         assert seen["play_type"] == "run"
         assert seen["pace_factor"] == pytest.approx(1.05 * script.pace_factor)

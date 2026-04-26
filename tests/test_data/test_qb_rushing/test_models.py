@@ -2,8 +2,11 @@ import numpy as np
 import pytest
 
 from fantasy_sim.data.qb_rushing.models import (
+    DEFAULT_QB_DESIGNED_RUN_FEATURES,
     DEFAULT_QB_SCRAMBLE_FEATURES,
+    QbDesignedRunContext,
     QbScrambleContext,
+    qb_designed_run_feature_values,
     qb_scramble_feature_values,
 )
 from fantasy_sim.engine.types import GameState
@@ -40,6 +43,17 @@ def _qb(scramble_rate=0.08):
     )
 
 
+def _designed_qb(carry_share=0.12):
+    return PlayerModel(
+        "QB1",
+        "Mobile QB",
+        "QB",
+        "BUF",
+        PlayerUsage(snap_share=1.0, carry_share=carry_share, scramble_rate=0.08),
+        PlayerOutcomes(rushing_yards_dist=np.array([4, 7, 11])),
+    )
+
+
 def test_feature_values_include_state_market_and_priors():
     values = qb_scramble_feature_values(
         _state(),
@@ -67,6 +81,35 @@ def test_feature_values_include_state_market_and_priors():
     assert values["qb_prior_scramble_rate"] == pytest.approx(0.10)
 
 
+def test_designed_run_feature_values_include_state_market_priors_and_tier():
+    values = qb_designed_run_feature_values(
+        _state(),
+        team="BUF",
+        opponent="KC",
+        home_team="KC",
+        away_team="BUF",
+        is_home=False,
+        week=9,
+        spread_line=-3.0,
+        total_line=48.0,
+        implied_team_total=22.5,
+        qb_prior_designed_run_share=0.12,
+        team_prior_designed_qb_run_rate=0.08,
+        opponent_prior_designed_qb_run_allowed=0.07,
+        mobility_tier="high",
+    )
+
+    assert set(DEFAULT_QB_DESIGNED_RUN_FEATURES).issubset(values)
+    assert values["down_3"] == 1.0
+    assert values["is_red_zone"] == 1.0
+    assert values["is_two_minute"] == 1.0
+    assert values["is_trailing"] == 1.0
+    assert values["is_home"] == 0.0
+    assert values["spread_norm"] == pytest.approx(-3.0 / 14.0)
+    assert values["qb_prior_designed_run_share"] == pytest.approx(0.12)
+    assert values["mobility_high"] == 1.0
+
+
 def test_context_returns_probability_anchored_to_player_prior():
     context = QbScrambleContext(
         coefficients={"intercept": 0.0},
@@ -81,6 +124,63 @@ def test_context_returns_probability_anchored_to_player_prior():
     )
 
     assert context.scramble_probability(_state(), _qb(0.08)) == pytest.approx(0.08)
+
+
+def test_designed_run_context_adjusts_only_qb_weight():
+    context = QbDesignedRunContext(
+        coefficients={"intercept": 10.0},
+        feature_names=("intercept",),
+        tail_buckets={},
+        global_tail_yards=(5, 8),
+        team="BUF",
+        opponent="KC",
+        home_team="KC",
+        away_team="BUF",
+        is_home=False,
+        target_season=2024,
+        week=9,
+        factor_clamp=(0.50, 2.00),
+    )
+    qb = _designed_qb(carry_share=0.12)
+    rb = PlayerModel(
+        "RB1",
+        "RB",
+        "RB",
+        "BUF",
+        PlayerUsage(carry_share=0.60),
+        PlayerOutcomes(rushing_yards_dist=np.array([4])),
+    )
+
+    adjusted = context.rusher_weights(
+        [qb, rb],
+        np.array([0.12, 0.60], dtype=float),
+        _state(),
+    )
+
+    assert adjusted is not None
+    assert adjusted[0] == pytest.approx(0.24)
+    assert adjusted[1] == pytest.approx(0.60)
+
+
+def test_designed_run_context_samples_tail_yards_for_qb_only():
+    context = QbDesignedRunContext(
+        coefficients={"intercept": 0.0},
+        feature_names=("intercept",),
+        tail_buckets={},
+        global_tail_yards=(12,),
+        team="BUF",
+        opponent="KC",
+        home_team="KC",
+        away_team="BUF",
+        is_home=False,
+        target_season=2024,
+        week=9,
+    )
+    qb = _designed_qb()
+    rb = PlayerModel("RB1", "RB", "RB", "BUF", PlayerUsage(carry_share=1.0), PlayerOutcomes())
+
+    assert context.designed_run_yards(_state(), qb, np.random.default_rng(1)) == 12
+    assert context.designed_run_yards(_state(), rb, np.random.default_rng(1)) is None
 
 
 def test_context_clamps_factor_and_probability():

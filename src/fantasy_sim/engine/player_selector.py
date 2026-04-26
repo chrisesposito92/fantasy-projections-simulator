@@ -6,7 +6,7 @@ game-state awareness (e.g., red zone detection, week-based availability).
 
 import numpy as np
 from fantasy_sim.engine.game_script import RuntimeGameScript
-from fantasy_sim.engine.types import GameState, TargetSelectionContextProtocol
+from fantasy_sim.engine.types import GameState, QbDesignedRunContextProtocol, TargetSelectionContextProtocol
 from fantasy_sim.models.player import PlayerModel, TeamRoster
 
 
@@ -206,6 +206,7 @@ def select_rusher(
     is_scramble: bool = False,
     goal_line_concentration_enabled: bool = False,
     script: RuntimeGameScript | None = None,
+    qb_designed_run_context: QbDesignedRunContextProtocol | None = None,
 ) -> PlayerModel:
     """Select a ball carrier, filtering out missed-week players."""
     if is_scramble:
@@ -231,6 +232,10 @@ def select_rusher(
         dtype=float,
     )
     weights = _apply_rb_rank_factors(eligible, base_weights, script)
+    if qb_designed_run_context is not None:
+        adjusted = qb_designed_run_context.rusher_weights(eligible, weights, state, script=script)
+        if adjusted is not None:
+            weights = adjusted
     if weights.sum() == 0:
         weights = np.ones(len(eligible), dtype=float)
     weights = weights / weights.sum()

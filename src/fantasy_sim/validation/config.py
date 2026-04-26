@@ -132,7 +132,9 @@ def build_engine_configs(config: dict) -> dict:
         "td_tendency_config": td_tendency if td_tendency.enabled else None,
         "target_selection_config": target_selection if target_selection.enabled else None,
         "play_call_model_config": play_call_model if play_call_model.enabled else None,
-        "qb_rushing_config": qb_rushing if qb_rushing.scramble.enabled else None,
+        "qb_rushing_config": qb_rushing
+        if (qb_rushing.scramble.enabled or qb_rushing.designed_runs.enabled)
+        else None,
     }
 
 
