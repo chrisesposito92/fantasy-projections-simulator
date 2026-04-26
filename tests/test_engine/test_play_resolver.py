@@ -1350,3 +1350,149 @@ def test_ks06_backup_receiver_fallback_branch_uses_legacy_range_when_flag_off(
     assert 6.0 <= mean <= 8.5, (
         f"mean {mean} outside expected ~7 for legacy fallback [3,12) sampling"
     )
+
+
+# === KS-07: positional RZ catch rate modifiers (D-20, Cycle 3 D-45) ===
+#
+# RZ_CATCH_RATE_MODIFIERS replaces the single 0.92 scalar with per-position
+# rates: WR=0.92, TE=0.95, RB=0.85. Real NFL data: TEs catch RZ targets at
+# slightly higher rates than WRs (~95% vs ~92% of overall rate); RBs at lower
+# rates (~85%, due to checkdowns under pressure). Single 0.92 modifier
+# under-estimates TE RZ production and over-estimates RB RZ production.
+# Gated behind `phase1_ks_flags.ks07_positional_rz_catch_rate.enabled` so the
+# legacy scalar 0.92 path stays as Arm A for the per-KS A/B until promotion.
+
+
+def test_ks07_rz_catch_rate_modifiers_dict():
+    """D-20: RZ_CATCH_RATE_MODIFIERS literal contents per KS-07 hypothesis."""
+    from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIERS
+    assert RZ_CATCH_RATE_MODIFIERS == {"WR": 0.92, "TE": 0.95, "RB": 0.85}
+
+
+def test_ks07_backward_compat_scalar_unchanged():
+    """Legacy RZ_CATCH_RATE_MODIFIER must equal RZ_CATCH_RATE_MODIFIERS['WR']."""
+    from fantasy_sim.engine.play_resolver import (
+        RZ_CATCH_RATE_MODIFIER,
+        RZ_CATCH_RATE_MODIFIERS,
+    )
+    assert RZ_CATCH_RATE_MODIFIER == RZ_CATCH_RATE_MODIFIERS["WR"] == 0.92
+
+
+def _make_ks07_roster(receiver_position: str, *, catch_rate: float = 1.0) -> TeamRoster:
+    """Single-receiver roster with RZ catch rate UNSET (forces fallback path).
+
+    `red_zone_catch_rate=0.0` triggers the `effective_catch_rate <= 0` branch
+    inside `_resolve_pass`, which then computes the fallback as
+    `catch_rate * RZ_CATCH_RATE_MODIFIERS.get(receiver.position, ...)` (flag-on)
+    or `catch_rate * RZ_CATCH_RATE_MODIFIER` (flag-off).
+    """
+    qb = PlayerModel(
+        "QB1", "QB", "QB", "T",
+        PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        PlayerOutcomes(),
+    )
+    receiver = PlayerModel(
+        "RX1", "RX1", receiver_position, "T",
+        PlayerUsage(target_share=1.0),
+        PlayerOutcomes(
+            catch_rate=catch_rate,
+            red_zone_catch_rate=0.0,  # forces fallback to position-aware modifier
+            receiving_yards_dist=np.array([5, 5, 5]),
+            fumble_rate=0.0,
+            receiving_td_factor=1.0,
+        ),
+    )
+    return TeamRoster(team="T", players=[qb, receiver])
+
+
+def _measure_rz_catch_rate(roster: TeamRoster, *, n: int = 4000, seed: int = 17) -> float:
+    """Run N RZ pass plays and return observed completion rate.
+
+    Uses yard_line=15 (in RZ for the catch-rate branch) and a deterministic
+    pass distribution so any rate variation comes from the catch_rate gate.
+    """
+    rng = np.random.default_rng(seed)
+    outcomes = make_outcomes(pass_yards=[5])
+    rates = make_turnover_rates()
+    completions = 0
+    for _ in range(n):
+        state = make_state(yard_line=15)
+        result = resolve_play(state, "pass", outcomes, rates, rng, roster=roster)
+        if result.is_complete:
+            completions += 1
+    return completions / n
+
+
+def test_ks07_flag_on_te_uses_higher_rate(monkeypatch):
+    """Flag-on path: TE receiver gets RZ rate of 0.95 * catch_rate.
+
+    With `catch_rate=1.0` and the TE modifier of 0.95, the observed rate
+    should center on 0.95 (95% completion). The legacy WR-only modifier 0.92
+    yields 0.92. The 4000-trial standard error is ~0.0035, so the [0.93, 0.97]
+    band cleanly separates the two hypotheses (3 σ from 0.92).
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+    roster = _make_ks07_roster("TE")
+    rate = _measure_rz_catch_rate(roster)
+    assert 0.93 <= rate <= 0.97, (
+        f"TE RZ catch rate {rate:.3f} not within [0.93, 0.97] expected for "
+        f"position-aware modifier 0.95 (would be ~0.92 under legacy scalar)"
+    )
+
+
+def test_ks07_flag_on_rb_uses_lower_rate(monkeypatch):
+    """Flag-on path: RB receiver gets RZ rate of 0.85 * catch_rate.
+
+    With `catch_rate=1.0` and the RB modifier of 0.85, the observed rate
+    should center on 0.85 (85% completion). The [0.83, 0.87] band cleanly
+    separates from the legacy 0.92 (~20 σ at n=4000).
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+    roster = _make_ks07_roster("RB")
+    rate = _measure_rz_catch_rate(roster)
+    assert 0.83 <= rate <= 0.87, (
+        f"RB RZ catch rate {rate:.3f} not within [0.83, 0.87] expected for "
+        f"position-aware modifier 0.85 (would be ~0.92 under legacy scalar)"
+    )
+
+
+def test_ks07_flag_on_wr_unchanged_from_legacy(monkeypatch):
+    """Flag-on path: WR receiver still gets RZ rate of 0.92 * catch_rate (no change)."""
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+    roster = _make_ks07_roster("WR")
+    rate = _measure_rz_catch_rate(roster)
+    assert 0.90 <= rate <= 0.94, (
+        f"WR RZ catch rate {rate:.3f} should match legacy 0.92 under flag-on"
+    )
+
+
+def test_ks07_flag_off_te_uses_legacy_scalar(monkeypatch):
+    """Flag-off path: TE receiver gets the legacy 0.92 * catch_rate (Arm A parity).
+
+    This is the bit-for-bit pre-Phase-1 behavior — TE specifically should NOT
+    pick up the new 0.95 rate when the flag is off, even though the dict
+    constant exists in the module namespace.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", False)
+    roster = _make_ks07_roster("TE")
+    rate = _measure_rz_catch_rate(roster)
+    assert 0.90 <= rate <= 0.94, (
+        f"TE RZ catch rate under flag-off {rate:.3f} should match legacy 0.92, "
+        f"not the flag-on 0.95"
+    )
+
+
+def test_ks07_flag_off_rb_uses_legacy_scalar(monkeypatch):
+    """Flag-off path: RB receiver gets the legacy 0.92 * catch_rate (Arm A parity)."""
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", False)
+    roster = _make_ks07_roster("RB")
+    rate = _measure_rz_catch_rate(roster)
+    assert 0.90 <= rate <= 0.94, (
+        f"RB RZ catch rate under flag-off {rate:.3f} should match legacy 0.92, "
+        f"not the flag-on 0.85"
+    )
