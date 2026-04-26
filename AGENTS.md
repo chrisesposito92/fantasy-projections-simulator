@@ -205,9 +205,26 @@ Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-
 
 ## Project
 
-**Fantasy Projections Simulator — Accuracy Initiative**
+**Fantasy Projections Simulator — Accuracy Initiative** (umbrella).
 
-**Core Value:** Projection accuracy that beats the current promoted defaults and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) while preserving realistic stat distributions — with WR and QB accuracy as highest-priority positions.
+**Active initiative:** Distribution Calibration — closing the stat-level KS gap (especially QB pass_yards and WR receiving_yards) without giving back the rank_corr / MAE wins. Formalized 2026-04-26.
+
+**Planning artifacts** (read before any planning/execution work):
+- `.planning/PROJECT.md` — project context, outcome targets TGT-01..TGT-10, hard-floor constraint
+- `.planning/REQUIREMENTS.md` — 23 v1 hypotheses (KS-XX) grouped by theme A-E
+- `.planning/ROADMAP.md` — 5 phases, dependency-ordered
+- `.planning/STATE.md` — current position (Phase 1)
+- `.planning/research/HYPOTHESES.md` — 733-line hypothesis backlog with file:line refs and KS-budget sanity check
+- `.planning/research/{MEAN_BIAS,DISTRIBUTION_SHAPE,SIGNAL_COVERAGE,PHASE5_SLICES}.md` — supporting evidence
+- `.planning/codebase/` — refreshed brownfield map (7 docs)
+
+### Core Value (umbrella)
+
+Projection accuracy that beats the current promoted defaults and pushes toward absolute targets (rank_corr > 0.80, weekly_mae < 6.0) while preserving realistic stat distributions — with WR and QB accuracy as highest-priority positions.
+
+### Core Value (active initiative)
+
+Distribution shape (KS) on stat outputs for season-long projections — without giving back the rank_corr / MAE wins. **Hard floor:** any change must NOT regress rank_corr by >0.005 or MAE by >0.05 (per `scripts/validate.py` A/B).
 
 ### Constraints
 
@@ -215,6 +232,7 @@ Caches: nflverse parquet at `~/.fantasy-sim/cache/`, PFF parquet at `~/.fantasy-
 - PFF premium subscription available; open to free sources; will consider paid if justified
 - Must maintain 1,122+ test suite; new features need tests
 - Open to any approach (new layers, ML models, structural changes) — whatever moves the metrics
+- The Odds API has a time-sensitive 5M-credit tier (~2 weeks remaining); historical alt-line scrapes for KS-21 must be front-loaded into Phase 1
 
 ## GSD Workflow Enforcement
 
