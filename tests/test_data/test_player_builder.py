@@ -976,3 +976,208 @@ class TestKs06MinPlayerPlays:
             "With KS-06 flag off (legacy MIN_PLAYER_PLAYS=5), 3 catches is "
             "below threshold so receiving_yards_dist should remain None"
         )
+
+
+class TestKs07PositionalRzCatchRateFallback:
+    """KS-07 D-20 (Cycle 3 D-45): the per-player RZ catch rate fallback at
+    `_assemble_models` (player_builder.py around line 549) uses a
+    position-aware modifier when the flag is on (WR=0.92, TE=0.95, RB=0.85)
+    and the legacy 0.92 scalar when off. This fallback only fires for
+    players with `< MIN_RZ_TARGETS = 10` RZ targets so we keep the test
+    PBP at well under that threshold for each player.
+    """
+
+    def _make_pbp_for_position(
+        self,
+        player_id: str,
+        team: str = "KC",
+    ) -> pl.DataFrame:
+        """PBP with 10 outside-RZ targets (5 catches) for `player_id` so that
+        `catch_rate = 0.5` and `rs["rz_targets"] = 0` — well below the
+        `MIN_RZ_TARGETS = 10` threshold, which forces the fallback branch
+        `red_zone_catch_rate = catch_rate * <modifier>`.
+        """
+        plays = []
+        # 5 completions outside the RZ
+        for i in range(5):
+            plays.append({
+                "season": 2024, "week": i + 1,
+                "game_id": f"2024_{i+1:02d}_KC_BUF",
+                "play_type": "pass", "posteam": team, "defteam": "BUF",
+                "down": 1, "ydstogo": 10, "yardline_100": 50,
+                "score_differential": 0, "qtr": 1,
+                "yards_gained": 10, "complete_pass": 1, "pass_attempt": 1,
+                "rush_attempt": 0, "interception": 0, "fumble_lost": 0,
+                "sack": 0, "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+                "passer_player_id": "PM15", "receiver_player_id": player_id,
+                "rusher_player_id": None,
+            })
+        # 5 incompletions outside the RZ
+        for i in range(5):
+            plays.append({
+                "season": 2024, "week": i + 6,
+                "game_id": f"2024_{i+6:02d}_KC_BUF",
+                "play_type": "pass", "posteam": team, "defteam": "BUF",
+                "down": 1, "ydstogo": 10, "yardline_100": 50,
+                "score_differential": 0, "qtr": 1,
+                "yards_gained": 0, "complete_pass": 0, "pass_attempt": 1,
+                "rush_attempt": 0, "interception": 0, "fumble_lost": 0,
+                "sack": 0, "touchdown": 0, "penalty": 0, "penalty_yards": 0,
+                "passer_player_id": "PM15", "receiver_player_id": player_id,
+                "rusher_player_id": None,
+            })
+        return pl.DataFrame(plays)
+
+    def _make_roster(self, player_id: str, position: str) -> pl.DataFrame:
+        return pl.DataFrame(
+            [
+                {
+                    "season": 2024, "week": 1, "player_id": player_id,
+                    "player_name": f"X.{position}", "position": position,
+                    "team": "KC", "status": "ACT",
+                },
+                {
+                    "season": 2024, "week": 1, "player_id": "PM15",
+                    "player_name": "P.Mahomes", "position": "QB",
+                    "team": "KC", "status": "ACT",
+                },
+            ]
+        )
+
+    def test_ks07_player_builder_te_uses_positional_modifier_when_flag_on(
+        self, monkeypatch
+    ):
+        """Flag-on: TE with < 10 RZ targets gets red_zone_catch_rate
+        = catch_rate * 0.95 (per D-20)."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+
+        pbp = self._make_pbp_for_position("TE10")
+        rosters = self._make_roster("TE10", "TE")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        te = models["TE10"]
+        assert te.position == "TE"
+        assert te.outcomes.catch_rate == pytest.approx(0.5, abs=0.01)
+        assert te.outcomes.red_zone_catch_rate == pytest.approx(
+            te.outcomes.catch_rate * 0.95, abs=0.01
+        ), (
+            f"TE flag-on red_zone_catch_rate {te.outcomes.red_zone_catch_rate} "
+            f"should be catch_rate * 0.95 = {te.outcomes.catch_rate * 0.95}, "
+            f"not the legacy 0.92"
+        )
+
+    def test_ks07_player_builder_rb_uses_positional_modifier_when_flag_on(
+        self, monkeypatch
+    ):
+        """Flag-on: RB with < 10 RZ targets gets red_zone_catch_rate
+        = catch_rate * 0.85 (per D-20)."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+
+        pbp = self._make_pbp_for_position("RB10")
+        rosters = self._make_roster("RB10", "RB")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        rb = models["RB10"]
+        assert rb.position == "RB"
+        assert rb.outcomes.catch_rate == pytest.approx(0.5, abs=0.01)
+        assert rb.outcomes.red_zone_catch_rate == pytest.approx(
+            rb.outcomes.catch_rate * 0.85, abs=0.01
+        ), (
+            f"RB flag-on red_zone_catch_rate {rb.outcomes.red_zone_catch_rate} "
+            f"should be catch_rate * 0.85 = {rb.outcomes.catch_rate * 0.85}, "
+            f"not the legacy 0.92"
+        )
+
+    def test_ks07_player_builder_wr_unchanged_when_flag_on(
+        self, monkeypatch
+    ):
+        """Flag-on: WR still gets red_zone_catch_rate = catch_rate * 0.92
+        (no behavior change for the historically-correct position)."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+
+        pbp = self._make_pbp_for_position("WR10")
+        rosters = self._make_roster("WR10", "WR")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        wr = models["WR10"]
+        assert wr.position == "WR"
+        assert wr.outcomes.red_zone_catch_rate == pytest.approx(
+            wr.outcomes.catch_rate * 0.92, abs=0.01
+        )
+
+    def test_ks07_player_builder_te_uses_legacy_scalar_when_flag_off(
+        self, monkeypatch
+    ):
+        """Flag-off (legacy): TE gets red_zone_catch_rate = catch_rate * 0.92,
+        NOT the new 0.95. Bit-for-bit Arm A parity."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", False)
+
+        pbp = self._make_pbp_for_position("TE11")
+        rosters = self._make_roster("TE11", "TE")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        te = models["TE11"]
+        assert te.outcomes.red_zone_catch_rate == pytest.approx(
+            te.outcomes.catch_rate * 0.92, abs=0.01
+        ), (
+            f"TE flag-off red_zone_catch_rate {te.outcomes.red_zone_catch_rate} "
+            f"should match legacy 0.92, not the flag-on 0.95"
+        )
+
+    def test_ks07_player_builder_rb_uses_legacy_scalar_when_flag_off(
+        self, monkeypatch
+    ):
+        """Flag-off (legacy): RB gets red_zone_catch_rate = catch_rate * 0.92,
+        NOT the new 0.85."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", False)
+
+        pbp = self._make_pbp_for_position("RB11")
+        rosters = self._make_roster("RB11", "RB")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        rb = models["RB11"]
+        assert rb.outcomes.red_zone_catch_rate == pytest.approx(
+            rb.outcomes.catch_rate * 0.92, abs=0.01
+        )
+
+    def test_ks07_player_builder_modifier_lookup_uses_position_string(
+        self, monkeypatch
+    ):
+        """Smoke test: the position string passed to RZ_CATCH_RATE_MODIFIERS.get(...)
+        is the literal `row['position']` value ('TE', 'RB', 'WR') matching the
+        dict keys. Defends against future refactors that pass the player object
+        or some other shape into the lookup."""
+        from fantasy_sim.engine import play_resolver as pr
+        from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIERS
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(pr, "_KS07_POSITIONAL_RZ_CATCH_RATE", True)
+
+        # Verify all three position keys are in the dict
+        assert "WR" in RZ_CATCH_RATE_MODIFIERS
+        assert "TE" in RZ_CATCH_RATE_MODIFIERS
+        assert "RB" in RZ_CATCH_RATE_MODIFIERS
+
+        # Build a TE and verify the resulting rate matches the dict lookup
+        pbp = self._make_pbp_for_position("TE12")
+        rosters = self._make_roster("TE12", "TE")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        te = models["TE12"]
+        expected = te.outcomes.catch_rate * RZ_CATCH_RATE_MODIFIERS["TE"]
+        assert te.outcomes.red_zone_catch_rate == pytest.approx(expected, abs=0.001)
