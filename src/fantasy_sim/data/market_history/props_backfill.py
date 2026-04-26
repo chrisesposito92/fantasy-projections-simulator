@@ -30,6 +30,18 @@ DEFAULT_PROP_MARKETS: tuple[str, ...] = (
     "player_anytime_td",
 )
 
+# KS-21 D-04: alternate-line markets — multi-line over/under markets that define
+# an empirical CDF directly. Phase 1 scrapes these as time-sensitive infrastructure;
+# Phase 4 OddsApiCdfLoader consumes them.
+ALT_PROP_MARKETS: tuple[str, ...] = (
+    "player_pass_yds_alternate",
+    "player_reception_yds_alternate",
+    "player_rush_yds_alternate",
+    "player_pass_attempts_alternate",
+    "player_receptions_alternate",
+    "player_rush_attempts_alternate",
+)
+
 EVENT_INVENTORY_REQUIRED_COLUMNS: tuple[str, ...] = (
     "season",
     "week",
