@@ -1262,15 +1262,23 @@ def test_ks06_backup_receiver_fallback_branch_uses_new_range_when_flag_on(
     # captured values came from completions where raw_sample fell in [5, 17].
     nonzero = [v for v in captured if v != 0]
     assert nonzero, "Expected at least one nonzero clamp input from the fallback"
-    assert min(nonzero) >= 5, (
-        f"min clamp input {min(nonzero)} below KS-06 new lower bound 5"
+    # The KS-04 conditional boost is off (monkeypatched), so the legacy
+    # `legacy_boost = 1 if state.yard_line > 20 else 0` outside-RZ +1
+    # boost still fires inside _resolve_pass. yard_line=50 > 20 → every
+    # captured value = raw_sample + 1. New range raw [5, 17] → captured
+    # [6, 18].
+    assert min(nonzero) >= 6, (
+        f"min clamp input {min(nonzero)} below KS-06 new lower bound 6 "
+        f"(raw 5 + legacy outside-RZ +1 boost)"
     )
-    assert max(nonzero) <= 17, (
-        f"max clamp input {max(nonzero)} above KS-06 new upper bound 17"
+    assert max(nonzero) <= 18, (
+        f"max clamp input {max(nonzero)} above KS-06 new upper bound 18 "
+        f"(raw 17 + legacy outside-RZ +1 boost)"
     )
     mean = float(np.mean(nonzero))
-    assert 10.0 <= mean <= 13.0, (
-        f"mean {mean} outside expected ~11.5 for fallback [5,18) sampling"
+    # raw mean ~11.5 + 1 boost → ~12.5
+    assert 11.0 <= mean <= 14.0, (
+        f"mean {mean} outside expected ~12.5 for fallback [5,18) sampling + boost"
     )
 
 

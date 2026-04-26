@@ -4,11 +4,30 @@ from copy import deepcopy
 
 import polars as pl
 import numpy as np
+from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster, MIN_QB_CARRY_SHARE
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIER
 
-MIN_PLAYER_PLAYS = 5
+# KS-06 D-19 sub-fix 3 (Cycle 3 D-45 flag-gated): the canonical module
+# constant is now 3 (the new path's value); the legacy threshold of 5 is
+# preserved as `_KS06_LEGACY_MIN_PLAYER_PLAYS` so the flag-off path inside
+# `_assemble_models` keeps Arm A bit-for-bit identical. Pre-Phase-1 callers
+# that imported `MIN_PLAYER_PLAYS` directly will see 3, but the actual
+# threshold used per call site is computed from the flag.
+MIN_PLAYER_PLAYS = 3
+_KS06_LEGACY_MIN_PLAYER_PLAYS = 5
+
+# Phase 1 KS-06 feature flag (Cycle 3 D-45). Read once at module import; A/B
+# arms are separate Python processes via fresh GameContextBuilder
+# construction so this matches the rest of the Phase 1 KS flag-gated code
+# paths.
+_KS06_BACKUP_RECEIVER_FIX = (
+    get_phase1_ks_flags()
+    .get("ks06_backup_receiver_fix", {})
+    .get("enabled", False)
+)
+
 MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
 FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
 ACTIVE_STATUSES = {"ACT"}
@@ -414,6 +433,16 @@ def _assemble_models(
     qb_scrambles = aggregated_stats.get("qb_scrambles", {})
     has_qb_scramble = aggregated_stats.get("has_qb_scramble", False)
 
+    # KS-06 D-19 sub-fix 3 (Cycle 3 D-45): pick the effective per-player-plays
+    # threshold based on the flag. Module-level MIN_PLAYER_PLAYS = 3 is the
+    # canonical new-path value; legacy is 5. Computing per-call ensures the
+    # same Python process can host both arms without mutating the constant.
+    effective_min_player_plays = (
+        MIN_PLAYER_PLAYS
+        if _KS06_BACKUP_RECEIVER_FIX
+        else _KS06_LEGACY_MIN_PLAYER_PLAYS
+    )
+
     # Get latest roster entry per player FIRST, then filter by status/position.
     # This ensures a player who goes ACT→IR is correctly excluded (their
     # latest row is IR, not a stale ACT row from an earlier week).
@@ -518,10 +547,10 @@ def _assemble_models(
                 outcomes.red_zone_catch_rate = rs["rz_catches"] / rs["rz_targets"]
             elif outcomes.catch_rate > 0:
                 outcomes.red_zone_catch_rate = outcomes.catch_rate * RZ_CATCH_RATE_MODIFIER
-            if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
+            if len(rs["yards"]) >= effective_min_player_plays:
                 outcomes.receiving_yards_dist = np.array(rs["yards"])
             # Red zone receiving yards distribution (catches inside the 20)
-            if len(rs["rz_yards"]) >= MIN_PLAYER_PLAYS:
+            if len(rs["rz_yards"]) >= effective_min_player_plays:
                 outcomes.rz_receiving_yards_dist = np.array(rs["rz_yards"])
 
         if pid in rushing_stats:
@@ -531,7 +560,7 @@ def _assemble_models(
                 if len(rs["yards"]) >= 1:
                     outcomes.scramble_yards_dist = np.array(rs["yards"])
             elif position != "QB":
-                if len(rs["yards"]) >= MIN_PLAYER_PLAYS:
+                if len(rs["yards"]) >= effective_min_player_plays:
                     outcomes.rushing_yards_dist = np.array(rs["yards"])
 
         # QB snap share and scramble rate (use hist_team for team totals)

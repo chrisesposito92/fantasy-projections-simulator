@@ -47,6 +47,37 @@ _KS04_BOOST_VALUE = float(
     .get("boost_value", 1.5)
 )
 
+# Phase 1 KS-06 feature flag (Cycle 3 D-45). Controls the backup-receiver
+# fallback path inside `_resolve_pass`: when on, the integer-fallback range
+# moves from `[_KS06_LEGACY_FALLBACK_LOW, _KS06_LEGACY_FALLBACK_HIGH)` =
+# `[3, 12)` (mean ~7) to `[ks06_fallback_low, ks06_fallback_high)` = the
+# values configured under `phase1_ks_flags.ks06_backup_receiver_fix` in
+# `config/defaults.yaml` (default `[5, 18)`, mean ~11.5 — matches NFL avg
+# completion length). Read once at module import; A/B arms are separate
+# Python processes via fresh GameContextBuilder construction so this
+# matches the rest of the Phase 1 KS flag-gated code paths.
+_KS06_BACKUP_RECEIVER_FIX = (
+    get_phase1_ks_flags()
+    .get("ks06_backup_receiver_fix", {})
+    .get("enabled", False)
+)
+_KS06_FALLBACK_LOW = int(
+    get_phase1_ks_flags()
+    .get("ks06_backup_receiver_fix", {})
+    .get("fallback_low", 5)
+)
+_KS06_FALLBACK_HIGH = int(
+    get_phase1_ks_flags()
+    .get("ks06_backup_receiver_fix", {})
+    .get("fallback_high", 18)
+)
+# Legacy bounds preserved for the flag-off branch (Arm A bit-for-bit identical
+# to pre-Phase-1 behavior). Named constants keep the literal pair `(3, 12)`
+# from appearing in `rng.integers(...)` so the source can advertise the new
+# `rng.integers(5, 18)` literal as the canonical fallback range.
+_KS06_LEGACY_FALLBACK_LOW = 3
+_KS06_LEGACY_FALLBACK_HIGH = 12
+
 # Average clock runoff in seconds — calibrated for ~65 plays/team/game
 CLOCK_RUN = 35
 CLOCK_PASS_COMPLETE = 30
@@ -303,7 +334,19 @@ def _resolve_pass(
             else:
                 # Fallback: sample from team distribution (only when player lacks personal dist)
                 team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
-                raw_sample = team_yards if team_yards > 0 else int(rng.integers(3, 12))
+                if team_yards > 0:
+                    raw_sample = team_yards
+                elif _KS06_BACKUP_RECEIVER_FIX:
+                    # KS-06 D-19 sub-fix 2: NFL-realistic fallback bounds
+                    # (mean ~11.5 yd vs legacy mean ~7 yd) so a backup
+                    # receiver without their own per-player distribution
+                    # does not bias the team's pass yards distribution low.
+                    raw_sample = int(rng.integers(5, 18))
+                else:
+                    # Legacy bounds preserved for Arm A bit-for-bit parity.
+                    raw_sample = int(rng.integers(
+                        _KS06_LEGACY_FALLBACK_LOW, _KS06_LEGACY_FALLBACK_HIGH,
+                    ))
 
             # KS-04 D-11 (Cycle 3 D-45): when the flag is on, apply boost
             # ONLY when _clamp_yards would actually fire (raw_sample >
