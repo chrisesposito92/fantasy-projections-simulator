@@ -30,6 +30,7 @@ import logging
 import numpy as np
 import polars as pl
 
+from fantasy_sim.config.loader import get_phase1_ks_flags
 from fantasy_sim.data.vegas.models import PropsConfig
 from fantasy_sim.data.vegas.props_loader import PFF_TO_ENGINE_MARKET, PropsLoader
 from fantasy_sim.models.player import TeamRoster
@@ -39,8 +40,26 @@ logger = logging.getLogger(__name__)
 # Typical NFL game seasons used to scale per-game historical rates
 _DEFAULT_GAMES_PER_SEASON = 17
 
-# Typical team pass yds per game (fallback when QB has no rushing dist)
-_DEFAULT_TEAM_PASS_YDS = 230.0
+# KS-05 D-17/D-18/D-45 (Cycle 3): the props-engine bug fixes are flag-gated.
+# The flag is read at module import time (see loader docstring rationale —
+# validate.py runs both A/B arms in a single process per season, so a process
+# restart is implicit between flag-flips). Defaults are the legacy values when
+# the flag is absent or off, preserving bit-for-bit pre-Phase-1 behavior.
+_KS05_FLAGS = get_phase1_ks_flags().get("ks05_props_recv_yds_fix", {}) or {}
+_KS05_PROPS_RECV_YDS_FIX = bool(_KS05_FLAGS.get("enabled", False))
+
+# Typical team pass yds per game (fallback when QB has no rushing dist).
+# Flag-on (KS-05 D-17 sub-fix 1): 240.0 to match NFL ~240 yd/team/game.
+# Flag-off (legacy): 230.0 (the original buggy default).
+if _KS05_PROPS_RECV_YDS_FIX:
+    _DEFAULT_TEAM_PASS_YDS = float(_KS05_FLAGS.get("default_team_pass_yds", 240.0))
+else:
+    _DEFAULT_TEAM_PASS_YDS = 230.0
+
+# Typical NFL team pass attempts per game (used in catches_per_game proxy for KS-05).
+# v1 of D-18 uses the receptions-engine proxy (target_share * team_targets_per_game * catch_rate);
+# pipeline-plumbed per-team rolling mean is deferred per RESEARCH.md Pitfall 4.
+_PROXY_TEAM_TARGETS_PER_GAME = 32.0
 
 # Implied TD probability baseline (per game) — used for anytime_td mapping
 _BASELINE_TD_RATE = 0.5  # ~0.5 TDs per game for a featured receiver
@@ -245,7 +264,23 @@ class PlayerPropsEngine:
         if dist_mean <= 0:
             return
 
-        historical_season_yds = dist_mean * player.games_played
+        # KS-05 D-17/D-18 (Cycle 3 D-45): dist_mean is PER-CATCH yards, not per-game yards.
+        # Historical per-game yards = per-catch_mean * catches_per_game.
+        # Flag-on path (KS-05 D-17 sub-fix 2 + D-18 v1 proxy per RESEARCH.md Pitfall 4)
+        # multiplies by catches_per_game (proxied via target_share * 32.0 * catch_rate
+        # mirroring _apply_receptions line 281's convention).
+        # Flag-off path keeps the legacy buggy `dist_mean * games_played` magnitude
+        # so production defaults stay bit-for-bit identical to pre-Phase-1.
+        if _KS05_PROPS_RECV_YDS_FIX:
+            catches_per_game = max(
+                0.1,
+                player.usage.target_share
+                * _PROXY_TEAM_TARGETS_PER_GAME
+                * max(0.5, player.outcomes.catch_rate),
+            )
+            historical_season_yds = dist_mean * catches_per_game * player.games_played
+        else:
+            historical_season_yds = dist_mean * player.games_played
         if historical_season_yds <= 0:
             return
 
