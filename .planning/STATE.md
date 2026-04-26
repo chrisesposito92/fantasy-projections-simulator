@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 planning complete
-last_updated: "2026-04-26T15:46:08.275Z"
+stopped_at: Plan 01-02 KS-04 BLOCKED — flag default stays false; new code dormant; KS-15 unblocked
+last_updated: "2026-04-26T17:27:33.119Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 12
-  completed_plans: 2
-  percent: 17
+  completed_plans: 3
+  percent: 25
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — EXECUTING
-Plan: 2 of 12
+Plan: 3 of 12
 Status: Ready to execute
 Last activity: 2026-04-26
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [██░░░░░░░░] 17%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 28.5 min | 4 tasks | 3 files |
+| Phase 01 P02 | 95min | 4 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,7 @@ Recent decisions affecting current work:
   - Plan 00 expanded: 7 tasks → 9 tasks (Task 8 = config block + loader shim, Task 9 = ledger schema bump + validate.py wiring). New file `tests/test_validation/test_ledger_schema.py`.
   - Plan count unchanged: 12.
 - [Phase 01]: Plan 01-01 KS-01: SHIPPED-NO-OP per D-31 — _tackled_short_preserve_distribution per D-09 ships behind phase1_ks_flags.ks01_preserve_distribution=true; hard floor passes both A/B entries (Δ rank_corr +0.0011/+0.0004, Δ weekly_mae -0.002/+0.003), KS Δ on QB pass_yards <= -0.01 promotion bar barely met (only 2024 full -0.01); bug fix is a correct precondition for KS-04/KS-15. — Mechanism only fires on RZ TD-gate failures; per-game stat impact below detection threshold at 200 sims; KS-04+KS-15 will stack on this foundation per dependency-mandatory order in D-26.
+- [Phase ?]: Plan 01-02 KS-04: BLOCKED per D-31 hard floor — bare weekly_mae +0.167 > +0.05 limit. Conditional boost (D-11) correctly removes fictitious yards but exposes underlying under-projection in bare mode. Flag-based rollback via D-45: phase1_ks_flags.ks04_conditional_catch_boost.enabled stays false in defaults.yaml; new code path stays in play_resolver.py but dormant. KS-15 (Plan 07) unblocked — removes boost entirely per D-15.
 
 ### Pending Todos
 
@@ -102,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T15:44:35.621Z
-Stopped at: Phase 1 planning complete
+Last session: 2026-04-26T17:27:33.114Z
+Stopped at: Plan 01-02 KS-04 BLOCKED — flag default stays false; new code dormant; KS-15 unblocked
 Resume file: None
