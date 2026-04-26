@@ -96,6 +96,32 @@ CLOCK_SACK = 35
 # path (flag off) hardcodes `+1` to preserve pre-Phase-1 Arm A behavior.
 CATCH_YARDS_BOOST = 1.5
 
+# Phase 1 KS-15 feature flag (Cycle 3 D-45). When ON, the field-position
+# clamping bug fix per D-14 is active in BOTH the roster-aware paths inside
+# `_resolve_pass`/`_resolve_run` AND the legacy non-roster paths (per D-15b /
+# MEDIUM-4). The new policy is:
+#   - Detect `would_be_td = (state.yard_line - raw_yards_post_home_field) <= 0`
+#     BEFORE any `_clamp_yards` truncation.
+#   - If `would_be_td` AND outside the RZ (yard_line > 20) → TD scores
+#     unconditionally (no gate, since the gate only fires inside the 20).
+#   - If `would_be_td` AND inside the RZ → route through the existing
+#     `_red_zone_td_gate`; if pass, TD scores with `yards = state.yard_line`;
+#     if fail, fall back to `_tackled_short_preserve_distribution` (KS-01).
+#   - If NOT `would_be_td` → take `raw_yards_post_home_field` directly (no
+#     clamping needed because the play didn't reach the goal).
+# Per D-15: in the same code path, drop `CATCH_YARDS_BOOST` to 0. The boost
+# was a band-aid for clamping-induced under-counting (KS-04 D-11/D-12); the
+# KS-15 mechanism fix obviates it. The legacy `CATCH_YARDS_BOOST = 1.5`
+# constant stays in module scope for the flag-OFF Arm A path so the per-KS
+# A/B genuinely flips a code path. When this flag is promoted, both the KS-04
+# conditional boost and the legacy `+1` outside-RZ boost become dead code in
+# the live path (still kept for Arm-A-equivalent rollback).
+_KS15_UNCLAMP_FOR_TD_GATE = (
+    get_phase1_ks_flags()
+    .get("ks15_unclamp_for_td_gate", {})
+    .get("enabled", False)
+)
+
 # Sack yardage loss distribution
 SACK_YARDS = np.array([-3, -4, -5, -5, -6, -7, -7, -8, -8, -10])
 
@@ -400,14 +426,21 @@ def _resolve_pass(
                         _KS06_LEGACY_FALLBACK_LOW, _KS06_LEGACY_FALLBACK_HIGH,
                     ))
 
-            # KS-04 D-11 (Cycle 3 D-45): when the flag is on, apply boost
-            # ONLY when _clamp_yards would actually fire (raw_sample >
-            # yard_line) AND we are outside the red zone. Inside the RZ the
-            # TD gate controls scoring and the boost would inflate TDs.
-            # When the flag is off, fall back to the legacy unconditional
-            # `+1` outside-RZ boost so Arm A is bit-for-bit identical to
-            # pre-Phase-1 behavior (preserves the genuine two-arm A/B).
-            if _KS04_CONDITIONAL_BOOST:
+            # KS-15 D-14/D-15 (Cycle 3 D-45): when the flag is on, the boost
+            # is dropped to 0 (per D-15 — KS-15's would-be-TD detection
+            # mechanism obviates the boost) AND the would-be-TD detection is
+            # done on the un-clamped sample BEFORE any clamping.
+            # When the flag is off, fall back to the existing KS-04
+            # conditional / legacy boost path so Arm A is bit-for-bit
+            # identical to pre-Phase-1 (preserves the genuine two-arm A/B).
+            if _KS15_UNCLAMP_FOR_TD_GATE:
+                # Per D-15: zero boost in the KS-15 path. KS-04 conditional
+                # and legacy `+1` boost both become inert.
+                player_yards = raw_sample
+            elif _KS04_CONDITIONAL_BOOST:
+                # KS-04 D-11: apply boost ONLY when _clamp_yards would
+                # actually fire (raw_sample > yard_line) AND we are outside
+                # the RZ. Inside the RZ the TD gate controls scoring.
                 if state.yard_line > 20 and raw_sample > state.yard_line:
                     player_yards = raw_sample + _KS04_BOOST_VALUE
                 else:
@@ -421,28 +454,67 @@ def _resolve_pass(
                 legacy_boost = 1 if state.yard_line > 20 else 0
                 player_yards = raw_sample + legacy_boost
 
-            yards = _apply_home_field(player_yards, is_home, rng)
-            yards = _clamp_yards(state.yard_line, yards)
+            if _KS15_UNCLAMP_FOR_TD_GATE:
+                # KS-15 D-14: detect would-be TD from the un-clamped,
+                # post-home-field sample BEFORE any clamping. The clamping
+                # is logical (yards = state.yard_line on TD), not numeric.
+                raw_yards_post_home_field = _apply_home_field(player_yards, is_home, rng)
+                would_be_td = (state.yard_line - raw_yards_post_home_field) <= 0
+                if would_be_td:
+                    if state.yard_line <= 20:
+                        # Inside RZ: route through the TD gate.
+                        if _red_zone_td_gate(state.yard_line, "pass", rng,
+                                             receiver.outcomes.receiving_td_factor):
+                            yards = state.yard_line
+                            is_td = True
+                        else:
+                            # Gate failed: tackled short, preserve distribution
+                            # via the KS-01 helper (always applies in the
+                            # KS-15 path; the KS-01 flag-off rewrite is
+                            # incompatible with KS-15's would-be-TD detection
+                            # because that path discards the sampled value).
+                            yards = _tackled_short_preserve_distribution(
+                                state.yard_line, player_yards
+                            )
+                            is_td = False
+                    else:
+                        # Outside RZ: would-be TD always scores.
+                        yards = state.yard_line
+                        is_td = True
+                else:
+                    # Not a would-be TD: take the sample (no clamping needed
+                    # because the play didn't reach the goal).
+                    yards = raw_yards_post_home_field
+                    is_td = False
+            else:
+                # Legacy path: home-field, clamp, then post-clamp TD-gate.
+                yards = _apply_home_field(player_yards, is_home, rng)
+                yards = _clamp_yards(state.yard_line, yards)
+
+                # TD determination with red zone gate
+                if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
+                    if _red_zone_td_gate(state.yard_line, "pass", rng,
+                                         receiver.outcomes.receiving_td_factor):
+                        is_td = True
+                    else:
+                        # KS-01 (D-09 / Cycle 3 D-45): when the flag is on,
+                        # preserve the sampled distribution by capping at
+                        # yard_line - 1 instead of overwriting with the
+                        # legacy strictly-shorter rewrite. `player_yards` is
+                        # the pre-`_clamp_yards`, pre-`_apply_home_field`
+                        # value sampled from the receiver's distribution.
+                        if _KS01_PRESERVE_DIST:
+                            yards = _tackled_short_preserve_distribution(
+                                state.yard_line, player_yards
+                            )
+                        else:
+                            yards = _tackled_short(state.yard_line, rng)
+                        is_td = False
+                else:
+                    is_td = (state.yard_line - yards) <= 0
         else:
             yards = 0
-
-        # TD determination with red zone gate
-        if is_complete and state.yard_line <= 20 and (state.yard_line - yards) <= 0:
-            if _red_zone_td_gate(state.yard_line, "pass", rng, receiver.outcomes.receiving_td_factor):
-                is_td = True
-            else:
-                # KS-01 (D-09 / Cycle 3 D-45): when the flag is on, preserve the
-                # sampled distribution by capping at yard_line - 1 instead of
-                # overwriting with the legacy strictly-shorter rewrite.
-                # `player_yards` is the pre-`_clamp_yards`, pre-`_apply_home_field`
-                # value sampled from the receiver's distribution (line 267 / 271).
-                if _KS01_PRESERVE_DIST:
-                    yards = _tackled_short_preserve_distribution(state.yard_line, player_yards)
-                else:
-                    yards = _tackled_short(state.yard_line, rng)
-                is_td = False
-        else:
-            is_td = is_complete and (state.yard_line - yards) <= 0
+            is_td = False
 
         is_fumble = False
         if is_complete:
@@ -460,11 +532,29 @@ def _resolve_pass(
 
     # Legacy path (no roster) — sample from team distribution
     team_yards = play_outcomes.sample_yards("pass", _bucket_from_state(state), rng)
-    team_yards = _apply_home_field(team_yards, is_home, rng)
-    yards = _clamp_yards(state.yard_line, team_yards)
+    raw_yards = _apply_home_field(team_yards, is_home, rng)
 
-    is_complete = yards > 0
-    is_td = (state.yard_line - yards) <= 0
+    if _KS15_UNCLAMP_FOR_TD_GATE:
+        # KS-15 D-15b (MEDIUM-4): legacy non-roster path uses the same
+        # would-be-TD detection pattern as the roster path. The legacy path
+        # has no roster/receiver to look up `td_factor` on, so the RZ TD
+        # gate is NOT routed through here — would-be-TDs simply score (the
+        # validation harness instantiates rosters in all production paths,
+        # so the legacy path is exercised only by tests and codebase-
+        # consistency hygiene per D-15b).
+        would_be_td = (state.yard_line - raw_yards) <= 0
+        if would_be_td:
+            yards = state.yard_line
+            is_td = True
+        else:
+            yards = raw_yards
+            is_td = False
+        # Legacy semantic preserved: any positive yards = completion.
+        is_complete = yards > 0
+    else:
+        yards = _clamp_yards(state.yard_line, raw_yards)
+        is_complete = yards > 0
+        is_td = (state.yard_line - yards) <= 0
 
     # Fumble check on completions
     is_fumble = False
@@ -519,29 +609,66 @@ def _resolve_run(
             player_yards = play_outcomes.sample_yards("run", _bucket_from_state(state), rng)
 
         raw_yards = _apply_home_field(player_yards, is_home, rng)
+        # Safety check on raw yards BEFORE any clamping or TD detection
+        # (preserved across both legacy and KS-15 paths).
         is_safety = (state.yard_line - raw_yards) >= 100
-        yards = _clamp_yards(state.yard_line, raw_yards)
 
-        # TD determination with red zone gate
-        if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
-            # Use inside-5 factor at goal line when available
-            if state.yard_line <= 5 and rusher.outcomes.i5_rushing_td_factor != 1.0:
-                td_factor = rusher.outcomes.i5_rushing_td_factor
-            else:
-                td_factor = rusher.outcomes.rushing_td_factor
-            if _red_zone_td_gate(state.yard_line, "run", rng, td_factor):
-                is_td = True
-            else:
-                # KS-01 (D-09 / Cycle 3 D-45): preserve the sampled distribution
-                # when the flag is on. `raw_yards` is the post-`_apply_home_field`,
-                # pre-`_clamp_yards` rushing value (line 362).
-                if _KS01_PRESERVE_DIST:
-                    yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)
+        if _KS15_UNCLAMP_FOR_TD_GATE:
+            # KS-15 D-14: detect would-be TD from un-clamped raw_yards before
+            # clamping. The clamping is logical (yards = state.yard_line on
+            # TD), not numeric.
+            would_be_td = (state.yard_line - raw_yards) <= 0 and not is_safety
+            if would_be_td:
+                if state.yard_line <= 20:
+                    if state.yard_line <= 5 and rusher.outcomes.i5_rushing_td_factor != 1.0:
+                        td_factor = rusher.outcomes.i5_rushing_td_factor
+                    else:
+                        td_factor = rusher.outcomes.rushing_td_factor
+                    if _red_zone_td_gate(state.yard_line, "run", rng, td_factor):
+                        yards = state.yard_line
+                        is_td = True
+                    else:
+                        # Gate failed: tackled short, preserve distribution
+                        # via the KS-01 helper.
+                        yards = _tackled_short_preserve_distribution(
+                            state.yard_line, raw_yards
+                        )
+                        is_td = False
                 else:
-                    yards = _tackled_short(state.yard_line, rng)
+                    # Outside RZ: would-be TD always scores.
+                    yards = state.yard_line
+                    is_td = True
+            elif is_safety:
+                # Match the legacy behavior: clamp to own end zone for safety.
+                yards = -(99 - state.yard_line)
+                is_td = False
+            else:
+                # Not a would-be TD: take the sample (no clamping needed).
+                yards = raw_yards
                 is_td = False
         else:
-            is_td = (state.yard_line - yards) <= 0
+            # Legacy path: clamp first, then post-clamp TD-gate logic.
+            yards = _clamp_yards(state.yard_line, raw_yards)
+
+            if state.yard_line <= 20 and (state.yard_line - yards) <= 0:
+                # Use inside-5 factor at goal line when available
+                if state.yard_line <= 5 and rusher.outcomes.i5_rushing_td_factor != 1.0:
+                    td_factor = rusher.outcomes.i5_rushing_td_factor
+                else:
+                    td_factor = rusher.outcomes.rushing_td_factor
+                if _red_zone_td_gate(state.yard_line, "run", rng, td_factor):
+                    is_td = True
+                else:
+                    # KS-01 (D-09 / Cycle 3 D-45): preserve the sampled distribution
+                    # when the flag is on. `raw_yards` is the post-`_apply_home_field`,
+                    # pre-`_clamp_yards` rushing value.
+                    if _KS01_PRESERVE_DIST:
+                        yards = _tackled_short_preserve_distribution(state.yard_line, raw_yards)
+                    else:
+                        yards = _tackled_short(state.yard_line, rng)
+                    is_td = False
+            else:
+                is_td = (state.yard_line - yards) <= 0
 
         is_fumble = _check_fumble(rusher.outcomes.fumble_rate, turnover_rates.fumble_rate, rng)
 
@@ -561,9 +688,27 @@ def _resolve_run(
     # Check safety on raw yards before clamping (ball pushed past own end zone)
     is_safety = (state.yard_line - raw_yards) >= 100
 
-    yards = _clamp_yards(state.yard_line, raw_yards)
+    if _KS15_UNCLAMP_FOR_TD_GATE:
+        # KS-15 D-15b (MEDIUM-4): legacy non-roster path uses the same
+        # would-be-TD + safety detection pattern as the roster path. No
+        # RZ TD gate here (no rusher td_factor available); would-be-TDs
+        # score directly.
+        would_be_td = (state.yard_line - raw_yards) <= 0 and not is_safety
+        if would_be_td:
+            yards = state.yard_line
+            is_td = True
+        elif is_safety:
+            # Match the legacy `_clamp_yards` behavior for safety: clamp to
+            # own end zone.
+            yards = -(99 - state.yard_line)
+            is_td = False
+        else:
+            yards = raw_yards
+            is_td = False
+    else:
+        yards = _clamp_yards(state.yard_line, raw_yards)
+        is_td = (state.yard_line - yards) <= 0
 
-    is_td = (state.yard_line - yards) <= 0
     is_fumble = rng.random() < turnover_rates.fumble_rate
 
     return PlayResult(
