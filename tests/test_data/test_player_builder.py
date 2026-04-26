@@ -863,3 +863,116 @@ class TestSeasonWeighting:
         builder = GameContextBuilder()
         # After init, _pbp_stats_cache_key should be None
         assert builder._pbp_stats_cache_key is None
+
+
+# === KS-06: MIN_PLAYER_PLAYS lowered (D-19 sub-fix 3) ===
+
+class TestKs06MinPlayerPlays:
+    """KS-06 D-19 sub-fix 3: lower MIN_PLAYER_PLAYS from 5 → 3 so receivers
+    with thin per-player data still get their own distribution rather than
+    falling through to the team-bucket backup-receiver path. Gated behind
+    `phase1_ks_flags.ks06_backup_receiver_fix.enabled` per Cycle 3 D-45.
+    """
+
+    def test_ks06_min_player_plays_is_3(self):
+        from fantasy_sim.data.player_builder import MIN_PLAYER_PLAYS
+        assert MIN_PLAYER_PLAYS == 3, (
+            f"D-19 sub-fix 3 requires module constant MIN_PLAYER_PLAYS == 3 "
+            f"(the new path's effective value); got {MIN_PLAYER_PLAYS}"
+        )
+
+    def _make_thin_pbp_for_player(
+        self, player_id: str, n_catches: int
+    ) -> pl.DataFrame:
+        """PBP with exactly `n_catches` completions to `player_id` for KC."""
+        completion_template = {
+            "season": 2024,
+            "week": 1,
+            "game_id": "2024_01_KC_BUF",
+            "play_type": "pass",
+            "posteam": "KC",
+            "defteam": "BUF",
+            "down": 1,
+            "ydstogo": 10,
+            "yardline_100": 75,
+            "score_differential": 0,
+            "qtr": 1,
+            "yards_gained": 12,
+            "complete_pass": 1,
+            "pass_attempt": 1,
+            "rush_attempt": 0,
+            "interception": 0,
+            "fumble_lost": 0,
+            "sack": 0,
+            "touchdown": 0,
+            "penalty": 0,
+            "penalty_yards": 0,
+            "passer_player_id": "PM15",
+            "receiver_player_id": player_id,
+            "rusher_player_id": None,
+        }
+        plays = []
+        for i in range(n_catches):
+            plays.append({**completion_template, "week": i + 1, "yards_gained": 8 + i})
+        return pl.DataFrame(plays)
+
+    def _make_roster_for_player(self, player_id: str) -> pl.DataFrame:
+        return pl.DataFrame(
+            [
+                {
+                    "season": 2024, "week": 1, "player_id": player_id,
+                    "player_name": "T.Backup", "position": "WR", "team": "KC",
+                    "status": "ACT",
+                },
+                {
+                    "season": 2024, "week": 1, "player_id": "PM15",
+                    "player_name": "P.Mahomes", "position": "QB", "team": "KC",
+                    "status": "ACT",
+                },
+            ]
+        )
+
+    def test_ks06_player_with_3_catches_gets_own_dist_when_flag_on(
+        self, monkeypatch
+    ):
+        """Flag-on: a player with exactly 3 catches builds their own
+        receiving_yards_dist (length 3) rather than falling through to the
+        team-bucket fallback path."""
+        from fantasy_sim.data import player_builder as pb_mod
+        # Force the flag-on local computation path inside _assemble_models
+        monkeypatch.setattr(
+            pb_mod, "_KS06_BACKUP_RECEIVER_FIX", True, raising=False
+        )
+
+        pbp = self._make_thin_pbp_for_player("BU99", n_catches=3)
+        rosters = self._make_roster_for_player("BU99")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        backup = models["BU99"]
+        assert backup.outcomes.receiving_yards_dist is not None, (
+            "With KS-06 flag on and 3 catches (>= MIN_PLAYER_PLAYS=3), the "
+            "backup receiver should have its own receiving_yards_dist"
+        )
+        assert len(backup.outcomes.receiving_yards_dist) == 3
+
+    def test_ks06_player_with_3_catches_no_dist_when_flag_off(
+        self, monkeypatch
+    ):
+        """Flag-off (legacy): a player with only 3 catches falls below the
+        legacy threshold (5) and gets no per-player distribution."""
+        from fantasy_sim.data import player_builder as pb_mod
+        monkeypatch.setattr(
+            pb_mod, "_KS06_BACKUP_RECEIVER_FIX", False, raising=False
+        )
+
+        pbp = self._make_thin_pbp_for_player("BU98", n_catches=3)
+        rosters = self._make_roster_for_player("BU98")
+        models = pb_mod.build_player_models(
+            pbp, rosters, training_seasons=[2024]
+        )
+        backup = models["BU98"]
+        assert backup.outcomes.receiving_yards_dist is None, (
+            "With KS-06 flag off (legacy MIN_PLAYER_PLAYS=5), 3 catches is "
+            "below threshold so receiving_yards_dist should remain None"
+        )

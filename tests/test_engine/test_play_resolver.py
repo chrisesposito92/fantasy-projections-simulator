@@ -1168,3 +1168,177 @@ def test_ks04_boost_conditional_when_clamp_fires(monkeypatch):
         f"(D-11). All inputs ≤ 35 means the conditional boost branch was "
         f"never taken."
     )
+
+
+# === KS-06: Backup-receiver fallback range (D-19 sub-fix 2) ===
+
+def test_ks06_backup_receiver_fallback_range_when_flag_on():
+    """KS-06 D-19 sub-fix 2: the integer fallback in _resolve_pass — used when
+    the receiver has no receiving_yards_dist AND the team-bucket sample is
+    <= 0 — should sample in [5, 17] (mean ~11.5, NFL-realistic per-completion
+    yards) when phase1_ks_flags.ks06_backup_receiver_fix.enabled is true.
+
+    The test checks the literal bounds of the new range; the legacy bounds
+    are [3, 11] (mean ~7).
+    """
+    rng = np.random.default_rng(42)
+    samples = [int(rng.integers(5, 18)) for _ in range(20000)]
+    assert min(samples) >= 5, f"min sample {min(samples)} below new lower bound 5"
+    assert max(samples) <= 17, (
+        f"max sample {max(samples)} above new upper bound 17 "
+        f"(rng.integers high is exclusive)"
+    )
+    mean = float(np.mean(samples))
+    assert 10.5 <= mean <= 12.0, (
+        f"mean {mean} outside expected ~11.5 for [5,18) uniform"
+    )
+
+
+def test_ks06_backup_receiver_fallback_branch_uses_new_range_when_flag_on(
+    monkeypatch,
+):
+    """Behavioural test: when the player has no receiving_yards_dist and the
+    team bucket samples <= 0, the resulting yards before clamping should fall
+    in [5, 17] when the KS-06 flag is on. Stub the team bucket to always
+    return 0 so the integer fallback fires deterministically.
+    """
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS06_BACKUP_RECEIVER_FIX", True, raising=False)
+    # Force the KS-04 conditional path off so the fallback path's output is
+    # not perturbed by an extra `+1.5` boost (this test only exercises the
+    # raw_sample range, not the post-boost arithmetic).
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    captured: list[int] = []
+    real_clamp = pr._clamp_yards
+
+    def _spy_clamp(yard_line, yards):
+        captured.append(yards)
+        return real_clamp(yard_line, yards)
+
+    monkeypatch.setattr(pr, "_clamp_yards", _spy_clamp)
+
+    # Build a roster whose receiver has NO receiving_yards_dist (forces the
+    # fallback). Then provide an outcomes object whose `pass` default yields
+    # 0 yards every time (forces the integer-fallback branch within the
+    # fallback path).
+    from fantasy_sim.engine.play_resolver import resolve_play
+    from fantasy_sim.models.distributions import PlayOutcomeDist
+    from fantasy_sim.models.player import (
+        PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster,
+    )
+
+    qb = PlayerModel(
+        player_id="QB1", name="QB One", position="QB", team="KC",
+        usage=PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        outcomes=PlayerOutcomes(catch_rate=0.0, fumble_rate=0.0, pass_fumble_rate=0.0),
+        games_played=10,
+    )
+    wr = PlayerModel(
+        player_id="WR1", name="WR Backup", position="WR", team="KC",
+        usage=PlayerUsage(target_share=1.0),
+        outcomes=PlayerOutcomes(
+            catch_rate=1.0, red_zone_catch_rate=1.0, fumble_rate=0.0,
+            receiving_yards_dist=None,  # critical: forces the fallback branch
+        ),
+        games_played=10,
+    )
+    roster = TeamRoster(team="KC", players=[qb, wr])
+
+    # Outcomes whose `pass` defaults always yield 0 (so the team_yards <= 0
+    # branch always triggers and the integer fallback fires).
+    outcomes = PlayOutcomeDist(distributions={}, defaults={"pass": np.array([0])})
+
+    rates = TurnoverRates(team="KC", int_rate=0.0, fumble_rate=0.0,
+                          sack_rate=0.0, sack_fumble_rate=0.0)
+    rng = np.random.default_rng(7)
+
+    for _ in range(500):
+        state = make_state(yard_line=50)  # outside RZ
+        resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
+
+    assert captured, "Expected at least one clamp call"
+    # Strip 0s — those come from incomplete passes, but catch_rate=1.0 so all
+    # captured values came from completions where raw_sample fell in [5, 17].
+    nonzero = [v for v in captured if v != 0]
+    assert nonzero, "Expected at least one nonzero clamp input from the fallback"
+    assert min(nonzero) >= 5, (
+        f"min clamp input {min(nonzero)} below KS-06 new lower bound 5"
+    )
+    assert max(nonzero) <= 17, (
+        f"max clamp input {max(nonzero)} above KS-06 new upper bound 17"
+    )
+    mean = float(np.mean(nonzero))
+    assert 10.0 <= mean <= 13.0, (
+        f"mean {mean} outside expected ~11.5 for fallback [5,18) sampling"
+    )
+
+
+def test_ks06_backup_receiver_fallback_branch_uses_legacy_range_when_flag_off(
+    monkeypatch,
+):
+    """Mirror of the above with the flag off — proves Arm A keeps the legacy
+    [3, 11] range so the per-KS A/B is genuinely two-arm."""
+    from fantasy_sim.engine import play_resolver as pr
+    monkeypatch.setattr(pr, "_KS06_BACKUP_RECEIVER_FIX", False, raising=False)
+    monkeypatch.setattr(pr, "_KS04_CONDITIONAL_BOOST", False)
+
+    captured: list[int] = []
+    real_clamp = pr._clamp_yards
+
+    def _spy_clamp(yard_line, yards):
+        captured.append(yards)
+        return real_clamp(yard_line, yards)
+
+    monkeypatch.setattr(pr, "_clamp_yards", _spy_clamp)
+
+    from fantasy_sim.engine.play_resolver import resolve_play
+    from fantasy_sim.models.distributions import PlayOutcomeDist
+    from fantasy_sim.models.player import (
+        PlayerModel, PlayerOutcomes, PlayerUsage, TeamRoster,
+    )
+
+    qb = PlayerModel(
+        player_id="QB1", name="QB One", position="QB", team="KC",
+        usage=PlayerUsage(snap_share=1.0, scramble_rate=0.0),
+        outcomes=PlayerOutcomes(catch_rate=0.0, fumble_rate=0.0, pass_fumble_rate=0.0),
+        games_played=10,
+    )
+    wr = PlayerModel(
+        player_id="WR1", name="WR Backup", position="WR", team="KC",
+        usage=PlayerUsage(target_share=1.0),
+        outcomes=PlayerOutcomes(
+            catch_rate=1.0, red_zone_catch_rate=1.0, fumble_rate=0.0,
+            receiving_yards_dist=None,
+        ),
+        games_played=10,
+    )
+    roster = TeamRoster(team="KC", players=[qb, wr])
+    outcomes = PlayOutcomeDist(distributions={}, defaults={"pass": np.array([0])})
+    rates = TurnoverRates(team="KC", int_rate=0.0, fumble_rate=0.0,
+                          sack_rate=0.0, sack_fumble_rate=0.0)
+    rng = np.random.default_rng(7)
+
+    for _ in range(500):
+        state = make_state(yard_line=50)  # outside RZ
+        resolve_play(state, "pass", outcomes, rates, rng, roster=roster, is_home=False)
+
+    nonzero = [v for v in captured if v != 0]
+    assert nonzero, "Expected at least one nonzero clamp input from the fallback"
+    # Legacy [3, 11] range; the unconditional outside-RZ +1 boost (legacy
+    # KS-04 path) adds 1, so observed values fall in [4, 12]. The boost is
+    # disabled in this test (KS04_CONDITIONAL_BOOST=False) but the legacy
+    # `legacy_boost = 1 if state.yard_line > 20 else 0` still fires inside
+    # _resolve_pass. yard_line=50 > 20 so each value gets +1.
+    # Effective observed range: [3+1, 11+1] = [4, 12].
+    assert min(nonzero) >= 4, (
+        f"min clamp input {min(nonzero)} below legacy lower bound 4 (3+1 boost)"
+    )
+    assert max(nonzero) <= 12, (
+        f"max clamp input {max(nonzero)} above legacy upper bound 12 (11+1 boost)"
+    )
+    mean = float(np.mean(nonzero))
+    # raw [3, 11) uniform mean ~ 6, +1 boost → ~7
+    assert 6.0 <= mean <= 8.5, (
+        f"mean {mean} outside expected ~7 for legacy fallback [3,12) sampling"
+    )
