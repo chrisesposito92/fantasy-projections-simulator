@@ -19,8 +19,6 @@ htmlcov/
 results/
 !results/.gitkeep
 
-.planning/
-
 .bg-shell/
 
 .env
