@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fantasy_sim.data.ensemble.models import (
     DynamicBlendConfig,
     EnsembleConfig,
     FfOpportunityConfig,
     FfRankingsConfig,
+    PriorWidthConfig,
     ResidualCalibrationConfig,
     StatLevelConfig,
 )
@@ -26,6 +29,15 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
     dynamic_blend_raw = raw.get("dynamic_blend", {})
     residual_calibration_raw = raw.get("residual_calibration", {})
 
+    # KS-13 D-10: prior_width config block
+    prior_width_raw = ff_opportunity_raw.get("prior_width", {})
+    prior_width_artifacts_dir_raw = prior_width_raw.get("artifacts_dir")
+    prior_width = PriorWidthConfig(
+        enabled=bool(prior_width_raw.get("enabled", False)),
+        path=str(prior_width_raw.get("path", "A")),
+        artifacts_dir=Path(prior_width_artifacts_dir_raw) if prior_width_artifacts_dir_raw else None,
+    )
+
     ff_opportunity = FfOpportunityConfig(
         enabled=ff_opportunity_raw.get("enabled", False),
         cache_dir=ff_opportunity_raw.get("cache_dir"),
@@ -36,6 +48,7 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
             "min_coverage_weeks",
             default_ff_opportunity.min_coverage_weeks,
         ),
+        prior_width=prior_width,
     )
     ff_rankings = FfRankingsConfig(
         enabled=ff_rankings_raw.get("enabled", False),

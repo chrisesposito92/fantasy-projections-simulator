@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class PriorWidthConfig:
+    """KS-13 D-10: ff_opportunity prior-width config.
+
+    enabled: bool — master sub-flag (conjunction with phase2_ks_flags.ks13 master).
+    path: str — "A" = quantile-derived sigma; "B" = fitted residual std per bucket.
+    artifacts_dir: Path | None — Path B override directory; None -> bundled dir.
+    """
+
+    enabled: bool = False
+    path: str = "A"  # "A" = quantile-derived; "B" = fitted residual std
+    artifacts_dir: Path | None = None  # codex cycle-2 HIGH 3: Path B override
 
 
 @dataclass
@@ -22,6 +37,7 @@ class FfOpportunityConfig:
         }
     )
     min_coverage_weeks: int = 1
+    prior_width: PriorWidthConfig = field(default_factory=PriorWidthConfig)  # KS-13 D-10
 
 
 @dataclass
