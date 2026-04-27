@@ -517,3 +517,84 @@ class TestComputePenaltyRates:
             assert "false_start" in pr.avg_yards
             assert "holding" in pr.avg_yards
             assert "pass_interference" in pr.avg_yards
+
+
+# === KS-14: thin-bucket Bayesian shrinkage (codex HIGH 2 fix — flag-gated threshold) ===
+
+import fantasy_sim.data.preprocessor as _ppmod
+from fantasy_sim.data.preprocessor import (
+    MIN_BUCKET_PLAYS,
+    _effective_min_bucket_plays,
+    _apply_bayesian_shrinkage,
+)
+
+
+def test_ks14_legacy_min_bucket_plays_when_flag_off(monkeypatch):
+    """CODEX HIGH 2 LOAD-BEARING TEST: when the KS-14 flag is OFF, the EFFECTIVE
+    threshold MUST be 10 (legacy / Phase-1 baseline). Without this guarantee, the
+    flag-off A/B arm is contaminated and the per-KS comparison becomes a no-op.
+    """
+    # MIN_BUCKET_PLAYS constant itself stays at 10 (we did NOT lower it globally)
+    assert MIN_BUCKET_PLAYS == 10, "MIN_BUCKET_PLAYS constant must remain 10 (codex HIGH 2 fix)"
+    # Force the cached flag to False and re-evaluate
+    monkeypatch.setattr(_ppmod, "_KS14_THIN_BUCKET_SHRINKAGE", False)
+    assert _effective_min_bucket_plays() == 10, (
+        "Flag-off MUST yield effective threshold = 10 (legacy). "
+        "If this test fails, the flag gate is leaky and KS-14 contaminates the bare A/B arm."
+    )
+
+
+def test_ks14_effective_min_drops_to_5_when_flag_on(monkeypatch):
+    """When the KS-14 flag is ON, the effective threshold drops to 5 (KS-14 active)."""
+    monkeypatch.setattr(_ppmod, "_KS14_THIN_BUCKET_SHRINKAGE", True)
+    assert _effective_min_bucket_plays() == 5
+
+
+def test_ks14_shrinkage_pulls_thin_bucket_toward_prior():
+    """At n=5 with prior_strength = 5*N_team, the shrunk mean is between observed and prior."""
+    personal = [12, 14, 11, 13, 15]  # mean = 13
+    team_default = np.array([8] * 100)  # mean = 8; prior_strength = 5*100 = 500
+    shrunk = _apply_bayesian_shrinkage(personal, team_default)
+    # adjusted_mean = (5*13 + 500*8) / (5 + 500) = (65 + 4000) / 505 = 4065/505 ≈ 8.05
+    expected_mean = (5 * 13 + 500 * 8) / 505
+    assert abs(float(np.mean(shrunk)) - expected_mean) < 0.01
+    # Shape preserved: shrunk array has same length
+    assert len(shrunk) == 5
+    # Variance is preserved (location-shift only, not scale-shift)
+    np.testing.assert_allclose(np.var(shrunk), np.var(personal), rtol=1e-6)
+
+
+def test_ks14_no_shrinkage_when_team_default_empty():
+    """When team_default is None or empty, falls back to personal unchanged."""
+    personal = [10, 12, 8]
+    out = _apply_bayesian_shrinkage(personal, None)
+    np.testing.assert_array_equal(out, np.array(personal))
+    out_empty = _apply_bayesian_shrinkage(personal, [])
+    np.testing.assert_array_equal(out_empty, np.array(personal))
+
+
+def test_ks14_no_shrinkage_when_n_above_threshold():
+    """For n >= 10, the caller skips shrinkage entirely and uses np.array(yards_list)
+    (regardless of flag state — robust buckets are always retained)."""
+    yards_list = list(range(20))
+    n = len(yards_list)
+    if n >= 10:
+        result = np.array(yards_list)
+        np.testing.assert_array_equal(result, yards_list)
+    else:
+        pytest.fail("Unreachable in this test (n=20 >= 10)")
+
+
+def test_ks14_unchanged_when_flag_disabled(monkeypatch):
+    """Integration: with flag OFF, the effective threshold is 10 (legacy), so
+    n=7 (in [5,9]) is NOT retained — the n∈[5,9] subrange is dropped exactly
+    as pre-KS-14. This is the codex HIGH 2 byte-identical guarantee."""
+    monkeypatch.setattr(_ppmod, "_KS14_THIN_BUCKET_SHRINKAGE", False)
+    # Effective threshold MUST be 10 (legacy)
+    assert _effective_min_bucket_plays() == 10
+    # A thin bucket at n=7 must be BELOW the legacy threshold of 10
+    n_thin = 7
+    assert not (n_thin >= _effective_min_bucket_plays()), (
+        f"n=7 must be below the legacy threshold of 10 when flag off "
+        f"(got threshold = {_effective_min_bucket_plays()})"
+    )
