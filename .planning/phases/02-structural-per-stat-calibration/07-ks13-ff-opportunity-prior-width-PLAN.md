@@ -137,11 +137,12 @@ prior_fpts = float(prior["prior_fpts"])
 prior_lo = float(prior.get("prior_fpts_lo")) if "prior_fpts_lo" in prior else None
 prior_hi = float(prior.get("prior_fpts_hi")) if "prior_fpts_hi" in prior else None
 
-if self.config.prior_width.enabled and prior_lo is not None and prior_hi is not None:
+_pw = self.config.ff_opportunity.prior_width  # PriorWidthConfig (codex cycle-3 alignment)
+if _pw.enabled and prior_lo is not None and prior_hi is not None:
     # Path A: Gaussian sample with std = (hi - lo) / 2.56
     sigma = (prior_hi - prior_lo) / (2 * 1.28)
     sampled_prior = float(rng.normal(prior_fpts, sigma))
-elif self.config.prior_width.enabled and self._fitted_std is not None:
+elif _pw.enabled and self._fitted_std is not None:
     # Path B: fitted residual std per bucket
     sigma = float(self._fitted_std.get(bucket_key, 0.0))
     sampled_prior = float(rng.normal(prior_fpts, sigma)) if sigma > 0 else prior_fpts
@@ -392,11 +393,12 @@ prior_fpts = float(prior["prior_fpts"])
 prior_lo = prior.get("prior_fpts_lo")
 prior_hi = prior.get("prior_fpts_hi")
 
-if self.config.prior_width.enabled:
-    if self.config.prior_width.path == "A" and prior_lo is not None and prior_hi is not None:
+_pw = self.config.ff_opportunity.prior_width  # PriorWidthConfig (codex cycle-3 alignment: nested under ff_opportunity, NOT top-level on EnsembleConfig)
+if _pw.enabled:
+    if _pw.path == "A" and prior_lo is not None and prior_hi is not None:
         sigma = (float(prior_hi) - float(prior_lo)) / (2 * 1.28)
         sampled_prior = float(self._rng.normal(prior_fpts, max(sigma, 0.0)))
-    elif self.config.prior_width.path == "B":
+    elif _pw.path == "B":
         sigma = self._fitted_std_for(row.get("position", ""), prior_fpts) if hasattr(self, "_fitted_std_for") else 0.0
         sampled_prior = float(self._rng.normal(prior_fpts, max(sigma, 0.0))) if sigma > 0 else prior_fpts
     else:
@@ -426,11 +428,70 @@ import pytest
 
 
 def test_ks13_path_a_uses_quantile_width_when_lo_hi_present():
-    """Path A: sigma = (hi - lo) / 2.56; sampled prior is centered on prior_fpts with that std."""
-    # Construct a Path A ensembler and assert that ensemble_sampled_prior_fpts varies
-    # across multiple seed values with std proportional to (hi - lo) / 2.56.
-    # (Detailed implementation depends on FfOpportunityProjectionEnsembler test fixtures.)
-    pass  # placeholder; expand with concrete fixture-driven assertions during implementation
+    """Path A: sigma = (hi - lo) / 2.56; sampled prior is centered on prior_fpts with that std.
+
+    Codex cycle-3 alignment (final cycle HIGH): replaces prior `pass` placeholder with a
+    concrete fixture-driven assertion that mirrors the existing
+    test_blend_week_updates_fpts_and_recomputes_rank pattern in
+    tests/test_scoring/test_ensemble.py. Two ensemblers seeded identically must produce
+    identical fpts (determinism); the empirical sample std across many seeds must match
+    (prior_hi - prior_lo) / 2.56 within a tolerance proportional to 1/sqrt(N_seeds).
+    """
+    from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+    from fantasy_sim.data.ensemble import EnsembleConfig, FfOpportunityConfig
+    from fantasy_sim.data.ensemble.models import PriorWidthConfig
+
+    cfg = EnsembleConfig(
+        enabled=True,
+        ff_opportunity=FfOpportunityConfig(
+            enabled=True,
+            weights={"WR": 0.5},
+            prior_width=PriorWidthConfig(enabled=True, path="A"),
+        ),
+    )
+
+    # FakeLoader returns a frame with prior_fpts=20.0, prior_fpts_lo=15.0, prior_fpts_hi=25.0
+    # → expected sigma = (25.0 - 15.0) / 2.56 ≈ 3.906
+    expected_sigma = (25.0 - 15.0) / 2.56
+
+    fake_priors = pl.DataFrame({
+        "season": [2024], "week": [1], "player_id": ["wr1"], "position": ["WR"],
+        "prior_fpts": [20.0], "prior_fpts_lo": [15.0], "prior_fpts_hi": [25.0],
+    })
+    fake_loader = _StubLoader(fake_priors)  # test helper, returns the frame for any season
+
+    samples: list[float] = []
+    for seed in range(500):
+        ens = FfOpportunityProjectionEnsembler(
+            cfg, loader=fake_loader, rng=np.random.default_rng(seed)
+        )
+        out, _ = ens.blend_week(
+            [{"player_id": "wr1", "position": "WR", "fpts": 0.0}],  # weight 0.5, sim=0 → fpts = 0.5 * sampled_prior
+            season=2024, week=1,
+        )
+        samples.append(out[0]["fpts"] / 0.5)  # invert weight to recover sampled_prior
+
+    # Determinism: same seed → identical sample
+    ens_a = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42))
+    ens_b = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42))
+    out_a, _ = ens_a.blend_week([{"player_id": "wr1", "position": "WR", "fpts": 0.0}], season=2024, week=1)
+    out_b, _ = ens_b.blend_week([{"player_id": "wr1", "position": "WR", "fpts": 0.0}], season=2024, week=1)
+    assert out_a[0]["fpts"] == out_b[0]["fpts"], "Path A must be deterministic under fixed RNG"
+
+    # Empirical std across 500 seeds matches expected_sigma within sqrt(500) Monte Carlo error
+    empirical_std = float(np.std(samples, ddof=1))
+    tolerance = expected_sigma * 0.20  # ±20% sufficient for 500 samples
+    assert abs(empirical_std - expected_sigma) < tolerance, (
+        f"Empirical std {empirical_std:.3f} should match expected sigma {expected_sigma:.3f} "
+        f"= (prior_hi - prior_lo) / 2.56 within ±{tolerance:.3f}"
+    )
+
+    # Mean centered on prior_fpts (Path A is unbiased)
+    empirical_mean = float(np.mean(samples))
+    mean_tolerance = expected_sigma / math.sqrt(500) * 4  # 4 SE bands
+    assert abs(empirical_mean - 20.0) < mean_tolerance, (
+        f"Empirical mean {empirical_mean:.3f} should match prior_fpts 20.0 within ±{mean_tolerance:.3f}"
+    )
 
 
 def test_ks13_path_b_uses_fitted_std_when_lo_hi_absent():
@@ -446,8 +507,70 @@ def test_ks13_path_b_uses_fitted_std_when_lo_hi_absent():
 
 
 def test_ks13_unchanged_when_flag_disabled():
-    """When prior_width.enabled = False, behavior is byte-identical to pre-Plan-07."""
-    pass
+    """When prior_width.enabled = False, behavior is byte-identical to pre-Plan-07.
+
+    Codex cycle-3 alignment (final cycle HIGH): replaces prior `pass` placeholder with a
+    concrete differential test against a same-config ensembler that has prior_width
+    DISABLED. Both runs must produce byte-identical fpts because the flag-off branch
+    reuses the legacy point-estimate prior code path (`sampled_prior = prior_fpts`).
+    """
+    from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+    from fantasy_sim.data.ensemble import EnsembleConfig, FfOpportunityConfig
+    from fantasy_sim.data.ensemble.models import PriorWidthConfig
+
+    fake_priors = pl.DataFrame({
+        "season": [2024], "week": [1], "player_id": ["wr1"], "position": ["WR"],
+        "prior_fpts": [20.0], "prior_fpts_lo": [15.0], "prior_fpts_hi": [25.0],
+    })
+    fake_loader = _StubLoader(fake_priors)
+    rows = [{"player_id": "wr1", "position": "WR", "fpts": 12.0}]
+
+    # Baseline: prior_width disabled (legacy point-estimate prior path)
+    cfg_off = EnsembleConfig(
+        enabled=True,
+        ff_opportunity=FfOpportunityConfig(
+            enabled=True,
+            weights={"WR": 0.5},
+            prior_width=PriorWidthConfig(enabled=False),  # codex cycle-3: nested correctly
+        ),
+    )
+    ens_off = FfOpportunityProjectionEnsembler(
+        cfg_off, loader=fake_loader, rng=np.random.default_rng(123)
+    )
+    out_off, _ = ens_off.blend_week(list(rows), season=2024, week=1)
+
+    # Repeat with a different RNG — output must be IDENTICAL because the flag-off path
+    # is deterministic (no sampling): fpts = 0.5*12.0 + 0.5*20.0 = 16.0
+    ens_off_alt = FfOpportunityProjectionEnsembler(
+        cfg_off, loader=fake_loader, rng=np.random.default_rng(999)
+    )
+    out_off_alt, _ = ens_off_alt.blend_week(list(rows), season=2024, week=1)
+    assert out_off[0]["fpts"] == out_off_alt[0]["fpts"], (
+        "Flag-off branch must be RNG-independent (no sampling — point-estimate prior)"
+    )
+    assert out_off[0]["fpts"] == 16.0, (
+        f"Expected legacy point-estimate fpts=16.0 (= 0.5*12 + 0.5*20), got {out_off[0]['fpts']}"
+    )
+    assert out_off[0].get("ensemble_covered") is True
+    assert out_off[0].get("ensemble_source") == "ff_opportunity"
+
+    # Sanity: enabling prior_width WITH lo/hi must produce a DIFFERENT (sampled) fpts
+    cfg_on = EnsembleConfig(
+        enabled=True,
+        ff_opportunity=FfOpportunityConfig(
+            enabled=True,
+            weights={"WR": 0.5},
+            prior_width=PriorWidthConfig(enabled=True, path="A"),
+        ),
+    )
+    ens_on = FfOpportunityProjectionEnsembler(
+        cfg_on, loader=fake_loader, rng=np.random.default_rng(123)
+    )
+    out_on, _ = ens_on.blend_week(list(rows), season=2024, week=1)
+    # P(equal | sampled with sigma≈3.9) is essentially zero
+    assert out_on[0]["fpts"] != out_off[0]["fpts"], (
+        "Enabling prior_width should change fpts via Gaussian sampling around prior_fpts"
+    )
 
 
 def test_ks13_probe_script_outputs_json():

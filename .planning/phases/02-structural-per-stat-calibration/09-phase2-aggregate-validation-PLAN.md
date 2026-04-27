@@ -15,7 +15,7 @@ must_haves:
   truths:
     - "Per D-15: Phase 2 aggregate runs `validate.py --baseline bare --label p2.aggregate.full` AFTER all KS items have shipped to defaults.yaml (promoted or rolled back). Compute Phase-2-vs-Phase-1 delta from `p2.aggregate.full` Arm B vs `p1.aggregate.full` (#105) Arm B."
     - "Per D-15 walk-back trigger: hard-floor regression on the Phase-2-vs-Phase-1 delta (NOT Phase-2-vs-Phase-0). When `Δ rank_corr < -0.005 OR Δ weekly_mae > +0.05`, walk-back is triggered. **Codex HIGH 3 fix (2026-04-27): walk-back uses REVERSE ABLATION against the final promoted stack — NOT isolated per-KS Δ.** See the walk-back protocol truth below."
-    - "**Codex HIGH 3 — REVERSE-ABLATION WALK-BACK PROTOCOL:** the Phase 2 KS items are NOT additive. Specifically: `{KS-08, KS-13}` form a coupled variance cluster (both reshape post-sim distribution width); `KS-09` operates on the post-`KS-08` stack (its corrections are fit on the floor-active runtime); `KS-10` re-fits artifacts on top of `KS-09`. Reverting based on isolated per-KS A/B Δ is therefore unsafe — a KS item with a small isolated Δ may be carrying a large MARGINAL Δ in the presence of the others. The walk-back protocol is: (1) starting from the all-promoted full stack, run a single rebaseline `p2.aggregate.full`. (2) For each promoted KS item Ki ∈ promoted_set, run a leave-one-out aggregate `p2.aggregate.no_K{i}` with `phase2_ks_flags.K{i}.enabled=false` and all other promoted flags ON. (3) Compute `marginal_delta_K{i} = p2.aggregate.full.arm_b.<metric> - p2.aggregate.no_K{i}.arm_b.<metric>` for each (rank_corr, weekly_mae). The KS item with the LEAST-FAVORABLE marginal_delta (i.e. removing it HELPS rank_corr / weekly_mae the most, or hurts the least) is the rollback candidate. (4) Revert that flag in defaults.yaml; re-run `p2.aggregate.full`. (5) If hard floor still regresses, repeat steps 2-4 with the now-reduced promoted_set (this naturally captures coupled-cluster effects: if KS-08 and KS-13 are coupled, removing KS-08 first may flip KS-13's marginal_delta on the next iteration). (6) Iterate until hard floor passes OR promoted_set is empty."
+    - "**Codex HIGH 3 — REVERSE-ABLATION WALK-BACK PROTOCOL:** the Phase 2 KS items are NOT additive. Specifically: `{KS-08, KS-13}` form a coupled variance cluster (both reshape post-sim distribution width); `KS-09` operates on the post-`KS-08` stack (its corrections are fit on the floor-active runtime); `KS-10` re-fits artifacts on top of `KS-09`. Reverting based on isolated per-KS A/B Δ is therefore unsafe — a KS item with a small isolated Δ may be carrying a large MARGINAL Δ in the presence of the others. The walk-back protocol is: (1) starting from the all-promoted full stack, run a single rebaseline `p2.aggregate.full`. (2) For each promoted KS item Ki ∈ promoted_set, run a leave-one-out aggregate `p2.aggregate.no_K{i}` with `phase2_ks_flags.K{i}.enabled=false` and all other promoted flags ON. (3) Compute `marginal_delta_K{i} = _avg_arm_b_<metric>(p2.aggregate.full) - _avg_arm_b_<metric>(p2.aggregate.no_K{i})` for each (rank_corr, weekly_mae). The KS item with the LEAST-FAVORABLE marginal_delta (i.e. removing it HELPS rank_corr / weekly_mae the most, or hurts the least) is the rollback candidate. (4) Revert that flag in defaults.yaml; re-run `p2.aggregate.full`. (5) If hard floor still regresses, repeat steps 2-4 with the now-reduced promoted_set (this naturally captures coupled-cluster effects: if KS-08 and KS-13 are coupled, removing KS-08 first may flip KS-13's marginal_delta on the next iteration). (6) Iterate until hard floor passes OR promoted_set is empty."
     - "**Coupled-cluster handling (codex cycle-2 alignment):** When the FIRST reverse-ablation iteration finishes, if `KS-08` AND `KS-13` are BOTH in promoted_set AND BOTH satisfy `marginal_delta_rank_corr ≤ ε` (where `ε = 0.005`, i.e. both look near-zero or harmful when removed individually — meaning the cluster's joint contribution is what's harmful, not either singleton), revert them as a PAIR before iterating again. The trigger uses `≤ ε` rather than strict `< 0` because coupled-cluster signature is *near-zero individual marginals masking a harmful joint effect* — `+0.001` and `-0.001` look identical to the protocol; both indicate decoupled-removal does not help. The synthetic test `test_reverse_ablation_coupled_cluster_pair_revert` exercises the near-zero positive case (`marginal_ks08 = +0.001`, `marginal_ks13 = +0.001`) which MUST trigger pair-revert under this rule. This avoids the n+1 round of reverse ablation flipping the marginal sign as the cluster decouples."
     - "Per Phase 1 D-46 + 02-VALIDATION.md: D-15 Phase-2-vs-Phase-1 delta computed via direct ledger reads. **Codex cycle-2 HIGH 4 fix (2026-04-27):** the actual ledger schema (verified at `src/fantasy_sim/validation/ledger.py` lines 25-89) is `LedgerEntry.season_results: list[SeasonMetrics]`. Each `SeasonMetrics` exposes `arm_b_rank_corr: dict[str, float]` (per-position keys QB/RB/WR/TE), `arm_b_weekly_mae: float`, `weekly_fpts_ks: dict[str, float | int]` (key `arm_b_ks`), `stat_ks: dict[pos][stat][{arm_a_ks, arm_b_ks, ks_delta, n}]`, and `stat_mean_bias: dict[pos][stat][{arm_a_bias, arm_b_bias, bias_delta, n}]`. There is NO `entry.arm_b.<metric>` object — earlier drafts of this plan were wrong about that. All inline scripts and the test file iterate `season_results`, average `arm_b_rank_corr` across positions then across seasons, and average `arm_b_weekly_mae` across seasons. New file `tests/test_validation/test_aggregate.py` ships the delta-computation tests AND the reverse-ablation evaluation tests, with helper functions `_avg_arm_b_rank_corr`, `_avg_arm_b_weekly_mae`, `_avg_arm_b_stat_ks`, `_avg_arm_b_stat_mean_bias`."
     - "**Codex cycle-2 HIGH 4 — Task 1 / Task 2 ordering:** Task 1 PINS the initial `p2.aggregate.full` ledger entry and writes the test scaffolding, but the hard-floor assertion is INTENTIONALLY split off into `test_phase2_vs_phase1_delta_within_hard_floor_post_walkback`, which is informational-skip until Task 2 writes the `p2_walkback_complete.marker` file. This split is required so a regressing aggregate triggers the reverse-ablation walk-back loop in Task 2 instead of failing the test suite before Task 2 can run. Task 2 is responsible for: (1) computing the delta, (2) running the reverse-ablation walk-back if hard floor regresses, (3) re-pinning the final `p2.aggregate.full`, (4) writing the marker, (5) re-running the post-walk-back test, which now hard-asserts."
@@ -78,27 +78,36 @@ Output:
 @src/fantasy_sim/validation/ledger.py
 
 <interfaces>
-From src/fantasy_sim/validation/ledger.py (`SeasonMetrics` schema v5 from Phase 1 D-46):
+From src/fantasy_sim/validation/ledger.py (`SeasonMetrics` schema v5 from Phase 1 D-46) — verified against the live source at lines 25-89 (codex cycle-3 alignment):
 
 ```python
 @dataclass
 class SeasonMetrics:
-    rank_corr: float
-    weekly_mae: float
-    season_mae: float
-    fpts_ks: float
-    stat_ks: dict[str, dict[str, dict[str, float]]]  # {position: {stat: {arm_a: float, arm_b: float}}}
-    stat_mean_bias: dict[str, dict[str, dict[str, float]]]  # {position: {stat: {arm_a_bias: float, arm_b_bias: float}}}
-    # ... other fields
+    test_season: int
+    arm_a_rank_corr: dict[str, float]   # {position: rank_corr}, keys QB/RB/WR/TE
+    arm_b_rank_corr: dict[str, float]
+    arm_a_weekly_mae: float
+    arm_b_weekly_mae: float
+    arm_a_season_mae: float
+    arm_b_season_mae: float
+    arm_a_calibration: float
+    arm_b_calibration: float
+    weekly_fpts_ks: dict[str, float | int]   # keys include "arm_a_ks", "arm_b_ks", "n"
+    stat_ks: dict[str, dict[str, dict[str, float | int]]]
+    # shape: {position: {stat: {"arm_a_ks": float, "arm_b_ks": float, "ks_delta": float, "n": int}}}
+    stat_mean_bias: dict[str, dict[str, dict[str, float | int]]]
+    # shape: {position: {stat: {"arm_a_bias": float, "arm_b_bias": float, "bias_delta": float, "n": int}}}
 ```
 
-From Phase 1 ledger entry `p1.aggregate.full` (#105) — Arm B fields:
-- `rank_corr` ≈ 0.7XX (post-Phase-1 promoted defaults)
-- `weekly_mae` ≈ 6.X
-- `stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"]` = -39.29 (the Phase 1 headline miss; TGT-09 target ±5)
-- `stat_ks["QB"]["pass_yards"]["arm_b"]` ≈ 0.36
-- `stat_ks["TE"]["receptions"]["arm_b"]` ≈ 0.35 (TGT-04 target ≤ 0.27)
-- `fpts_ks` (aggregate) ≈ 0.18-0.25 (TGT-08 target ≤ 0.18)
+Note: there is NO `entry.arm_b.<metric>` object — Arm B metrics are stored as discrete `arm_b_*` fields on each `SeasonMetrics`, and `LedgerEntry.season_results` is a `list[SeasonMetrics]` (one per test season). All inline scripts and tests in this plan iterate `season_results` and aggregate via the helper functions defined in the Task-1 implementation block.
+
+From Phase 1 ledger entry `p1.aggregate.full` (#105), averaged across the `season_results` list via the helpers below:
+- `_avg_arm_b_rank_corr(p1_entry)` ≈ 0.7XX (post-Phase-1 promoted defaults)
+- `_avg_arm_b_weekly_mae(p1_entry)` ≈ 6.X
+- `stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"]` (averaged via `_avg_arm_b_stat_mean_bias`) = -39.29 (the Phase 1 headline miss; TGT-09 target ±5)
+- `stat_ks["QB"]["pass_yards"]["arm_b_ks"]` (averaged via `_avg_arm_b_stat_ks`) ≈ 0.36
+- `stat_ks["TE"]["receptions"]["arm_b_ks"]` ≈ 0.35 (TGT-04 target ≤ 0.27)
+- `weekly_fpts_ks["arm_b_ks"]` (averaged across seasons) ≈ 0.18-0.25 (TGT-08 target ≤ 0.18)
 
 After Plan 09 succeeds with Phase 2 SHIPPED, the new `p2.aggregate.full` Arm B (post-Phase-2 promoted defaults) targets:
 - TGT-04 TE receptions KS: ~0.35 → ≤ 0.27 (KS-08 floor + KS-09 per-stat + KS-10 TE elite tier)
