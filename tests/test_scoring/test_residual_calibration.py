@@ -5,6 +5,7 @@ from fantasy_sim.data.ensemble.models import ResidualCalibrationConfig
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.residual_calibration import (
     ARTIFACT_SCHEMA_VERSION,
+    ARTIFACT_SCHEMA_VERSIONS_SUPPORTED,
     BUNDLED_CALIBRATION_DIR,
     ResidualCalibrationProjectionAdjuster,
     fit_residual_calibration_artifact,
@@ -248,7 +249,11 @@ def test_bundled_decision_artifacts_are_available():
         path = BUNDLED_CALIBRATION_DIR / f"calibration_{season}.json"
         artifact = json.loads(path.read_text())
 
-        assert artifact["schema_version"] == ARTIFACT_SCHEMA_VERSION
+        # Bundled artifacts are at schema_version: 1 until Plan 03 / Plan 05 re-fit
+        # bumps them to v2. Both versions must be accepted.
+        assert artifact["schema_version"] in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED, (
+            f"Bundled artifact calibration_{season}.json at unsupported schema_version={artifact['schema_version']}"
+        )
         assert artifact["test_season"] == season
         assert artifact["buckets"]
 
@@ -293,3 +298,29 @@ def test_apply_projection_layers_runs_residual_after_dynamic_and_skips_fixed_lay
 
     assert adjusted[0]["fpts"] == 14.0
     assert order == ["trend", "dynamic", "residual"]
+
+
+def test_artifact_loader_accepts_schema_v1():
+    """Schema v1 artifacts (Phase 1 bundled) must continue to load post-Phase-2 schema bump."""
+    from pathlib import Path
+    # Use one of the bundled artifacts that ships at schema_version: 1
+    artifact_path = BUNDLED_CALIBRATION_DIR / "calibration_2024.json"
+    if artifact_path.exists():
+        artifact = json.loads(artifact_path.read_text())
+        # Bundled artifacts are at schema_version: 1 until Plan 03 / Plan 05 re-fit
+        # bumps them to v2. The v1 path must keep working.
+        assert artifact["schema_version"] in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED, (
+            f"Bundled artifact at unsupported schema_version={artifact['schema_version']}"
+        )
+
+
+def test_artifact_loader_accepts_schema_v2():
+    """Schema v2 artifacts (KS-09 Plan 03 introduces) must load and expose stat_corrections."""
+    assert ARTIFACT_SCHEMA_VERSION == 2
+    assert 1 in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED
+    assert 2 in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED
+
+
+def test_artifact_loader_rejects_schema_v3():
+    """Future schema versions must be rejected so a forwards-incompatible artifact doesn't silently load."""
+    assert 3 not in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED

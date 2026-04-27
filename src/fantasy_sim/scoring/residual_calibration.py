@@ -12,7 +12,8 @@ import numpy as np
 from fantasy_sim.data.ensemble.models import ResidualCalibrationConfig
 from fantasy_sim.scoring.role_trend import ProjectionRow
 
-ARTIFACT_SCHEMA_VERSION = 1
+ARTIFACT_SCHEMA_VERSION = 2  # v1 = fpts-only; v2 = fpts + per-stat stat_corrections (KS-09)
+ARTIFACT_SCHEMA_VERSIONS_SUPPORTED = (1, 2)  # loader accepts both
 BUNDLED_CALIBRATION_DIR = (
     Path(__file__).resolve().parents[1]
     / "data"
@@ -326,9 +327,15 @@ class ResidualCalibrationProjectionAdjuster:
         except (OSError, json.JSONDecodeError):
             self._artifact_cache[season] = None
             return None
-        if artifact.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
+        schema = artifact.get("schema_version")
+        if schema not in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED:
             self._artifact_cache[season] = None
             return None
+        # Normalize: v1 artifacts have no stat_corrections block; expose an empty dict so
+        # downstream per-stat corrector (KS-09 Plan 03) sees a uniform shape.
+        if schema == 1 and "stat_corrections" not in artifact:
+            artifact = dict(artifact)  # don't mutate cache key
+            artifact["stat_corrections"] = {}
         if artifact.get("scoring") != self.scoring:
             self._artifact_cache[season] = None
             return None
