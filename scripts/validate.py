@@ -201,7 +201,36 @@ def _compute_distribution_ks(
     bias is the per-game mean projection delta vs actuals; ``bias_delta`` is
     ``arm_b_bias - arm_a_bias`` (negative = bias narrowed in Arm B). Plan 11
     reads this directly to evaluate Phase 1 success criterion 1.
+
+    KS-09 output contract (Plan 03 Task 3, codex review HIGH 1 fix): when the
+    phase2_ks_flags.ks09_per_stat_residual_calibration flag is on, prefer
+    corrected_<stat> over the raw stat for stat_ks / stat_mean_bias. Routing
+    is a no-op when the flag is off (byte-identical to pre-Plan-03 legacy).
+    corrected_<stat> routing active in validate._compute_distribution_ks
+    (stat_ks / stat_mean_bias read corrected_<stat> when present)
     """
+    from fantasy_sim.config.loader import get_phase2_ks_flags as _get_p2_flags
+    _ks09_on = bool(
+        _get_p2_flags().get("ks09_per_stat_residual_calibration", {}).get("enabled", False)
+    )
+
+    def _read_stat(row: Mapping[str, object], stat: str) -> object:
+        """Return corrected_<stat> if KS-09 routing is on AND the column is present;
+        else return the raw <stat>. Used by both arm_a and arm_b reads to keep the
+        Arm-A leg byte-identical to legacy when corrected columns are absent."""
+        if _ks09_on:
+            corrected = row.get(f"corrected_{stat}")
+            if corrected is not None:
+                return corrected
+        return row.get(stat)
+
+    if _ks09_on:
+        import logging
+        logging.getLogger(__name__).info(
+            "KS-09 corrected_<stat> routing active in validate._compute_distribution_ks "
+            "(stat_ks / stat_mean_bias read corrected_<stat> when present)"
+        )
+
     positions_set = set(positions)
     fpts_a: list[float] = []
     fpts_b: list[float] = []
@@ -233,10 +262,16 @@ def _compute_distribution_ks(
                 fpts_actual.append(actual_fpts)
 
             for stat in STAT_KS_BY_POSITION.get(pos, ()):
+                # Membership check uses raw stat (corrected_<stat> is always present
+                # alongside raw when KS-09 writes it; checking raw catches the case
+                # where the row is malformed entirely).
                 if stat not in arm_a_row or stat not in arm_b_row or not hasattr(actual, stat):
                     continue
-                a_value = _numeric_value(arm_a_row.get(stat))
-                b_value = _numeric_value(arm_b_row.get(stat))
+                # KS-09 routing: corrected when flag on + column present, else raw.
+                # Arm A in bare A/B has no corrected_ columns; _read_stat returns raw
+                # via fallback so Arm A's contribution is byte-identical to legacy.
+                a_value = _numeric_value(_read_stat(arm_a_row, stat))
+                b_value = _numeric_value(_read_stat(arm_b_row, stat))
                 actual_value = _numeric_value(getattr(actual, stat))
                 if a_value is None or b_value is None or actual_value is None:
                     continue
