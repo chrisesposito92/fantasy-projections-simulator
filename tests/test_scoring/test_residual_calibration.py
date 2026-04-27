@@ -324,3 +324,262 @@ def test_artifact_loader_accepts_schema_v2():
 def test_artifact_loader_rejects_schema_v3():
     """Future schema versions must be rejected so a forwards-incompatible artifact doesn't silently load."""
     assert 3 not in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED
+
+
+# === KS-09: per-stat residual_calibration ===
+
+import math
+
+from fantasy_sim.data.ensemble.models import StatLevelConfig
+from fantasy_sim.scoring.residual_calibration import stat_clamp_adjustment  # NEW helper from Task 2 — RED until then
+
+
+def _build_v2_artifact_for_tests():
+    """Construct a minimal schema-v2 artifact with stat_corrections for KS-09 testing."""
+    return {
+        "schema_version": 2,
+        "test_season": 2024,
+        "source_seasons": [2022, 2023],
+        "sims": 200,
+        "scoring": "ppr",
+        "positions": ["QB", "RB", "WR", "TE"],
+        "min_bucket_rows": 200,
+        "min_bucket_weeks": 6,
+        "shrinkage_prior_rows": 200,
+        "max_abs_adjustment": 1.5,
+        "min_training_mae_delta": -0.01,
+        "fallback": "zero",
+        "usage_tier_thresholds": {
+            "QB": {"high": 18.0, "mid": 12.0},
+            "RB": {"high": 14.0, "mid": 7.0},
+            "WR": {"high": 12.0, "mid": 6.0},
+            "TE": {"high": 9.0, "mid": 4.0},
+        },
+        "buckets": {
+            "QB|low|simulator_only": {"correction_fpts": -0.5, "n_rows": 250, "n_weeks": 8},
+            "QB|mid|simulator_only": {"correction_fpts": -0.3, "n_rows": 180, "n_weeks": 6},
+        },
+        "fallback_buckets": {},
+        "stat_corrections": {
+            "pass_yards": {
+                "corrections": {
+                    "QB|low|simulator_only": {"correction": -10.0, "n_rows": 250},
+                    "QB|mid|simulator_only": {"correction": -8.0, "n_rows": 180},
+                },
+                "clamps": {
+                    "QB|low|simulator_only": {"clamp_std": 50.0},
+                    "QB|mid|simulator_only": {"clamp_std": 60.0},
+                },
+            },
+            "receiving_yards": {
+                "corrections": {
+                    "WR|low|simulator_only": {"correction": 4.0, "n_rows": 220},
+                },
+                "clamps": {
+                    "WR|low|simulator_only": {"clamp_std": 30.0},
+                },
+            },
+        },
+    }
+
+
+def _build_qb_row(fpts: float = 16.0, pass_yards: float = 240.0):
+    return {
+        "player_id": "00-0036971",
+        "name": "Test QB",
+        "position": "QB",
+        "team": "KC",
+        "fpts": fpts,
+        "pass_yards": pass_yards,
+        "pass_tds": 1.5,
+        "interceptions": 0.6,
+        "rush_yards": 12.0,
+        "rush_tds": 0.1,
+        "fumbles_lost": 0.05,
+        "dynamic_blend_source_mask": "simulator",
+    }
+
+
+def _build_wr_row(fpts: float = 8.0, receiving_yards: float = 70.0):
+    return {
+        "player_id": "00-0036900",
+        "name": "Test WR",
+        "position": "WR",
+        "team": "KC",
+        "fpts": fpts,
+        "receiving_yards": receiving_yards,
+        "receptions": 5.0,
+        "receiving_tds": 0.4,
+        "fumbles_lost": 0.02,
+        "dynamic_blend_source_mask": "simulator",
+    }
+
+
+def _build_adjuster_with_stat_level_enabled():
+    """Build a ResidualCalibrationProjectionAdjuster with stat_level.enabled=True + the v2 test artifact."""
+    config = ResidualCalibrationConfig(
+        enabled=True,
+        artifacts_dir=None,  # we'll inject the artifact directly
+        positions=("QB", "RB", "WR", "TE"),
+        min_bucket_rows=200,
+        min_bucket_weeks=6,
+        shrinkage_prior_rows=200,
+        max_abs_adjustment=1.5,
+        min_training_mae_delta=-0.01,
+        fallback="zero",
+        stat_level=StatLevelConfig(
+            enabled=True,
+            covered_stats=(
+                "pass_yards", "pass_tds", "interceptions",
+                "rush_yards", "rush_tds",
+                "receiving_yards", "receptions", "receiving_tds",
+                "fumbles_lost",
+            ),
+        ),
+    )
+    adjuster = ResidualCalibrationProjectionAdjuster(config)
+    # Inject the v2 artifact directly into the cache
+    adjuster._artifact_cache = {2024: _build_v2_artifact_for_tests()}  # noqa: SLF001
+    return adjuster
+
+
+def test_ks09_writes_corrected_columns_when_enabled():
+    """When stat_level.enabled=True, adjust_week writes corrected_<stat> columns for covered stats."""
+    adjuster = _build_adjuster_with_stat_level_enabled()
+    rows, _stats = adjuster.adjust_week([_build_qb_row()], season=2024, week=1)
+    row = rows[0]
+    # 9 covered stats from StatLevelConfig.covered_stats above
+    assert "corrected_pass_yards" in row
+    assert "corrected_pass_tds" in row
+    assert "corrected_interceptions" in row
+    assert "corrected_rush_yards" in row
+    assert "corrected_rush_tds" in row
+    assert "corrected_fumbles_lost" in row
+
+
+def test_ks09_fpts_unchanged_when_flag_disabled():
+    """When stat_level.enabled=False, no corrected_<stat> columns appear."""
+    config = ResidualCalibrationConfig(
+        enabled=True,
+        positions=("QB", "RB", "WR", "TE"),
+        min_bucket_rows=200,
+        min_bucket_weeks=6,
+        max_abs_adjustment=1.5,
+        stat_level=StatLevelConfig(enabled=False),
+    )
+    adjuster = ResidualCalibrationProjectionAdjuster(config)
+    adjuster._artifact_cache = {2024: _build_v2_artifact_for_tests()}  # noqa: SLF001
+    rows, _stats = adjuster.adjust_week([_build_qb_row()], season=2024, week=1)
+    row = rows[0]
+    # No corrected_<stat> columns
+    for stat in ("pass_yards", "pass_tds", "interceptions", "rush_yards", "rush_tds", "fumbles_lost"):
+        assert f"corrected_{stat}" not in row, f"corrected_{stat} unexpectedly present when flag disabled"
+
+
+def test_ks09_two_stage_layered_fpts_unchanged_with_flag_enabled():
+    """D-01: row['fpts'] is computed from raw_sim_fpts + existing fpts-level correction; per-stat corrections do NOT propagate."""
+    adjuster = _build_adjuster_with_stat_level_enabled()
+    raw_fpts = 16.0
+    rows, _stats = adjuster.adjust_week([_build_qb_row(fpts=raw_fpts)], season=2024, week=1)
+    row = rows[0]
+    # QB at fpts=16.0 → above QB|mid threshold (12.0) → bucket "QB|mid|simulator_only"
+    # correction_fpts = -0.3 from buckets dict (not stat_corrections)
+    expected_fpts = max(raw_fpts + (-0.3), 0.0)
+    assert math.isclose(float(row["fpts"]), round(expected_fpts, 1), abs_tol=1e-6)
+    # And corrected_pass_yards is independently computed (not derived from fpts)
+    # raw pass_yards = 240, correction = -8.0 (QB|mid), clamped at ±2*60=120
+    assert "corrected_pass_yards" in row
+    assert math.isclose(float(row["corrected_pass_yards"]), 240.0 + (-8.0), abs_tol=1e-6)
+
+
+def test_ks09_std_scaled_clamp_applies():
+    """stat_clamp_adjustment clamps to ±2 * clamp_std."""
+    # raw correction = +25, clamp_std = 10, limit = 20 → clamped to +20
+    assert stat_clamp_adjustment(25.0, clamp_std=10.0) == 20.0
+    # raw correction = -15, clamp_std = 10, limit = 20 → unchanged at -15
+    assert stat_clamp_adjustment(-15.0, clamp_std=10.0) == -15.0
+    # raw correction = -30, clamp_std = 10 → clamped to -20
+    assert stat_clamp_adjustment(-30.0, clamp_std=10.0) == -20.0
+    # clamp_std = 0 → limit = 0 → any input clamped to 0
+    assert stat_clamp_adjustment(5.0, clamp_std=0.0) == 0.0
+
+
+def test_ks09_missing_bucket_fallback_zero():
+    """For a bucket_key NOT in stat_corrections, corrected_<stat> equals the raw <stat>."""
+    adjuster = _build_adjuster_with_stat_level_enabled()
+    # WR with low fpts → bucket_key = "WR|low|simulator_only"; stat_corrections has WR|low|simulator_only for receiving_yards only
+    # Other WR-covered stats (receptions, receiving_tds, fumbles_lost) have NO entry — fallback to raw
+    rows, _stats = adjuster.adjust_week([_build_wr_row(fpts=5.0)], season=2024, week=1)
+    row = rows[0]
+    # receiving_yards has correction; should differ from raw
+    raw_recv = 70.0
+    assert math.isclose(float(row["corrected_receiving_yards"]), raw_recv + 4.0, abs_tol=1e-6)  # correction=4.0 from fixture
+    # receptions has NO correction → corrected == raw (zero adjustment)
+    assert math.isclose(float(row["corrected_receptions"]), 5.0, abs_tol=1e-6)
+
+
+def test_ks09_schema_v2_artifact_has_stat_corrections():
+    """V2 artifact carries a stat_corrections block."""
+    artifact = _build_v2_artifact_for_tests()
+    assert artifact["schema_version"] == 2
+    assert "stat_corrections" in artifact
+    assert "pass_yards" in artifact["stat_corrections"]
+    assert "corrections" in artifact["stat_corrections"]["pass_yards"]
+    assert "clamps" in artifact["stat_corrections"]["pass_yards"]
+
+
+def test_ks09_training_script_writes_per_stat_block():
+    """fit_residual_calibration_artifact with stat_level enabled=True populates stat_corrections."""
+    # Minimal training rows: simulate QB rows with raw stats + actuals
+    source_rows = [
+        {
+            "player_id": "p1", "position": "QB",
+            "season": 2022, "week": 1,
+            "projected_fpts": 18.0, "actual_fpts": 22.0,
+            "fpts": 18.0, "pass_yards": 250.0,
+            "actual_pass_yards": 280.0,  # KS-09 needs actual stat values
+            "dynamic_blend_source_mask": "simulator",
+            "bucket_key": "QB|high|simulator_only",
+        },
+        {
+            "player_id": "p1", "position": "QB",
+            "season": 2022, "week": 2,
+            "projected_fpts": 17.0, "actual_fpts": 19.0,
+            "fpts": 17.0, "pass_yards": 230.0,
+            "actual_pass_yards": 250.0,
+            "dynamic_blend_source_mask": "simulator",
+            "bucket_key": "QB|high|simulator_only",
+        },
+    ] * 200  # repeat to satisfy min_bucket_rows
+    config = ResidualCalibrationConfig(
+        enabled=True,
+        positions=("QB",),
+        min_bucket_rows=200,
+        min_bucket_weeks=6,
+        stat_level=StatLevelConfig(enabled=True, covered_stats=("pass_yards",)),
+    )
+    artifact = fit_residual_calibration_artifact(
+        source_rows,
+        test_season=2024,
+        source_seasons=[2022, 2023],
+        sims=200,
+        scoring="ppr",
+        config=config,
+    )
+    assert "stat_corrections" in artifact
+    assert "pass_yards" in artifact["stat_corrections"]
+    # At least one bucket-correction populated
+    assert len(artifact["stat_corrections"]["pass_yards"]["corrections"]) >= 1
+    assert len(artifact["stat_corrections"]["pass_yards"]["clamps"]) >= 1
+
+
+def test_ks09_corrected_differs_from_raw_for_non_fallback_rows():
+    """For rows whose bucket has a correction, corrected_<stat> != raw <stat>."""
+    adjuster = _build_adjuster_with_stat_level_enabled()
+    # QB at fpts=10.0 → below mid threshold (12.0) → bucket "QB|low|simulator_only"; correction for pass_yards = -10.0
+    rows, _stats = adjuster.adjust_week([_build_qb_row(fpts=10.0, pass_yards=240.0)], season=2024, week=1)
+    row = rows[0]
+    raw_pass_yards = 240.0
+    corrected = float(row["corrected_pass_yards"])
+    assert corrected != raw_pass_yards, "corrected_pass_yards must differ from raw for a populated bucket"
+    assert math.isclose(corrected, 230.0, abs_tol=1e-6)  # 240 + (-10) clamped at ±100
