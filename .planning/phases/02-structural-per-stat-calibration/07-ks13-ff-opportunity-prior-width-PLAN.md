@@ -23,6 +23,7 @@ must_haves:
     - "**Codex cycle-2 alignment (HIGH 2 — verified code surfaces, 2026-04-27):** the actual loader API is `FfOpportunityLoader(config: FfOpportunityConfig | None = None)` with `load_weekly(seasons: list[int]) -> pl.DataFrame` (per `src/fantasy_sim/data/ensemble/loader.py` lines 24-63). The actual ensembler class is `FfOpportunityProjectionEnsembler` with method `blend_week(projections, *, season, week) -> tuple[list[dict], BlendStats]` (per `src/fantasy_sim/scoring/ensemble.py` lines 21-117). There is NO `EnsembleLoader`, NO `load_week_raw`, NO `adjust_week`, and NO `EnsembleLayer` — earlier drafts of this plan invented these names. All scripts and code in this plan use the verified surfaces."
     - "Per D-10 + Pattern 6 + Pitfall 6 in 02-RESEARCH.md: probe-then-decide. Step 1: run `scripts/probe_ff_opportunity_quantiles.py` (uses `FfOpportunityLoader.load_weekly([season])` per the verified API) to verify `total_fantasy_points_exp_lo` + `_hi` columns exist in the raw frame AND are non-null for ≥80% of training rows. Path A (lo/hi found and dense): build Gaussian prior with `mean = prior_fpts`, `std = (hi - lo) / (2 * 1.28)` (80% interval). Path B (lo/hi missing or sparse): fit per-bucket residual variance from training-season ff_opportunity_prior vs actual_fpts data via the new fitter script `scripts/fit_ff_opportunity_prior_width.py` (Task 2.5)."
     - "Per D-02 / Phase 1 D-45: change is gated behind `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled` (default false). When false, behavior is byte-identical to pre-Plan-07 (point-estimate prior_fpts in `FfOpportunityProjectionEnsembler.blend_week` lines 97-105). When true, the chosen path's prior width is used to perturb fpts via independent samples per player."
+    - "**Codex cycle-4 alignment (HIGH — KS-13 dual-gate fix, 2026-04-27):** the runtime gate for KS-13 sampling is the **conjunction** `ks13_active := phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled AND ensemble.ff_opportunity.prior_width.enabled`. Both must be `True`. Disabling EITHER flag falls back to legacy point-estimate behavior. The master `phase2_ks_flags` flag is therefore a **sole-sufficient kill switch** — Plan 09's reverse-ablation walk-back, which only flips `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled` to `False`, fully disables KS-13 sampling regardless of the engine-local sub-flag's runtime state. Implementation: `FfOpportunityProjectionEnsembler.__init__` accepts `ks13_master_enabled: bool | None = None`; when `None`, the ensembler reads the master flag via `get_phase2_ks_flags()` (Plan 01 shim) with default-deny on shim-unavailable. Pinned by `test_ks13_dual_gate_master_flag_off_keeps_ks13_dormant` and the dual-pass in `test_ks13_unchanged_when_flag_disabled`."
     - "Per Pattern 6 (probe-then-decide): the plan body has BOTH Path A (Task 2) and Path B (Task 2.5) implemented so the plan doesn't stall on probe outcome. The probe outcome is recorded in the plan summary."
     - "**Codex cycle-2 HIGH 3 — Path B artifact pipeline (NEW Task 2.5):** when Path B is selected, the fitted-std artifact lives at `src/fantasy_sim/data/ensemble/artifacts/ff_opportunity_prior_width/decision_s200/prior_width_<test_season>.json` (path mirrors `residual_calibration/decision_s200/calibration_<test_season>.json`). Schema: `{schema_version: 1, scoring: 'ppr' | 'half_ppr' | 'standard', test_season: int, source_seasons: [int...], sims: int, buckets: {<position>: {std_fpts: float, empirical_std_fpts: float, league_std_fpts: float, n: int}}}`. Bucket keying for KS-13 v1 is BARE POSITION (QB/RB/WR/TE) — NOT the composite key from residual_calibration. Per-fpts-tier subdivision is OUT OF SCOPE for v1 and tracked in HYPOTHESES.md as a follow-up. Loader contract: `FfOpportunityProjectionEnsembler._load_ff_opportunity_prior_width_artifact(season: int) -> dict | None` mirrors `ResidualCalibrationProjectionAdjuster._artifact` (per-season cache; fallback to bundled dir; returns None on missing/error/version-mismatch/scoring-mismatch). Helper: `_fitted_std_for(position, prior_fpts, season) -> float` returns 0.0 (point-estimate fallback) when artifact / bucket missing. `scripts/fit_ff_opportunity_prior_width.py` mirrors `scripts/fit_residual_calibration.py` structure: same CLI flags (`--test-seasons`, `--min-source-season`, `--training-years`, `--scoring`, `--output-dir`)."
     - "**Codex cycle-2 HIGH 3 — Path B tests must be CONCRETE (not `pass`):** the three placeholder tests in Task 2 (`test_ks13_path_a_seed_determinism`, `test_ks13_path_b_uses_fitted_std_when_lo_hi_absent`, `test_ks13_path_b_artifact_loader_graceful_when_missing`) are REPLACED by Task 2.5 with concrete assertions: writes a synthetic v1 artifact to a temp dir, points the loader at it, verifies `_fitted_std_for(position, fpts, season)` returns the bucket's `std_fpts`. The graceful-missing test points the loader at an empty dir and asserts sigma == 0.0. The seed-determinism test seeds two RNGs identically and asserts the same sample is drawn. Plus a new test file `tests/test_scripts/test_fit_ff_opportunity_prior_width.py` covers the fitter CLI and schema_version constraint."
@@ -31,7 +32,7 @@ must_haves:
     - "Per HYPOTHESES.md KS-13 (lines 261-273): Path A confidence MEDIUM (depends on lo/hi schema availability); Path B confidence LOW-MEDIUM (more complex, weaker effect). Promotion bar adjusts: Path A → fpts KS Δ ≤ -0.01 (D-30 standard small-gain); Path B → fpts KS Δ ≤ -0.005 (relaxed)."
     - "**Codex MEDIUM 5 (2026-04-27 revision) — RNG determinism contract:** when KS-13 is on, Gaussian sampling is introduced on the post-sim ff_opportunity prior path. Determinism is preserved by (1) constructing the ensembler with an explicit `rng: np.random.Generator` at boundary (the call site in `cli.py` / runtime is responsible for seeding), (2) drawing exactly ONE sample per (season, week, player_id, sim_idx) tuple via `self._rng.normal(...)`, and (3) not advancing any shared RNG state outside the ensembler. The same A/B invocation with the same seeds + the same artifact produces byte-identical output. The seed-determinism tests (Task 2.5) prove this by constructing two ensemblers with identically-seeded RNGs and asserting the sampled prior matches."
     - "Per C-08: test-after acceptable for KS-13; 6 unit tests in test_ensemble.py + 3 fitter tests + 1 probe-script test."
-    - "Per C-09: 2,164 + 6 (Task 2 tests) + 3 (Task 2.5 fitter tests) = 2,173 tests stay green after Plan 07."
+    - "Per C-09: 2,164 + 6 (Task 2 tests) + 3 (Task 2.5 fitter tests) + 1 (Task 2 dual-gate regression test, codex cycle-4) = 2,174 tests stay green after Plan 07."
   artifacts:
     - path: "scripts/probe_ff_opportunity_quantiles.py"
       provides: "One-shot probe script: uses `FfOpportunityLoader.load_weekly([season])` (the REAL loader API per `src/fantasy_sim/data/ensemble/loader.py` line 43; codex cycle-2 HIGH 2 fix); reports presence + non-null fraction of `total_fantasy_points_exp_lo`/`_hi`; emits JSON to stdout for plan-body branch decision"
@@ -386,7 +387,16 @@ Update the loader (in `data/ensemble/__init__.py` or `data/ensemble/config.py`) 
 
 **File 2: `src/fantasy_sim/data/ensemble/loader.py`** — codex cycle-2 alignment: the real class is `FfOpportunityLoader` with `load_weekly(seasons: list[int]) -> pl.DataFrame` (not `EnsembleLoader.load_week`). When Path A is configured, ensure `total_fantasy_points_exp_lo` and `total_fantasy_points_exp_hi` survive the parquet caching round-trip. The existing `RAW_WEEKLY_SCHEMA` (lines 13-21) enumerates 7 columns. Either: (a) extend the schema dict with optional `total_fantasy_points_exp_lo: pl.Float64` and `total_fantasy_points_exp_hi: pl.Float64` entries (preferred), or (b) rely on `pl.concat(how='diagonal_relaxed')` to pass them through silently and update `normalize_ff_opportunity` to copy them into the per-row prior dict. Pick (a) for clarity. The graceful fallback is implicit: if the upstream nflreadpy frame lacks these columns, polars writes nulls; downstream Path A consumers check for non-null before computing `sigma = (hi - lo) / 2.56`.
 
-**File 3: `src/fantasy_sim/scoring/ensemble.py`** — codex cycle-2 alignment: the method is `FfOpportunityProjectionEnsembler.blend_week` (not `adjust_week`). The blend block is at lines 97-105 of the current file (see read_first). Add an RNG to the class via `__init__(self, config: EnsembleConfig, loader: FfOpportunityLoader | None = None, rng: np.random.Generator | None = None)`. Default RNG construction follows existing project pattern (`rng or np.random.default_rng()`). Replace the existing blend block (lines 97-105) with:
+**File 3: `src/fantasy_sim/scoring/ensemble.py`** — codex cycle-2 alignment: the method is `FfOpportunityProjectionEnsembler.blend_week` (not `adjust_week`). The blend block is at lines 97-105 of the current file (see read_first). Add an RNG to the class via `__init__(self, config: EnsembleConfig, loader: FfOpportunityLoader | None = None, rng: np.random.Generator | None = None, ks13_master_enabled: bool | None = None)`. Default RNG construction follows existing project pattern (`rng or np.random.default_rng()`).
+
+**Codex cycle-4 alignment (HIGH — dual-gate split fix):** the runtime gate for KS-13 is the **conjunction** of two flags:
+
+1. **Master flag:** `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled` (top-level KS gate, the SAME flag Plan 09's reverse-ablation walk-back flips when reverting KS-13). Read via `get_phase2_ks_flags()` shim from `src/fantasy_sim/config/loader.py` (added in Plan 01 per Phase 1 D-45 pattern). At construction time, the orchestrator (e.g. `validate.py` or any caller) passes the resolved `bool` as `ks13_master_enabled`. When `None`, the ensembler reads it lazily from `get_phase2_ks_flags().ks13_ff_opportunity_prior_width.enabled` to default-deny if the shim is absent.
+2. **Sub-flag:** `ensemble.ff_opportunity.prior_width.enabled` (engine-local sub-toggle on `PriorWidthConfig`).
+
+Both flags must be `True` for KS-13 sampling to activate. Disabling EITHER flag returns the legacy point-estimate prior path. This invariant ensures Plan 09's `--set phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled=false` reverse-ablation override is **sufficient on its own** to fully disable KS-13 sampling, regardless of the engine-local sub-flag's state. Without the conjunction, a `no_KS13` aggregate iteration could leave KS-13 sampling live (defeating per-KS isolation and corrupting `{KS-08, KS-13}` coupled-cluster pair-revert decisions — codex cycle-4 finding).
+
+Replace the existing blend block (lines 97-105) with:
 
 ```python
 prior_fpts = float(prior["prior_fpts"])
@@ -394,7 +404,12 @@ prior_lo = prior.get("prior_fpts_lo")
 prior_hi = prior.get("prior_fpts_hi")
 
 _pw = self.config.ff_opportunity.prior_width  # PriorWidthConfig (codex cycle-3 alignment: nested under ff_opportunity, NOT top-level on EnsembleConfig)
-if _pw.enabled:
+# Codex cycle-4 alignment (dual-gate fix): KS-13 sampling requires BOTH the master
+# phase2_ks_flag AND the engine-local sub-flag. Flipping either off is sufficient to
+# return to legacy point-estimate behavior. Plan 09's reverse-ablation walk-back relies
+# on the master flag being a sole-sufficient kill switch for `no_KS13` aggregate runs.
+ks13_active = self._ks13_master_enabled and _pw.enabled
+if ks13_active:
     if _pw.path == "A" and prior_lo is not None and prior_hi is not None:
         sigma = (float(prior_hi) - float(prior_lo)) / (2 * 1.28)
         sampled_prior = float(self._rng.normal(prior_fpts, max(sigma, 0.0)))
@@ -415,6 +430,39 @@ row["fpts"] = round(
     float(row["fpts"] * (1.0 - weight) + sampled_prior * weight),
     1,
 )
+```
+
+In `__init__`, resolve the master flag once and cache it on `self._ks13_master_enabled`:
+
+```python
+def __init__(
+    self,
+    config: EnsembleConfig,
+    loader: FfOpportunityLoader | None = None,
+    rng: np.random.Generator | None = None,
+    ks13_master_enabled: bool | None = None,
+) -> None:
+    self.config = config
+    self.loader = loader
+    self._rng = rng or np.random.default_rng()
+    self._prior_cache: dict[int, pl.DataFrame] = {}
+
+    # Codex cycle-4 alignment (dual-gate fix): resolve the master phase2_ks_flag once
+    # at construction. Explicit override wins; otherwise fall back to the shim from
+    # Plan 01. If the shim is unavailable (e.g. test fixture without phase2_ks_flags),
+    # default-deny so KS-13 stays dormant unless the caller opts in explicitly.
+    if ks13_master_enabled is not None:
+        self._ks13_master_enabled = bool(ks13_master_enabled)
+    else:
+        try:
+            from fantasy_sim.config.loader import get_phase2_ks_flags
+            flags = get_phase2_ks_flags()
+            self._ks13_master_enabled = bool(
+                getattr(flags, "ks13_ff_opportunity_prior_width", None)
+                and flags.ks13_ff_opportunity_prior_width.enabled
+            )
+        except Exception:
+            self._ks13_master_enabled = False
 ```
 
 **File 4: `tests/test_scoring/test_ensemble.py`** — add 6 tests:
@@ -463,7 +511,8 @@ def test_ks13_path_a_uses_quantile_width_when_lo_hi_present():
     samples: list[float] = []
     for seed in range(500):
         ens = FfOpportunityProjectionEnsembler(
-            cfg, loader=fake_loader, rng=np.random.default_rng(seed)
+            cfg, loader=fake_loader, rng=np.random.default_rng(seed),
+            ks13_master_enabled=True,  # codex cycle-4: master flag must be True for KS-13 to activate
         )
         out, _ = ens.blend_week(
             [{"player_id": "wr1", "position": "WR", "fpts": 0.0}],  # weight 0.5, sim=0 → fpts = 0.5 * sampled_prior
@@ -472,8 +521,8 @@ def test_ks13_path_a_uses_quantile_width_when_lo_hi_present():
         samples.append(out[0]["fpts"] / 0.5)  # invert weight to recover sampled_prior
 
     # Determinism: same seed → identical sample
-    ens_a = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42))
-    ens_b = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42))
+    ens_a = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42), ks13_master_enabled=True)
+    ens_b = FfOpportunityProjectionEnsembler(cfg, loader=fake_loader, rng=np.random.default_rng(42), ks13_master_enabled=True)
     out_a, _ = ens_a.blend_week([{"player_id": "wr1", "position": "WR", "fpts": 0.0}], season=2024, week=1)
     out_b, _ = ens_b.blend_week([{"player_id": "wr1", "position": "WR", "fpts": 0.0}], season=2024, week=1)
     assert out_a[0]["fpts"] == out_b[0]["fpts"], "Path A must be deterministic under fixed RNG"
@@ -535,14 +584,16 @@ def test_ks13_unchanged_when_flag_disabled():
         ),
     )
     ens_off = FfOpportunityProjectionEnsembler(
-        cfg_off, loader=fake_loader, rng=np.random.default_rng(123)
+        cfg_off, loader=fake_loader, rng=np.random.default_rng(123),
+        ks13_master_enabled=True,  # master ON; sub-flag OFF — conjunction is False, KS-13 dormant
     )
     out_off, _ = ens_off.blend_week(list(rows), season=2024, week=1)
 
     # Repeat with a different RNG — output must be IDENTICAL because the flag-off path
     # is deterministic (no sampling): fpts = 0.5*12.0 + 0.5*20.0 = 16.0
     ens_off_alt = FfOpportunityProjectionEnsembler(
-        cfg_off, loader=fake_loader, rng=np.random.default_rng(999)
+        cfg_off, loader=fake_loader, rng=np.random.default_rng(999),
+        ks13_master_enabled=True,
     )
     out_off_alt, _ = ens_off_alt.blend_week(list(rows), season=2024, week=1)
     assert out_off[0]["fpts"] == out_off_alt[0]["fpts"], (
@@ -554,7 +605,7 @@ def test_ks13_unchanged_when_flag_disabled():
     assert out_off[0].get("ensemble_covered") is True
     assert out_off[0].get("ensemble_source") == "ff_opportunity"
 
-    # Sanity: enabling prior_width WITH lo/hi must produce a DIFFERENT (sampled) fpts
+    # Sanity: enabling prior_width WITH lo/hi (BOTH master AND sub) must produce a DIFFERENT (sampled) fpts
     cfg_on = EnsembleConfig(
         enabled=True,
         ff_opportunity=FfOpportunityConfig(
@@ -564,13 +615,76 @@ def test_ks13_unchanged_when_flag_disabled():
         ),
     )
     ens_on = FfOpportunityProjectionEnsembler(
-        cfg_on, loader=fake_loader, rng=np.random.default_rng(123)
+        cfg_on, loader=fake_loader, rng=np.random.default_rng(123),
+        ks13_master_enabled=True,  # both flags true → KS-13 active
     )
     out_on, _ = ens_on.blend_week(list(rows), season=2024, week=1)
     # P(equal | sampled with sigma≈3.9) is essentially zero
     assert out_on[0]["fpts"] != out_off[0]["fpts"], (
         "Enabling prior_width should change fpts via Gaussian sampling around prior_fpts"
     )
+
+
+def test_ks13_dual_gate_master_flag_off_keeps_ks13_dormant():
+    """Codex cycle-4 HIGH (dual-gate split fix): master phase2_ks_flag must be a
+    sole-sufficient kill switch for KS-13 sampling.
+
+    Plan 09's reverse-ablation walk-back disables KS-13 by setting
+    `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled = False` while leaving
+    `ensemble.ff_opportunity.prior_width.enabled` untouched. If KS-13's runtime gate
+    were ONLY the engine-local sub-flag, the walk-back would silently leave KS-13
+    sampling live, defeating per-KS A/B isolation and corrupting `{KS-08, KS-13}`
+    coupled-cluster pair-revert decisions.
+
+    This test pins the invariant: when `ks13_master_enabled=False` AND
+    `prior_width.enabled=True`, KS-13 sampling is OFF (legacy point-estimate path).
+    Conjunction semantics: `ks13_active := master AND sub`.
+    """
+    from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+    from fantasy_sim.data.ensemble import EnsembleConfig, FfOpportunityConfig
+    from fantasy_sim.data.ensemble.models import PriorWidthConfig
+
+    fake_priors = pl.DataFrame({
+        "season": [2024], "week": [1], "player_id": ["wr1"], "position": ["WR"],
+        "prior_fpts": [20.0], "prior_fpts_lo": [15.0], "prior_fpts_hi": [25.0],
+    })
+    fake_loader = _StubLoader(fake_priors)
+    rows = [{"player_id": "wr1", "position": "WR", "fpts": 12.0}]
+
+    # Sub-flag ON, master OFF → conjunction False → legacy point-estimate path
+    cfg_sub_on = EnsembleConfig(
+        enabled=True,
+        ff_opportunity=FfOpportunityConfig(
+            enabled=True,
+            weights={"WR": 0.5},
+            prior_width=PriorWidthConfig(enabled=True, path="A"),
+        ),
+    )
+
+    # Master flag OFF — KS-13 must be dormant regardless of RNG seed
+    ens_master_off_seed1 = FfOpportunityProjectionEnsembler(
+        cfg_sub_on, loader=fake_loader, rng=np.random.default_rng(1),
+        ks13_master_enabled=False,
+    )
+    ens_master_off_seed2 = FfOpportunityProjectionEnsembler(
+        cfg_sub_on, loader=fake_loader, rng=np.random.default_rng(99999),
+        ks13_master_enabled=False,
+    )
+    out_seed1, _ = ens_master_off_seed1.blend_week(list(rows), season=2024, week=1)
+    out_seed2, _ = ens_master_off_seed2.blend_week(list(rows), season=2024, week=1)
+
+    # RNG-independent → master-off truly bypasses sampling
+    assert out_seed1[0]["fpts"] == out_seed2[0]["fpts"], (
+        "ks13_master_enabled=False must make blend RNG-independent regardless of sub-flag state"
+    )
+    # Output equals the legacy point-estimate value: 0.5*12 + 0.5*20 = 16.0
+    assert out_seed1[0]["fpts"] == 16.0, (
+        f"Master-off + sub-on must use legacy point-estimate (16.0), got {out_seed1[0]['fpts']}"
+    )
+
+    # Symmetric: master ON, sub OFF → conjunction also False (covered in
+    # test_ks13_unchanged_when_flag_disabled above with ks13_master_enabled=True + sub=False).
+    # This test specifically pins the OPPOSITE asymmetry that Plan 09's walk-back relies on.
 
 
 def test_ks13_probe_script_outputs_json():
