@@ -680,3 +680,53 @@ class TestBareConfigDict:
                 f"phase1_ks_flags.{flag} should still be False, got "
                 f"{isolated['phase1_ks_flags'][flag]}"
             )
+
+
+# === Phase 2 KS feature flag tests (D-02 / D-44 pattern, Plan 01) ===
+
+
+def test_phase2_ks_flags_present_and_default_false():
+    """HARD GATE: every phase2_ks_flags entry must exist in defaults and default to enabled: false.
+
+    Per Phase 2 D-02: per-KS plans land their code path behind `phase2_ks_flags.ksXX_<name>.enabled`
+    with default false. The promotion commit per plan flips the default to true. This test
+    catches the case where someone adds a KS code change behind a flag that doesn't exist in
+    defaults (would silently behave as `False`, hiding the regression).
+    """
+    from fantasy_sim.config.loader import get_phase2_ks_flags
+    flags = get_phase2_ks_flags()
+    expected = {
+        "ks08_dynamic_blend_simulator_floor",
+        "ks09_per_stat_residual_calibration",
+        "ks10_per_position_caps",
+        "ks11_position_reliability",
+        "ks12_share_normalization_residual",
+        "ks13_ff_opportunity_prior_width",
+        "ks14_thin_bucket_shrinkage",
+    }
+    assert set(flags.keys()) >= expected, f"Missing phase2_ks_flags entries: {expected - set(flags.keys())}"
+    for name in expected:
+        assert flags[name].get("enabled") is False, f"phase2_ks_flags.{name}.enabled must default to False (got {flags[name].get('enabled')!r})"
+
+
+def test_phase2_bare_config_disables_all_new_flags():
+    """HARD GATE: bare_config_dict() must enumerate every phase2_ks_flags.*.enabled key.
+
+    Mirrors the Phase 1 hard-gate test pattern (D-44). If a Phase 2 KS plan adds a flag
+    to defaults but forgets to add it to bare_config_dict(), the per-KS bare-isolation A/B
+    silently runs both arms with the same flag value and produces a no-op A/B (the Cycle-2
+    failure mode). This test refuses to merge a plan that does so.
+    """
+    from fantasy_sim.config.loader import load_defaults
+    from fantasy_sim.validation.config import bare_config_dict
+    bare = bare_config_dict(load_defaults())
+    assert bare["phase2_ks_flags"]["ks08_dynamic_blend_simulator_floor"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks09_per_stat_residual_calibration"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks10_per_position_caps"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks11_position_reliability"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks12_share_normalization_residual"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks13_ff_opportunity_prior_width"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks14_thin_bucket_shrinkage"]["enabled"] is False
+    # Sub-engine gates from Plan 01 Task 1
+    assert bare["ensemble"]["residual_calibration"]["stat_level"]["enabled"] is False
+    assert bare["ensemble"]["ff_opportunity"]["prior_width"]["enabled"] is False

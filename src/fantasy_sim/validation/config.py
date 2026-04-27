@@ -267,6 +267,22 @@ def bare_config_dict(defaults: dict) -> dict:
         "phase1_ks_flags.ks07_positional_rz_catch_rate.enabled",
         "phase1_ks_flags.ks15_unclamp_for_td_gate.enabled",
         "phase1_ks_flags.ks32_clock_pass_incomplete_3s.enabled",
+
+        # Phase 2 KS code-change feature flags (added — see 02-CONTEXT.md D-02 / D-44 pattern).
+        # Each flag gates one per-KS code change so per-KS A/B can perform a real (legacy)
+        # vs (new) two-arm comparison via `--set phase2_ks_flags.ksXX_<name>.enabled=true`.
+        # Disabling them in bare_config_dict means per-KS bare-isolation A/B can flip them
+        # back on with the same --set syntax. Plans 02-08 reference these.
+        "phase2_ks_flags.ks08_dynamic_blend_simulator_floor.enabled",
+        "phase2_ks_flags.ks09_per_stat_residual_calibration.enabled",
+        "phase2_ks_flags.ks10_per_position_caps.enabled",
+        "phase2_ks_flags.ks11_position_reliability.enabled",
+        "phase2_ks_flags.ks12_share_normalization_residual.enabled",
+        "phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled",
+        "phase2_ks_flags.ks14_thin_bucket_shrinkage.enabled",
+        # Phase 2 sub-engine gates (the 5 new top-level keys from Plan 01 Task 1)
+        "ensemble.residual_calibration.stat_level.enabled",
+        "ensemble.ff_opportunity.prior_width.enabled",
     )
 
     for key_path in enabled_keys_to_disable:

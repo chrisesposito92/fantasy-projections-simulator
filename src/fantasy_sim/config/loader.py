@@ -109,3 +109,15 @@ def get_phase1_ks_flags() -> dict:
     """
     defaults = load_defaults()
     return defaults.get("phase1_ks_flags", {})
+
+
+def get_phase2_ks_flags() -> dict:
+    """Return the phase2_ks_flags block from the loaded defaults.yaml.
+
+    Returns {} if the block is absent (graceful degradation for older configs).
+    Used by per-KS code paths to gate Phase 2 KS-XX behavior changes behind
+    `phase2_ks_flags.ksXX_<name>.enabled` so per-KS A/B genuinely flips a code
+    path on/off (continues Phase 1 D-45 pattern; see 02-CONTEXT.md D-02).
+    """
+    defaults = load_defaults()
+    return defaults.get("phase2_ks_flags", {})
