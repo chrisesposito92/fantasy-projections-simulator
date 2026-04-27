@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-04-27T03:36:27.211Z"
+last_updated: "2026-04-27T05:55:35.686Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 21
-  completed_plans: 13
-  percent: 62
+  completed_plans: 14
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 02 (structural-per-stat-calibration) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-04-27
 
-Progress: [██████░░░░] 62%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████░░░░] 62%
 | Phase 01 P10 | 13 min | 2 tasks | 3 files |
 | Phase 01 P11 | 19.4 min | 4 tasks | 5 files |
 | Phase 02 P01 | 30 | 4 tasks | 6 files |
+| Phase 02 P02 | 370min | 4 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,7 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 01]: Plan 01-08 KS-29 PROMOTED — pff.team_context.enabled=true with pass_rate_sensitivity=0.03 (best of {0.03, 0.05, 0.08} sweep); full hard floor passes (Δ rank_corr -0.0007, Δ weekly_mae -0.005); WR/TE recv_yds non-regressive primary target; bare-mode QB pass_yards regression informational per Gate Relaxation Decision; D-22 honored via existing TestApplyTeamContext::test_qb_unchanged behavior test. 2,131 tests still green. Last per-KS code/config plan in Phase 1 before Plan 10 (KS-32 measure) and Plan 11 (aggregate).
 - [Phase ?]: Phase 01-10: KS-32 MEASURED-NO-CHANGE per D-24 — plays_per_team in target band and nfl_pass_attempts in band; reducing CLOCK_PASS_INCOMPLETE 5 to 3 contraindicated. p1.ks32.measure ledger #104 confirms post-Phase-1 stack matches phase0.baseline.full within noise. KS-32 satisfies REQUIREMENTS delivered definition with no source change.
 - [Phase ?]: Phase 01-11: Phase 1 SHIPPED-NO-OP — aggregate p1.aggregate.full (#105) vs phase0.baseline.full (#82): hard floor PASSES (rank_corr Δ -0.0004, weekly_mae Δ +0.0142) but headline criteria 1-3 (QB pass_yards bias / KS, RB rush_yards KS) MISS. Headline finding: QB pass_yards mean bias REGRESSED -10.99 yd/g (-28.30 → -39.29; target was within ±10). KS-01 mechanism is opposite-direction so reverting it would not restore baseline. Walk-back NOT executed in Plan 11 (D-32 trigger is hard-floor regression, not headline-criteria miss). Recommended posture: fold QB pass_yards mean-bias closure into Phase 2 KS-09 (per-stat residual_calibration). Phase 2 entry baseline = ledger entry p1.aggregate.full Arm B.
+- [Phase 02]: Plan 02-02 KS-08 SHIPPED — simulator-weight floor=0.20 applied post-normalize in dynamic_blend._artifact_weights(); bundled weights_2023.json (7 learned + 14 fallback) and weights_2024.json (17 learned + 55 fallback) re-fit with --simulator-weight-floor 0.20; sweep {0.20, 0.30, 0.40} × {bare, full} = 6 entries + 1 promoted (#107-#113); floor=0.20 selected via D-05 (smallest passing hard floor + non-zero KS improvement); TE recv_yds -0.01 all 3 seasons; promoted A/B rank_corr -0.0004 (within 1e-3 of sweep -0.0008); 2142 tests pass.
 
 ### Pending Todos
 
@@ -123,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-27T03:36:27.205Z
+Last session: 2026-04-27T05:55:35.674Z
 Stopped at: Phase 2 context gathered
 Resume file: None
