@@ -442,3 +442,60 @@ def test_load_pff_config_depth_role_rejects_invalid_positions():
                 }
             }
         )
+
+
+# === KS-11 Codex MEDIUM 6: flag-gated position_reliability loader ===
+
+
+def test_ks11_loader_passes_empty_when_flag_off(monkeypatch):
+    """When the KS-11 flag is off, load_pff_config MUST pass `{}` for
+    position_reliability regardless of defaults.yaml content.
+
+    Codex MEDIUM 6 (2026-04-27): this is the per-KS A/B isolation contract.
+    """
+    import fantasy_sim.data.pff.config as cfg_mod
+
+    monkeypatch.setattr(
+        cfg_mod,
+        "_ks11_position_reliability_enabled",
+        lambda: False,
+    )
+    raw = {
+        "pff": {
+            "tier_engine": {
+                "enabled": True,
+                "position_reliability": {  # populated, but flag is off — must be ignored
+                    "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+                },
+            },
+        },
+    }
+    pff_cfg = load_pff_config(raw)
+    assert pff_cfg.tier_engine.position_reliability == {}, (
+        "Codex MEDIUM 6: when KS-11 flag is off, loader MUST pass {} regardless of defaults"
+    )
+
+
+def test_ks11_loader_passes_populated_dict_when_flag_on(monkeypatch):
+    """When the KS-11 flag is on, load_pff_config passes the dict from yaml."""
+    import fantasy_sim.data.pff.config as cfg_mod
+
+    monkeypatch.setattr(
+        cfg_mod,
+        "_ks11_position_reliability_enabled",
+        lambda: True,
+    )
+    raw = {
+        "pff": {
+            "tier_engine": {
+                "enabled": True,
+                "position_reliability": {
+                    "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+                },
+            },
+        },
+    }
+    pff_cfg = load_pff_config(raw)
+    assert pff_cfg.tier_engine.position_reliability == {
+        "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+    }
