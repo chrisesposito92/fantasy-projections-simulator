@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 01 closed (Plan 01-11 SHIPPED-NO-OP). Phase 2 entry baseline = ledger entry p1.aggregate.full (#105) Arm B.
-last_updated: "2026-04-26T23:07:33.362Z"
+status: Phase 01 closed — Phase 02 not yet planned
+stopped_at: Phase 2 context gathered
+last_updated: "2026-04-27T00:21:07.035Z"
 last_activity: 2026-04-26
 progress:
   total_phases: 5
@@ -122,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T23:07:28.590Z
-Stopped at: Phase 01 closed (Plan 01-11 SHIPPED-NO-OP — aggregate validation complete; headline QB pass_yards bias / KS regressed but hard floor passes). Phase 2 entry baseline = ledger entry p1.aggregate.full (#105) Arm B.
-Resume file: None
+Last session: 2026-04-27T00:21:07.028Z
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-structural-per-stat-calibration/02-CONTEXT.md
