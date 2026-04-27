@@ -73,7 +73,33 @@ seasons). Bundled artifacts weights_2023.json and weights_2024.json re-fit with 
 > Defaults: phase2_ks_flags.ks08_dynamic_blend_simulator_floor.enabled=true; floor=0.20
 > Refs: D-05, D-06 (CONTEXT.md)
 
-## KS-09 (Plan 03) — TBD
+## KS-09 (Plan 03) — SHIPPED-PARTIAL
+
+**Re-fit (2026-04-27):** `calibration_2023.json` + `calibration_2024.json` re-fit with `phase2_ks_flags.ks09_per_stat_residual_calibration.enabled=true` (KS-08 floor=0.20 active as per SHIPPED status). Schema bumped 1→2; new `stat_corrections` block populated for 9 stats × ~8-19 buckets each. `calibration_2023.json`: 8 learned buckets, 11 fallback; `calibration_2024.json`: 17 learned buckets, 34 fallback.
+
+**A/B results (2026-04-27):**
+
+| Mode | Δ rank_corr | Δ weekly_mae | Δ QB pass_yards KS (avg) | Δ QB pass_yards mean bias | Hard Floor | KS Δ ≤ -0.03 | \|bias Δ\| ≤ 5 |
+|------|-------------|--------------|--------------------------|---------------------------|-----------|--------------|----------------|
+| bare | +0.0017     | +0.060       | +0.080 (avg regression)  | ~-40 yd/g (arm B)         | FAIL (wk_mae) | FAIL | N/A (bare informational) |
+| full | +0.0001     | +0.003       | +0.003 (avg, within noise) | 2022=-39.1, 2023=-35.5, 2024=-35.9 yd/g (arm B) | PASS | FAIL | need ref |
+
+**Per-season QB pass_yards KS (full-stack):**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.42     | 0.42     | -0.00 |
+| 2023   | 0.42     | 0.43     | +0.00 |
+| 2024   | 0.43     | 0.43     | +0.01 |
+
+Average Δ ≈ +0.003 (NOT ≤ -0.03 — KS bar FAILS)
+
+**D-14 evaluation:**
+1. Hard floor (rank_corr Δ ≥ -0.005 AND MAE Δ ≤ +0.05): full +0.0001 / +0.003 → **PASS**
+2. KS Δ ≤ -0.03 on QB pass_yards: Δ ≈ +0.003 (within noise, slight regression) → **FAIL**
+3. QB pass_yards mean bias |Δ| ≤ 5 yd/g vs p1.aggregate.full baseline: p1 bias was -39.29 yd/g; arm B 2023=-35.5 / 2024=-35.9 yd/g — improvement of ~3-4 yd/g, but condition cannot be evaluated cleanly since arm A (defaults) and p1 baseline differ.
+
+**Decision:** `SHIPPED-PARTIAL`. Rationale: Hard floor PASSES (rank_corr +0.0001, weekly_mae +0.003). The KS Δ condition (≤ -0.03) is not met because per-stat corrections trained on the full stack's residuals are small — the fpts-level calibration + market_history + ff_opportunity already handle most QB bias; the incremental per-stat residuals are on the order of 1-5 yd/week per bucket, well within 200-sim noise. The architecture is complete: two-stage layered fpts (D-01), corrected_<stat> columns, validate.py routing into stat_ks / stat_mean_bias (codex HIGH 1 fix), schema_v2 artifacts. Per D-14, BLOCKED requires hard floor regression — since hard floor passes, flag flips to true for Phase 3/4 levers (KS-10 per-position caps, KS-14 thin-bucket shrinkage) to layer on top of this foundation. The bare regression (+0.060 weekly_mae, QB pass_yards KS regression in bare mode) is informational per Phase 1 Gate Relaxation Decision — artifacts were fit on full-stack residuals so bare-mode isolation shows expected mismatch.
 
 ## KS-10 (Plan 05) — TBD
 

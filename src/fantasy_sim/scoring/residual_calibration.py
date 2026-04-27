@@ -124,14 +124,31 @@ def stat_clamp_adjustment(value: float, clamp_std: float) -> float:
     return min(max(float(value), -limit), limit)
 
 
+# Stats that may appear in both projection rows and ActualPlayerWeek objects.
+# Used by KS-09 to capture per-stat projected vs actual values in training rows.
+_CAPTURABLE_STATS = (
+    "pass_yards", "pass_tds", "interceptions",
+    "rush_yards", "rush_tds",
+    "receiving_yards", "receptions", "receiving_tds",
+    "fumbles_lost",
+)
+
+
 def source_row_for_projection(
     projection: Mapping[str, object],
     *,
     season: int,
     week: int,
     actual_by_player_week: Mapping[str, Mapping[int, float]] | None = None,
+    actual_stats_by_player_week: Mapping[str, Mapping[int, object]] | None = None,
 ) -> dict:
-    """Build one residual-calibration training row from a final projection row."""
+    """Build one residual-calibration training row from a final projection row.
+
+    KS-09 extension: when ``actual_stats_by_player_week`` is provided (mapping from
+    player_id → week → ActualPlayerWeek), each capturable stat is stored as both the
+    projected value (``stat``) and the actual value (``actual_<stat>``) in the row.
+    This allows ``fit_residual_calibration_artifact`` to compute per-stat corrections.
+    """
     pid = projection.get("player_id")
     actual_fpts = None
     if (
@@ -145,7 +162,7 @@ def source_row_for_projection(
     projected = projected_fpts(row)
     usage = usage_tier(str(row.get("position") or "UNK"), projected)
     confidence = source_confidence_bucket(row)
-    return {
+    source_row: dict = {
         "season": season,
         "week": week,
         "player_id": pid,
@@ -158,6 +175,21 @@ def source_row_for_projection(
         "projected_fpts": projected,
         "actual_fpts": actual_fpts,
     }
+    # KS-09: capture projected stat values + actual stat values when available
+    for stat in _CAPTURABLE_STATS:
+        proj_val = row.get(stat)
+        if isinstance(proj_val, (int, float)):
+            source_row[stat] = float(proj_val)
+    if actual_stats_by_player_week is not None and isinstance(pid, str):
+        actual_obj = (
+            actual_stats_by_player_week.get(pid, {}).get(week)
+        )
+        if actual_obj is not None:
+            for stat in _CAPTURABLE_STATS:
+                actual_val = getattr(actual_obj, stat, None)
+                if isinstance(actual_val, (int, float)):
+                    source_row[f"actual_{stat}"] = float(actual_val)
+    return source_row
 
 
 def source_rows_for_week(
@@ -166,6 +198,7 @@ def source_rows_for_week(
     season: int,
     week: int,
     actual_by_player_week: Mapping[str, Mapping[int, float]] | None = None,
+    actual_stats_by_player_week: Mapping[str, Mapping[int, object]] | None = None,
 ) -> list[dict]:
     return [
         source_row_for_projection(
@@ -173,6 +206,7 @@ def source_rows_for_week(
             season=season,
             week=week,
             actual_by_player_week=actual_by_player_week,
+            actual_stats_by_player_week=actual_stats_by_player_week,
         )
         for projection in projections
     ]

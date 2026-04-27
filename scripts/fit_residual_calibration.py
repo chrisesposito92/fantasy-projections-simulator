@@ -31,7 +31,7 @@ from fantasy_sim.scoring.residual_calibration import (
     source_rows_for_week,
 )
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
-from fantasy_sim.validation.config import build_engine_configs, build_game_config_kwargs
+from fantasy_sim.validation.config import apply_overrides, build_engine_configs, build_game_config_kwargs
 from fantasy_sim.validation.parallel import (
     GameSpec,
     build_games_parallel,
@@ -53,6 +53,14 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--scoring", default="ppr", choices=["ppr", "half_ppr", "standard"])
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=0)
+    parser.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        dest="overrides",
+        metavar="KEY=VALUE",
+        help="Dot-notation config override applied to defaults before fitting. Repeatable.",
+    )
     return parser
 
 
@@ -155,8 +163,10 @@ def collect_source_rows_for_season(
     player_stats = loader.load_player_stats([season])
     actuals = load_actual_scores(player_stats, scoring_config, season)
     actual_by_player_week: dict[str, dict[int, float]] = defaultdict(dict)
+    actual_stats_by_player_week: dict[str, dict[int, object]] = defaultdict(dict)
     for actual in actuals:
         actual_by_player_week[actual.player_id][actual.week] = actual.fpts
+        actual_stats_by_player_week[actual.player_id][actual.week] = actual
 
     game_args = _game_args_for_season(
         loader,
@@ -221,6 +231,7 @@ def collect_source_rows_for_season(
                 season=season,
                 week=spec.week,
                 actual_by_player_week=actual_by_player_week,
+                actual_stats_by_player_week=actual_stats_by_player_week,
             )
         )
 
@@ -241,6 +252,8 @@ def main() -> int:
         return 1
 
     defaults = load_defaults()
+    if args.overrides:
+        defaults = apply_overrides(defaults, args.overrides)
     scoring_config = resolve_scoring(defaults["scoring"], args.scoring)
     calibration_config = load_ensemble_config(defaults).residual_calibration
     args.output_dir.mkdir(parents=True, exist_ok=True)
