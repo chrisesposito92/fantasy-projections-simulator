@@ -23,13 +23,13 @@ Confirmed code defects causing measurable bias. Bug-fix-class changes — should
 
 Architectural changes — most leverage on stat-level KS regressions. Sequenced after bugs so measurements aren't contaminated by bug-driven noise.
 
-- [ ] **KS-08**: Add `dynamic_blend` simulator-weight floor (recommendation: grid-search 0.20/0.30/0.40 around current near-zero values in `weights_2024.json`). Restores Monte Carlo variance contribution to the post-sim ensemble. → Impacts TGT-08, TGT-04, TGT-05
-- [ ] **KS-09**: Extend `residual_calibration` to operate at the stat-column level, not just `fpts`. THE structural blocker for stat-level KS work. Files: `src/fantasy_sim/scoring/residual_calibration.py:422` (and surrounding artifact-loading code). → Impacts every TGT
-- [ ] **KS-10**: Add per-position `max_abs_adjustment` clamp + a TE-specific elite-tier override that prevents `_merge_thin_tiers` from collapsing the `TE|high|*` calibration bucket. → Impacts TGT-04, TGT-05, TGT-08
-- [ ] **KS-11**: Raise `tier_engine` `reliability_cap` from 0.80 to ~0.90 for high-touch players (PFF tier 1+2). Currently the cap shrinks elite-player distributions toward fat-middle pools. → Impacts TGT-02, TGT-05, TGT-06
-- [ ] **KS-12**: Address share-normalization residual that re-distributes target/carry shares to sum to 1.0 weekly, removing legitimate cross-player variance. → Impacts TGT-03, TGT-04, TGT-06
-- [ ] **KS-13**: Fix `ff_opportunity` prior to carry width (currently used as a point estimate by `dynamic_blend`). → Impacts TGT-04, TGT-05, TGT-08
-- [ ] **KS-14**: Bayesian shrinkage tuning for thin (`MIN_BUCKET_PLAYS=10` fallback) buckets. → Impacts every yards TGT (small but additive)
+- [x] **KS-08**: Add `dynamic_blend` simulator-weight floor (recommendation: grid-search 0.20/0.30/0.40 around current near-zero values in `weights_2024.json`). Restores Monte Carlo variance contribution to the post-sim ensemble. → Impacts TGT-08, TGT-04, TGT-05
+- [x] **KS-09**: Extend `residual_calibration` to operate at the stat-column level, not just `fpts`. THE structural blocker for stat-level KS work. Files: `src/fantasy_sim/scoring/residual_calibration.py:422` (and surrounding artifact-loading code). → Impacts every TGT
+- [x] **KS-10**: Add per-position `max_abs_adjustment` clamp + a TE-specific elite-tier override that prevents `_merge_thin_tiers` from collapsing the `TE|high|*` calibration bucket. → Impacts TGT-04, TGT-05, TGT-08
+- [x] **KS-11**: Raise `tier_engine` `reliability_cap` from 0.80 to ~0.90 for high-touch players (PFF tier 1+2). Currently the cap shrinks elite-player distributions toward fat-middle pools. → Impacts TGT-02, TGT-05, TGT-06
+- [x] **KS-12**: Address share-normalization residual that re-distributes target/carry shares to sum to 1.0 weekly, removing legitimate cross-player variance. → Impacts TGT-03, TGT-04, TGT-06
+- [x] **KS-13**: Fix `ff_opportunity` prior to carry width (currently used as a point estimate by `dynamic_blend`). → Impacts TGT-04, TGT-05, TGT-08
+- [x] **KS-14**: Bayesian shrinkage tuning for thin (`MIN_BUCKET_PLAYS=10` fallback) buckets. → Impacts every yards TGT (small but additive)
 
 ### C. Phase 5 Slice Activation (KS-priority retune)
 
@@ -100,13 +100,13 @@ Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). T
 | KS-05 | Phase 1 | Complete |
 | KS-06 | Phase 1 | Complete |
 | KS-07 | Phase 1 | Complete |
-| KS-08 | Phase 2 | Pending |
-| KS-09 | Phase 2 | Pending |
-| KS-10 | Phase 2 | Pending |
-| KS-11 | Phase 2 | Pending |
-| KS-12 | Phase 2 | Pending |
-| KS-13 | Phase 2 | Pending |
-| KS-14 | Phase 2 | Pending |
+| KS-08 | Phase 2 | Complete |
+| KS-09 | Phase 2 | Complete |
+| KS-10 | Phase 2 | Complete |
+| KS-11 | Phase 2 | Complete |
+| KS-12 | Phase 2 | Complete |
+| KS-13 | Phase 2 | Complete |
+| KS-14 | Phase 2 | Complete |
 | KS-15 | Phase 1 | Complete |
 | KS-16 | Phase 3 | Pending |
 | KS-17 | Phase 3 | Pending |

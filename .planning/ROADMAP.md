@@ -157,7 +157,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Bug Fixes, Cheap Calibration & Scrape | 12/12 | Complete   | 2026-04-26 |
-| 2. Structural Per-Stat Calibration | 0/TBD | Not started | - |
+| 2. Structural Per-Stat Calibration | 1/9 | In Progress|  |
 | 3. Phase 5 Slice Activation (KS-Priority) | 0/TBD | Not started | - |
 | 4. New Signal Integration | 0/TBD | Not started | - |
 | 5. Initiative Wrap-up & Outcome Validation | 0/TBD | Not started | - |
