@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-04-PLAN.md (KS-14 SHIPPED)
-last_updated: "2026-04-27T09:25:26.452Z"
+stopped_at: Completed 02-07-PLAN.md (KS-13 SHIPPED-NO-OP)
+last_updated: "2026-04-27T10:20:29.580Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 ## Current Position
 
 Phase: 02 (structural-per-stat-calibration) — EXECUTING
-Plan: 7 of 9
+Plan: 8 of 9
 Status: Ready to execute
 Last activity: 2026-04-27
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [█████████░] 86%
 | Phase 02 P03 | 61min | 5 tasks | 13 files |
 | Phase 02-structural-per-stat-calibration P04 | 90min | 3 tasks | 7 files |
 | Phase 02-structural-per-stat-calibration P06 | 40m | 3 tasks | 6 files |
+| Phase 02-structural-per-stat-calibration P07 | 120 | 4 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,7 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 01-11: Phase 1 SHIPPED-NO-OP — aggregate p1.aggregate.full (#105) vs phase0.baseline.full (#82): hard floor PASSES (rank_corr Δ -0.0004, weekly_mae Δ +0.0142) but headline criteria 1-3 (QB pass_yards bias / KS, RB rush_yards KS) MISS. Headline finding: QB pass_yards mean bias REGRESSED -10.99 yd/g (-28.30 → -39.29; target was within ±10). KS-01 mechanism is opposite-direction so reverting it would not restore baseline. Walk-back NOT executed in Plan 11 (D-32 trigger is hard-floor regression, not headline-criteria miss). Recommended posture: fold QB pass_yards mean-bias closure into Phase 2 KS-09 (per-stat residual_calibration). Phase 2 entry baseline = ledger entry p1.aggregate.full Arm B.
 - [Phase 02]: Plan 02-05 KS-10 SHIPPED — TE elite tier (>14 fpts) + per-position caps {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8} in residual_calibration; full hard floor PASSES (rank_corr +0.0001, weekly_mae -0.002); TE receptions KS -0.01 in 2024; Codex MEDIUM 7 TE|elite|market_medium n_rows=18 in 2024 artifact; TE min_bucket_rows=10 (deviation from plan's 100 — elite TEs rare ~20 rows/season); flag default flipped to enabled=true.
 - [Phase 02]: Plan 02-02 KS-08 SHIPPED — simulator-weight floor=0.20 applied post-normalize in dynamic_blend._artifact_weights(); bundled weights_2023.json (7 learned + 14 fallback) and weights_2024.json (17 learned + 55 fallback) re-fit with --simulator-weight-floor 0.20; sweep {0.20, 0.30, 0.40} × {bare, full} = 6 entries + 1 promoted (#107-#113); floor=0.20 selected via D-05 (smallest passing hard floor + non-zero KS improvement); TE recv_yds -0.01 all 3 seasons; promoted A/B rank_corr -0.0004 (within 1e-3 of sweep -0.0008); 2142 tests pass.
+- [Phase ?]: KS-13 SHIPPED-NO-OP: dual-gate conjunction; probe→Path B; hard floor passes but fpts KS Δ≈0 (symmetric noise does not close systematic KS gap)
 
 ### Pending Todos
 
@@ -129,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-27T09:25:26.436Z
-Stopped at: Completed 02-04-PLAN.md (KS-14 SHIPPED)
+Last session: 2026-04-27T10:20:29.574Z
+Stopped at: Completed 02-07-PLAN.md (KS-13 SHIPPED-NO-OP)
 Resume file: None
