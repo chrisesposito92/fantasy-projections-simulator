@@ -1663,3 +1663,34 @@ def collect_signal_coverage(
             ),
         ),
     }
+
+
+def buckets_below_min_plays_pct(
+    pbp_buckets: "dict[tuple, list]",
+    position: str,
+    threshold: int = 10,
+) -> float:
+    """Per-position fallback rate audit metric.
+
+    KS-14 D-11 audit: returns the fraction of `(play_type, GameStateBucket)` combinations
+    for the given position with `n < threshold`. Default threshold = 10 (the historical
+    robust-bucket cutoff). With the new `MIN_BUCKET_PLAYS = 5` and the KS-14 shrinkage
+    branch, this metric reports how many buckets are being rescued by shrinkage instead
+    of falling back to team defaults.
+
+    Args:
+        pbp_buckets: dict keyed by (play_type, GameStateBucket); values are yards lists.
+        position: position label for filtering (only buckets relevant to this position).
+        threshold: bucket-size threshold below which a bucket is "thin" (default 10).
+
+    Returns:
+        Fraction in [0.0, 1.0]; 0.0 means all buckets are robust, 1.0 means all are thin.
+    """
+    if not pbp_buckets:
+        return 0.0
+    # Filter to buckets relevant to this position; for v1, count all buckets
+    # (position-specific filtering is deferred to v2 — most buckets are play_type-
+    # agnostic on position, and the audit metric is a coarse signal).
+    total = len(pbp_buckets)
+    thin = sum(1 for yards_list in pbp_buckets.values() if len(yards_list) < threshold)
+    return thin / total if total > 0 else 0.0
