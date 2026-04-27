@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from fantasy_sim.config.loader import get_phase2_ks_flags
 from fantasy_sim.data.ensemble.models import ResidualCalibrationConfig
 from fantasy_sim.scoring.role_trend import ProjectionRow
 
@@ -23,12 +24,19 @@ BUNDLED_CALIBRATION_DIR = (
     / "decision_s200"
 )
 
-USAGE_TIER_THRESHOLDS: dict[str, tuple[float, float]] = {
+# KS-10 D-07: 4-tier threshold for TE adds an `elite` tier above 14.0 fpts.
+# Other positions stay at the 3-tier shape. The legacy USAGE_TIER_THRESHOLDS
+# is kept for backwards compatibility with callers that haven't been updated.
+USAGE_TIER_THRESHOLDS_3: dict[str, tuple[float, float]] = {
     "QB": (18.0, 12.0),
     "RB": (14.0, 7.0),
     "WR": (12.0, 6.0),
-    "TE": (9.0, 4.0),
+    "TE": (9.0, 4.0),  # legacy 3-tier (used when KS-10 flag disabled)
 }
+USAGE_TIER_THRESHOLDS_4: dict[str, tuple[float, float, float]] = {
+    "TE": (14.0, 9.0, 4.0),  # elite >=14, high >=9, mid >=4, low <4 (KS-10 only)
+}
+USAGE_TIER_THRESHOLDS = USAGE_TIER_THRESHOLDS_3  # backward-compat alias
 
 
 @dataclass
@@ -56,9 +64,23 @@ def projected_fpts(row: Mapping[str, object]) -> float:
     return value
 
 
-def usage_tier(position: str, fpts: float) -> str:
-    """Return a fixed projected-fantasy-points usage tier."""
-    high, mid = USAGE_TIER_THRESHOLDS.get(position, (float("inf"), float("inf")))
+def usage_tier(position: str, fpts: float, *, ks10_enabled: bool = False) -> str:
+    """Return a fixed projected-fantasy-points usage tier.
+
+    KS-10 D-07: when ``ks10_enabled`` is True and the position has a 4-tier
+    threshold defined (currently TE only), returns one of {elite, high, mid, low}.
+    Otherwise falls back to the 3-tier {high, mid, low} shape.
+    """
+    if ks10_enabled and position in USAGE_TIER_THRESHOLDS_4:
+        elite, high, mid = USAGE_TIER_THRESHOLDS_4[position]
+        if fpts >= elite:
+            return "elite"
+        if fpts >= high:
+            return "high"
+        if fpts >= mid:
+            return "mid"
+        return "low"
+    high, mid = USAGE_TIER_THRESHOLDS_3.get(position, (float("inf"), float("inf")))
     if fpts >= high:
         return "high"
     if fpts >= mid:
@@ -107,8 +129,26 @@ def bucket_key_for_projection(row: Mapping[str, object]) -> str:
     )
 
 
-def clamp_adjustment(value: float, max_abs_adjustment: float) -> float:
-    limit = max(float(max_abs_adjustment), 0.0)
+def clamp_adjustment(
+    value: float,
+    max_abs_adjustment: float,
+    *,
+    position: str | None = None,
+    by_position: dict[str, float] | None = None,
+) -> float:
+    """Clamp an fpts-level residual to ±max_abs_adjustment.
+
+    KS-10 D-07: when ``position`` and ``by_position`` are both provided AND the
+    position is in ``by_position``, the per-position cap overrides the global
+    ``max_abs_adjustment``. Otherwise falls back to the global cap. The
+    ``by_position`` dict is only consulted when the KS-10 flag is explicitly
+    enabled at the call site — callers that don't pass these kwargs get legacy
+    behavior regardless of config.
+    """
+    if position and by_position and position in by_position:
+        limit = max(float(by_position[position]), 0.0)
+    else:
+        limit = max(float(max_abs_adjustment), 0.0)
     return min(max(float(value), -limit), limit)
 
 
@@ -392,6 +432,9 @@ class ResidualCalibrationProjectionAdjuster:
         self.config = config
         self.scoring = scoring
         self._artifact_cache: dict[int, dict | None] = {}
+        # KS-10 D-07: cache the phase2 KS flags at construction time for performance.
+        # The flag is read once from defaults.yaml and keyed on the ks10_per_position_caps block.
+        self._phase2_flags: dict = get_phase2_ks_flags()
 
     def _artifact(self, season: int) -> dict | None:
         if season in self._artifact_cache:
@@ -482,11 +525,17 @@ class ResidualCalibrationProjectionAdjuster:
         missing_bucket_rows = 0
         allowed_positions = set(self.config.positions)
 
+        # KS-10 D-07 Codex MEDIUM 7: gate strictly on the flag, NOT on dict presence.
+        # Plan 01's all-1.5 placeholder dict must remain a no-op when the flag is off.
+        ks10_enabled = bool(
+            self._phase2_flags.get("ks10_per_position_caps", {}).get("enabled", False)
+        )
+
         for projection in projections:
             row = dict(projection)
             position = str(row.get("position") or "UNK")
             fpts = projected_fpts(row)
-            tier = usage_tier(position, fpts)
+            tier = usage_tier(position, fpts, ks10_enabled=ks10_enabled)
             confidence_bucket = source_confidence_bucket(row)
             key = "|".join([position, tier, confidence_bucket])
             correction = 0.0
@@ -505,7 +554,13 @@ class ResidualCalibrationProjectionAdjuster:
                     else:
                         missing_bucket_rows += 1
                 else:
-                    correction = learned
+                    # KS-10 D-07: when flag enabled, clamp using per-position cap.
+                    correction = clamp_adjustment(
+                        learned,
+                        self.config.max_abs_adjustment,
+                        position=position if ks10_enabled else None,
+                        by_position=self.config.max_abs_adjustment_by_position if ks10_enabled else None,
+                    )
 
             if fallback_reason is not None:
                 fallback_rows += 1
