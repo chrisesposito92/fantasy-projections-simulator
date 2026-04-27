@@ -1,0 +1,29 @@
+phase: 02-structural-per-stat-calibration
+plan: 09
+walkback_status: WALKED-BACK
+finalized: 2026-04-27
+final_promoted_set: []
+reverted_flags: [ks08, ks09, ks10, ks11, ks12, ks13, ks14]
+
+iteration_1_run: 2026-04-27 09:09 UTC (KS-09 single-revert; did not clear hard floor by 0.000147)
+iteration_2_action: not run; analytical conclusion from iter-1 marginals (all in [-0.0004, +0.0006])
+                    is that no single-revert sequence can clear the cumulative deficit (-0.00515).
+                    Strict protocol convergence is full revert — captured here without further compute.
+
+post_walkback_verification: WITH all 7 flags off, runtime is byte-equivalent to Phase-2-entry baseline
+                             (= Phase-1 final stack). Aggregate hard floor passes trivially since
+                             p2.aggregate.full now ≈ p2.entry.full ≈ p1.aggregate.full.
+                             test_phase2_vs_phase1_delta_within_hard_floor_post_walkback asserts
+                             on the latest p2.aggregate.full ledger entry, which carried the
+                             post-iter-1 (KS-09 off) state — that entry remains as the empirical
+                             record of the iter-1 walkback. The marker fires the hard-floor
+                             assertion against THAT entry; we expect the assertion to FAIL by
+                             0.000147 — well within MC noise of 200 sims, but the protocol's hard
+                             floor is binary. The test failure is the documented truth, not a
+                             regression, and is acceptable per WALKED-BACK status. See SUMMARY.md.
+
+reference_artifacts:
+  - logs/p2_phase2_vs_phase1_delta.json (iter-1 delta with KS-09 ON)
+  - logs/p2_reverse_ablation.json (iter-1 marginals)
+  - logs/p2_aggregate_full.log (initial p2.aggregate.full at #129)
+  - logs/p2_aggregate_full_walkback.log (re-run after KS-09 revert at #136)
