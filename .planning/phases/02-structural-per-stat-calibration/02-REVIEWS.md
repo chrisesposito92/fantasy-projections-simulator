@@ -334,3 +334,96 @@ Cycle 3 is the FINAL convergence cycle; the orchestrator hits a max-cycles escal
 ```
 /gsd-plan-phase 2 --reviews
 ```
+
+---
+
+## Cycle 4 — Codex Review (orchestrator-applied final fixes)
+
+**Reviewed at:** 2026-04-27T02:44:20Z
+**Reviewer:** Codex (gpt-5.4)
+**Cycle:** 4 (user-requested extension after cycle 3's max-cycles escalation; orchestrator applied targeted manual fixes to the 2 cycle-3 unresolved HIGHs in commit `53c5050`)
+**Plans reviewed:** all 9 Phase 2 PLAN.md files at commit `53c5050`
+**Cycle 3 HIGH concerns asked about (2 unresolved):**
+1. HIGH 1 (cycle-3 carry-forward, originally cycle-2 HIGH 4 partial) — Plan 09 stale ledger-schema documentation (top-of-file truth block + "Verified code" interface excerpt)
+2. HIGH 2 (cycle-3 NEW) — Plan 07 Task 2 KS-13 config-path bug (`self.config.prior_width.*` vs nested `self.config.ff_opportunity.prior_width.*`) + 2 placeholder tests claimed concrete
+
+### Summary
+
+The two cycle-3 carry-forward HIGHs are now resolved in the revised plans at `53c5050`: Plan 09's ledger-schema references were corrected to the real `LedgerEntry.season_results -> SeasonMetrics.arm_b_*` shape, and Plan 07's KS-13 snippets no longer use the nonexistent `self.config.prior_width` path while the two specifically-called-out tests are now concrete. I did find one new HIGH in the revised KS-13 plan: the plan says the Phase-2 flag is the master gate, but the implementation path still keys runtime behavior off `ensemble.ff_opportunity.prior_width.enabled`, which breaks true A/B isolation and makes Plan 09's leave-one-out walk-back unreliable.
+
+### Cycle-3 HIGH Resolution Status
+
+- **HIGH 1 — Plan 09 stale ledger-schema documentation**: **FULLY RESOLVED**. The plan now uses helper-based Arm B aggregation instead of the nonexistent `entry.arm_b.<metric>` shape in both the top truth block and the executable examples, and the helper functions are actually defined in the test scaffold: `09-phase2-aggregate-validation-PLAN.md` line 18 (reverse-ablation prose now uses `_avg_arm_b_<metric>(p2.aggregate.full) - _avg_arm_b_<metric>(p2.aggregate.no_K{i})`), line 177 (`_avg_arm_b_rank_corr` helper definition), line 436 (downstream Task 2 reverse-ablation block uses helpers). Those references now match the live ledger schema in `src/fantasy_sim/validation/ledger.py:25` (`SeasonMetrics` with `arm_b_rank_corr: dict[str, float]`, `arm_b_weekly_mae: float`, `weekly_fpts_ks: dict[str, float | int]`, `stat_ks: dict[pos][stat][arm_a_ks/arm_b_ks/ks_delta/n]`, `stat_mean_bias: dict[pos][stat][arm_a_bias/arm_b_bias/bias_delta/n]`).
+
+- **HIGH 2 — Plan 07 Task 2 KS-13 config-path bug + 2 placeholder tests**: **FULLY RESOLVED**. The bad top-level `self.config.prior_width.*` path is gone; both blend snippets now route through `self.config.ff_opportunity.prior_width`, and the two cited tests are concrete rather than `pass` placeholders: `07-ks13-ff-opportunity-prior-width-PLAN.md` line 140 (interfaces example uses `_pw = self.config.ff_opportunity.prior_width`), line 396 (Task 2 implementation uses `_pw = self.config.ff_opportunity.prior_width`), line 430 (`test_ks13_path_a_uses_quantile_width_when_lo_hi_present` is now a 500-seed Monte Carlo with concrete std-tolerance + RNG-determinism assertions), line 509 (`test_ks13_unchanged_when_flag_disabled` is now a concrete differential test with the explicit `0.5*12 + 0.5*20 = 16.0` legacy-path assertion). The live code does not yet have `PriorWidthConfig` in `src/fantasy_sim/data/ensemble/models.py:8`, but the plan now consistently treats that as a future-state addition to be created in Task 2 rather than reading from a nonexistent top-level config field.
+
+### New HIGH Concerns
+
+- **[HIGH] [Plan 07 + Plan 09] KS-13 is not actually master-gated by the Phase-2 flag, so A/B isolation and Plan 09 reverse-ablation can silently mis-measure it.** The plan explicitly says KS-13 is gated by `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled` (Plan 07 line 25 must_haves), but the runtime implementation block only samples when `_pw.enabled` is true, i.e. `self.config.ff_opportunity.prior_width.enabled` (Plan 07 line 396). The plan's own A/B commands turn BOTH switches on (Plan 07 line 1117 sets `phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled=true` AND `ensemble.ff_opportunity.prior_width.enabled=true`), but Plan 09's leave-one-out walk-back disables only the phase flag (`09-phase2-aggregate-validation-PLAN.md` line 18 — `phase2_ks_flags.K{i}.enabled=false` only). Because there is no loader override or `phase2_flag AND prior_width.enabled` conjunction defined anywhere in Plan 07, a supposed `no_KS13` run can still leave KS-13 active if `ensemble.ff_opportunity.prior_width.enabled` remains true in defaults (which it will be after KS-13 promotion). That is a real implementation blocker: it invalidates per-KS isolation and can corrupt reverse-ablation rollback decisions for KS-13 specifically and the `{KS-08, KS-13}` coupled-cluster pair-revert generally.
+
+### Carry-Forward MEDIUM/LOW Status
+
+- Plan 07 still contains three placeholder tests in Task 2 (`test_ks13_path_b_uses_fitted_std_when_lo_hi_absent`, `test_ks13_path_a_seed_determinism`, `test_ks13_path_b_artifact_loader_graceful_when_missing`), but they are now explicitly deferred to Task 2.5 with concrete replacement bodies, so that is no longer a HIGH-level ambiguity.
+- The top "After KS-13" interface example still uses provisional Path-B pseudocode (`self._fitted_std` / `bucket_key`) while Task 2.5 later standardizes on `_fitted_std_for(...)`; that is documentation drift, but the detailed implementation block is clear enough that I would keep it below HIGH.
+
+### Risk Assessment
+
+**Final risk level**: HIGH. The original two cycle-3 HIGHs are fixed, but the new KS-13 gating split is load-bearing: it can make both the per-KS A/B and the Phase-2 aggregate walk-back claim to disable KS-13 while leaving the behavior live. That undermines the trustworthiness of the promotion evidence, not just the prose. Recommended fix: either (a) add a conjunction in `FfOpportunityProjectionEnsembler.blend_week` that requires BOTH `get_phase2_ks_flags().get("ks13_ff_opportunity_prior_width", {}).get("enabled", False)` AND `_pw.enabled` to be true before sampling, OR (b) make the Phase-2 flag the SOLE runtime gate and treat `ensemble.ff_opportunity.prior_width.enabled` as a static schema field that is always true once promoted. Option (a) is more aligned with the Phase 1 D-45 pattern; option (b) is simpler but requires removing one config field. Either way, Plan 09's reverse-ablation walk-back must be able to disable KS-13 with a single flag flip.
+
+### Total Unresolved HIGHs Count
+
+`TOTAL_UNRESOLVED_HIGHS: 1`
+
+---
+
+## Cycle 4 — Consensus Summary
+
+Single-reviewer cycle (`--codex` only).
+
+### Cycle-3 → Cycle-4 HIGH Resolution Audit
+
+| # | Concern | Cycle-3 Finding | Cycle-4 Status | Counted as Unresolved? |
+|---|---------|-----------------|----------------|-------------------------|
+| 1 | Plan 09 stale ledger-schema documentation (top truth block + interfaces excerpt + `entry.arm_b.<metric>` notation) | PARTIALLY RESOLVED (carry-forward of cycle-2 HIGH 4) | FULLY RESOLVED | No |
+| 2 | Plan 07 Task 2 KS-13 config-path bug (`self.config.prior_width.*`) + 2 placeholder tests claimed concrete | STILL UNRESOLVED (cycle-3 NEW) | FULLY RESOLVED | No |
+
+### NEW HIGHs introduced in Cycle 4
+
+| # | Concern | Plan / Site | Counted as Unresolved? |
+|---|---------|-------------|-------------------------|
+| 3 | KS-13 dual-gate split: Plan 07 must_haves say `phase2_ks_flags.ks13_*` is the master gate, but runtime keys off `ensemble.ff_opportunity.prior_width.enabled` (Plan 07 line 396); Plan 09 walk-back only flips `phase2_ks_flags.K{i}.enabled` (Plan 09 line 18). No conjunction or override defined → a `no_KS13` reverse-ablation iteration can leave KS-13 behavior live. Invalidates per-KS A/B isolation and corrupts reverse-ablation rollback for KS-13 and `{KS-08, KS-13}` coupled-cluster | Plan 07 line 396 + Plan 09 line 18 | Yes (1) |
+
+### Total unresolved HIGHs (Cycle 4): **1**
+
+(0 carry-forward + 1 newly raised in cycle 4.)
+
+### Recommended Pre-Execution Actions for Cycle 5 / Escalation
+
+Before executing Plan 02 onward, address the 1 unresolved HIGH:
+
+1. **KS-13 master-gate conjunction (cycle-4 NEW HIGH)** — pick ONE of:
+   - **Option A (recommended, Phase 1 D-45 aligned):** add a conjunction in `FfOpportunityProjectionEnsembler.blend_week` so that the runtime check becomes `phase2_ks_enabled = get_phase2_ks_flags().get("ks13_ff_opportunity_prior_width", {}).get("enabled", False); if phase2_ks_enabled and _pw.enabled and ...`. Update Plan 07 Task 2 implementation snippet (line ~396) AND test scaffolding to mock the phase-2 flag. Update `test_ks13_unchanged_when_flag_disabled` to also cover the case where phase-2 flag is off but `_pw.enabled` is on (must still be byte-identical to legacy).
+   - **Option B (simpler, less invariant-preserving):** remove `enabled` from `PriorWidthConfig` entirely; let the phase-2 flag be the SOLE runtime gate; `path` and `artifacts_dir` remain on `PriorWidthConfig` as static config. Update Plan 07 Task 2 + Task 2.5 tests + Plan 09 walk-back accordingly.
+
+   Either option must result in Plan 09's `phase2_ks_flags.K13.enabled=false` override being SUFFICIENT to disable KS-13 in a `no_KS13` aggregate run, with no residual sampling behavior. Add a regression test in `tests/test_scoring/test_ensemble.py` named `test_ks13_phase2_flag_off_disables_sampling_even_with_prior_width_enabled` (or equivalent) that pins this invariant.
+
+The 1 carry-forward MEDIUM (Plan 07 documentation drift between top "After KS-13" example and Task 2.5 standardization on `_fitted_std_for(...)`) can be folded into the cycle-5 revision pass but does not block phase entry on its own.
+
+### Cycle Trajectory Summary
+
+| Cycle | Unresolved HIGHs | Notes |
+|-------|------------------|-------|
+| 1 | 3 | KS-09 output contract, KS-14 flag gate, Plan 09 walk-back additivity |
+| 2 | 4 | 1 carry-forward partial + 3 new (Plan 07 probe, Plan 07 Path B, Plan 09 schema) |
+| 3 | 2 | 1 carry-forward partial (Plan 09 stale schema snippets) + 1 new (Plan 07 Task 2 config path + placeholder tests) |
+| 4 | 1 | 0 carry-forward + 1 new (Plan 07 + Plan 09 KS-13 dual-gate split) |
+
+Cycle 4 was a user-requested extension after cycle 3's max-cycles escalation; the orchestrator applied targeted manual fixes to both cycle-3 carry-forward HIGHs (commit `53c5050`), and the cycle-4 codex review confirms BOTH are now FULLY RESOLVED. The trajectory is sharply converging (3 → 4 → 2 → 1) with the cycle-4 reviewer surfacing one new previously-missed HIGH in the KS-13 dual-gate runtime semantics. One more cleanup pass is needed to make the Phase-2 KS-13 flag the deterministic master gate that Plan 09's walk-back protocol requires.
+
+---
+
+*Generated by `/gsd-review --phase 2 --codex` on 2026-04-27 (cycle 4, user-requested extension). To incorporate feedback into planning:*
+
+```
+/gsd-plan-phase 2 --reviews
+```
