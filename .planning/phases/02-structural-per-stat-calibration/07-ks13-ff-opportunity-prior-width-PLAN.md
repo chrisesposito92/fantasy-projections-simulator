@@ -32,7 +32,7 @@ must_haves:
     - "Per HYPOTHESES.md KS-13 (lines 261-273): Path A confidence MEDIUM (depends on lo/hi schema availability); Path B confidence LOW-MEDIUM (more complex, weaker effect). Promotion bar adjusts: Path A → fpts KS Δ ≤ -0.01 (D-30 standard small-gain); Path B → fpts KS Δ ≤ -0.005 (relaxed)."
     - "**Codex MEDIUM 5 (2026-04-27 revision) — RNG determinism contract:** when KS-13 is on, Gaussian sampling is introduced on the post-sim ff_opportunity prior path. Determinism is preserved by (1) constructing the ensembler with an explicit `rng: np.random.Generator` at boundary (the call site in `cli.py` / runtime is responsible for seeding), (2) drawing exactly ONE sample per (season, week, player_id, sim_idx) tuple via `self._rng.normal(...)`, and (3) not advancing any shared RNG state outside the ensembler. The same A/B invocation with the same seeds + the same artifact produces byte-identical output. The seed-determinism tests (Task 2.5) prove this by constructing two ensemblers with identically-seeded RNGs and asserting the sampled prior matches."
     - "Per C-08: test-after acceptable for KS-13; 6 unit tests in test_ensemble.py + 3 fitter tests + 1 probe-script test."
-    - "Per C-09: 2,164 + 6 (Task 2 tests) + 3 (Task 2.5 fitter tests) + 1 (Task 2 dual-gate regression test, codex cycle-4) = 2,174 tests stay green after Plan 07."
+    - "Per C-09: 2,164 + 6 (Task 2 tests) + 3 (Task 2.5 fitter tests) + 1 (Task 2 dual-gate regression test, codex cycle-4) + 1 (Task 2 lazy-fallback dict-access regression test, codex cycle-5) = 2,175 tests stay green after Plan 07."
   artifacts:
     - path: "scripts/probe_ff_opportunity_quantiles.py"
       provides: "One-shot probe script: uses `FfOpportunityLoader.load_weekly([season])` (the REAL loader API per `src/fantasy_sim/data/ensemble/loader.py` line 43; codex cycle-2 HIGH 2 fix); reports presence + non-null fraction of `total_fantasy_points_exp_lo`/`_hi`; emits JSON to stdout for plan-body branch decision"
@@ -457,10 +457,14 @@ def __init__(
         try:
             from fantasy_sim.config.loader import get_phase2_ks_flags
             flags = get_phase2_ks_flags()
-            self._ks13_master_enabled = bool(
-                getattr(flags, "ks13_ff_opportunity_prior_width", None)
-                and flags.ks13_ff_opportunity_prior_width.enabled
-            )
+            # Codex cycle-5 alignment: Plan 01 (line 298) defines get_phase2_ks_flags()
+            # to return a plain dict (`return defaults.get("phase2_ks_flags", {})`),
+            # NOT a typed config object. Earlier drafts of this fallback used
+            # `flags.ks13_ff_opportunity_prior_width.enabled` (attribute access), which
+            # short-circuits to None on a dict via getattr-default → silently default-denies
+            # KS-13 even when the master flag is True in defaults.yaml. Use dict access.
+            ks13_cfg = flags.get("ks13_ff_opportunity_prior_width", {}) if isinstance(flags, dict) else {}
+            self._ks13_master_enabled = bool(ks13_cfg.get("enabled", False))
         except Exception:
             self._ks13_master_enabled = False
 ```
@@ -685,6 +689,75 @@ def test_ks13_dual_gate_master_flag_off_keeps_ks13_dormant():
     # Symmetric: master ON, sub OFF → conjunction also False (covered in
     # test_ks13_unchanged_when_flag_disabled above with ks13_master_enabled=True + sub=False).
     # This test specifically pins the OPPOSITE asymmetry that Plan 09's walk-back relies on.
+
+
+def test_ks13_master_enabled_lazy_fallback_reads_dict_shaped_phase2_ks_flags(monkeypatch):
+    """Codex cycle-5 HIGH (lazy-fallback dict-vs-attribute mismatch fix):
+    when `ks13_master_enabled=None` is passed to the ensembler constructor, the
+    fallback path MUST resolve the master flag by reading the dict returned from
+    `get_phase2_ks_flags()` (Plan 01 line 298: `return defaults.get("phase2_ks_flags", {})`).
+
+    Earlier drafts of this fallback used attribute access
+    (`flags.ks13_ff_opportunity_prior_width.enabled`) on what is actually a plain
+    dict, which short-circuits to None on getattr-default → silently default-denies
+    KS-13 in `validate.py`-driven runs that don't pass an explicit master_enabled
+    constructor arg. This test pins the dict-access correctness of the fallback.
+    """
+    import fantasy_sim.config.loader as loader_mod
+    from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
+    from fantasy_sim.data.ensemble import EnsembleConfig, FfOpportunityConfig
+    from fantasy_sim.data.ensemble.models import PriorWidthConfig
+
+    cfg = EnsembleConfig(
+        enabled=True,
+        ff_opportunity=FfOpportunityConfig(
+            enabled=True,
+            weights={"WR": 0.5},
+            prior_width=PriorWidthConfig(enabled=True, path="A"),
+        ),
+    )
+
+    # Case 1: dict-shaped phase2_ks_flags with ks13 master TRUE
+    monkeypatch.setattr(
+        loader_mod,
+        "get_phase2_ks_flags",
+        lambda: {"ks13_ff_opportunity_prior_width": {"enabled": True}},
+    )
+    ens_master_on = FfOpportunityProjectionEnsembler(cfg, rng=np.random.default_rng(0))
+    assert ens_master_on._ks13_master_enabled is True, (
+        "Lazy fallback MUST read 'ks13_ff_opportunity_prior_width.enabled' from a dict, "
+        "not via attribute access. Otherwise `validate.py` runs default-deny KS-13 silently."
+    )
+
+    # Case 2: dict-shaped phase2_ks_flags with ks13 master FALSE
+    monkeypatch.setattr(
+        loader_mod,
+        "get_phase2_ks_flags",
+        lambda: {"ks13_ff_opportunity_prior_width": {"enabled": False}},
+    )
+    ens_master_off = FfOpportunityProjectionEnsembler(cfg, rng=np.random.default_rng(0))
+    assert ens_master_off._ks13_master_enabled is False
+
+    # Case 3: missing top-level key → default-deny
+    monkeypatch.setattr(loader_mod, "get_phase2_ks_flags", lambda: {})
+    ens_missing = FfOpportunityProjectionEnsembler(cfg, rng=np.random.default_rng(0))
+    assert ens_missing._ks13_master_enabled is False
+
+    # Case 4: missing inner key → default-deny
+    monkeypatch.setattr(
+        loader_mod,
+        "get_phase2_ks_flags",
+        lambda: {"ks13_ff_opportunity_prior_width": {}},
+    )
+    ens_missing_inner = FfOpportunityProjectionEnsembler(cfg, rng=np.random.default_rng(0))
+    assert ens_missing_inner._ks13_master_enabled is False
+
+    # Case 5: shim raises → default-deny (graceful)
+    def _raises():
+        raise RuntimeError("loader unavailable")
+    monkeypatch.setattr(loader_mod, "get_phase2_ks_flags", _raises)
+    ens_raises = FfOpportunityProjectionEnsembler(cfg, rng=np.random.default_rng(0))
+    assert ens_raises._ks13_master_enabled is False
 
 
 def test_ks13_probe_script_outputs_json():
