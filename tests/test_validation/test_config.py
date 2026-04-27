@@ -693,13 +693,21 @@ def test_phase2_ks_flags_present_and_default_false():
     catches the case where someone adds a KS code change behind a flag that doesn't exist in
     defaults (would silently behave as `False`, hiding the regression).
 
-    Promoted flags (enabled: true by design — do not include in the "must be false" set):
-      - ks08_dynamic_blend_simulator_floor: SHIPPED 2026-04-26 (Plan 02)
-      - ks09_per_stat_residual_calibration: SHIPPED-PARTIAL 2026-04-27 (Plan 03)
-      - ks14_thin_bucket_shrinkage: SHIPPED 2026-04-27 (Plan 04)
-      - ks10_per_position_caps: SHIPPED 2026-04-27 (Plan 05)
-      - ks11_position_reliability: SHIPPED 2026-04-27 (Plan 06)
-      - ks12_share_normalization_residual: SHIPPED 2026-04-27 (Plan 08)
+    Phase 2 status (post-Plan-09 walk-back, 2026-04-27):
+      All 7 KS items WALKED-BACK at the aggregate level. Per-KS A/Bs each individually
+      passed hard floor in isolation (KS-08, KS-10, KS-11, KS-12, KS-14 SHIPPED;
+      KS-09 SHIPPED-PARTIAL; KS-13 SHIPPED-NO-OP), but the FULL-stack aggregate failed
+      Phase-2-vs-Phase-1 hard floor (Δ rank_corr = -0.00515 vs limit -0.005). Reverse-
+      ablation iter-1 marginals were all in [-0.0004, +0.0006] — "death by a thousand
+      cuts": cumulative deficit cannot be attributed to any single KS, so iterative
+      single-revert cannot clear the floor. Per-stat picture was unambiguously
+      regressive (6 of 8 priority stats KS up; QB pass_yards bias -39.29 → -41.11 yd/g).
+      All 7 flags reverted to enabled: false; code/architecture preserved in tree for
+      Phase 3+ levers.
+      See:
+        .planning/phases/02-structural-per-stat-calibration/09-phase2-aggregate-validation-SUMMARY.md
+        .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md
+        .planning/phases/02-structural-per-stat-calibration/logs/p2_walkback_complete.marker
     """
     from fantasy_sim.config.loader import get_phase2_ks_flags
     flags = get_phase2_ks_flags()
@@ -712,15 +720,10 @@ def test_phase2_ks_flags_present_and_default_false():
         "ks13_ff_opportunity_prior_width",
         "ks14_thin_bucket_shrinkage",
     }
-    # Flags that have been promoted to enabled=true (excluded from "must be false" check)
-    promoted = {
-        "ks08_dynamic_blend_simulator_floor",  # SHIPPED 2026-04-26 (Plan 02)
-        "ks09_per_stat_residual_calibration",  # SHIPPED-PARTIAL 2026-04-27 (Plan 03)
-        "ks14_thin_bucket_shrinkage",           # SHIPPED 2026-04-27 (Plan 04)
-        "ks10_per_position_caps",              # SHIPPED 2026-04-27 (Plan 05)
-        "ks11_position_reliability",           # SHIPPED 2026-04-27 (Plan 06)
-        "ks12_share_normalization_residual",   # SHIPPED 2026-04-27 (Plan 08)
-    }
+    # Phase 2 walked back 2026-04-27 — all flags currently enabled: false.
+    # promoted set is empty; if a future phase re-promotes any of these, add the
+    # name to `promoted` and the corresponding line below will assert True.
+    promoted: set[str] = set()
     assert set(flags.keys()) >= expected_all, f"Missing phase2_ks_flags entries: {expected_all - set(flags.keys())}"
     for name in expected_all - promoted:
         assert flags[name].get("enabled") is False, f"phase2_ks_flags.{name}.enabled must default to False (got {flags[name].get('enabled')!r})"

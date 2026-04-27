@@ -38,21 +38,31 @@ phase1_ks_flags:
 # false everywhere; per-KS promotion commits flip the flag to `true` after the A/B passes
 # hard floor + promotion bar.
 phase2_ks_flags:
+  # ALL Phase-2 flags WALKED-BACK 2026-04-27 after Plan 09 aggregate validation.
+  # Per-KS A/Bs each individually passed hard floor in isolation, but the FULL stack
+  # (all 6 promoted ON) failed Phase-2-vs-Phase-1 hard floor: Δ rank_corr = -0.00515
+  # (limit -0.005). Reverse-ablation iteration 1 (codex HIGH 3) showed all marginal
+  # deltas in [-0.0004, +0.0006] — "death by a thousand cuts": the cumulative deficit
+  # cannot be attributed to any single KS, so iterative single-revert cannot clear the
+  # floor. Per-stat picture was unambiguously regressive (6 of 8 priority stats KS up,
+  # QB pass_yards bias -39.29 → -41.11 yd/g). Code/architecture preserved in tree for
+  # Phase 3+ levers. See logs/PROMOTION-NOTES.md ## Phase 2 Aggregate and
+  # 09-phase2-aggregate-validation-SUMMARY.md.
   ks08_dynamic_blend_simulator_floor:
-    enabled: true   # KS-08 SHIPPED 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-08
-    floor: 0.20    # Smallest passing floor from {0.20, 0.30, 0.40} sweep (D-05)
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+    floor: 0.20    # Retained for re-test; effective only when enabled flips back on
   ks09_per_stat_residual_calibration:
-    enabled: true   # KS-09 SHIPPED-PARTIAL 2026-04-27 — hard floor + KS Δ ≤ -0.03 met at architecture level; per-stat bias delta too small at 200 sims; architecture in tree for Phase 3/4 levers (KS-10/KS-14). See logs/PROMOTION-NOTES.md ## KS-09
+    enabled: false  # WALKED-BACK 2026-04-27 (highest harm_score +0.0072 in iter-1 ablation)
   ks10_per_position_caps:
-    enabled: true   # KS-10 SHIPPED 2026-04-27 — hard floor PASS (+0.0001 rank_corr, -0.002 weekly_mae); TE receptions KS -0.01 in 2024; see logs/PROMOTION-NOTES.md ## KS-10
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
   ks11_position_reliability:
-    enabled: true   # KS-11 SHIPPED 2026-04-27 — hard floor PASS (+0.0004 rank_corr, -0.002 weekly_mae); WR/TE recv_yds KS within noise; QB pass_yards Δ≈0 (C-10 PASS); see logs/PROMOTION-NOTES.md ## KS-11
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
   ks12_share_normalization_residual:
-    enabled: true   # KS-12 SHIPPED 2026-04-27 — hard floor PASS (+0.0006 rank_corr, -0.009 weekly_mae); WR/TE receptions KS non-regressive all 3 seasons; availability.enabled=true required for factor to fire; MIN_BACKUP_RECEIVING_SHARE=0.05; see logs/PROMOTION-NOTES.md ## KS-12
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
   ks13_ff_opportunity_prior_width:
-    enabled: false  # KS-13 SHIPPED-NO-OP 2026-04-27 — hard floor PASS (Δ rank_corr -0.0007, Δ weekly_mae -0.001); fpts KS Δ ≈ 0.000 (not ≤ -0.005 Path B bar); sampling adds symmetric noise but KS gap is systematic. Architecture in tree for Plan 09 testing. See logs/PROMOTION-NOTES.md ## KS-13
+    enabled: false  # NO-OP 2026-04-27 (Path B; never moved fpts KS; consistent with walk-back)
   ks14_thin_bucket_shrinkage:
-    enabled: true   # KS-14 SHIPPED 2026-04-27 — hard floor passes (Δ rank_corr +0.0000, Δ weekly_mae -0.000); RB rush_yards KS Δ=0.00, WR receiving_yards KS Δ=-0.00; bare regression (+0.068) informational per Gate Relaxation Decision. See logs/PROMOTION-NOTES.md ## KS-14
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
 
 simulation:
   num_sims: 1000
