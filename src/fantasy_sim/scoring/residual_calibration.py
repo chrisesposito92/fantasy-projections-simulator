@@ -112,6 +112,18 @@ def clamp_adjustment(value: float, max_abs_adjustment: float) -> float:
     return min(max(float(value), -limit), limit)
 
 
+def stat_clamp_adjustment(value: float, clamp_std: float) -> float:
+    """Clamp a per-stat residual to ±2 * clamp_std (per-bucket std from training).
+
+    KS-09 D-04 + Pattern 4: clamp_std comes from
+    artifact["stat_corrections"][stat]["clamps"][bucket_key]["clamp_std"].
+    Falls back to zero adjustment when clamp_std is 0 (graceful degradation
+    for buckets with no training data for the stat).
+    """
+    limit = max(2.0 * float(clamp_std), 0.0)
+    return min(max(float(value), -limit), limit)
+
+
 def source_row_for_projection(
     projection: Mapping[str, object],
     *,
@@ -273,7 +285,7 @@ def fit_residual_calibration_artifact(
             "mae_delta": round(mae_delta, 6),
         }
 
-    return {
+    artifact: dict = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "test_season": test_season,
         "source_seasons": source_seasons,
@@ -293,6 +305,45 @@ def fit_residual_calibration_artifact(
         "buckets": buckets,
         "fallback_buckets": fallback_buckets,
     }
+
+    # KS-09 D-03: when stat_level enabled, fit per-stat corrections + clamps per bucket.
+    if config.stat_level.enabled and config.stat_level.covered_stats:
+        stat_corrections: dict[str, dict[str, dict]] = {}
+        for stat in config.stat_level.covered_stats:
+            stat_block: dict[str, dict] = {"corrections": {}, "clamps": {}}
+            # Group rows by bucket_key (same key as the fpts-level grouping)
+            by_bucket: dict[str, list[Mapping[str, object]]] = {}
+            for row in source_rows:
+                # Only include rows that have both projected and actual values for this stat
+                if not isinstance(row.get(f"actual_{stat}"), (int, float)):
+                    continue
+                if not isinstance(row.get(stat), (int, float)):
+                    continue
+                key = str(row.get("bucket_key") or "")
+                if not key:
+                    continue
+                by_bucket.setdefault(key, []).append(row)
+            for key, rows in by_bucket.items():
+                if len(rows) < config.min_bucket_rows:
+                    continue
+                # Mean correction = mean(actual_stat - projected_stat) for this bucket
+                deltas = [
+                    float(row[f"actual_{stat}"]) - float(row[stat])
+                    for row in rows
+                ]
+                mean_delta = float(np.mean(deltas))
+                # clamp_std = std of actual stat values for this bucket (per D-04)
+                actual_values = [float(row[f"actual_{stat}"]) for row in rows]
+                clamp_std = float(np.std(actual_values))
+                stat_block["corrections"][key] = {
+                    "correction": round(mean_delta, 6),
+                    "n_rows": len(rows),
+                }
+                stat_block["clamps"][key] = {"clamp_std": round(clamp_std, 6)}
+            stat_corrections[stat] = stat_block
+        artifact["stat_corrections"] = stat_corrections
+
+    return artifact
 
 
 class ResidualCalibrationProjectionAdjuster:
@@ -426,6 +477,38 @@ class ResidualCalibrationProjectionAdjuster:
                 fallback_rows += 1
             if abs(correction) > 1e-9:
                 adjusted_rows += 1
+
+            # KS-09 D-01: per-stat correction writes corrected_<stat> columns BEFORE fpts write.
+            # Two-stage layered fpts (D-01): the existing row["fpts"] correction is unchanged
+            # (computed from raw_sim_fpts + bucket correction below); the per-stat columns are
+            # additive and do NOT propagate into fpts.
+            if self.config.stat_level.enabled and artifact is not None:
+                stat_corrections_block = artifact.get("stat_corrections", {})
+                for stat in self.config.stat_level.covered_stats:
+                    raw = row.get(stat)
+                    if not isinstance(raw, (int, float)):
+                        # Stat not present on this row (e.g., RB row missing pass_yards) — skip
+                        continue
+                    stat_block = stat_corrections_block.get(stat, {})
+                    bucket_corrections = stat_block.get("corrections", {})
+                    bucket_clamps = stat_block.get("clamps", {})
+                    correction_entry = bucket_corrections.get(key)
+                    clamp_entry = bucket_clamps.get(key)
+                    if not correction_entry:
+                        # Missing bucket → fallback zero adjustment (corrected == raw)
+                        row[f"corrected_{stat}"] = round(float(raw), 4)
+                        continue
+                    raw_correction = float(correction_entry.get("correction", 0.0))
+                    clamp_std = float(clamp_entry.get("clamp_std", 0.0)) if clamp_entry else 0.0
+                    if clamp_std > 0:
+                        applied = stat_clamp_adjustment(raw_correction, clamp_std)
+                    else:
+                        # No clamp_std available → fallback to global max_abs_adjustment
+                        applied = clamp_adjustment(raw_correction, self.config.max_abs_adjustment)
+                    corrected = float(raw) + applied
+                    # Stats are non-negative (yards, TDs, receptions, fumbles_lost) — clamp to 0
+                    row[f"corrected_{stat}"] = round(max(corrected, 0.0), 4)
+
             row["fpts"] = round(max(fpts + correction, 0.0), 1)
             self._stamp_metadata(
                 row,

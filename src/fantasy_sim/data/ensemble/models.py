@@ -46,6 +46,14 @@ class DynamicBlendConfig:
 
 
 @dataclass
+class StatLevelConfig:
+    """Per-stat residual_calibration config block for KS-09 (Plan 03)."""
+
+    enabled: bool = False
+    covered_stats: tuple[str, ...] = ()
+
+
+@dataclass
 class ResidualCalibrationConfig:
     """Configuration for post-simulation residual calibration."""
 
@@ -58,6 +66,8 @@ class ResidualCalibrationConfig:
     max_abs_adjustment: float = 1.5
     min_training_mae_delta: float = -0.01
     fallback: str = "zero"
+    stat_level: StatLevelConfig = field(default_factory=StatLevelConfig)
+    max_abs_adjustment_by_position: dict[str, float] = field(default_factory=dict)  # placeholder for KS-10 — Plan 05
 
 
 @dataclass

@@ -8,6 +8,7 @@ from fantasy_sim.data.ensemble.models import (
     FfOpportunityConfig,
     FfRankingsConfig,
     ResidualCalibrationConfig,
+    StatLevelConfig,
 )
 
 
@@ -74,6 +75,15 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
         fallback=dynamic_blend_raw.get("fallback", default_dynamic_blend.fallback),
         simulator_weight_floor=simulator_weight_floor,
     )
+    # KS-09 D-02: phase2_ks_flags.ks09_per_stat_residual_calibration.enabled is the master toggle.
+    # When the flag is true, stat_level.enabled is forced to True regardless of the YAML field.
+    ks09_block = phase2_flags.get("ks09_per_stat_residual_calibration", {})
+    stat_level_raw = residual_calibration_raw.get("stat_level", {})
+    stat_level_enabled = bool(ks09_block.get("enabled", False)) or bool(
+        stat_level_raw.get("enabled", False)
+    )
+    covered_stats = tuple(stat_level_raw.get("covered_stats", ()))
+
     residual_calibration = ResidualCalibrationConfig(
         enabled=residual_calibration_raw.get(
             "enabled",
@@ -122,6 +132,13 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
         fallback=residual_calibration_raw.get(
             "fallback",
             default_residual_calibration.fallback,
+        ),
+        stat_level=StatLevelConfig(
+            enabled=stat_level_enabled,
+            covered_stats=covered_stats,
+        ),
+        max_abs_adjustment_by_position=dict(
+            residual_calibration_raw.get("max_abs_adjustment_by_position", {})
         ),
     )
 
