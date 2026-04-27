@@ -39,6 +39,17 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
     ff_rankings = FfRankingsConfig(
         enabled=ff_rankings_raw.get("enabled", False),
     )
+    # KS-08 D-06: the simulator_weight_floor is sourced from phase2_ks_flags.ks08 when
+    # enabled; falls back to ensemble.dynamic_blend.simulator_weight_floor (default 0.0).
+    phase2_flags = defaults.get("phase2_ks_flags", {})
+    ks08_block = phase2_flags.get("ks08_dynamic_blend_simulator_floor", {})
+    if ks08_block.get("enabled"):
+        simulator_weight_floor = float(ks08_block.get("floor", 0.0))
+    else:
+        simulator_weight_floor = float(
+            dynamic_blend_raw.get("simulator_weight_floor", default_dynamic_blend.simulator_weight_floor)
+        )
+
     dynamic_blend = DynamicBlendConfig(
         enabled=dynamic_blend_raw.get("enabled", default_dynamic_blend.enabled),
         weights_dir=dynamic_blend_raw.get("weights_dir", default_dynamic_blend.weights_dir),
@@ -61,6 +72,7 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
             dynamic_blend_raw.get("grid_step", default_dynamic_blend.grid_step)
         ),
         fallback=dynamic_blend_raw.get("fallback", default_dynamic_blend.fallback),
+        simulator_weight_floor=simulator_weight_floor,
     )
     residual_calibration = ResidualCalibrationConfig(
         enabled=residual_calibration_raw.get(

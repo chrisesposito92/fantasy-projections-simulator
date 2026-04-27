@@ -42,6 +42,7 @@ class DynamicBlendConfig:
     min_bucket_weeks: int = 6
     grid_step: float = 0.05
     fallback: str = "fixed_defaults"
+    simulator_weight_floor: float = 0.0  # KS-08 D-06 — Plan 02
 
 
 @dataclass
