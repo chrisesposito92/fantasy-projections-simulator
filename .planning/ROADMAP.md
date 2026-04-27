@@ -15,7 +15,7 @@ This initiative closes the distribution-shape (KS) gap that survives our current
 - Decimal phases (e.g. 2.1): Reserved for urgent insertions if discovered
 
 - [x] **Phase 1: Bug Fixes, Cheap Calibration & Time-Sensitive Scrape** — Confirmed code defects + cheap calibration constants + Odds API alt-line historical scrape (data only, no engine yet) (completed 2026-04-26)
-- [ ] **Phase 2: Structural Per-Stat Calibration** — Architectural changes (per-stat residual_calibration, dynamic_blend simulator-weight floor, tier_engine reliability, share normalization, ff_opportunity width, thin-bucket shrinkage, clamping fix)
+- [x] **Phase 2: Structural Per-Stat Calibration** — Architectural changes (per-stat residual_calibration, dynamic_blend simulator-weight floor, tier_engine reliability, share normalization, ff_opportunity width, thin-bucket shrinkage, clamping fix) (WALKED-BACK 2026-04-27 — see `.planning/phases/02-structural-per-stat-calibration/09-phase2-aggregate-validation-SUMMARY.md`)
 - [ ] **Phase 3: Phase 5 Slice Activation (KS-Priority Retune)** — Retune off-by-default PFF slices (rb_scheme_fit, depth_role.efficiency, qb_split, designed-run/rb_efficiency re-measurement) under KS-priority validation
 - [ ] **Phase 4: New Signal Integration (Including Odds API Engine)** — Integrate `last_ten_json` empirical CDF, PFF `projections_json` cross-stat consistency, and Odds API alt-line CDF engine (consumes Phase 1 scrape)
 - [ ] **Phase 5: Initiative Wrap-up & Outcome Validation** — Final aggregate A/B against 2022-2024, outcome-target verification (TGT-01..TGT-10), update PROJECT.md / AGENTS.md / `docs/`

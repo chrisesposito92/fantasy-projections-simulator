@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-07-PLAN.md (KS-13 SHIPPED-NO-OP)
-last_updated: "2026-04-27T12:43:38.764Z"
+status: phase-complete
+stopped_at: Completed 02-09-PLAN.md (Phase 2 WALKED-BACK at aggregate)
+last_updated: "2026-04-27T16:08:17Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-26)
 
 **Core value:** Distribution shape (KS) on stat outputs that matters for season-long projections — without giving back the rank_corr / MAE wins we already shipped. Hard floor: any change must NOT regress rank_corr by >0.005 or MAE by >0.05.
-**Current focus:** Phase 02 — structural-per-stat-calibration
+**Current focus:** Phase 02 complete (WALKED-BACK at aggregate); ready to advance to Phase 03
 
 ## Current Position
 
-Phase: 02 (structural-per-stat-calibration) — EXECUTING
-Plan: 9 of 9
-Status: Ready to execute
+Phase: 02 (structural-per-stat-calibration) — DONE / WALKED-BACK
+Plan: 9 of 9 — Phase 2 finalized 2026-04-27
+Status: All 7 phase2_ks_flags reverted to enabled: false; architecture preserved as Phase 3+ levers
+Next: Phase 03 (KS-priority retune of off-by-default PFF slices) — entry baseline = Phase-1-final-stack
 Last activity: 2026-04-27
 
-Progress: [██████████] 95%
+Progress: [██████████] 100% (Phase 2 complete; Phase 3 not yet started)
 
 ## Performance Metrics
 
@@ -69,6 +70,8 @@ Progress: [██████████] 95%
 | Phase 02-structural-per-stat-calibration P04 | 90min | 3 tasks | 7 files |
 | Phase 02-structural-per-stat-calibration P06 | 40m | 3 tasks | 6 files |
 | Phase 02-structural-per-stat-calibration P07 | 120 | 4 tasks | 17 files |
+| Phase 02-structural-per-stat-calibration P08 | 95 min | 3 tasks | 4 files |
+| Phase 02-structural-per-stat-calibration P09 | ~95 min (incl. interrupted reverse-ablation; finalized inline) | 3 tasks | 7 files |
 
 ## Accumulated Context
 

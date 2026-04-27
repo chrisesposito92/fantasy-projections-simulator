@@ -39,20 +39,36 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 
 | ID | Description | Current (post-Phase-1) | Target | Status |
 |----|-------------|------------------------|--------|--------|
-| TGT-01 | QB `pass_yards` KS | 0.4287 | ≤ 0.20 | regressed +0.075 vs Phase 0; Phase 2 KS-09 (per-stat residual_calibration) is the architectural lever |
-| TGT-02 | WR `receiving_yards` KS | 0.2573 | ≤ 0.20 | improved -0.007 vs Phase 0; below intermediate target, above final |
-| TGT-03 | WR `receptions` KS | 0.2803 | ≤ 0.22 | flat (+0.005); Phase 2 KS-08 floor + KS-09 needed |
-| TGT-04 | TE `receptions` KS | 0.3521 | ≤ 0.27 | flat (-0.001); relaxed target; Phase 2 KS-10 (TE elite tier) needed |
-| TGT-05 | TE `receiving_yards` KS | 0.3001 | ≤ 0.25 | improved -0.016 vs Phase 0 |
-| TGT-06 | RB `rush_yards` KS | 0.2464 | ≤ 0.22 | improved -0.008 vs Phase 0; near intermediate target |
-| TGT-07 | RB `receiving_yards` KS | 0.4175 | ≤ 0.34 | improved -0.005; relaxed target; Phase 3 KS-02 + KS-16 needed |
-| TGT-08 | Aggregate `fpts` KS | ≤ 0.05 (`total_lift` ks_delta) | ≤ 0.18 | held; aggregate `fpts` ks_delta from `phase0.baseline.full` 0.052 → `p1.aggregate.full` 0.050 |
-| TGT-09 | QB pass_yards mean bias (yd/g) | -39.29 | ±5 | regressed -10.99 yd/g vs Phase 0 (-28.30 → -39.29); HEADLINE PHASE-1 MISS; Phase 2 KS-09 stat-level residual_calibration is the design lever for closure |
-| TGT-10 | WR receiving_yards mean bias (yd/g) | -10.36 | ±2 | regressed -1.25 yd/g vs Phase 0 (-9.11 → -10.36); Phase 2 KS-09 needed |
+| TGT-01 | QB `pass_yards` KS | 0.4287 | ≤ 0.20 | unchanged post-Phase-2 (Phase 2 walked back); KS-09 architectural lever still off-by-default — Phase 3+ to layer different bias-correction methods on top |
+| TGT-02 | WR `receiving_yards` KS | 0.2573 | ≤ 0.20 | unchanged post-Phase-2 (Phase 2 walked back) |
+| TGT-03 | WR `receptions` KS | 0.2803 | ≤ 0.22 | unchanged post-Phase-2 (Phase 2 walked back) |
+| TGT-04 | TE `receptions` KS | 0.3521 | ≤ 0.27 | unchanged post-Phase-2 (Phase 2 walked back); KS-10 TE elite tier shipped in isolation but reverted at aggregate |
+| TGT-05 | TE `receiving_yards` KS | 0.3001 | ≤ 0.25 | unchanged post-Phase-2 (Phase 2 walked back) |
+| TGT-06 | RB `rush_yards` KS | 0.2464 | ≤ 0.22 | unchanged post-Phase-2 (Phase 2 walked back); near intermediate target — Phase 3 KS-02 (rb_scheme_fit) still the design lever |
+| TGT-07 | RB `receiving_yards` KS | 0.4175 | ≤ 0.34 | unchanged post-Phase-2 (Phase 2 walked back); relaxed target |
+| TGT-08 | Aggregate `fpts` KS | 0.050 | ≤ 0.18 | unchanged post-Phase-2 (Phase 2 walked back); held within hard floor |
+| TGT-09 | QB pass_yards mean bias (yd/g) | -39.29 | ±5 | UNCHANGED post-Phase-2 (Phase 2 walked back); HEADLINE MISS still open. Phase 2's KS-09 was the dedicated mechanism; the corrected_<stat> infrastructure is in tree but disabled. Phase 3+ must treat this as top priority |
+| TGT-10 | WR receiving_yards mean bias (yd/g) | -10.36 | ±2 | UNCHANGED post-Phase-2 (Phase 2 walked back); Phase 3+ needed |
 
 (Outcome targets — TGT-04 and TGT-07 relaxed after sanity-check; others held. The hypothesis backlog `.planning/research/HYPOTHESES.md` shows plausible 70-100% closure across these targets through P1-P4. **Hypothesis IDs (KS-XX) and outcome target IDs (TGT-XX) are different namespaces — don't conflate.**)
 
 > **Phase-1 outcome note:** Phase 1 shipped under the hard floor (rank_corr Δ -0.0004, weekly_mae Δ +0.0142 — both within ±0.005/±0.05) but did NOT close the headline TGT-09 / TGT-01 (QB pass_yards) targets — both regressed at the n=200-sim resolution. The targeted closure for QB pass_yards was concentrated in KS-01 (RZ TD-gate fix) which shipped SHIPPED-NO-OP at the per-KS A/B (mechanism only fires on RZ TD-gate failures; per-game stat impact below detection threshold). Phase 2's KS-09 per-stat `residual_calibration` is the architectural mechanism designed to close stat-level mean bias and is now the primary lever for TGT-09 closure. See `.planning/phases/01-bug-fixes-cheap-calibration-time-sensitive-scrape/logs/PROMOTION-NOTES.md ## Phase 1 aggregate` for the full delta and walk-back analysis.
+
+### Failed Hypotheses (do not retry as-is)
+
+This section captures hypotheses that have been empirically tested and INVALIDATED at the aggregate level. Architecture is preserved in tree (flags off-by-default) so Phase 3+ can layer different methods on top, but **do not re-promote these flags as-is** — the existing per-KS A/B has been done and the full-stack composition failed.
+
+| Hypothesis | What was tried | Status | Phase | Why it failed | What's preserved |
+|------------|----------------|--------|-------|---------------|------------------|
+| KS-08 dynamic_blend simulator-weight floor | Floor swept {0.20, 0.30, 0.40}; floor=0.20 selected as smallest passing | INVALIDATED at aggregate (was SHIPPED in isolation) | 02 | Net positive in iter-1 ablation but couldn't carry the full stack past hard floor | `apply_simulator_weight_floor()` + CLI flag in `fit_dynamic_blend_weights.py` |
+| KS-09 per-stat residual_calibration | `corrected_<stat>` columns with ±2σ clamp + schema_v2 artifacts | INVALIDATED at aggregate (was SHIPPED-PARTIAL in isolation) | 02 | Highest harm_score in iter-1 reverse-ablation (+0.0072); per-stat bias delta was too small at 200 sims to outweigh the stack regression | `corrected_<stat>` infrastructure + schema_v2 loader + validate.py routing — Phase 3 can re-fit with different methods (more sims, stratified sampling, alt clamp) |
+| KS-10 per-position caps + TE elite tier | D-07 values verbatim: QB 2.5 / RB 2.0 / WR 1.5 / TE 0.8; TE elite tier ≥14 fpts | INVALIDATED at aggregate (was SHIPPED in isolation) | 02 | Net positive in iter-1 ablation but couldn't carry the stack | `USAGE_TIER_THRESHOLDS_4`, per-position cap config block, 4-tier TE classification |
+| KS-11 tier_engine position_reliability | WR/TE 0.30/0.95, RB 0.25/0.92 | INVALIDATED at aggregate (was SHIPPED in isolation) | 02 | Essentially neutral in iter-1 ablation | `pff.tier_engine.position_reliability` config block |
+| KS-12 share-normalization residual | `clip(active/typical, 0.5, 1.0)` factor + 0.05 backup TE/WR threshold | INVALIDATED at aggregate (was SHIPPED in isolation) | 02 | Net positive in iter-1 ablation but couldn't carry the stack | `_expected_active_share_factor()` + `_scale_shares_with_factor()` + `MIN_BACKUP_RECEIVING_SHARE` |
+| KS-13 ff_opportunity prior width | Path B Gaussian width artifact (Path A unavailable: nflverse FF Opportunity has no quantile columns) | NO-OP (never moved fpts KS) | 02 | Symmetric noise around the prior doesn't reduce KS — distribution gap is from systematic bias, not insufficient prior width | `probe_ff_opportunity_quantiles.py` + `fit_ff_opportunity_prior_width.py` + lazy artifact loader + dual-gate (master flag + sub-flag) |
+| KS-14 thin-bucket Bayesian shrinkage | `_effective_min_bucket_plays()` 10→5 + Bayesian shrinkage at strength `5 * len(team_default)` | INVALIDATED at aggregate (was SHIPPED in isolation) | 02 | Net positive in iter-1 ablation but couldn't carry the stack | `_effective_min_bucket_plays()` flag-gated helper + `_apply_bayesian_shrinkage()` + audit metric |
+
+**Phase 2 aggregate finding (the umbrella lesson):** 6 individually-passing per-KS A/Bs composed into a stack that REGRESSED 6 of 8 priority stat KS values and got worse on QB pass_yards mean bias (the headline miss the phase was meant to fix). Reverse-ablation iter-1 marginals were all within ±0.0007 (MC noise) — the deficit is "death by a thousand cuts," not attributable to any single KS. **Future per-KS A/Bs should be measured against the FULL prior-phase stack, not just `bare` and `defaults`, to detect this earlier.** See `.planning/phases/02-structural-per-stat-calibration/09-phase2-aggregate-validation-SUMMARY.md`.
 
 ### Out of Scope
 
@@ -121,6 +137,8 @@ If a single change improves KS by N points but regresses rank_corr by >0.005 or 
 | v1 scope = P1-P4 (25 hypotheses); P5 deferred | P5 long-tail items are mostly 5-10 day engineering with most-uncertain payoff. Cleaner v1 boundary; P5 items become follow-up initiative if results warrant | — Pending |
 | TE receptions and RB receiving_yards targets relaxed | Sanity check flagged both as borderline against the structural-fix budget. Avoids initiative being declared partial-fail on these two single metrics | — Pending |
 | Front-load Odds API scraping while high tier is active | 5M-credit budget expires in ~2 weeks; historical backfill would be cost-prohibitive on a lower tier. Affects phase ordering — data acquisition for KS-19/KS-20/KS-21 happens earliest practical opportunity | — Pending |
+| Phase 2 walked back at aggregate (2026-04-27) | All 6 promoted KS items individually passed in isolation but composed into a stack that failed Phase-2-vs-Phase-1 hard floor by 0.000147 with 6 of 8 priority stats KS-regressing. Reverse-ablation iter-1 marginals all within MC noise → "death by a thousand cuts." Architecture preserved as latent levers for Phase 3+ | ✗ Failed — flags off |
+| Per-KS A/Bs should compare against the FULL prior-phase stack, not just `bare`/`defaults` | Phase 2's failure mode (individually passing, stack regressing) was invisible to the per-KS isolation A/B because each per-KS A/B measured against the Phase-1-final-stack as `defaults`, not against the *evolving* Phase 2 stack. Future phases should add an "isolation-against-current-stack" mode to surface composition issues earlier | — Pending |
 
 ## Evolution
 
@@ -140,4 +158,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-26 — Phase 1 closure (Plan 11): TGT-XX `Current` column refreshed to post-Phase-1 baseline (ledger entry `p1.aggregate.full` #105 Arm B). Phase-0 reference preserved in `.planning/PROJECT-PHASE0-FROZEN.md`.*
+*Last updated: 2026-04-27 — Phase 2 closure (Plan 09): WALKED-BACK at aggregate. All 7 phase2_ks_flags reverted to `enabled: false`. TGT-XX `Current` column unchanged from post-Phase-1 (Phase 2 contributed zero net Δ). Failed Hypotheses section added to capture each KS attempt + preserved architecture for Phase 3+ levers. Phase-0 reference still in `.planning/PROJECT-PHASE0-FROZEN.md`.*

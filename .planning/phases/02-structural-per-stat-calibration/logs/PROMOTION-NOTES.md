@@ -335,4 +335,102 @@ Rationale: Hard floor PASSES on the full-stack arm (rank_corr -0.0007, weekly_ma
 
 **Ledger entries:** p2.ks13.bare (#122), p2.ks13.full (#123, pre-artifacts), p2.ks13.full (#124, post-artifacts).
 
-## Phase 2 Aggregate (Plan 09) — TBD
+## Phase 2 Aggregate (Plan 09) — WALKED-BACK
+
+**Final phase status: WALKED-BACK as of 2026-04-27.**
+
+All 7 phase2_ks_flags reverted to `enabled: false`. Each per-KS A/B passed hard floor in isolation (KS-08, KS-10, KS-11, KS-12, KS-14 SHIPPED; KS-09 SHIPPED-PARTIAL; KS-13 SHIPPED-NO-OP), but the FULL stack failed Phase-2-vs-Phase-1 hard floor.
+
+### Aggregate delta (full stack, all 6 promoted ON, ledger #129)
+
+| Metric | Phase 1 | Phase 2 (full) | Δ | Hard floor |
+|--------|--------:|---------------:|------:|------------|
+| rank_corr | 0.91896 | 0.91384 | **−0.00512** | ❌ FAILS by 0.00012 |
+| weekly_mae | 3.86469 | 3.88801 | +0.02332 | ✅ |
+| fpts_ks | 0.20963 | 0.21992 | +0.01029 | regressed (no hard limit) |
+
+### Reverse-ablation iter-1 (codex HIGH 3 protocol)
+
+Leave-one-out aggregate per promoted KS, compute marginal_delta = full − no_Ki:
+
+| KS | Δ rank_corr | Δ weekly_mae | harm_score | Decision |
+|----|------------:|-------------:|-----------:|----------|
+| **KS-09** | −0.00041 | +0.00675 | **+0.00716** | Reverted in iter-1 (only positive harm_score) |
+| KS-12 | +0.00064 | −0.00565 | −0.00629 | Net positive — kept |
+| KS-08 | −0.00019 | −0.00424 | −0.00405 | Slight net positive — kept |
+| KS-14 | +0.00039 | −0.00307 | −0.00346 | Slight net positive — kept |
+| KS-10 | −0.00005 | −0.00252 | −0.00247 | Essentially neutral — kept |
+| KS-11 | −0.00011 | −0.00089 | −0.00078 | Essentially neutral — kept |
+
+Full marginals captured in `logs/p2_reverse_ablation.json`.
+
+### After iter-1 KS-09 single-revert (ledger #136)
+
+| Metric | Phase 1 | Phase 2 (KS-09 off) | Δ | Hard floor |
+|--------|--------:|--------------------:|------:|------------|
+| rank_corr | 0.91896 | 0.91382 | **−0.00515** | ❌ FAILS by 0.00015 |
+| weekly_mae | 3.86469 | 3.89014 | +0.02545 | ✅ |
+
+The single-revert did not move the needle — within MC noise of original.
+
+### Death-by-a-thousand-cuts: why iter-2+ skipped
+
+All iter-1 marginal_delta_rank_corr values are within ±0.0007 (MC noise of 200 sims). The cumulative deficit (−0.005) cannot be attributed to any single KS. Strict protocol convergence is full revert (iterate until promoted_set empty) — `iter-1` already showed this. Iter-2 (5 leave-one-outs at ~20 min each = ~100 min) would have produced the same conclusion.
+
+### Per-stat picture (full stack vs Phase 1) — the diagnostic that drove WALKED-BACK
+
+6 of 8 priority stats regressed:
+
+| Stat | Phase 1 KS | Phase 2 KS | Δ |
+|------|-----------:|-----------:|------:|
+| QB pass_yards | 0.4287 | 0.4376 | +0.0090 ↑ |
+| WR receiving_yards | 0.2573 | 0.2718 | +0.0145 ↑ |
+| RB rush_yards | 0.2464 | 0.2621 | +0.0157 ↑ |
+| TE receptions | 0.3521 | 0.3716 | **+0.0195 ↑** |
+| TE receiving_yards | 0.3001 | 0.3104 | +0.0103 ↑ |
+| RB receiving_yards | 0.4175 | 0.4188 | +0.0013 ↑ |
+| QB rush_yards | 0.2283 | 0.2260 | −0.0022 ↓ |
+| WR receptions | 0.2803 | 0.2798 | ≈ |
+
+### Mean bias (the thing Phase 2 was supposed to fix)
+
+| Stat | Phase 1 bias | Phase 2 (full) bias | Δ |
+|------|-------------:|--------------------:|------:|
+| QB pass_yards | −39.29 yd/g | **−41.11 yd/g** | −1.82 (worse) |
+| WR receiving_yards | −10.36 yd/g | **−11.19 yd/g** | −0.83 (worse) |
+| RB rush_yards | −1.78 yd/g | −1.23 yd/g | +0.55 (slight improvement) |
+| TE receptions | −0.21 yd/g | −0.25 yd/g | −0.04 (≈) |
+
+KS-09 (per-stat residual_calibration, the only Phase 2 mechanism for bias correction) was specifically designed to address QB pass_yards bias. The infrastructure works (corrected_<stat> columns, schema_v2 artifacts) but the artifacts fitted at 200 sims didn't move the needle and were regressive in the full stack.
+
+### Final state (post-walkback)
+
+`p2.aggregate.full` ledger entry re-pinned from `p2.entry.full` (byte-equivalent runtime) at 2026-04-27T16:08:17Z.
+
+| Metric | Phase 1 | Phase 2 (walked-back) | Δ | Hard floor |
+|--------|--------:|----------------------:|------:|------------|
+| rank_corr | 0.91896 | 0.91818 | −0.00079 | ✅ PASS |
+| weekly_mae | 3.86469 | 3.86486 | +0.00018 | ✅ PASS |
+
+### What's preserved in tree (Phase 3+ levers)
+
+All KS code architecture stays — only flags reverted:
+
+- KS-08: `apply_simulator_weight_floor()` + CLI flag in `fit_dynamic_blend_weights.py`
+- KS-09: `corrected_<stat>` columns + schema_v2 artifact loader + validate.py routing
+- KS-10: per-position `max_abs_adjustment` clamp + TE elite usage tier (4-tier classification)
+- KS-11: `pff.tier_engine.position_reliability` config block (per-position floor/cap)
+- KS-12: `_expected_active_share_factor()` + scale-with-factor helpers + backup TE/WR threshold
+- KS-13: `probe_ff_opportunity_quantiles.py` + `fit_ff_opportunity_prior_width.py` + lazy artifact loader
+- KS-14: `_effective_min_bucket_plays()` + `_apply_bayesian_shrinkage()` + coverage audit metric
+
+### Reference artifacts
+
+- `logs/p2_phase2_vs_phase1_delta.json` — iter-1 delta with KS-09 ON (the original failure)
+- `logs/p2_reverse_ablation.json` — iter-1 marginals for all 6 promoted KS
+- `logs/p2_aggregate_full.log` — initial p2.aggregate.full validate.py run (#129)
+- `logs/p2_aggregate_no_ks08.log` — sample leave-one-out log (KS-08)
+- `logs/p2_aggregate_full_walkback.log` — re-run after KS-09 single-revert (#136)
+- `logs/p2_walkback_complete.marker` — finalization marker, fires hard-floor assertion in `tests/test_validation/test_aggregate.py`
+- `09-phase2-aggregate-validation-SUMMARY.md` — full Plan 09 debrief
+
