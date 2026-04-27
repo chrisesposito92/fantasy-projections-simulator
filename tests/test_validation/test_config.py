@@ -692,10 +692,13 @@ def test_phase2_ks_flags_present_and_default_false():
     with default false. The promotion commit per plan flips the default to true. This test
     catches the case where someone adds a KS code change behind a flag that doesn't exist in
     defaults (would silently behave as `False`, hiding the regression).
+
+    Promoted flags (enabled: true by design — do not include in the "must be false" set):
+      - ks08_dynamic_blend_simulator_floor: SHIPPED 2026-04-26 (Plan 02)
     """
     from fantasy_sim.config.loader import get_phase2_ks_flags
     flags = get_phase2_ks_flags()
-    expected = {
+    expected_all = {
         "ks08_dynamic_blend_simulator_floor",
         "ks09_per_stat_residual_calibration",
         "ks10_per_position_caps",
@@ -704,9 +707,15 @@ def test_phase2_ks_flags_present_and_default_false():
         "ks13_ff_opportunity_prior_width",
         "ks14_thin_bucket_shrinkage",
     }
-    assert set(flags.keys()) >= expected, f"Missing phase2_ks_flags entries: {expected - set(flags.keys())}"
-    for name in expected:
+    # Flags that have been promoted to enabled=true (excluded from "must be false" check)
+    promoted = {
+        "ks08_dynamic_blend_simulator_floor",  # SHIPPED 2026-04-26 (Plan 02)
+    }
+    assert set(flags.keys()) >= expected_all, f"Missing phase2_ks_flags entries: {expected_all - set(flags.keys())}"
+    for name in expected_all - promoted:
         assert flags[name].get("enabled") is False, f"phase2_ks_flags.{name}.enabled must default to False (got {flags[name].get('enabled')!r})"
+    for name in promoted:
+        assert flags[name].get("enabled") is True, f"phase2_ks_flags.{name}.enabled should be True (promoted flag)"
 
 
 def test_phase2_bare_config_disables_all_new_flags():

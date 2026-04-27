@@ -39,8 +39,8 @@ phase1_ks_flags:
 # hard floor + promotion bar.
 phase2_ks_flags:
   ks08_dynamic_blend_simulator_floor:
-    enabled: false
-    floor: 0.20    # KS-08 sweep candidate (Plan 02 retunes to smallest-passing value)
+    enabled: true   # KS-08 SHIPPED 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-08
+    floor: 0.20    # Smallest passing floor from {0.20, 0.30, 0.40} sweep (D-05)
   ks09_per_stat_residual_calibration:
     enabled: false  # KS-09 D-02 (Plan 03)
   ks10_per_position_caps:
