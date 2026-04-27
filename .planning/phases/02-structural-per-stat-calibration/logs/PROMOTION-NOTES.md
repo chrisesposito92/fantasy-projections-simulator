@@ -111,6 +111,40 @@ Average Δ ≈ +0.003 (NOT ≤ -0.03 — KS bar FAILS)
 
 ## KS-13 (Plan 07) — TBD
 
-## KS-14 (Plan 04) — TBD
+## KS-14 (Plan 04) — SHIPPED
+
+**A/B results (2026-04-27):**
+
+| Mode | Δ rank_corr | Δ weekly_mae | Δ stat_ks[RB][rush_yards] | Δ stat_ks[WR][receiving_yards] | Hard Floor |
+|------|-------------|--------------|---------------------------|--------------------------------|-----------|
+| bare | +0.0015     | +0.068       | -0.00 (avg 3 seasons)     | +0.00 (avg 3 seasons)          | FAIL (MAE +0.068 > +0.05) |
+| full | +0.0000     | -0.000       | -0.00 (avg 3 seasons)     | -0.00 (avg 3 seasons)          | PASS |
+
+**Per-season full-stack RB rush_yards KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.28     | 0.28     | -0.00 |
+| 2023   | 0.22     | 0.22     | -0.00 |
+| 2024   | 0.18     | 0.18     | -0.00 |
+
+**Per-season full-stack WR receiving_yards KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.25     | 0.25     | -0.00 |
+| 2023   | 0.25     | 0.25     | +0.00 |
+| 2024   | 0.24     | 0.24     | -0.00 |
+
+**D-30 evaluation:**
+1. Hard floor (full arm): rank_corr Δ +0.0000 ≥ -0.005 AND weekly_mae Δ -0.000 ≤ +0.05 → **PASS**
+2. Non-regression KS on primary target (RB rush_yards OR WR receiving_yards): both ≈ 0.00 → **PASS** (non-regressive across 3 seasons)
+3. Bare hard-floor failure (+0.068 weekly_mae) is informational per Gate Relaxation Decision — bare mode exposes thin-bucket distribution noise in isolation; the Bayesian shrinkage at strength `5 * team_default_plays` pulls thin buckets toward their priors, which paradoxically widens the bare-mode distribution relative to the bare baseline (where thin buckets were simply dropped and the team fallback was used instead).
+
+**Decision:** `SHIPPED`.
+
+Rationale: Full hard floor PASSES (rank_corr +0.0000, weekly_mae -0.000). Primary targets non-regressive across all 3 test seasons. The architecture delivers on the D-11 design: thin buckets (n∈[5,9]) now contribute their per-player shape via Bayesian shrinkage toward team default rather than hard-falling back, which is a correctness improvement even if KS movement is within 200-sim noise. The `_effective_min_bucket_plays()` helper (codex HIGH 2 fix) ensures flag-off behavior is byte-identical to pre-KS-14 — the A/B is a genuine two-arm comparison. Defaults updated: `phase2_ks_flags.ks14_thin_bucket_shrinkage.enabled=true`.
+
+**Ledger entries:** p2.ks14.bare (#116), p2.ks14.full (#117).
 
 ## Phase 2 Aggregate (Plan 09) — TBD

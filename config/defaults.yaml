@@ -52,7 +52,7 @@ phase2_ks_flags:
   ks13_ff_opportunity_prior_width:
     enabled: false  # KS-13 D-10 (Plan 07)
   ks14_thin_bucket_shrinkage:
-    enabled: false  # KS-14 D-11 (Plan 04)
+    enabled: true   # KS-14 SHIPPED 2026-04-27 — hard floor passes (Δ rank_corr +0.0000, Δ weekly_mae -0.000); RB rush_yards KS Δ=0.00, WR receiving_yards KS Δ=-0.00; bare regression (+0.068) informational per Gate Relaxation Decision. See logs/PROMOTION-NOTES.md ## KS-14
 
 simulation:
   num_sims: 1000
