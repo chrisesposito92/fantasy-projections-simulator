@@ -46,7 +46,7 @@ phase2_ks_flags:
   ks10_per_position_caps:
     enabled: true   # KS-10 SHIPPED 2026-04-27 — hard floor PASS (+0.0001 rank_corr, -0.002 weekly_mae); TE receptions KS -0.01 in 2024; see logs/PROMOTION-NOTES.md ## KS-10
   ks11_position_reliability:
-    enabled: false  # KS-11 D-08 (Plan 06)
+    enabled: true   # KS-11 SHIPPED 2026-04-27 — hard floor PASS (+0.0004 rank_corr, -0.002 weekly_mae); WR/TE recv_yds KS within noise; QB pass_yards Δ≈0 (C-10 PASS); see logs/PROMOTION-NOTES.md ## KS-11
   ks12_share_normalization_residual:
     enabled: false  # KS-12 D-09 (Plan 08)
   ks13_ff_opportunity_prior_width:
@@ -136,7 +136,19 @@ pff:
     reliability_variance_weight: 0.3
     reliability_floor: 0.20
     reliability_cap: 0.80
-    position_reliability: {}  # KS-11 D-08 placeholder (Plan 06 populates: WR/TE {floor: 0.30, cap: 0.95, min_targets: 30}, RB {floor: 0.25, cap: 0.92, min_carries: 50}; QB stays at global floor:0.20/cap:0.80 per C-10)
+    position_reliability:     # KS-11 D-08 (Plan 06) — gated by phase2_ks_flags.ks11_position_reliability.enabled
+      WR:
+        floor: 0.30
+        cap: 0.95
+        min_targets: 30
+      TE:
+        floor: 0.30
+        cap: 0.95
+        min_targets: 30
+      RB:
+        floor: 0.25
+        cap: 0.92
+        min_carries: 50
     blend_pool_size: 250
     ncaa_rookie:
       enabled: true

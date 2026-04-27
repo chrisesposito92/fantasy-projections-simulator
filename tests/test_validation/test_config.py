@@ -695,6 +695,10 @@ def test_phase2_ks_flags_present_and_default_false():
 
     Promoted flags (enabled: true by design — do not include in the "must be false" set):
       - ks08_dynamic_blend_simulator_floor: SHIPPED 2026-04-26 (Plan 02)
+      - ks09_per_stat_residual_calibration: SHIPPED-PARTIAL 2026-04-27 (Plan 03)
+      - ks14_thin_bucket_shrinkage: SHIPPED 2026-04-27 (Plan 04)
+      - ks10_per_position_caps: SHIPPED 2026-04-27 (Plan 05)
+      - ks11_position_reliability: SHIPPED 2026-04-27 (Plan 06)
     """
     from fantasy_sim.config.loader import get_phase2_ks_flags
     flags = get_phase2_ks_flags()
@@ -713,6 +717,7 @@ def test_phase2_ks_flags_present_and_default_false():
         "ks09_per_stat_residual_calibration",  # SHIPPED-PARTIAL 2026-04-27 (Plan 03)
         "ks14_thin_bucket_shrinkage",           # SHIPPED 2026-04-27 (Plan 04)
         "ks10_per_position_caps",              # SHIPPED 2026-04-27 (Plan 05)
+        "ks11_position_reliability",           # SHIPPED 2026-04-27 (Plan 06)
     }
     assert set(flags.keys()) >= expected_all, f"Missing phase2_ks_flags entries: {expected_all - set(flags.keys())}"
     for name in expected_all - promoted:
