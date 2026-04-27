@@ -7,8 +7,10 @@ depends_on: ["01", "02"]
 files_modified:
   - src/fantasy_sim/scoring/residual_calibration.py
   - scripts/fit_residual_calibration.py
+  - scripts/validate.py
   - config/defaults.yaml
   - tests/test_scoring/test_residual_calibration.py
+  - tests/test_validation/test_validate_corrected_stat_routing.py
   - src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2023.json
   - src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2024.json
   - .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md
@@ -18,13 +20,14 @@ must_haves:
   truths:
     - "Per D-01 (two-stage layered fpts) + Pitfall 1 in 02-RESEARCH.md: per-stat correction writes NEW columns `corrected_<stat>` (e.g. `corrected_pass_yards`, `corrected_receiving_yards`) BEFORE the existing `row[\"fpts\"]` write at `residual_calibration.py:422`. The `fpts` field continues to use the existing fpts-level correction (unchanged). Per-stat and fpts corrections may diverge (e.g., `corrected_pass_yards * 0.04 != corrected fpts contribution`). Documented and not chased in v1."
     - "Per D-02 / Phase 1 D-45: change is gated behind `phase2_ks_flags.ks09_per_stat_residual_calibration.enabled` (default false). When the flag is false, `adjust_week()` behaves byte-identically to pre-Plan-03; when true, it ALSO writes per-stat corrected columns. Promotion commit per D-12 + Phase 1 D-25 flips default to true; rollback = flip flag back to false; existing fpts-level calibration continues to work."
+    - "**OUTPUT CONTRACT (codex review HIGH 1 — 2026-04-27 revision):** path (b) is locked: when `phase2_ks_flags.ks09_per_stat_residual_calibration.enabled=true`, `scripts/validate.py::_compute_distribution_ks` MUST prefer `corrected_<stat>` over the raw stat column when reading per-stat values for `stat_ks` / `stat_mean_bias` (validate.py:238-240 currently reads `arm_b_row.get(stat)` — Plan 03 Task 4 changes this site to read `arm_b_row.get(f'corrected_{stat}', arm_b_row.get(stat))` when the flag is on). The raw stat columns are LEFT UNCHANGED for downstream observability (CSV/JSON exports continue to expose both raw + corrected). When the flag is off, validate.py reads raw columns exactly as today (byte-identical legacy behavior). This routes per-stat corrections into the canonical ledger metric Phase 2 promotes against, eliminating the observability-only failure mode codex identified."
     - "Per D-03: stat coverage = 14 scoring-impacting stats per CONTEXT.md `<decisions>` D-03 (QB: pass_yards, pass_tds, interceptions, rush_yards, rush_tds, fumbles_lost; RB: rush_yards, rush_tds, receiving_yards, receptions, fumbles_lost; WR/TE: receiving_yards, receptions, receiving_tds, fumbles_lost). The list lives in `config/defaults.yaml` under `ensemble.residual_calibration.stat_level.covered_stats` (already populated at Plan 01)."
     - "Per D-04 + Pattern 4 in 02-RESEARCH.md: per-row clamp = std-scaled at `±2 * sqrt(actual_var)` where `actual_var` is computed from the training-season hold-out distribution per `(position, usage_tier, stat)` bucket. Stored per-bucket in `stat_corrections.{stat}.clamps[bucket_key].clamp_std` in the calibration artifact. Adapts to stat scale (QB pass_yards std ~80 vs WR receptions std ~2)."
     - "Per Plan 01 Task 3: artifact schema_version = 2 already supported by the runtime loader; v1 artifacts continue to load (loader supplies an empty `stat_corrections: {}` block). Plan 03 produces v2 artifacts with non-empty `stat_corrections` populated."
     - "Per D-14 (KS-09 elevated promotion bar): SHIPPED requires hard floor + KS Δ ≤ -0.03 on QB pass_yards + QB pass_yards mean bias `|Δ| ≤ 5 yd/g`. SHIPPED-PARTIAL = hard floor + KS Δ pass but bias `|Δ| > 5 yd/g` (architecture stays for Phase 3/4 levers to layer on top); flag flips to true and the residual gap is documented in PROMOTION-NOTES.md. BLOCKED = hard floor regresses; flag stays false."
-    - "Per Phase 1 D-46 / 02-VALIDATION.md: KS-09 success measured via `SeasonMetrics.stat_mean_bias[\"QB\"][\"pass_yards\"][\"arm_b_bias\"]` and `SeasonMetrics.stat_ks[\"QB\"][\"pass_yards\"][\"arm_b\"]` from the persisted ledger entry `p2.ks09.full`. Direct ledger-read; no side script needed."
-    - "Per C-08: TDD-first for KS-09 (8 unit tests for: per-stat correction writes new columns, fpts unchanged when flag off, fpts unchanged when flag on (D-01 two-stage), std-scaled clamp applies, missing-bucket fallback returns 0 correction, schema-v2 artifact has stat_corrections, training-script writes per-stat block, integration test that corrected_<stat> != raw <stat> for non-fallback rows)."
-    - "Per C-09: 2,142 + 8 (Plan 03 Task 1) = 2,150 tests stay green after this plan."
+    - "Per Phase 1 D-46 / 02-VALIDATION.md: KS-09 success measured via `SeasonMetrics.stat_mean_bias[\"QB\"][\"pass_yards\"][\"arm_b_bias\"]` and `SeasonMetrics.stat_ks[\"QB\"][\"pass_yards\"][\"arm_b\"]` from the persisted ledger entry `p2.ks09.full`. Direct ledger-read; no side script needed. The metric reflects the corrected stat distribution because Plan 03 Task 4 routes `corrected_<stat>` into `_compute_distribution_ks` when the flag is on (output contract above)."
+    - "Per C-08: TDD-first for KS-09 (10 unit tests for: per-stat correction writes new columns, fpts unchanged when flag off, fpts unchanged when flag on (D-01 two-stage), std-scaled clamp applies, missing-bucket fallback returns 0 correction, schema-v2 artifact has stat_corrections, training-script writes per-stat block, integration test that corrected_<stat> != raw <stat> for non-fallback rows, **NEW: validate.py routes corrected_<stat> when flag on**, **NEW: validate.py routes raw stat when flag off (byte-identical to legacy)**)."
+    - "Per C-09: 2,142 + 10 (Plan 03 Task 1) = 2,152 tests stay green after this plan."
     - "Per Pitfall 3: re-fit `decision_s200/calibration_2023.json` and `calibration_2024.json` MUST honor the holdout discipline. Training data for `calibration_2024.json` = seasons [2022..2023]; for `calibration_2023.json` = season [2022]. Never include the test season in the training set."
   artifacts:
     - path: "src/fantasy_sim/scoring/residual_calibration.py"
@@ -61,6 +64,10 @@ must_haves:
       to: "src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_*.json"
       via: "stat_corrections.{stat}.{corrections, clamps} block"
       pattern: "stat_corrections"
+    - from: "src/fantasy_sim/scoring/residual_calibration.py::adjust_week (corrected_<stat> writes)"
+      to: "scripts/validate.py::_compute_distribution_ks (stat_ks / stat_mean_bias)"
+      via: "validate.py reads `arm_b_row.get(f'corrected_{stat}', arm_b_row.get(stat))` when KS-09 flag is on; falls back to raw stat when flag off (byte-identical legacy)"
+      pattern: "corrected_"
 ---
 
 <objective>
@@ -213,7 +220,7 @@ class ResidualCalibrationConfig:
 <tasks>
 
 <task type="auto" tdd="true">
-  <name>Task 1: RED — write 8 failing tests for KS-09 per-stat correction + std-scaled clamp + schema-v2 artifact + training-script per-stat block</name>
+  <name>Task 1: RED — write 10 failing tests for KS-09 per-stat correction + std-scaled clamp + schema-v2 artifact + training-script per-stat block + validate.py corrected_<stat> routing (codex HIGH 1)</name>
   <files>tests/test_scoring/test_residual_calibration.py</files>
   <read_first>
     - tests/test_scoring/test_residual_calibration.py (existing test conventions: imports, fixture names, projection-row construction)
@@ -498,24 +505,96 @@ def test_ks09_corrected_differs_from_raw_for_non_fallback_rows():
     corrected = float(row["corrected_pass_yards"])
     assert corrected != raw_pass_yards, "corrected_pass_yards must differ from raw for a populated bucket"
     assert math.isclose(corrected, 230.0, abs_tol=1e-6)  # 240 + (-10) clamped at ±100
+
+
+# === KS-09 OUTPUT-CONTRACT tests (codex review HIGH 1, 2026-04-27 revision) ===
+# These tests live in a NEW file `tests/test_validation/test_validate_corrected_stat_routing.py`
+# because they exercise scripts/validate.py (the reader), not residual_calibration.py (the writer).
+# Below is the full content of that new file:
+
+def test_ks09_validate_routes_corrected_stat_when_flag_on(monkeypatch, tmp_path):
+    """When phase2_ks_flags.ks09_per_stat_residual_calibration.enabled=true, validate.py reads
+    corrected_<stat> instead of raw <stat> for stat_ks / stat_mean_bias.
+
+    THIS IS THE LOAD-BEARING TEST for the codex HIGH 1 finding. Without this test, KS-09 could
+    write corrected_<stat> columns without those columns ever flowing into the ledger metric
+    Phase 2 promotes against (the observability-only failure mode).
+    """
+    from scripts.validate import _compute_distribution_ks  # imported lazily because it is a script
+
+    # Build minimal arm_a / arm_b inputs where corrected_<stat> != <stat>
+    arm_a_rows = {"p1": {1: {"fpts": 16.0, "pass_yards": 240.0}}}
+    arm_b_rows = {"p1": {1: {"fpts": 15.5, "pass_yards": 240.0, "corrected_pass_yards": 230.0}}}
+
+    class _Actual:
+        fpts = 18.0
+        pass_yards = 250.0
+
+    actual_pos = {"p1": "QB"}
+    actual_by_pw = {"p1": {1: _Actual()}}
+
+    # Flag ON → validate.py should read corrected_pass_yards (= 230.0), not raw (= 240.0)
+    monkeypatch.setattr(
+        "fantasy_sim.config.loader.get_phase2_ks_flags",
+        lambda: {"ks09_per_stat_residual_calibration": {"enabled": True}},
+    )
+    weekly_fpts_ks, stat_ks, stat_mean_bias = _compute_distribution_ks(
+        arm_a_rows, arm_b_rows, actual_pos, actual_by_pw, positions=("QB",)
+    )
+    # arm_b mean = 230.0 (corrected); actual = 250.0; bias = 230 - 250 = -20.0
+    assert math.isclose(stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"], -20.0, abs_tol=0.5)
+
+
+def test_ks09_validate_routes_raw_stat_when_flag_off(monkeypatch):
+    """When the KS-09 flag is OFF, validate.py reads raw <stat> exactly as legacy (byte-identical).
+
+    This is the rollback safety net: even if corrected_<stat> columns leak into projection rows
+    (e.g. stale cache), validate.py MUST behave as pre-Plan-03 when the flag is false.
+    """
+    from scripts.validate import _compute_distribution_ks
+
+    arm_a_rows = {"p1": {1: {"fpts": 16.0, "pass_yards": 240.0}}}
+    # Note: corrected_pass_yards is present but should be IGNORED when flag off
+    arm_b_rows = {"p1": {1: {"fpts": 15.5, "pass_yards": 240.0, "corrected_pass_yards": 230.0}}}
+
+    class _Actual:
+        fpts = 18.0
+        pass_yards = 250.0
+
+    actual_pos = {"p1": "QB"}
+    actual_by_pw = {"p1": {1: _Actual()}}
+
+    # Flag OFF → validate.py reads raw pass_yards (= 240.0)
+    monkeypatch.setattr(
+        "fantasy_sim.config.loader.get_phase2_ks_flags",
+        lambda: {"ks09_per_stat_residual_calibration": {"enabled": False}},
+    )
+    weekly_fpts_ks, stat_ks, stat_mean_bias = _compute_distribution_ks(
+        arm_a_rows, arm_b_rows, actual_pos, actual_by_pw, positions=("QB",)
+    )
+    # arm_b mean = 240.0 (raw); actual = 250.0; bias = 240 - 250 = -10.0
+    assert math.isclose(stat_mean_bias["QB"]["pass_yards"]["arm_b_bias"], -10.0, abs_tol=0.5)
 ```
+
+(Tests `test_ks09_validate_routes_*` belong in a separate file `tests/test_validation/test_validate_corrected_stat_routing.py` — copy them there. The file in test_scoring/ above contains the residual_calibration writer-side tests only.)
 
 Run pytest:
 ```bash
-uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09
+uv run pytest tests/test_scoring/test_residual_calibration.py tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09
 ```
 
-Expected: all 8 tests fail with ImportError (`stat_clamp_adjustment` not yet defined) or AssertionError (the runtime path doesn't yet write corrected_<stat> columns; the training script doesn't yet write stat_corrections). RED state.
+Expected: all 10 tests fail with ImportError (`stat_clamp_adjustment` not yet defined) or AssertionError (the runtime path doesn't yet write corrected_<stat> columns; the training script doesn't yet write stat_corrections; validate.py doesn't yet route corrected_<stat>). RED state.
 
-Commit: `test(02-03): add 8 failing tests for KS-09 per-stat residual_calibration`
+Commit: `test(02-03): add 10 failing tests for KS-09 per-stat residual_calibration (incl. validate.py routing contract)`
   </action>
   <verify>
-    <automated>uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09 2>&1 | grep -E "FAILED|ERROR" | head -10</automated>
+    <automated>uv run pytest tests/test_scoring/test_residual_calibration.py tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09 2>&1 | grep -E "FAILED|ERROR" | head -12</automated>
   </verify>
   <acceptance_criteria>
-    - `tests/test_scoring/test_residual_calibration.py` contains all 8 `def test_ks09_*` test functions (literal substring match)
-    - `uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09` exits NON-ZERO (RED state)
-    - `git log -1 --pretty=%s` matches `test(02-03): add 8 failing tests for KS-09`
+    - `tests/test_scoring/test_residual_calibration.py` contains all 8 writer-side `def test_ks09_*` test functions (literal substring match)
+    - `tests/test_validation/test_validate_corrected_stat_routing.py` contains `def test_ks09_validate_routes_corrected_stat_when_flag_on` AND `def test_ks09_validate_routes_raw_stat_when_flag_off`
+    - `uv run pytest tests/test_scoring/test_residual_calibration.py tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09` exits NON-ZERO (RED state, 10 tests)
+    - `git log -1 --pretty=%s` matches `test(02-03): add 10 failing tests for KS-09`
   </acceptance_criteria>
 </task>
 
@@ -711,14 +790,145 @@ Commit: `feat(02-03): KS-09 implement stat_clamp_adjustment() + per-stat correct
     - `src/fantasy_sim/data/ensemble/models.py` contains `class StatLevelConfig`
     - `src/fantasy_sim/data/ensemble/models.py` contains `stat_level: StatLevelConfig`
     - `scripts/fit_residual_calibration.py` contains the literal string `stat_corrections`
-    - `uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09` exits 0 (8 tests pass)
-    - `uv run pytest tests/ -v` exits 0 (full suite green; 2,150 tests)
+    - `uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09` exits 0 (8 writer-side tests pass)
+    - `uv run pytest tests/ -v` exits 0 (full suite green; 2,150 tests passed at this point — Task 3 will add the validate.py routing tests)
     - `git log -1 --pretty=%s` matches `feat(02-03): KS-09 implement`
   </acceptance_criteria>
 </task>
 
+<task type="auto" tdd="true">
+  <name>Task 3: GREEN — route `corrected_<stat>` into `scripts/validate.py::_compute_distribution_ks` when KS-09 flag is on (codex review HIGH 1 — output contract)</name>
+  <files>
+    - scripts/validate.py
+    - tests/test_validation/test_validate_corrected_stat_routing.py
+  </files>
+  <read_first>
+    - scripts/validate.py:235-246 (the per-stat read site at lines 238-239 — current code reads `arm_a_row.get(stat)` and `arm_b_row.get(stat)`)
+    - scripts/validate.py:260-284 (where stat_ks / stat_mean_bias get assembled from the samples — no change needed here)
+    - src/fantasy_sim/config/loader.py (`get_phase2_ks_flags`)
+    - tests/test_validation/test_validate_corrected_stat_routing.py (the 2 RED tests added in Task 1)
+  </read_first>
+  <behavior>
+    - In `scripts/validate.py::_compute_distribution_ks`: at the per-stat read sites (lines ~238-239), prefer `arm_X_row.get(f"corrected_{stat}")` when the KS-09 flag is enabled, else read raw `arm_X_row.get(stat)` exactly as today. Read the flag once at function entry via `get_phase2_ks_flags()` so all (pid, week, stat) triplets in the same call use a consistent reader.
+    - When the flag is on, both Arm A and Arm B reads use the same routing rule. Note: in bare A/B (Arm A = bare config, Arm B = bare + KS-09), Arm A rows do NOT have `corrected_<stat>` columns (residual_calibration is disabled there); the `.get(corrected_..., raw)` fallback chain returns the raw value, which is identical to today — no change in Arm A's contribution. Arm B reads the corrected value, so the KS / bias delta reflects the correction.
+    - When the flag is off, BOTH arms read raw — byte-identical to legacy `validate.py`.
+    - Add a one-line warning log at function entry when the flag is on, documenting that corrected routing is active (so a developer scanning the log knows which path produced the metric).
+    - The 2 routing tests from Task 1 (`test_ks09_validate_routes_corrected_stat_when_flag_on`, `test_ks09_validate_routes_raw_stat_when_flag_off`) must turn GREEN.
+  </behavior>
+  <action>
+**File 1: `scripts/validate.py`** — locate `_compute_distribution_ks` (around line 195). At the top of the function (after the docstring), add:
+
+```python
+    # KS-09 output contract (Plan 03 Task 3, codex review HIGH 1 fix): when the
+    # phase2_ks_flags.ks09_per_stat_residual_calibration flag is on, prefer
+    # corrected_<stat> over the raw stat for stat_ks / stat_mean_bias. Routing
+    # is a no-op when the flag is off (byte-identical to pre-Plan-03 legacy).
+    from fantasy_sim.config.loader import get_phase2_ks_flags as _get_p2_flags
+    _ks09_on = bool(
+        _get_p2_flags().get("ks09_per_stat_residual_calibration", {}).get("enabled", False)
+    )
+
+    def _read_stat(row: Mapping[str, object], stat: str) -> object:
+        """Return corrected_<stat> if KS-09 routing is on AND the column is present;
+        else return the raw <stat>. Used by both arm_a and arm_b reads to keep the
+        Arm-A leg byte-identical to legacy when corrected columns are absent."""
+        if _ks09_on:
+            corrected = row.get(f"corrected_{stat}")
+            if corrected is not None:
+                return corrected
+        return row.get(stat)
+
+    if _ks09_on:
+        import logging
+        logging.getLogger(__name__).info(
+            "KS-09 corrected_<stat> routing active in validate._compute_distribution_ks "
+            "(stat_ks / stat_mean_bias read corrected_<stat> when present)"
+        )
+```
+
+Then locate the per-stat read site (currently around lines 235-246). Find:
+```python
+            for stat in STAT_KS_BY_POSITION.get(pos, ()):
+                if stat not in arm_a_row or stat not in arm_b_row or not hasattr(actual, stat):
+                    continue
+                a_value = _numeric_value(arm_a_row.get(stat))
+                b_value = _numeric_value(arm_b_row.get(stat))
+                actual_value = _numeric_value(getattr(actual, stat))
+```
+
+Replace with:
+```python
+            for stat in STAT_KS_BY_POSITION.get(pos, ()):
+                # Membership check uses raw stat (corrected_<stat> is always present
+                # alongside raw when KS-09 writes it; checking raw catches the case
+                # where the row is malformed entirely).
+                if stat not in arm_a_row or stat not in arm_b_row or not hasattr(actual, stat):
+                    continue
+                # KS-09 routing: corrected when flag on + column present, else raw.
+                # Arm A in bare A/B has no corrected_ columns; _read_stat returns raw
+                # via fallback so Arm A's contribution is byte-identical to legacy.
+                a_value = _numeric_value(_read_stat(arm_a_row, stat))
+                b_value = _numeric_value(_read_stat(arm_b_row, stat))
+                actual_value = _numeric_value(getattr(actual, stat))
+```
+
+**File 2: `tests/test_validation/test_validate_corrected_stat_routing.py`** — create the file from Task 1's stubs (the two `test_ks09_validate_routes_*` tests). Imports needed at top:
+
+```python
+"""Tests for KS-09 corrected_<stat> routing through scripts/validate.py.
+
+Codex review HIGH 1 (2026-04-27): KS-09 writes corrected_<stat> columns but the
+ledger metric (stat_ks / stat_mean_bias) is computed by scripts/validate.py
+::_compute_distribution_ks, which historically reads raw <stat>. Plan 03 Task 3
+adds corrected-routing gated on phase2_ks_flags.ks09_per_stat_residual_calibration.
+These tests exercise the routing decision in isolation."""
+
+import math
+from collections.abc import Mapping
+import pytest
+
+
+def _import_compute():
+    """Lazy-import scripts.validate so the test file can be discovered without
+    side-effecting on validate's heavy module-level imports."""
+    import scripts.validate as v
+    return v._compute_distribution_ks
+```
+
+Then both `test_ks09_validate_routes_*` tests as specified in Task 1.
+
+Run pytest:
+```bash
+uv run pytest tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09
+```
+
+Expected: both tests pass (GREEN).
+
+Run full suite:
+```bash
+uv run pytest tests/ -v 2>&1 | tail -3
+```
+
+Expected: 2,152 tests pass (2,150 from Plan 03 Task 2 baseline + 2 new routing tests).
+
+Commit: `feat(02-03): route corrected_<stat> into validate.py stat_ks / stat_mean_bias when KS-09 flag is on (codex HIGH 1)`
+  </action>
+  <verify>
+    <automated>uv run pytest tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09 2>&1 | grep -E "PASSED|FAILED" | head -10 && uv run pytest tests/ -v 2>&1 | tail -3</automated>
+  </verify>
+  <acceptance_criteria>
+    - `scripts/validate.py` contains the literal string `corrected_<stat> routing`
+    - `scripts/validate.py` contains the literal string `def _read_stat(`
+    - `scripts/validate.py` contains the literal string `_ks09_on`
+    - `tests/test_validation/test_validate_corrected_stat_routing.py` exists and contains both `def test_ks09_validate_routes_corrected_stat_when_flag_on` and `def test_ks09_validate_routes_raw_stat_when_flag_off`
+    - `uv run pytest tests/test_validation/test_validate_corrected_stat_routing.py -v` exits 0 (GREEN)
+    - `uv run pytest tests/ -v` exits 0 (2,152 tests passing)
+    - `git log -1 --pretty=%s` matches `feat(02-03): route corrected_<stat>`
+  </acceptance_criteria>
+</task>
+
 <task type="auto">
-  <name>Task 3: Re-fit `decision_s200/calibration_*.json` artifacts with KS-08 floor active + KS-09 stat_corrections + run KS-09 A/B (bare + full)</name>
+  <name>Task 4: Re-fit `decision_s200/calibration_*.json` artifacts with KS-08 floor active + KS-09 stat_corrections + run KS-09 A/B (bare + full)</name>
   <files>
     - src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2023.json
     - src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2024.json
@@ -834,13 +1044,13 @@ Commit: `chore(02-03): KS-09 re-fit calibration artifacts (schema_v2) + run A/B 
 </task>
 
 <task type="auto">
-  <name>Task 4: Promotion-state commit per D-14 + full suite green</name>
+  <name>Task 5: Promotion-state commit per D-14 + full suite green</name>
   <files>
     - config/defaults.yaml
     - .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md
   </files>
   <read_first>
-    - .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md (Task 3's D-14 evaluation)
+    - .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md (Task 4's D-14 evaluation)
     - config/defaults.yaml (`phase2_ks_flags.ks09_per_stat_residual_calibration` block)
   </read_first>
   <behavior>
@@ -851,7 +1061,7 @@ Commit: `chore(02-03): KS-09 re-fit calibration artifacts (schema_v2) + run A/B 
     - Commit per Phase 1 D-25/D-40 standardized format.
   </behavior>
   <action>
-Branch on Task 3's status from PROMOTION-NOTES.md:
+Branch on Task 4's status from PROMOTION-NOTES.md:
 
 **If `SHIPPED`:** edit `config/defaults.yaml` so:
 ```yaml
@@ -920,14 +1130,15 @@ Refs: D-01, D-02, D-03, D-04, D-14 (CONTEXT.md), HYPOTHESES.md KS-09 (lines 189-
 </tasks>
 
 <verification>
-After all 4 tasks complete:
+After all 5 tasks complete:
 
-1. `git log --oneline -10` shows 4 new commits prefixed `(02-03)` (test, feat, chore, feat).
+1. `git log --oneline -10` shows 5 new commits prefixed `(02-03)` (test, feat, feat, chore, feat).
 2. If SHIPPED/SHIPPED-PARTIAL: defaults.yaml has both flags flipped; bundled calibration_*.json artifacts at schema_v2 with stat_corrections.
-3. `uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks09` exits 0 (8 tests pass).
+3. `uv run pytest tests/test_scoring/test_residual_calibration.py tests/test_validation/test_validate_corrected_stat_routing.py -v -k ks09` exits 0 (10 tests pass — 8 writer-side + 2 routing).
 4. `uv run python scripts/validate.py --show-ledger | grep "^p2.ks09"` returns 2 (or 3 if SHIPPED) rows.
-5. `uv run pytest tests/ -v` exits 0; total = 2,150.
+5. `uv run pytest tests/ -v` exits 0; total = 2,152.
 6. PROMOTION-NOTES.md `## KS-09` has D-14 3-condition evaluation + final decision word.
+7. **Codex HIGH 1 fix verified:** `scripts/validate.py` reads `corrected_<stat>` when KS-09 flag is on (per Task 3 routing test) — KS-09 is no longer observability-only; it routes into the canonical ledger metric.
 
 KS-09 status recorded. Plan 04 (KS-14) may now proceed.
 </verification>
@@ -936,12 +1147,14 @@ KS-09 status recorded. Plan 04 (KS-14) may now proceed.
   truths:
     - "Per D-01: two-stage layered fpts — corrected_<stat> columns are NEW (additive) and NOT propagated into row['fpts']. row['fpts'] = max(raw_sim_fpts + existing_fpts_correction, 0.0); per-stat corrections live in corrected_<stat> columns only."
     - "Per D-02: gated behind phase2_ks_flags.ks09_per_stat_residual_calibration.enabled (default false). Loader override: when phase2 flag is true, ResidualCalibrationConfig.stat_level.enabled is forced to True."
+    - "**Codex HIGH 1 OUTPUT CONTRACT (2026-04-27):** when the KS-09 flag is on, `scripts/validate.py::_compute_distribution_ks` reads `arm_X_row.get(f'corrected_{stat}', arm_X_row.get(stat))` so per-stat corrections flow into `SeasonMetrics.stat_ks` and `SeasonMetrics.stat_mean_bias`. When the flag is off, both arms read raw stat (byte-identical legacy). Raw stat columns are LEFT UNCHANGED on rows. This is path (b) per CONTEXT.md and is what makes Plan 03 outcome-producing instead of observability-only."
     - "Per D-03: 14 covered stats from defaults.yaml ensemble.residual_calibration.stat_level.covered_stats. Position-specific (RB has receiving stats, WR/TE don't have rush stats); skip stats not present on the row."
     - "Per D-04 + Pattern 4: per-bucket clamp_std lives in artifact[stat_corrections][<stat>][clamps][<bucket_key>][clamp_std]. Falls back to global max_abs_adjustment when clamp_std is None."
     - "Per D-14 elevated promotion bar: SHIPPED requires hard floor + KS Δ ≤ -0.03 on QB pass_yards + |bias Δ| ≤ 5 yd/g. SHIPPED-PARTIAL = hard floor + KS Δ pass but bias miss; flag still flips and gap documented. BLOCKED = hard floor regresses."
     - "Per Pitfall 3: holdout discipline — calibration_2024 trains on [2022, 2023]; calibration_2023 trains on [2022]. Never include test_season in training."
     - "Per Pitfall 1: per-stat and fpts corrections may diverge (e.g., corrected_pass_yards * 0.04 != corrected fpts contribution). Documented and not chased in v1."
-    - "Per C-09: 2,150-test suite stays green throughout (2,142 pre-Plan-03 + 8 from Task 1)."
+    - "Per C-09: 2,152-test suite stays green throughout (2,142 pre-Plan-03 + 8 from Task 1 + 2 from Task 3 routing)."
+    - "**Codex MEDIUM 5 (RNG determinism):** `validate.py` runs Arm A and Arm B with `np.random.default_rng(seed=...)` and the seed is shared across arms within a single A/B invocation. With KS-09's std-scaled clamp, the per-row correction is deterministic given the artifact + bucket_key (no sampling); only the underlying simulator's RNG affects determinism. The routing change in Task 3 is purely a `dict.get` swap and does not introduce sampling. The existing seed-pinning convention is sufficient — no new determinism contract is required for KS-09."
   artifacts:
     - path: "src/fantasy_sim/scoring/residual_calibration.py"
       provides: "stat_clamp_adjustment() helper + per-stat correction logic in adjust_week() (gated)"

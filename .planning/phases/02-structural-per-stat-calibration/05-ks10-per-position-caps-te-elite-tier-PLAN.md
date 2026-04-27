@@ -18,6 +18,8 @@ must_haves:
   truths:
     - "Per D-07 + HYPOTHESES.md KS-10 (lines 203-224): ship the verbatim values — `ensemble.residual_calibration.max_abs_adjustment_by_position = {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8}`. Add 4th `elite` tier above `14.0 fpts` for TE in `USAGE_TIER_THRESHOLDS` (`residual_calibration.py:25-30`); lower TE `min_bucket_rows` to `100` from `200` in the calibration artifact's TE buckets only. Update `clamp_adjustment` lookup at `residual_calibration.py:109-111` to read per-position cap when `phase2_ks_flags.ks10_per_position_caps.enabled` is true."
     - "Per D-02 / Phase 1 D-45: change is gated behind `phase2_ks_flags.ks10_per_position_caps.enabled` (default false). When false, the existing global `max_abs_adjustment = 1.5` is used (legacy behavior). When true, per-position caps + TE elite tier + reduced TE min_bucket_rows are all active."
+    - "**Codex MEDIUM 7 (2026-04-27 revision):** Plan 01 ships `max_abs_adjustment_by_position = {QB: 1.5, RB: 1.5, WR: 1.5, TE: 1.5}` as a placeholder (numerically identical to the global cap, intentionally a no-op when the dict is consulted). The runtime `clamp_adjustment` MUST consult the dict ONLY when `phase2_ks_flags.ks10_per_position_caps.enabled=true` — NOT when the dict is non-empty. Otherwise the populated-but-numerically-identical placeholder would silently take effect even with the flag off. Plan 05 Task 1 wires this strictly via the flag, never via dict-presence."
+    - "**Codex MEDIUM 7 — re-fit artifact assertion:** the `## KS-10 promotion validation` MUST explicitly assert that the re-fit `calibration_2024.json` artifact contains a NON-EMPTY `TE|elite|*` bucket (i.e., at least one bucket key matching the regex `^TE\\|elite\\|.*` with `n_rows >= 1`). Without this assertion, a degenerate re-fit could ship with the elite tier defined in code but unpopulated in the bundled artifact, making KS-10's TE half a no-op. If 2024 data cannot populate the elite TE bucket (small N), document the fallback behavior explicitly in PROMOTION-NOTES.md and downgrade KS-10 to SHIPPED-PARTIAL."
     - "Per Plan 03 dependency (D-12 ordering): KS-10 needs the v2 schema's stat_corrections to coexist with new per-position cap lookup. Plan 05 re-fits `decision_s200/calibration_*.json` ON TOP OF Plan 03's v2 schema (i.e., the artifact already has stat_corrections from Plan 03; Plan 05 adds the elite TE tier + per-position cap metadata)."
     - "Per Pitfall 4: TE elite tier (`> 14.0 fpts`) interaction with `_merge_thin_tiers` — the existing `_merge_thin_tiers` logic in `tier_engine.py:441-477` is a SEPARATE concern (it merges thin TIERS within a position, not thin BUCKETS within `residual_calibration`). Plan 05 verifies via test that the artifact written by `fit_residual_calibration.py` after KS-10 retune contains a non-empty `TE|elite|*` bucket (the elite tier is being populated and not collapsed)."
     - "Per HYPOTHESES.md KS-10: rated `small-medium gain, very low risk`; sweep ROI is poor — single A/B for the bundle (no per-position cap sweep)."
@@ -578,10 +580,11 @@ After all 3 tasks complete:
 1. `git log --oneline -10` shows 3 new commits prefixed `(02-05)`.
 2. If SHIPPED: defaults.yaml has `phase2_ks_flags.ks10_per_position_caps.enabled: true` AND per-position caps at D-07 values.
 3. `uv run pytest tests/test_scoring/test_residual_calibration.py -v -k ks10` exits 0 (5 tests pass).
-4. `calibration_2024.json` contains at least one `TE|elite|*` or `TE|high|*` bucket (depending on 2024 TE data).
+4. **Codex MEDIUM 7 — non-empty TE elite bucket assertion:** `calibration_2024.json` contains at least one bucket key matching `TE\|elite\|.*` with `n_rows >= 1` (the elite tier MUST be populated, not just declared). If 2024 data cannot populate the elite TE bucket, document the fallback in PROMOTION-NOTES.md AND downgrade KS-10 to SHIPPED-PARTIAL.
 5. `uv run python scripts/validate.py --show-ledger | grep "^p2.ks10"` returns 2 rows.
 6. `uv run pytest tests/ -v` exits 0; total = 2,159.
 7. PROMOTION-NOTES.md `## KS-10` has D-30 evaluation + final decision word.
+8. **Codex MEDIUM 7 — flag gating verified:** the runtime `clamp_adjustment` consults `max_abs_adjustment_by_position` ONLY when `phase2_ks_flags.ks10_per_position_caps.enabled=true`. The Plan 01 placeholder (all-1.5) does not silently take effect when the flag is off — proven by `test_ks10_legacy_behavior_when_flag_disabled`.
 
 KS-10 status recorded. Plan 06 (KS-11) parallel to Plan 05 (Wave 4 in D-12) may now run.
 </verification>
@@ -590,6 +593,8 @@ KS-10 status recorded. Plan 06 (KS-11) parallel to Plan 05 (Wave 4 in D-12) may 
   truths:
     - "Per D-07: ship HYPOTHESES KS-10 values verbatim — {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8} per-position caps; TE elite tier > 14 fpts; TE min_bucket_rows = 100 (down from 200)"
     - "Per D-02: gated behind phase2_ks_flags.ks10_per_position_caps.enabled (default false)"
+    - "**Codex MEDIUM 7 (2026-04-27 revision):** runtime keys off the `ks10_per_position_caps.enabled` flag, NOT off `max_abs_adjustment_by_position` dict presence. Plan 01's all-1.5 placeholder must remain a no-op even if a developer pre-populates the dict before promotion. Plan 05 Task 1 wires the flag check explicitly."
+    - "**Codex MEDIUM 7 — re-fit assertion:** acceptance criteria include the explicit non-empty-`TE|elite|*` check in `calibration_2024.json`. If empty, KS-10 ships as SHIPPED-PARTIAL with the fallback documented (not silent failure)."
     - "Per Pitfall 4: TE elite tier interaction with _merge_thin_tiers is OUT OF SCOPE — _merge_thin_tiers operates on TIERS within tier_engine, NOT BUCKETS within residual_calibration"
     - "Per D-12 dependency: Plan 05 depends on Plan 03 — re-fit happens ON TOP OF Plan 03's v2 schema (stat_corrections preserved)"
     - "Per HYPOTHESES.md KS-10 small-medium gain, very low risk: single A/B (no per-position cap sweep)"

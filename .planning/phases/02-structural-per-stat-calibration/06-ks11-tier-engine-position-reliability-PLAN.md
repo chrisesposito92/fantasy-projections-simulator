@@ -6,7 +6,9 @@ wave: 4
 depends_on: ["01"]
 files_modified:
   - config/defaults.yaml
+  - src/fantasy_sim/data/pff/config.py
   - tests/test_data/test_pff/test_tier_engine.py
+  - tests/test_data/test_pff/test_config.py
   - .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md
 autonomous: true
 requirements: [KS-11]
@@ -15,6 +17,7 @@ must_haves:
     - "Per D-08 + HYPOTHESES.md KS-11 (lines 226-245): position-specific reliability cap raise (config-only). Add `pff.tier_engine.position_reliability` block: WR/TE `{floor: 0.30, cap: 0.95, min_targets: 30}`, RB `{floor: 0.25, cap: 0.92, min_carries: 50}`. QB stays at global `{floor: 0.20, cap: 0.80}` per C-10."
     - "Per Architectural Responsibility Map in 02-RESEARCH.md: `compute_reliability(position=...)` is ALREADY plumbed (`tier_engine.py:957-965`) and reads `cfg.position_reliability` (`models.py:162`). Plan 06 is config-only — no Python source code changes are needed beyond verifying the existing test path."
     - "Per D-02 / Phase 1 D-45: change is gated behind `phase2_ks_flags.ks11_position_reliability.enabled` (default false). When false, the empty `position_reliability: {}` block keeps QB/WR/TE/RB at global floor/cap. When true, the 3 non-QB positions use the new floors/caps."
+    - "**Codex MEDIUM 6 (2026-04-27 revision):** the loader at `data/pff/config.py:138` currently reads `position_reliability` UNCONDITIONALLY from defaults.yaml, which means a populated dict could leak runtime behavior even with the `ks11_position_reliability.enabled` flag false. Plan 06 Task 1 fixes this by changing the loader to: `position_reliability = tier_raw.get('position_reliability', {}) if get_phase2_ks_flags().get('ks11_position_reliability', {}).get('enabled', False) else {}`. The flag is the master gate; the populated dict is the value. Without this fix, per-KS A/B is contaminated when defaults.yaml has the dict populated."
     - "Per C-10 + Pitfall: KS-11 MUST NOT alter QB carry_share/scramble_rate/yards blending. The existing `feedback_qb_calibration.md` invariants are protected by the existing test `tests/test_data/test_pff/test_tier_engine.py:848` (test_apply_team_context::test_qb_unchanged) which is reused as the KS-11 preflight gate."
     - "Per HYPOTHESES.md KS-11 small-medium gain, low risk: single A/B (no per-position cap sweep)."
     - "Per C-08: test-after acceptable for KS-11; 5 unit + 1 behavior preflight tests."
@@ -23,9 +26,15 @@ must_haves:
     - path: "config/defaults.yaml"
       provides: "Updated `pff.tier_engine.position_reliability` block from empty `{}` (Plan 01 placeholder) to D-08 values: WR/TE `{floor: 0.30, cap: 0.95, min_targets: 30}`, RB `{floor: 0.25, cap: 0.92, min_carries: 50}` (after promotion)"
       contains: "position_reliability:"
+    - path: "src/fantasy_sim/data/pff/config.py"
+      provides: "Codex MEDIUM 6 fix — `build_pff_config` reads `position_reliability` ONLY when `phase2_ks_flags.ks11_position_reliability.enabled=true`; else passes `{}` regardless of defaults.yaml content"
+      contains: "ks11_position_reliability"
     - path: "tests/test_data/test_pff/test_tier_engine.py"
       provides: "5 new tests: ks11_wr_position_reliability_uses_per_position_floor_cap, ks11_te_position_reliability_uses_per_position_floor_cap, ks11_rb_position_reliability_uses_per_position_floor_cap, ks11_qb_unchanged_at_global_values, ks11_min_targets_carries_gate"
       contains: "def test_ks11_"
+    - path: "tests/test_data/test_pff/test_config.py"
+      provides: "Codex MEDIUM 6 coverage — test_ks11_loader_passes_empty_when_flag_off + test_ks11_loader_passes_populated_dict_when_flag_on"
+      contains: "test_ks11_loader"
     - path: ".planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md"
       provides: "KS-11 promotion-state decision summary + QB-untouched preflight result"
       contains: "## KS-11"
@@ -260,6 +269,146 @@ Commit: `test(02-06): KS-11 add 5 unit tests for tier_engine position_reliabilit
 </task>
 
 <task type="auto">
+  <name>Task 1b: Codex MEDIUM 6 fix — gate the `position_reliability` loader on the `ks11_position_reliability.enabled` flag (not on dict presence)</name>
+  <files>
+    - src/fantasy_sim/data/pff/config.py
+    - tests/test_data/test_pff/test_config.py
+  </files>
+  <read_first>
+    - src/fantasy_sim/data/pff/config.py:120-145 (`build_pff_config` — locate `position_reliability=tier_raw.get(...)` at line 138)
+    - src/fantasy_sim/config/loader.py (`get_phase2_ks_flags`)
+    - tests/test_data/test_pff/test_config.py (existing test patterns; create file if missing)
+  </read_first>
+  <behavior>
+    - Codex MEDIUM 6 fix: replace the unconditional read of `tier_raw["position_reliability"]` with a flag-gated read. When `phase2_ks_flags.ks11_position_reliability.enabled=false`, the loader passes `{}` regardless of defaults.yaml content. When the flag is true, the loader reads the populated dict.
+    - This makes the per-KS A/B isolation real: in the `bare` arm with the flag off, `pff.tier_engine.position_reliability` is empty even if defaults.yaml has values populated (because Plan 01 set the placeholder to `{}` but a developer might populate it before promotion for prep work).
+    - Add 2 unit tests: flag-off-passes-empty, flag-on-passes-populated.
+  </behavior>
+  <action>
+**File 1: `src/fantasy_sim/data/pff/config.py`** — replace line 138:
+
+Find:
+```python
+        position_reliability=tier_raw.get("position_reliability", {}),
+```
+
+Replace with:
+```python
+        # Codex MEDIUM 6 fix (Phase 2 D-08 / 2026-04-27 revision): the
+        # position_reliability dict is read ONLY when the KS-11 flag is on.
+        # Otherwise the loader passes {} so per-KS A/B isolation is real
+        # (defaults.yaml may have a populated dict pre-promotion).
+        position_reliability=(
+            tier_raw.get("position_reliability", {})
+            if _ks11_position_reliability_enabled()
+            else {}
+        ),
+```
+
+At the top of `config.py` (just below the imports), add:
+```python
+def _ks11_position_reliability_enabled() -> bool:
+    """Return True iff `phase2_ks_flags.ks11_position_reliability.enabled=true`.
+
+    Codex MEDIUM 6 (Phase 2 / 2026-04-27): this gate replaces the legacy
+    'unconditional read' behavior at config.py:138 so per-KS A/B isolation is
+    real even when defaults.yaml has the position_reliability dict populated.
+    """
+    from fantasy_sim.config.loader import get_phase2_ks_flags
+    return bool(
+        get_phase2_ks_flags()
+        .get("ks11_position_reliability", {})
+        .get("enabled", False)
+    )
+```
+
+**File 2: `tests/test_data/test_pff/test_config.py`** — create the file if missing. Add:
+
+```python
+"""Tests for build_pff_config — codex MEDIUM 6 KS-11 flag-gated loader."""
+
+import pytest
+
+
+def test_ks11_loader_passes_empty_when_flag_off(monkeypatch):
+    """When the KS-11 flag is off, build_pff_config MUST pass `{}` for
+    position_reliability regardless of defaults.yaml content.
+
+    Codex MEDIUM 6 (2026-04-27): this is the per-KS A/B isolation contract.
+    """
+    from fantasy_sim.data.pff import config as cfg_mod
+    from fantasy_sim.data.pff.config import build_pff_config
+
+    monkeypatch.setattr(
+        "fantasy_sim.config.loader.get_phase2_ks_flags",
+        lambda: {"ks11_position_reliability": {"enabled": False}},
+    )
+    raw = {
+        "tier_engine": {
+            "enabled": True,
+            "position_reliability": {  # populated, but flag is off — must be ignored
+                "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+            },
+        },
+    }
+    pff_cfg = build_pff_config(raw)
+    assert pff_cfg.tier_engine.position_reliability == {}, (
+        "Codex MEDIUM 6: when KS-11 flag is off, loader MUST pass {} regardless of defaults"
+    )
+
+
+def test_ks11_loader_passes_populated_dict_when_flag_on(monkeypatch):
+    """When the KS-11 flag is on, build_pff_config passes the dict from defaults."""
+    from fantasy_sim.data.pff.config import build_pff_config
+
+    monkeypatch.setattr(
+        "fantasy_sim.config.loader.get_phase2_ks_flags",
+        lambda: {"ks11_position_reliability": {"enabled": True}},
+    )
+    raw = {
+        "tier_engine": {
+            "enabled": True,
+            "position_reliability": {
+                "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+            },
+        },
+    }
+    pff_cfg = build_pff_config(raw)
+    assert pff_cfg.tier_engine.position_reliability == {
+        "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+    }
+```
+
+Run pytest:
+```bash
+uv run pytest tests/test_data/test_pff/test_config.py -v -k ks11
+```
+
+Expected: 2 tests pass.
+
+Run full suite:
+```bash
+uv run pytest tests/ -v 2>&1 | tail -3
+```
+
+Expected: 2,164 + 2 = 2,166 tests pass.
+
+Commit: `feat(02-06): KS-11 gate position_reliability loader on phase2_ks_flags.ks11.enabled (codex MEDIUM 6 fix)`
+  </action>
+  <verify>
+    <automated>uv run pytest tests/test_data/test_pff/test_config.py -v -k ks11_loader 2>&1 | grep -E "PASSED|FAILED" | head -5 && grep -q "_ks11_position_reliability_enabled" src/fantasy_sim/data/pff/config.py</automated>
+  </verify>
+  <acceptance_criteria>
+    - `src/fantasy_sim/data/pff/config.py` contains the literal string `_ks11_position_reliability_enabled`
+    - `src/fantasy_sim/data/pff/config.py` contains `if _ks11_position_reliability_enabled()` near the position_reliability assignment
+    - `tests/test_data/test_pff/test_config.py` contains both `def test_ks11_loader_passes_empty_when_flag_off` AND `def test_ks11_loader_passes_populated_dict_when_flag_on`
+    - `uv run pytest tests/test_data/test_pff/test_config.py -v -k ks11_loader` exits 0 (2 tests pass)
+    - `uv run pytest tests/ -v` exits 0 (full suite green; 2,166 tests)
+    - `git log -1 --pretty=%s` matches `feat(02-06): KS-11 gate position_reliability loader`
+  </acceptance_criteria>
+</task>
+
+<task type="auto">
   <name>Task 2: Run KS-11 A/B with explicit `--set pff.tier_engine.position_reliability=<dict>` overrides + promotion-state commit per D-30</name>
   <files>
     - config/defaults.yaml
@@ -356,7 +505,7 @@ Refs: D-08 (CONTEXT.md), HYPOTHESES.md KS-11 (lines 226-245), feedback_qb_calibr
     - `uv run python scripts/validate.py --show-ledger | grep "^p2.ks11"` returns exactly 2 rows
     - PROMOTION-NOTES.md `## KS-11` section contains A/B table + D-30 + C-10 evaluations + Decision word
     - PROMOTION-NOTES.md `## KS-11` shows `Δ stat_ks[QB][pass_yards]` value with C-10 PASS/FAIL annotation
-    - `uv run pytest tests/ -v` exits 0 (2,164 tests passing)
+    - `uv run pytest tests/ -v` exits 0 (2,166 tests passing)
     - `git log -1 --pretty=%s` matches `feat(02-06): KS-11`
   </acceptance_criteria>
 </task>
@@ -364,15 +513,16 @@ Refs: D-08 (CONTEXT.md), HYPOTHESES.md KS-11 (lines 226-245), feedback_qb_calibr
 </tasks>
 
 <verification>
-After both tasks complete:
+After all 3 tasks complete (Task 1, Task 1b, Task 2):
 
-1. `git log --oneline -10` shows 2 new commits prefixed `(02-06)`.
+1. `git log --oneline -10` shows 3 new commits prefixed `(02-06)`.
 2. If SHIPPED: defaults.yaml has populated `position_reliability:` block.
-3. `uv run pytest tests/test_data/test_pff/test_tier_engine.py -v -k ks11` exits 0 (5 tests pass).
+3. `uv run pytest tests/test_data/test_pff/test_tier_engine.py tests/test_data/test_pff/test_config.py -v -k "ks11 or ks11_loader"` exits 0 (5+2=7 tests pass).
 4. C-10 verified: QB Δ stat_ks[pass_yards] ≥ -0.001.
 5. `uv run python scripts/validate.py --show-ledger | grep "^p2.ks11"` returns 2 rows.
-6. `uv run pytest tests/ -v` exits 0; total = 2,164.
+6. `uv run pytest tests/ -v` exits 0; total = 2,166.
 7. PROMOTION-NOTES.md `## KS-11` has D-30 + C-10 evaluations + final decision word.
+8. **Codex MEDIUM 6 fix verified:** `src/fantasy_sim/data/pff/config.py` contains the `_ks11_position_reliability_enabled()` flag-gate helper; the position_reliability assignment is gated on the flag, not on dict presence.
 
 KS-11 status recorded. Plan 07 (KS-13) may now proceed (Wave 5 in D-12).
 </verification>
@@ -381,10 +531,11 @@ KS-11 status recorded. Plan 07 (KS-13) may now proceed (Wave 5 in D-12).
   truths:
     - "Per D-08: WR/TE {floor: 0.30, cap: 0.95, min_targets: 30}, RB {floor: 0.25, cap: 0.92, min_carries: 50}; QB stays at global {0.20, 0.80}"
     - "Per D-02: gated behind phase2_ks_flags.ks11_position_reliability.enabled (default false)"
+    - "**Codex MEDIUM 6 (2026-04-27 revision):** loader at `data/pff/config.py` keys off the `phase2_ks_flags.ks11_position_reliability.enabled` flag, NOT off dict presence. When flag off, loader passes `{}` regardless of defaults content. When flag on, loader passes the populated dict."
     - "Per C-10: QB stat_ks[pass_yards] Δ MUST be ≥ -0.001 (no regression). Failing this gate = BLOCKED regardless of other deltas."
     - "Per HYPOTHESES.md KS-11: small-medium gain, low risk; single A/B (no per-position cap sweep)"
-    - "Per C-09: 2,164-test suite stays green throughout"
-    - "Plan 06 is config-only — no Python source changes (compute_reliability already plumbed at tier_engine.py:957-965)"
+    - "Per C-09: 2,166-test suite stays green throughout (2,159 pre-Plan-06 + 5 from Task 1 + 2 from Task 1b loader gate)"
+    - "Plan 06 is mostly config-only — Task 1b adds a small loader-gate change in `data/pff/config.py` for codex MEDIUM 6"
   artifacts:
     - path: "config/defaults.yaml"
       provides: "Populated position_reliability block with D-08 values (only if SHIPPED)"
