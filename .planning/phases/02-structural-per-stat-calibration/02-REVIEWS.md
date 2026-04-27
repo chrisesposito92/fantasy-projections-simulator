@@ -224,3 +224,113 @@ The 3 carry-forward MEDIUMs (Plan 07 RNG determinism, Plan 05 `TE|elite|*` asser
 ```
 /gsd-plan-phase 2 --reviews
 ```
+
+---
+
+## Cycle 3 — Codex Review (post-cycle-2 revision, FINAL CYCLE)
+
+**Reviewed at:** 2026-04-27T05:24:00Z
+**Reviewer:** Codex (gpt-5.4)
+**Cycle:** 3 (FINAL — post-cycle-2 revision review at commit `5cc58d8` on `gsd/phase-2`)
+**Plans reviewed:** all 9 Phase 2 PLAN.md files (revised set after cycle-2 fixes)
+**Cycle 2 HIGH concerns asked about (4 unresolved):**
+1. HIGH 1 (cycle-2 carry-forward, originally cycle-1 HIGH 3) — Plan 09 walk-back consistency (stale "smallest-gain" sentence + coupled-cluster trigger sign convention)
+2. HIGH 2 (cycle-2 NEW) — Plan 07 probe imports (verified `FfOpportunityLoader.load_weekly` API)
+3. HIGH 3 (cycle-2 NEW) — Plan 07 Path B artifact pipeline (Task 2.5: fitter script, loader, concrete tests)
+4. HIGH 4 (cycle-2 NEW) — Plan 09 ledger-schema reads + Task 1 hard-floor split (`season_results`/`arm_b_*` correctness + walkback marker)
+
+### Summary
+
+Cycle 3 materially improved the Phase 2 plan: the Plan 07 probe now targets the real FF Opportunity loader surface, and Plan 09's detailed Task 1/2 blocks now read the real ledger schema and split the hard-floor assert behind a post-walkback marker. I still would not sign off on execution yet, because one cycle-2 HIGH is only partially cleaned up and Plan 07 now contains a new load-bearing contradiction in the main KS-13 implementation step. Biggest residual risk: the KS-13 plan can still drive the executor into broken code paths while claiming its tests are concrete.
+
+### Cycle-2 HIGH Resolution Status
+
+1. **HIGH 1 — Plan 09 walk-back consistency**
+Status: **FULLY RESOLVED**
+Plan 09 now makes reverse ablation the authoritative walk-back protocol in the actual execution plan text, not just in commentary (`09-phase2-aggregate-validation-PLAN.md` around lines 17-19, 50, 521-605). The coupled-cluster rule is also internally aligned now: prose uses `marginal_delta_rank_corr ≤ ε` with `ε = 0.005`, and the synthetic pair-revert test is described against the `+0.001` near-zero-positive case in the same file (around lines 19, 343-363, 603). The stale "smallest-gain" sentence appears removed from Plan 09 itself; the only remaining stale mention is in `02-VALIDATION.md`, which is supporting documentation, not the plan body.
+
+2. **HIGH 2 — Plan 07 probe imports**
+Status: **FULLY RESOLVED**
+Plan 07 now explicitly anchors the probe to the verified loader/API surface: `FfOpportunityLoader(config: FfOpportunityConfig | None = None)` with `load_weekly(seasons: list[int]) -> pl.DataFrame` (`07-ks13-ff-opportunity-prior-width-PLAN.md` around lines 23-24, 196-225, 334-335). That matches the live code exactly in `src/fantasy_sim/data/ensemble/loader.py:24` and `src/fantasy_sim/data/ensemble/loader.py:43`, and the plan now explicitly rejects the fictional `EnsembleLoader` / `load_week_raw` surface.
+
+3. **HIGH 3 — Plan 07 Path B artifact pipeline**
+Status: **FULLY RESOLVED**
+The specific cycle-2 gap is now present in the plan: Task 2.5 adds a fitter script, a bundled artifact location, a runtime loader `_load_ff_opportunity_prior_width_artifact`, a `_fitted_std_for(...)` helper, and concrete acceptance criteria for all of them (`07-ks13-ff-opportunity-prior-width-PLAN.md` around lines 27-29, 534-968). The concrete replacement tests are also spelled out, including the new `tests/test_scripts/test_fit_ff_opportunity_prior_width.py` coverage and the non-placeholder Path B assertions (around lines 789-968). That fully resolves the original "Path B pipeline never actually exists" finding.
+
+4. **HIGH 4 — Plan 09 ledger-schema reads + Task 1 hard-floor split**
+Status: **PARTIALLY RESOLVED**
+The detailed implementation blocks are now corrected: the plan explicitly switches to `LedgerEntry.season_results` helpers and introduces the `p2_walkback_complete.marker` split so the hard-floor test asserts only after the walk-back loop (`09-phase2-aggregate-validation-PLAN.md` around lines 20-21, 144-227, 427-505, 619-635). But the same file still carries stale contradictory schema/protocol text: the reverse-ablation formula in the top truth block still uses nonexistent `p2.aggregate.full.arm_b.<metric>` notation (around line 18), and the "Verified code" interface excerpt still shows the old flat `SeasonMetrics` shape with `rank_corr` / `weekly_mae` fields instead of `arm_b_rank_corr` / `arm_b_weekly_mae` (around lines 81-90). What's still missing is a full cleanup of those stale snippets so the entire plan file, not just its helper sections, consistently matches the real ledger surface.
+
+### New HIGH Concerns (introduced by cycle-2 revisions)
+
+- **[HIGH] [Plan 07, Task 2 blend block + test block]** The main KS-13 implementation step still tells the executor to use nonexistent top-level config paths: `self.config.prior_width.enabled` / `self.config.prior_width.path` in `FfOpportunityProjectionEnsembler.blend_week` (`07-ks13-ff-opportunity-prior-width-PLAN.md` around lines 395-400), but the verified live config surface is nested under `self.config.ff_opportunity` and `EnsembleConfig` has no top-level `prior_width` (`src/fantasy_sim/data/ensemble/models.py:63`). The same task still leaves `test_ks13_path_a_uses_quantile_width_when_lo_hi_present` and `test_ks13_unchanged_when_flag_disabled` as `pass` placeholders (around lines 428-450), despite the plan header claiming all six KS-13 tests are concrete (around line 55). That is a real execution blocker for the Path A and flag-off branches.
+
+### Carry-Forward MEDIUM Status (brief)
+
+- Plan 07 RNG determinism contract: mostly strengthened; must-have text and the concrete seed test exist (`07-ks13-ff-opportunity-prior-width-PLAN.md` around line 32 and lines 835-861), but its practical value is gated by the new Task 2 KS-13 contradiction above.
+- Plan 05 `TE|elite|*` bucket assertion: addressed; both the must-have and end-of-plan verification explicitly require a non-empty `TE|elite|*` bucket or downgrade to `SHIPPED-PARTIAL` (`05-ks10-per-position-caps-te-elite-tier-PLAN.md` around lines 21-22 and 583-587).
+- Plan 08 stub integration tests at lines 242/247: still unresolved; both integration tests remain `pass` placeholders despite the top-of-plan claim that they are concrete (`08-ks12-share-normalization-residual-PLAN.md` around lines 21-22, 240-247).
+- Plan 09 stale "smallest-gain" in `02-VALIDATION.md`: still stale at `02-VALIDATION.md:107`, but the executable Plan 09 now supersedes it with reverse ablation.
+
+### Risk Assessment
+
+**Final risk level**: HIGH
+
+Cycle 3 clearly converged on the right architecture for two of the biggest cycle-2 failures, but it did not finish cleanup: one original HIGH remains partially resolved, and Plan 07 now has a new load-bearing contradiction in the main implementation snippet plus vacuous tests in the same task. I would not sign off on Phase 2 execution now. One more cleanup pass is needed to make Plan 07 internally consistent and to remove the stale ledger/schema snippets from Plan 09.
+
+### Total Unresolved HIGHs Count
+
+`TOTAL_UNRESOLVED_HIGHS: 2`
+
+---
+
+## Cycle 3 — Consensus Summary
+
+Single-reviewer cycle (`--codex` only).
+
+### Cycle-2 → Cycle-3 HIGH Resolution Audit
+
+| # | Concern | Cycle-2 Finding | Cycle-3 Status | Counted as Unresolved? |
+|---|---------|-----------------|----------------|-------------------------|
+| 1 | Plan 09 walk-back consistency (stale sentence + trigger sign) | PARTIALLY RESOLVED (carry-forward of cycle-1 HIGH 3) | FULLY RESOLVED | No |
+| 2 | Plan 07 probe imports (`FfOpportunityLoader.load_weekly` API) | NEW HIGH | FULLY RESOLVED | No |
+| 3 | Plan 07 Path B artifact pipeline (Task 2.5) | NEW HIGH | FULLY RESOLVED | No |
+| 4 | Plan 09 ledger-schema reads + Task 1 hard-floor split | NEW HIGH | PARTIALLY RESOLVED | Yes (1) |
+
+### NEW HIGHs introduced in Cycle 3
+
+| # | Concern | Plan / Site | Counted as Unresolved? |
+|---|---------|-------------|-------------------------|
+| 5 | Plan 07 Task 2 KS-13 implementation references nonexistent top-level `self.config.prior_width.{enabled,path}` (live surface is nested under `self.config.ff_opportunity.prior_width` per `src/fantasy_sim/data/ensemble/models.py:63`); same task leaves `test_ks13_path_a_uses_quantile_width_when_lo_hi_present` and `test_ks13_unchanged_when_flag_disabled` as `pass` placeholders despite plan header claiming all six KS-13 tests are concrete | Plan 07 Task 2 blend block + test block | Yes (2) |
+
+### Total unresolved HIGHs (Cycle 3): **2**
+
+(1 partially-resolved cycle-2 carryover + 1 newly raised in cycle 3.)
+
+### Recommended Pre-Execution Actions for Cycle 4 / Escalation
+
+Before executing Plan 02 onward, address the 2 unresolved HIGHs:
+
+1. **Plan 09 stale schema snippets cleanup (HIGH 4 carryover)** — remove the nonexistent `p2.aggregate.full.arm_b.<metric>` notation in the must_haves truth block at line ~18 and update the "Verified code" interfaces excerpt at lines ~81-90 to match the real `SeasonMetrics` schema (`arm_b_rank_corr: dict[str, float]`, `arm_b_weekly_mae: float`, `stat_ks: dict[pos][stat][...]`, `stat_mean_bias: dict[pos][stat][...]`). The detailed Task 1/2 blocks already use the right shape — this is a cleanup of stale top-of-file documentation.
+
+2. **Plan 07 Task 2 config-path correction + concrete Path A / flag-off tests (cycle-3 NEW HIGH)** — rewrite the blend-block snippet at Plan 07 Task 2 lines ~395-400 to use `self.config.ff_opportunity.prior_width.enabled` and `self.config.ff_opportunity.prior_width.path` (the actual nested config path in `EnsembleConfig` per `src/fantasy_sim/data/ensemble/models.py:63`) — NOT the fictional top-level `self.config.prior_width.*`. Replace the `pass` placeholders in `test_ks13_path_a_uses_quantile_width_when_lo_hi_present` (line ~428) and `test_ks13_unchanged_when_flag_disabled` (line ~448) with concrete assertions that exercise the Path A branch and the flag-off pre-Plan-07 byte-identical behavior. Without this, the Path A and flag-off branches are unimplementable from the plan as written, and the plan header's "all six tests concrete" claim is false.
+
+The 1 carry-forward MEDIUM (Plan 08 stub integration tests at lines 242/247) and the cosmetic stale `02-VALIDATION.md:107` reference should also be folded into the next pass but do not block phase entry on their own.
+
+### Cycle Trajectory Summary
+
+| Cycle | Unresolved HIGHs | Notes |
+|-------|------------------|-------|
+| 1 | 3 | KS-09 output contract, KS-14 flag gate, Plan 09 walk-back additivity |
+| 2 | 4 | 1 carry-forward partial + 3 new (Plan 07 probe, Plan 07 Path B, Plan 09 schema) |
+| 3 | 2 | 1 carry-forward partial (Plan 09 stale schema snippets) + 1 new (Plan 07 Task 2 config path + placeholder tests) |
+
+Cycle 3 is the FINAL convergence cycle; the orchestrator hits a max-cycles escalation gate after this review. The trajectory is converging (3 → 4 → 2) but has not zeroed out. Per the cycle-3 reviewer's risk assessment: HIGH risk, no go on execution until one more cleanup pass.
+
+---
+
+*Generated by `/gsd-review --phase 2 --codex` on 2026-04-27 (cycle 3, FINAL). To incorporate feedback into planning:*
+
+```
+/gsd-plan-phase 2 --reviews
+```
