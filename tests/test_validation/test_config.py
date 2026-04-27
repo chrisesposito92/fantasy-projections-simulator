@@ -712,6 +712,7 @@ def test_phase2_ks_flags_present_and_default_false():
         "ks08_dynamic_blend_simulator_floor",  # SHIPPED 2026-04-26 (Plan 02)
         "ks09_per_stat_residual_calibration",  # SHIPPED-PARTIAL 2026-04-27 (Plan 03)
         "ks14_thin_bucket_shrinkage",           # SHIPPED 2026-04-27 (Plan 04)
+        "ks10_per_position_caps",              # SHIPPED 2026-04-27 (Plan 05)
     }
     assert set(flags.keys()) >= expected_all, f"Missing phase2_ks_flags entries: {expected_all - set(flags.keys())}"
     for name in expected_all - promoted:

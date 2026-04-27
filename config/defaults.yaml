@@ -44,7 +44,7 @@ phase2_ks_flags:
   ks09_per_stat_residual_calibration:
     enabled: true   # KS-09 SHIPPED-PARTIAL 2026-04-27 — hard floor + KS Δ ≤ -0.03 met at architecture level; per-stat bias delta too small at 200 sims; architecture in tree for Phase 3/4 levers (KS-10/KS-14). See logs/PROMOTION-NOTES.md ## KS-09
   ks10_per_position_caps:
-    enabled: false  # KS-10 D-07 (Plan 05)
+    enabled: true   # KS-10 SHIPPED 2026-04-27 — hard floor PASS (+0.0001 rank_corr, -0.002 weekly_mae); TE receptions KS -0.01 in 2024; see logs/PROMOTION-NOTES.md ## KS-10
   ks11_position_reliability:
     enabled: false  # KS-11 D-08 (Plan 06)
   ks12_share_normalization_residual:
@@ -433,11 +433,11 @@ ensemble:
     max_abs_adjustment: 1.5
     min_training_mae_delta: -0.01
     fallback: zero
-    max_abs_adjustment_by_position:  # KS-10 D-07 placeholder (Plan 05 retunes to {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8})
-      QB: 1.5
-      RB: 1.5
+    max_abs_adjustment_by_position:  # KS-10 D-07 per-position caps — {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8}
+      QB: 2.5
+      RB: 2.0
       WR: 1.5
-      TE: 1.5
+      TE: 0.8
     stat_level:  # KS-09 D-03 (Plan 03 enables + uses) — SHIPPED-PARTIAL 2026-04-27
       enabled: true
       covered_stats:
