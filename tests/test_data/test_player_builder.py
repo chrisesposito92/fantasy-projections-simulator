@@ -1199,3 +1199,96 @@ class TestKs07PositionalRzCatchRateFallback:
         te = models["TE12"]
         expected = te.outcomes.catch_rate * RZ_CATCH_RATE_MODIFIERS["TE"]
         assert te.outcomes.red_zone_catch_rate == pytest.approx(expected, abs=0.001)
+
+
+# === KS-12: share-normalization residual ===
+
+class _MockUsageKS12:
+    """Minimal usage mock for KS-12 unit tests."""
+    def __init__(self, carry_share=0.0, target_share=0.0, red_zone_carry_share=0.0,
+                 red_zone_target_share=0.0, outer_rz_carry_share=0.0,
+                 outer_rz_target_share=0.0, goal_line_carry_share=0.0,
+                 goal_line_target_share=0.0, snap_share=1.0):
+        self.carry_share = carry_share
+        self.target_share = target_share
+        self.red_zone_carry_share = red_zone_carry_share
+        self.red_zone_target_share = red_zone_target_share
+        self.outer_rz_carry_share = outer_rz_carry_share
+        self.outer_rz_target_share = outer_rz_target_share
+        self.goal_line_carry_share = goal_line_carry_share
+        self.goal_line_target_share = goal_line_target_share
+        self.snap_share = snap_share
+
+
+class _MockPlayerKS12:
+    """Minimal player mock for KS-12 unit tests."""
+    def __init__(self, position, snap_share=1.0, carry_share=0.0, target_share=0.0):
+        self.position = position
+        self.usage = _MockUsageKS12(
+            carry_share=carry_share,
+            target_share=target_share,
+            snap_share=snap_share,
+        )
+
+
+class _MockRosterKS12:
+    """Minimal roster mock for KS-12 unit tests."""
+    def __init__(self, players):
+        self.players = players
+
+
+class TestKS12ShareNormalizationResidual:
+    """Unit tests for _expected_active_share_factor (KS-12 D-09)."""
+
+    def test_ks12_factor_is_one_when_all_active(self):
+        """When all 22 roster players have snap_share > 0, factor = 1.0."""
+        from fantasy_sim.data.player_builder import _expected_active_share_factor
+        players = [_MockPlayerKS12("RB", snap_share=1.0) for _ in range(22)]
+        roster = _MockRosterKS12(players)
+        factor = _expected_active_share_factor(roster, typical_roster_size=22)
+        assert factor == 1.0
+
+    def test_ks12_factor_lt_one_when_multi_inactive(self):
+        """When 4 of 22 players have snap_share == 0 (inactive), factor = 18/22."""
+        from fantasy_sim.data.player_builder import _expected_active_share_factor
+        players = [
+            _MockPlayerKS12("RB", snap_share=0.0 if i < 4 else 1.0)
+            for i in range(22)
+        ]
+        roster = _MockRosterKS12(players)
+        factor = _expected_active_share_factor(roster, typical_roster_size=22)
+        assert abs(factor - 18 / 22) < 1e-6
+
+    def test_ks12_min_fraction_clamps_low(self):
+        """When 18 of 22 inactive (only 4 active), 4/22 ≈ 0.18 clamped to 0.5."""
+        from fantasy_sim.data.player_builder import _expected_active_share_factor
+        players = [
+            _MockPlayerKS12("RB", snap_share=1.0 if i < 4 else 0.0)
+            for i in range(22)
+        ]
+        roster = _MockRosterKS12(players)
+        factor = _expected_active_share_factor(roster, typical_roster_size=22, min_fraction=0.5)
+        assert factor == 0.5
+
+    def test_ks12_max_fraction_clamps_high(self):
+        """When typical_roster_size=20 and 22 active, 22/20 > 1.0 clamped to 1.0."""
+        from fantasy_sim.data.player_builder import _expected_active_share_factor
+        players = [_MockPlayerKS12("RB", snap_share=1.0) for _ in range(22)]
+        roster = _MockRosterKS12(players)
+        factor = _expected_active_share_factor(roster, typical_roster_size=20)
+        assert factor == 1.0
+
+    def test_ks12_normalize_unchanged_when_flag_disabled(self, monkeypatch):
+        """When flag is False, _normalize_roster_shares produces sum-to-1.0 (legacy)."""
+        from fantasy_sim.data import player_builder as pb_mod
+        from fantasy_sim.data.player_builder import _normalize_roster_shares
+        # Force the flag OFF for this test regardless of defaults.yaml
+        monkeypatch.setattr(pb_mod, "_KS12_SHARE_NORM_RESIDUAL", False)
+        players = [
+            _MockPlayerKS12("RB", carry_share=0.5),
+            _MockPlayerKS12("RB", carry_share=0.3),
+        ]
+        roster = _MockRosterKS12(players)
+        _normalize_roster_shares(roster)
+        total_carry = sum(p.usage.carry_share for p in players)
+        assert abs(total_carry - 1.0) < 1e-6

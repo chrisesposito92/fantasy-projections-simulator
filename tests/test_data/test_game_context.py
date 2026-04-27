@@ -999,3 +999,122 @@ class TestKs03DistMeanAnchor:
 
         assert none_wr.outcomes.receiving_yards_dist is None
         assert len(empty_wr.outcomes.receiving_yards_dist) == 0
+
+
+# === KS-12: integration with _normalize_roster_shares ===
+
+class TestKS12NormalizeRosterSharesIntegration:
+    """Integration tests for KS-12 share-normalization residual.
+
+    These tests exercise _normalize_roster_shares with the flag enabled and
+    a multi-inactive roster (players with snap_share=0 simulating post-availability
+    state), verifying that the factor < 1.0 path is used and share sums match
+    the expected active fraction.
+    """
+
+    def _make_usage(self, snap_share=1.0, carry_share=0.0, target_share=0.0,
+                    red_zone_carry_share=0.0, red_zone_target_share=0.0,
+                    outer_rz_carry_share=0.0, outer_rz_target_share=0.0,
+                    goal_line_carry_share=0.0, goal_line_target_share=0.0):
+        from fantasy_sim.models.player import PlayerUsage
+        u = PlayerUsage()
+        u.snap_share = snap_share
+        u.carry_share = carry_share
+        u.target_share = target_share
+        u.red_zone_carry_share = red_zone_carry_share
+        u.red_zone_target_share = red_zone_target_share
+        u.outer_rz_carry_share = outer_rz_carry_share
+        u.outer_rz_target_share = outer_rz_target_share
+        u.goal_line_carry_share = goal_line_carry_share
+        u.goal_line_target_share = goal_line_target_share
+        return u
+
+    def _make_player(self, player_id, position, **usage_kwargs):
+        from fantasy_sim.models.player import PlayerModel, PlayerOutcomes
+        import numpy as np
+        usage = self._make_usage(**usage_kwargs)
+        outcomes = PlayerOutcomes()
+        return PlayerModel(
+            player_id=player_id,
+            name=player_id,
+            position=position,
+            team="KC",
+            usage=usage,
+            outcomes=outcomes,
+        )
+
+    def test_ks12_select_receiver_handles_residual_factor(self, monkeypatch):
+        """When KS-12 flag ON and 2 receivers inactive (snap_share=0),
+        _normalize_roster_shares reduces target_share sum to active_factor < 1.0.
+
+        Verifies availability-engine composition: inactive players (snap_share=0)
+        are not counted as active, so the active_factor = 20/22 ≈ 0.909, and
+        the sum of target_shares for active receivers ≈ active_factor ± 0.02.
+        """
+        from fantasy_sim.data import player_builder as pb_mod
+        from fantasy_sim.data.player_builder import _normalize_roster_shares, _expected_active_share_factor
+        from fantasy_sim.models.player import TeamRoster
+
+        # Force KS-12 flag ON
+        monkeypatch.setattr(pb_mod, "_KS12_SHARE_NORM_RESIDUAL", True)
+
+        # 20 active WRs + 2 inactive (snap_share=0, target_share=0)
+        # Simulate post-availability state: inactive players have zeroed shares
+        active_receivers = [
+            self._make_player(f"WR_{i}", "WR", snap_share=1.0, target_share=0.1)
+            for i in range(20)
+        ]
+        inactive_receivers = [
+            self._make_player(f"WR_INACTIVE_{j}", "WR", snap_share=0.0, target_share=0.0)
+            for j in range(2)
+        ]
+        roster = TeamRoster(team="KC", players=active_receivers + inactive_receivers)
+
+        # Compute expected factor before normalizing
+        expected_factor = _expected_active_share_factor(roster, typical_roster_size=22)
+        assert expected_factor < 1.0, "Expected factor < 1.0 for multi-inactive roster"
+
+        _normalize_roster_shares(roster)
+
+        active_target_sum = sum(p.usage.target_share for p in active_receivers)
+        # After normalization with factor, sum should ≈ active_factor ± 0.02
+        assert abs(active_target_sum - expected_factor) < 0.02, (
+            f"target_share sum {active_target_sum:.4f} should ≈ "
+            f"active_factor {expected_factor:.4f} ± 0.02"
+        )
+
+    def test_ks12_select_rusher_handles_residual_factor(self, monkeypatch):
+        """When KS-12 flag ON and 2 RBs inactive (snap_share=0),
+        _normalize_roster_shares reduces carry_share sum to active_factor < 1.0.
+
+        Mirrors the receiver test for rushers: 20 active RBs + 2 inactive.
+        Factor = 20/22 ≈ 0.909; sum of carry_shares for active RBs ≈ factor ± 0.02.
+        """
+        from fantasy_sim.data import player_builder as pb_mod
+        from fantasy_sim.data.player_builder import _normalize_roster_shares, _expected_active_share_factor
+        from fantasy_sim.models.player import TeamRoster
+
+        # Force KS-12 flag ON
+        monkeypatch.setattr(pb_mod, "_KS12_SHARE_NORM_RESIDUAL", True)
+
+        # 20 active RBs + 2 inactive (snap_share=0, carry_share=0)
+        active_rushers = [
+            self._make_player(f"RB_{i}", "RB", snap_share=1.0, carry_share=0.1)
+            for i in range(20)
+        ]
+        inactive_rushers = [
+            self._make_player(f"RB_INACTIVE_{j}", "RB", snap_share=0.0, carry_share=0.0)
+            for j in range(2)
+        ]
+        roster = TeamRoster(team="KC", players=active_rushers + inactive_rushers)
+
+        expected_factor = _expected_active_share_factor(roster, typical_roster_size=22)
+        assert expected_factor < 1.0
+
+        _normalize_roster_shares(roster)
+
+        active_carry_sum = sum(p.usage.carry_share for p in active_rushers)
+        assert abs(active_carry_sum - expected_factor) < 0.02, (
+            f"carry_share sum {active_carry_sum:.4f} should ≈ "
+            f"active_factor {expected_factor:.4f} ± 0.02"
+        )
