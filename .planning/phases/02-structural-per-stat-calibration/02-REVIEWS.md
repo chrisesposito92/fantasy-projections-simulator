@@ -122,3 +122,105 @@ Medium items (KS-11 flag gate, KS-10 fitter gating, KS-13 artifact spec, KS-12 l
 ```
 /gsd-plan-phase 2 --reviews
 ```
+
+---
+
+## Cycle 2 — Codex Review (post-revision)
+
+**Reviewed at:** 2026-04-27T01:52:07Z
+**Reviewer:** Codex (gpt-5.4)
+**Cycle:** 2 (post-revision after commit `ee58ff4` on `gsd/phase-2`)
+**Plans reviewed:** all 9 Phase 2 PLAN.md files (revised set)
+**Cycle 1 HIGH concerns asked about:**
+1. KS-09 output contract ambiguity (Plan 03 + Plan 09)
+2. KS-14 flag gate is leaky (Plan 04 Task 1)
+3. Plan 09 walk-back logic assumes additivity that does not hold
+
+**Summary**
+
+The Cycle 1 revisions materially improved the Phase 2 plan set. HIGH 1 and HIGH 2 are now closed in the plan text, and the revised Plan 09 is directionally much better than the original additivity-based walk-back. But I would not sign off on Phase 2 execution yet. HIGH 3 is only partially resolved because Plan 09 still contains conflicting rollback instructions, and the revised set now has two new load-bearing execution blockers: Plan 07's probe/Path-B branch does not match the current ensemble code surface, and Plan 09's aggregate delta logic is written against a ledger interface that does not exist.
+
+**Cycle 1 HIGH Resolution Status**
+
+- **HIGH 1 (KS-09 output contract): FULLY RESOLVED** — Plan 03 (must_haves line 23) now explicitly says `scripts/validate.py::_compute_distribution_ks` must prefer `corrected_<stat>` when the KS-09 flag is on, and Task 3 adds concrete routing tests for flag-on and flag-off behavior (`test_ks09_validate_routes_corrected_stat_when_flag_on` / `..._raw_stat_when_flag_off`).
+- **HIGH 2 (KS-14 flag gate): FULLY RESOLVED** — Plan 04 (must_haves line 17) now keeps `MIN_BUCKET_PLAYS = 10` as the legacy constant, introduces `_effective_min_bucket_plays()`, routes both `compute_play_outcomes` and `compute_play_calling` through it, and adds the required `test_ks14_legacy_min_bucket_plays_when_flag_off`.
+- **HIGH 3 (Plan 09 walk-back additivity): PARTIALLY RESOLVED** — Plan 09 (must_haves line 18) now replaces isolated per-KS rollback with leave-one-out reverse ablation, which is the right conceptual fix. But it is not fully closed because the same file still says in the objective to "revert the smallest-gain promotion candidate first" (Plan 09 line 49), and the coupled-cluster trigger is inconsistent between the prose (`negative marginal_delta_rank_corr`) and the synthetic test case (`+0.001` near-zero positives in `test_reverse_ablation_coupled_cluster_pair_revert` Plan 09 line 218).
+
+**Cycle 1 MEDIUM/LOW Resolution Status (briefly)**
+
+- **KS-13 artifact spec:** PARTIALLY RESOLVED — the revised must-haves define a real Path B artifact contract, but the task body still never creates `scripts/fit_ff_opportunity_prior_width.py` or a concrete artifact loader path.
+- **RNG determinism:** UNRESOLVED — the must-have promises per-row seeded deterministic sampling, but Plan 07 Task 2 (line ~302) still sketches a shared `self._rng.normal(...)` path and leaves determinism tests as `pass`.
+- **KS-11 flag gate:** RESOLVED — Plan 06 Task 1b correctly gates `position_reliability` on `ks11_position_reliability.enabled` and adds flag-off / flag-on tests.
+- **KS-10 fitter gating + `TE|elite|*` bucket assertion:** PARTIALLY RESOLVED — runtime gating is explicit, but the promised non-empty `TE|elite|*` assertion is not actually enforced; Plan 05 Task 2 only checks for any `TE|` bucket.
+- **KS-12 success metric + concrete tests:** PARTIALLY RESOLVED — the success metric is now correctly tied to `Δ stat_ks[WR][receptions]`, but the two "concrete" integration tests in Plan 08 Task 1 (line ~240) are still literal `pass` placeholders.
+- **KS-08 sweep alignment:** RESOLVED — Plan 02 (line ~722) now aligns sweep choice, defaults flip, and bundled artifact refit around the same chosen floor.
+- **`bare_config_dict` non-boolean knob safety:** RESOLVED — Plan 01 (line ~330) now explicitly distinguishes scalar/dict knobs from boolean gates and keeps bare isolation on the parent `enabled` paths.
+
+**New HIGH Concerns Introduced by the Revisions**
+
+- **[HIGH] Plan 07 Task 1, `scripts/probe_ff_opportunity_quantiles.py`** — the revised probe script imports `EnsembleLoader` and calls `load_week_raw(...)` (Plan 07 Task 1 line ~169), but the current code surface only exposes `FfOpportunityLoader.load_weekly(...)` in `src/fantasy_sim/data/ensemble/loader.py` (line 24). As written, the probe cannot run, so the Path A / Path B decision is blocked.
+- **[HIGH] Plan 07 Task 2, Path B branch** — the revised plan promises a concrete Path B artifact pipeline in the must-haves, but Task 2 (line ~258) never creates `scripts/fit_ff_opportunity_prior_width.py`, never defines the artifact loader, and still leaves several KS-13 tests as `pass`. If the probe selects Path B, the plan dead-ends.
+- **[HIGH] Plan 09 Task 1/Task 2, aggregate delta + walk-back implementation** — the revised delta test and reverse-ablation scripts are written against a nonexistent ledger interface (`p1.arm_b.rank_corr`, `p2.arm_b.weekly_mae`, etc. in Task 1 line ~161 and Task 2 line ~289), but `src/fantasy_sim/validation/ledger.py` (line 70) stores per-season data under `season_results[*].arm_a_* / arm_b_*`, not a single `arm_b` object. On top of that, Task 1 hard-asserts the hard floor before Task 2's walk-back loop, so a real regression would fail the suite before reverse ablation could even run.
+
+**New MEDIUM/LOW Concerns Worth Flagging**
+
+- **[MEDIUM] Plan 09 objective text still contains stale pre-revision guidance** — line 49 still says "revert the smallest-gain promotion candidate first," which conflicts with the reverse-ablation protocol above it.
+- **[MEDIUM] Plan 09 coupled-cluster trigger is internally inconsistent** — the prose says pair-revert when both KS-08 and KS-13 have negative marginal rank deltas, but the synthetic test models near-zero positive deltas instead; the executor does not have one unambiguous trigger rule.
+- **[MEDIUM] Plan 08 still over-claims test concreteness** — the must-have says the integration tests "ARE concrete," but the task body still leaves them stubbed.
+
+**Strengths of the Cycle 2 Plan Set**
+
+- Plan 03 now closes the original KS-09 observability gap cleanly by wiring the corrected stat columns all the way into the canonical ledger metric.
+- Plan 04 fixes the KS-14 leak the right way: the threshold, the shrinkage branch, and both consumer call sites are now tied to the same flag.
+- Plan 01's hard-gate treatment of Phase 2 flags and sub-engine booleans makes the bare/full A/B contract much more credible than the original draft.
+- Plan 06's loader-gate fix is a real improvement: it turns the KS-11 flag into an actual runtime gate instead of a comment-only contract.
+- Plan 09's move away from isolated per-KS rollback toward marginal contribution testing is the correct conceptual direction.
+
+**Risk Assessment**
+
+**HIGH** — I would not sign off on Phase 2 execution yet. The revised set is much stronger on the original Cycle 1 issues, but it is still not execution-safe as a whole: Plan 07 has a broken probe surface and an incomplete Path B branch, and Plan 09's aggregate/walk-back implementation is written against the wrong ledger interface and still contains conflicting rollback rules. If those two plans are revised, and the remaining placeholder integration tests are replaced with concrete assertions, the set should be close to ready. As it stands, further revisions are needed before kickoff.
+
+---
+
+## Cycle 2 — Consensus Summary
+
+Single-reviewer cycle (`--codex` only).
+
+### Cycle-1 → Cycle-2 HIGH Resolution Audit
+
+| # | Concern | Cycle-1 Finding | Cycle-2 Status | Counted as Unresolved? |
+|---|---------|-----------------|----------------|-------------------------|
+| 1 | KS-09 output contract ambiguity | HIGH | FULLY RESOLVED | No |
+| 2 | KS-14 flag gate leaky | HIGH | FULLY RESOLVED | No |
+| 3 | Plan 09 walk-back additivity | HIGH | PARTIALLY RESOLVED | Yes (1) |
+
+### NEW HIGHs introduced in Cycle 2
+
+| # | Concern | Plan / Site | Counted as Unresolved? |
+|---|---------|-------------|-------------------------|
+| 4 | Plan 07 probe script imports nonexistent `EnsembleLoader.load_week_raw(...)` (current code surface = `FfOpportunityLoader.load_weekly(...)`) | Plan 07 Task 1 | Yes (2) |
+| 5 | Plan 07 Path B never creates `scripts/fit_ff_opportunity_prior_width.py` or the artifact loader; KS-13 dead-ends if probe → Path B | Plan 07 Task 2 | Yes (3) |
+| 6 | Plan 09 aggregate delta + reverse-ablation are written against a nonexistent `p1.arm_b.rank_corr` / `p2.arm_b.weekly_mae` ledger object (real schema is `season_results[*].arm_a_* / arm_b_*`); Task 1 also hard-asserts hard floor before Task 2's walk-back loop runs | Plan 09 Task 1 + Task 2 | Yes (4) |
+
+### Total unresolved HIGHs (Cycle 2): **4**
+
+(1 partially-resolved Cycle-1 carryover + 3 newly raised in Cycle 2.)
+
+### Recommended Pre-Execution Actions for Cycle 3
+
+Before executing Plan 02 onward, address the 4 unresolved HIGHs:
+
+1. **Plan 09 walk-back consistency** — delete the stale "revert smallest-gain promotion candidate first" sentence at line 49; align the coupled-cluster trigger prose with the synthetic test (pick ONE trigger sign convention — recommend `marginal_delta_rank_corr ≤ 0` so near-zero values qualify, then update the test accordingly).
+2. **Plan 07 probe script surface** — rewrite `scripts/probe_ff_opportunity_quantiles.py` against the real `FfOpportunityLoader.load_weekly(...)` API (verify in `src/fantasy_sim/data/ensemble/loader.py` first), or extend the loader to expose `load_week_raw(...)` if the raw schema is needed.
+3. **Plan 07 Path B artifact pipeline** — add a new task to Plan 07 that creates `scripts/fit_ff_opportunity_prior_width.py` mirroring `scripts/fit_residual_calibration.py`, defines `_load_ff_opportunity_prior_width_artifact(season)` in `EnsembleLayer`, and replaces `pass` test stubs with concrete assertions. Without this, Path B is unimplementable.
+4. **Plan 09 ledger interface** — rewrite Task 1 / Task 2 ledger reads against the actual `LedgerEntry.season_results[season].arm_a_<metric>` / `arm_b_<metric>` schema (verify in `src/fantasy_sim/validation/ledger.py`). Move the hard-floor assertion AFTER the walk-back loop (or split into a "pre-walkback" advisory log + a "post-walkback" assert) so a regressing aggregate triggers the protocol instead of failing the test suite.
+
+The 3 carry-forward MEDIUMs (Plan 07 RNG determinism, Plan 05 `TE|elite|*` assertion, Plan 08 stub integration tests) and the 3 new MEDIUMs (Plan 09 stale prose, Plan 09 coupled-cluster trigger sign, Plan 08 over-claim) should be folded into the Cycle 3 revision pass but do not necessarily block phase entry on their own.
+
+---
+
+*Generated by `/gsd-review --phase 2 --codex` on 2026-04-27 (cycle 2). To incorporate feedback into planning:*
+
+```
+/gsd-plan-phase 2 --reviews
+```
