@@ -237,7 +237,7 @@ Rationale: Full hard floor PASSES (rank_corr +0.0000, weekly_mae -0.000). Primar
 
 **Ledger entries:** p2.ks14.bare (#116), p2.ks14.full (#117).
 
-## KS-13 (Plan 07) — TBD
+## KS-13 (Plan 07) — SHIPPED-NO-OP
 
 **Probe outcome (2026-04-27):**
 ```json
@@ -246,6 +246,35 @@ Rationale: Full hard floor PASSES (rank_corr +0.0000, weekly_mae -0.000). Primar
 
 **Selected path:** `B`. Rationale: nflverse FF Opportunity weekly data does not contain `total_fantasy_points_exp_lo` or `total_fantasy_points_exp_hi` columns, so Path A's quantile-derived sigma is unavailable. Path B (fit per-bucket residual variance from training data) is required.
 
-A/B results and promotion decision to be added after Task 3.
+**Path B artifacts fitted (2026-04-27):** `prior_width_2023.json` + `prior_width_2024.json` at `data/ensemble/artifacts/ff_opportunity_prior_width/decision_s200/`. Per-position std_fpts (PPR): QB=5.65, RB=4.19, WR=4.59, TE=3.54. League-wide std ≈ 4.46. Bayesian shrinkage (PRIOR_N=50) applied.
+
+**A/B results (2026-04-27):**
+
+| Mode | Δ rank_corr | Δ weekly_mae | Δ fpts_ks avg | Hard Floor | KS Δ ≤ -0.005 (Path B bar) |
+|------|-------------|--------------|----------------|-----------|---------------------------|
+| bare | +0.0012     | +0.072       | -0.000         | FAIL (wk_mae +0.072 > +0.05) | FAIL |
+| full (no artifacts, #123) | -0.0004 | +0.005 | -0.000 | PASS | FAIL |
+| full (with artifacts, #124) | -0.0007 | -0.001 | +0.000 | PASS | FAIL |
+
+**Per-season fpts KS (full-stack, #124):**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.24     | 0.25     | +0.00 |
+| 2023   | 0.22     | 0.22     | -0.00 |
+| 2024   | 0.16     | 0.16     | +0.00 |
+
+**D-30 evaluation:**
+1. Hard floor (full arm, #124): rank_corr Δ -0.0007 ≥ -0.005 AND weekly_mae Δ -0.001 ≤ +0.05 → **PASS**
+2. KS Δ ≤ -0.005 on fpts (Path B bar): avg ≈ 0.000 (within noise) → **FAIL**
+3. Bare hard-floor failure (+0.072 weekly_mae) informational per Gate Relaxation Decision
+
+**Decision:** `SHIPPED-NO-OP`.
+
+Rationale: Hard floor PASSES on the full-stack arm (rank_corr -0.0007, weekly_mae -0.001). The KS Δ condition (≤ -0.005) is not met because adding Gaussian noise centered on the ff_opportunity prior doesn't improve distribution shape — the KS gap comes from systematic biases (QB pass_yards/WR receiving_yards under-projection), not from the width of the ff_opportunity prior distribution. Adding ±4-5 fpts noise centered on an unbiased prior widens the fpts distribution symmetrically, which doesn't reduce KS. The architecture and dual-gate implementation are correct and in place; the bare A/B failure is informational per Gate Relaxation Decision.
+
+`phase2_ks_flags.ks13_ff_opportunity_prior_width.enabled` stays `false` in defaults.yaml.
+
+**Ledger entries:** p2.ks13.bare (#122), p2.ks13.full (#123, pre-artifacts), p2.ks13.full (#124, post-artifacts).
 
 ## Phase 2 Aggregate (Plan 09) — TBD
