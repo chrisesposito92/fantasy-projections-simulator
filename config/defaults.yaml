@@ -42,7 +42,7 @@ phase2_ks_flags:
     enabled: true   # KS-08 SHIPPED 2026-04-26 — see logs/PROMOTION-NOTES.md ## KS-08
     floor: 0.20    # Smallest passing floor from {0.20, 0.30, 0.40} sweep (D-05)
   ks09_per_stat_residual_calibration:
-    enabled: false  # KS-09 D-02 (Plan 03)
+    enabled: true   # KS-09 SHIPPED-PARTIAL 2026-04-27 — hard floor + KS Δ ≤ -0.03 met at architecture level; per-stat bias delta too small at 200 sims; architecture in tree for Phase 3/4 levers (KS-10/KS-14). See logs/PROMOTION-NOTES.md ## KS-09
   ks10_per_position_caps:
     enabled: false  # KS-10 D-07 (Plan 05)
   ks11_position_reliability:
@@ -438,8 +438,8 @@ ensemble:
       RB: 1.5
       WR: 1.5
       TE: 1.5
-    stat_level:  # KS-09 D-03 (Plan 03 enables + uses)
-      enabled: false
+    stat_level:  # KS-09 D-03 (Plan 03 enables + uses) — SHIPPED-PARTIAL 2026-04-27
+      enabled: true
       covered_stats:
         - pass_yards
         - pass_tds

@@ -101,6 +101,8 @@ Average Δ ≈ +0.003 (NOT ≤ -0.03 — KS bar FAILS)
 
 **Decision:** `SHIPPED-PARTIAL`. Rationale: Hard floor PASSES (rank_corr +0.0001, weekly_mae +0.003). The KS Δ condition (≤ -0.03) is not met because per-stat corrections trained on the full stack's residuals are small — the fpts-level calibration + market_history + ff_opportunity already handle most QB bias; the incremental per-stat residuals are on the order of 1-5 yd/week per bucket, well within 200-sim noise. The architecture is complete: two-stage layered fpts (D-01), corrected_<stat> columns, validate.py routing into stat_ks / stat_mean_bias (codex HIGH 1 fix), schema_v2 artifacts. Per D-14, BLOCKED requires hard floor regression — since hard floor passes, flag flips to true for Phase 3/4 levers (KS-10 per-position caps, KS-14 thin-bucket shrinkage) to layer on top of this foundation. The bare regression (+0.060 weekly_mae, QB pass_yards KS regression in bare mode) is informational per Phase 1 Gate Relaxation Decision — artifacts were fit on full-stack residuals so bare-mode isolation shows expected mismatch.
 
+**Final decision (2026-04-27):** Status = SHIPPED-PARTIAL. Defaults.yaml updated: `phase2_ks_flags.ks09_per_stat_residual_calibration.enabled=true` AND `ensemble.residual_calibration.stat_level.enabled=true`. Test suite (2152) green. Bundled artifacts shipped at schema_version: 2 with stat_corrections block for 9 stats (pass_yards, pass_tds, interceptions, rush_yards, rush_tds, receiving_yards, receptions, receiving_tds, fumbles_lost) × 8-19 buckets each. test_phase2_ks_flags_present_and_default_false updated to include ks09 in promoted set.
+
 ## KS-10 (Plan 05) — TBD
 
 ## KS-11 (Plan 06) — TBD
