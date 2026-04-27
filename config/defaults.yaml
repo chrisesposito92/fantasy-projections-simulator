@@ -32,6 +32,28 @@ phase1_ks_flags:
   ks32_clock_pass_incomplete_3s:
     enabled: false   # KS-32 — CLOCK_PASS_INCOMPLETE = 3 (only set if measurement motivates)
 
+# Phase 2 KS code-change feature flags (continues Phase 1 D-45 pattern — see 02-CONTEXT.md
+# D-02). Each flag gates one per-KS code change so per-KS A/B can perform a real (legacy)
+# vs (new) two-arm comparison via `--set phase2_ks_flags.ksXX_<name>.enabled=true`. Default
+# false everywhere; per-KS promotion commits flip the flag to `true` after the A/B passes
+# hard floor + promotion bar.
+phase2_ks_flags:
+  ks08_dynamic_blend_simulator_floor:
+    enabled: false
+    floor: 0.20    # KS-08 sweep candidate (Plan 02 retunes to smallest-passing value)
+  ks09_per_stat_residual_calibration:
+    enabled: false  # KS-09 D-02 (Plan 03)
+  ks10_per_position_caps:
+    enabled: false  # KS-10 D-07 (Plan 05)
+  ks11_position_reliability:
+    enabled: false  # KS-11 D-08 (Plan 06)
+  ks12_share_normalization_residual:
+    enabled: false  # KS-12 D-09 (Plan 08)
+  ks13_ff_opportunity_prior_width:
+    enabled: false  # KS-13 D-10 (Plan 07)
+  ks14_thin_bucket_shrinkage:
+    enabled: false  # KS-14 D-11 (Plan 04)
+
 simulation:
   num_sims: 1000
   training_years: 4
@@ -114,6 +136,7 @@ pff:
     reliability_variance_weight: 0.3
     reliability_floor: 0.20
     reliability_cap: 0.80
+    position_reliability: {}  # KS-11 D-08 placeholder (Plan 06 populates: WR/TE {floor: 0.30, cap: 0.95, min_targets: 30}, RB {floor: 0.25, cap: 0.92, min_carries: 50}; QB stays at global floor:0.20/cap:0.80 per C-10)
     blend_pool_size: 250
     ncaa_rookie:
       enabled: true
@@ -387,6 +410,8 @@ ensemble:
       WR: 0.25
       TE: 0.15
     min_coverage_weeks: 1
+    prior_width:  # KS-13 D-10 (Plan 07 enables; Path A or Path B per probe)
+      enabled: false
   ff_rankings:
     enabled: false
   dynamic_blend:
@@ -397,6 +422,7 @@ ensemble:
     min_bucket_weeks: 6
     grid_step: 0.05
     fallback: fixed_defaults
+    simulator_weight_floor: 0.0  # KS-08 D-06 placeholder (Plan 02 retunes to smallest-passing value from sweep {0.20, 0.30, 0.40})
   residual_calibration:
     enabled: true
     artifacts_dir: null
@@ -407,6 +433,23 @@ ensemble:
     max_abs_adjustment: 1.5
     min_training_mae_delta: -0.01
     fallback: zero
+    max_abs_adjustment_by_position:  # KS-10 D-07 placeholder (Plan 05 retunes to {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8})
+      QB: 1.5
+      RB: 1.5
+      WR: 1.5
+      TE: 1.5
+    stat_level:  # KS-09 D-03 (Plan 03 enables + uses)
+      enabled: false
+      covered_stats:
+        - pass_yards
+        - pass_tds
+        - interceptions
+        - rush_yards
+        - rush_tds
+        - receiving_yards
+        - receptions
+        - receiving_tds
+        - fumbles_lost
 
 market_history:
   enabled: true
