@@ -237,4 +237,15 @@ Rationale: Full hard floor PASSES (rank_corr +0.0000, weekly_mae -0.000). Primar
 
 **Ledger entries:** p2.ks14.bare (#116), p2.ks14.full (#117).
 
+## KS-13 (Plan 07) — TBD
+
+**Probe outcome (2026-04-27):**
+```json
+{"path": "B", "lo_present": false, "hi_present": false, "non_null_fraction": 0.0}
+```
+
+**Selected path:** `B`. Rationale: nflverse FF Opportunity weekly data does not contain `total_fantasy_points_exp_lo` or `total_fantasy_points_exp_hi` columns, so Path A's quantile-derived sigma is unavailable. Path B (fit per-bucket residual variance from training data) is required.
+
+A/B results and promotion decision to be added after Task 3.
+
 ## Phase 2 Aggregate (Plan 09) — TBD
