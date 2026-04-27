@@ -48,7 +48,7 @@ phase2_ks_flags:
   ks11_position_reliability:
     enabled: true   # KS-11 SHIPPED 2026-04-27 — hard floor PASS (+0.0004 rank_corr, -0.002 weekly_mae); WR/TE recv_yds KS within noise; QB pass_yards Δ≈0 (C-10 PASS); see logs/PROMOTION-NOTES.md ## KS-11
   ks12_share_normalization_residual:
-    enabled: false  # KS-12 D-09 (Plan 08)
+    enabled: true   # KS-12 SHIPPED 2026-04-27 — hard floor PASS (+0.0006 rank_corr, -0.009 weekly_mae); WR/TE receptions KS non-regressive all 3 seasons; availability.enabled=true required for factor to fire; MIN_BACKUP_RECEIVING_SHARE=0.05; see logs/PROMOTION-NOTES.md ## KS-12
   ks13_ff_opportunity_prior_width:
     enabled: false  # KS-13 SHIPPED-NO-OP 2026-04-27 — hard floor PASS (Δ rank_corr -0.0007, Δ weekly_mae -0.001); fpts KS Δ ≈ 0.000 (not ≤ -0.005 Path B bar); sampling adds symmetric noise but KS gap is systematic. Architecture in tree for Plan 09 testing. See logs/PROMOTION-NOTES.md ## KS-13
   ks14_thin_bucket_shrinkage:

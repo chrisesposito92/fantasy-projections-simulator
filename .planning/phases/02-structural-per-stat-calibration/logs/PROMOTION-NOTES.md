@@ -197,7 +197,65 @@ Average Δ ≈ +0.003 (NOT ≤ -0.03 — KS bar FAILS)
 
 **Final decision (2026-04-27):** Status = SHIPPED. Defaults.yaml updated: `phase2_ks_flags.ks11_position_reliability.enabled=true` AND `pff.tier_engine.position_reliability={WR: {floor: 0.30, cap: 0.95, min_targets: 30}, TE: {floor: 0.30, cap: 0.95, min_targets: 30}, RB: {floor: 0.25, cap: 0.92, min_carries: 50}}`. QB stays at global floor:0.20/cap:0.80 per C-10. Test suite (2173) green. Flag gate (Codex MEDIUM 6) ensures populated dict is no-op when flag is off — per-KS A/B isolation preserved.
 
-## KS-12 (Plan 08) — TBD
+## KS-12 (Plan 08) — SHIPPED
+
+**Backup-TE/WR exclusion threshold:** MIN_BACKUP_RECEIVING_SHARE = 0.05 (planner's discretion per CONTEXT.md).
+
+**A/B results (2026-04-27):**
+
+| Mode | Δ rank_corr | Δ weekly_mae | Δ stat_ks[WR][receptions] | Δ stat_ks[TE][receptions] | Hard Floor | KS Δ ≤ 0 on primary |
+|------|-------------|--------------|----------------------------|----------------------------|-----------|---------------------|
+| bare | -0.0113     | +0.454       | +0.12 (regression, bare informational) | +0.15 (regression, bare informational) | FAIL (wk_mae, informational) | FAIL (informational) |
+| full | +0.0006     | -0.009       | 2022: +0.00, 2023: +0.00, 2024: +0.00 | 2022: -0.00, 2023: +0.00, 2024: +0.00 | PASS | PASS (non-regressive) |
+
+**Per-season full-stack WR receptions KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.22     | 0.22     | +0.00 |
+| 2023   | 0.21     | 0.21     | +0.00 |
+| 2024   | 0.22     | 0.22     | +0.00 |
+
+**Per-season full-stack TE receptions KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.27     | 0.26     | -0.00 |
+| 2023   | 0.20     | 0.20     | +0.00 |
+| 2024   | 0.22     | 0.22     | +0.00 |
+
+**Per-season full-stack WR receiving_yards KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.24     | 0.24     | +0.00 |
+| 2023   | 0.24     | 0.23     | -0.00 |
+| 2024   | 0.23     | 0.24     | +0.00 |
+
+**Per-season full-stack TE receiving_yards KS:**
+
+| Season | Arm A KS | Arm B KS | Δ |
+|--------|----------|----------|---|
+| 2022   | 0.27     | 0.27     | +0.00 |
+| 2023   | 0.27     | 0.26     | -0.00 |
+| 2024   | 0.26     | 0.25     | -0.00 |
+
+**D-30 evaluation:**
+1. Hard floor (full arm): rank_corr Δ +0.0006 ≥ -0.005 AND weekly_mae Δ -0.009 ≤ +0.05 → **PASS**
+2. Non-regression KS on primary target (WR receptions): all 3 seasons ≤ +0.00 → **PASS** (non-regressive)
+3. Non-regression KS on TE receptions: 2022 -0.00 (slight improvement), 2023/2024 +0.00 → **PASS** (non-regressive)
+4. Bare hard-floor failure (wk_mae +0.454) is informational per Phase 1 Gate Relaxation Decision — bare mode with availability ON redistributes shares among a smaller eligible set, amplifying bare-mode noise since all other engines (PFF tiers, market_history, etc.) that stabilize share estimates are off.
+
+**Why bare arm regresses severely:**
+The bare arm tests `availability.enabled=true + ks12.enabled=true` vs pure bare. Availability without the full signal stack produces dramatic WR/TE receptions KS regressions (+0.12/+0.15) because the standalone availability engine redistributes shares without the corrective signals from PFF tier engine, market_history, etc. This is consistent with all prior availability bare runs (e.g., `phase-2-availability-only` bare showing large regressions). The full-stack arm, which includes all promoted engines, shows clean non-regression.
+
+**Decision:** `SHIPPED`.
+
+Rationale: Full hard floor PASSES (rank_corr +0.0006, weekly_mae -0.009). All WR/TE position KS metrics are non-regressive across all 3 seasons. The D-09 `_expected_active_share_factor` architecture correctly scales normalization to the active roster fraction rather than always normalizing to 1.0, preventing over-concentration when players are on bye/injured. The backup-TE/WR exclusion at MIN_BACKUP_RECEIVING_SHARE=0.05 prevents low-share players from being incorrectly classified as "missing" roster members. Bare arm failures are informational per Phase 1 Gate Relaxation Decision.
+
+**Ledger entries:** p2.ks12.bare (#125, #127), p2.ks12.full (#126, #128). Authoritative entries: bare #127 (most recent), full #128 (most recent).
+
+**Final decision (2026-04-27):** Status = SHIPPED. Defaults.yaml updated: `phase2_ks_flags.ks12_share_normalization_residual.enabled=true`. MIN_BACKUP_RECEIVING_SHARE=0.05. Test suite green. Flag gate confirmed: `_scale_shares_with_factor` only called when flag is on; no-op otherwise.
 
 ## KS-13 (Plan 07) — TBD
 
