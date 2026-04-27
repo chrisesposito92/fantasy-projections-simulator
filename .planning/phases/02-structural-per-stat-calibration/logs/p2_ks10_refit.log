@@ -1,0 +1,13 @@
+Using 12 workers per source season.
+  [2022] Building 271 game contexts...
+  [2022] Simulating 271 games...
+  [2022] Collected 5823 residual source rows.
+  [2023] Building 272 game contexts...
+Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+  [2023] Simulating 272 games...
+  [2023] Collected 5774 residual source rows.
+  [2023] KS-10 flag enabled: recomputing TE bucket keys with elite tier (min_bucket_rows TE=100).
+  [2023] Wrote /Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2023.json (12 learned buckets, 8 fallback buckets).
+  [2024] KS-10 flag enabled: recomputing TE bucket keys with elite tier (min_bucket_rows TE=100).
+  [2024] Wrote /Users/chrisesposito/Documents/github/fantasy-projections-simulator/src/fantasy_sim/data/ensemble/artifacts/residual_calibration/decision_s200/calibration_2024.json (22 learned buckets, 32 fallback buckets).
+Done in 886.4s.

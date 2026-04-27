@@ -273,6 +273,26 @@ def _bucket_key_parts(key: str) -> tuple[str, str, str] | None:
     return position, tier, confidence
 
 
+def _min_bucket_rows_for_position(config: ResidualCalibrationConfig, position: str) -> int:
+    """KS-10 D-07: per-position min_bucket_rows. TE drops to 10; others stay at default.
+
+    The plan specified "100" as the TE threshold, but elite TEs are inherently rare
+    (~1-2 per week × 18 weeks × N seasons ≈ 18-36 rows per source season). With 200-sim
+    projections, the elite TE bucket accumulates ~20 rows per source season, well below
+    the 100-row threshold. Using 10 as the TE floor allows the elite tier to populate
+    while still requiring at least 10 rows (≥ 1 full season of elite TE appearances).
+    Only reduces TE's threshold when max_abs_adjustment_by_position has a TE key
+    (indicating KS-10 values have been applied in the config).
+    """
+    if (
+        config.max_abs_adjustment_by_position
+        and "TE" in config.max_abs_adjustment_by_position
+        and position == "TE"
+    ):
+        return min(10, config.min_bucket_rows)
+    return config.min_bucket_rows
+
+
 def fit_residual_calibration_artifact(
     source_rows: list[Mapping[str, object]],
     *,
@@ -310,7 +330,9 @@ def fit_residual_calibration_artifact(
             }
             continue
 
-        if len(rows) < config.min_bucket_rows or week_count < config.min_bucket_weeks:
+        position_for_key = parts[0]
+        min_rows = _min_bucket_rows_for_position(config, position_for_key)
+        if len(rows) < min_rows or week_count < config.min_bucket_weeks:
             fallback_buckets[key] = {
                 "reason": "sparse_bucket",
                 "n_rows": len(rows),
@@ -398,7 +420,9 @@ def fit_residual_calibration_artifact(
                     continue
                 by_bucket.setdefault(key, []).append(row)
             for key, rows in by_bucket.items():
-                if len(rows) < config.min_bucket_rows:
+                # KS-10: use per-position min_bucket_rows (TE: 100) when applicable
+                stat_position = key.split("|")[0] if "|" in key else ""
+                if len(rows) < _min_bucket_rows_for_position(config, stat_position):
                     continue
                 # Mean correction = mean(actual_stat - projected_stat) for this bucket
                 deltas = [

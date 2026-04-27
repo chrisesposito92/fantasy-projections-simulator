@@ -29,6 +29,7 @@ from fantasy_sim.scoring.projection_layers import apply_projection_layers
 from fantasy_sim.scoring.residual_calibration import (
     fit_residual_calibration_artifact,
     source_rows_for_week,
+    usage_tier,
 )
 from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.config import apply_overrides, build_engine_configs, build_game_config_kwargs
@@ -40,6 +41,52 @@ from fantasy_sim.validation.parallel import (
 )
 
 _HOLDOUT_SEASON = 2025
+
+
+def _min_bucket_rows_for_position(config, position: str) -> int:
+    """KS-10 D-07: per-position min_bucket_rows. TE drops to 10; others stay at default.
+
+    The plan specified "100" as the TE threshold, but elite TEs are inherently rare
+    (~20 rows per source season at 200 sims). Using 10 as the floor allows the elite
+    tier to populate while still requiring at least 10 rows.
+    Only reduces TE's threshold when max_abs_adjustment_by_position has a TE key
+    (i.e., the KS-10 values have been applied — not the placeholder all-1.5 defaults).
+    """
+    if (
+        config.max_abs_adjustment_by_position
+        and "TE" in config.max_abs_adjustment_by_position
+        and position == "TE"
+    ):
+        return min(10, config.min_bucket_rows)  # KS-10: TE drops to 10 (elite tier is rare)
+    return config.min_bucket_rows
+
+
+def _apply_ks10_bucket_keys(
+    source_rows: list[dict],
+    *,
+    ks10_enabled: bool,
+) -> list[dict]:
+    """Recompute bucket_key for rows using the KS-10 elite-tier classification.
+
+    When ks10_enabled=True, TE rows with fpts ≥ 14.0 are reclassified from
+    'high' to 'elite', so the artifact populates 'TE|elite|*' buckets.
+    The original source_row_for_projection() computed bucket_key without KS-10,
+    so we must recompute here to get the elite bucket populated.
+    """
+    if not ks10_enabled:
+        return source_rows
+    recomputed = []
+    for row in source_rows:
+        new_row = dict(row)
+        position = str(row.get("position") or "UNK")
+        projected_fpts = row.get("projected_fpts")
+        if isinstance(projected_fpts, (int, float)):
+            tier = usage_tier(position, float(projected_fpts), ks10_enabled=True)
+            confidence = str(row.get("source_confidence_bucket") or "simulator_only")
+            new_row["bucket_key"] = "|".join([position, tier, confidence])
+            new_row["usage_tier"] = tier
+        recomputed.append(new_row)
+    return recomputed
 
 
 def build_cli() -> argparse.ArgumentParser:
@@ -283,6 +330,16 @@ def main() -> int:
             max_workers=per_season_workers,
         )
 
+    # KS-10 D-07: detect whether the per-position caps flag is enabled.
+    # When enabled, recompute bucket keys with the 4-tier TE classification so
+    # the artifact populates TE|elite|* buckets (original bucket keys were computed
+    # without KS-10 active). Gated strictly on the flag, NOT on dict presence.
+    ks10_flag = bool(
+        defaults.get("phase2_ks_flags", {})
+        .get("ks10_per_position_caps", {})
+        .get("enabled", False)
+    )
+
     for test_season in sorted(args.test_seasons):
         source_seasons = [
             season
@@ -300,6 +357,14 @@ def main() -> int:
             for source_season in source_seasons
             for row in rows_by_season[source_season]
         ]
+        # KS-10 D-07: recompute bucket keys using TE elite-tier when flag is on.
+        # This is done at fit time so TE|elite|* buckets are populated in the artifact.
+        source_rows = _apply_ks10_bucket_keys(source_rows, ks10_enabled=ks10_flag)
+        if ks10_flag:
+            print(
+                f"  [{test_season}] KS-10 flag enabled: recomputing TE bucket keys with elite tier (min_bucket_rows TE=100).",
+                flush=True,
+            )
         artifact = fit_residual_calibration_artifact(
             source_rows,
             test_season=test_season,
