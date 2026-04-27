@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: phase-complete
+status: ready_to_plan
 stopped_at: Completed 02-09-PLAN.md (Phase 2 WALKED-BACK at aggregate)
 last_updated: "2026-04-27T16:08:17Z"
 last_activity: 2026-04-27
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 21
   completed_plans: 21
-  percent: 100
+  percent: 60
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 ## Current Position
 
-Phase: 02 (structural-per-stat-calibration) — DONE / WALKED-BACK
-Plan: 9 of 9 — Phase 2 finalized 2026-04-27
-Status: All 7 phase2_ks_flags reverted to enabled: false; architecture preserved as Phase 3+ levers
+Phase: 3
+Plan: Not started
+Status: Ready to plan
 Next: Phase 03 (KS-priority retune of off-by-default PFF slices) — entry baseline = Phase-1-final-stack
 Last activity: 2026-04-27
 
@@ -37,7 +37,7 @@ Progress: [██████████] 100% (Phase 2 complete; Phase 3 not y
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 9
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -45,7 +45,7 @@ Progress: [██████████] 100% (Phase 2 complete; Phase 3 not y
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 02 | 9 | - | - |
 
 **Recent Trend:**
 
