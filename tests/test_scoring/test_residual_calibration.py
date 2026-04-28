@@ -252,8 +252,9 @@ def test_bundled_decision_artifacts_are_available():
         path = BUNDLED_CALIBRATION_DIR / f"calibration_{season}.json"
         artifact = json.loads(path.read_text())
 
-        # Bundled artifacts are at schema_version: 1 until Plan 03 / Plan 05 re-fit
-        # bumps them to v2. Both versions must be accepted.
+        # Bundled artifacts were bumped to schema_version: 2 during Plan 03 / Plan 05
+        # re-fits. The loader continues to accept either v1 or v2; this assertion
+        # checks version-set membership rather than exact equality.
         assert artifact["schema_version"] in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED, (
             f"Bundled artifact calibration_{season}.json at unsupported schema_version={artifact['schema_version']}"
         )
@@ -304,14 +305,17 @@ def test_apply_projection_layers_runs_residual_after_dynamic_and_skips_fixed_lay
 
 
 def test_artifact_loader_accepts_schema_v1():
-    """Schema v1 artifacts (Phase 1 bundled) must continue to load post-Phase-2 schema bump."""
-    from pathlib import Path
-    # Use one of the bundled artifacts that ships at schema_version: 1
+    """Schema v1 artifacts (Phase 1 bundled) must continue to load post-Phase-2 schema bump.
+
+    The bundled artifacts were bumped to schema_version: 2 during Plan 03 / Plan 05
+    re-fits, so this test asserts only that whatever the bundle ships is in the
+    supported version set. To genuinely exercise the v1 loader path, see the
+    inline-fixture v1 tests further down (e.g. fit_residual_calibration_artifact
+    tests that construct synthetic v1-shaped artifacts).
+    """
     artifact_path = BUNDLED_CALIBRATION_DIR / "calibration_2024.json"
     if artifact_path.exists():
         artifact = json.loads(artifact_path.read_text())
-        # Bundled artifacts are at schema_version: 1 until Plan 03 / Plan 05 re-fit
-        # bumps them to v2. The v1 path must keep working.
         assert artifact["schema_version"] in ARTIFACT_SCHEMA_VERSIONS_SUPPORTED, (
             f"Bundled artifact at unsupported schema_version={artifact['schema_version']}"
         )

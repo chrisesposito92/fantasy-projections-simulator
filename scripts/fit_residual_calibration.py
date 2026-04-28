@@ -26,6 +26,7 @@ from fantasy_sim.scoring.dynamic_blend import DynamicBlendProjectionBlender
 from fantasy_sim.scoring.ensemble import FfOpportunityProjectionEnsembler
 from fantasy_sim.scoring.market_history import MarketHistoryProjectionAdjuster
 from fantasy_sim.scoring.projection_layers import apply_projection_layers
+from fantasy_sim.data.ensemble.models import ResidualCalibrationConfig
 from fantasy_sim.scoring.residual_calibration import (
     fit_residual_calibration_artifact,
     source_rows_for_week,
@@ -43,7 +44,7 @@ from fantasy_sim.validation.parallel import (
 _HOLDOUT_SEASON = 2025
 
 
-def _min_bucket_rows_for_position(config, position: str) -> int:
+def _min_bucket_rows_for_position(config: ResidualCalibrationConfig, position: str) -> int:
     """KS-10 D-07: per-position min_bucket_rows. TE drops to 10; others stay at default.
 
     The plan specified "100" as the TE threshold, but elite TEs are inherently rare

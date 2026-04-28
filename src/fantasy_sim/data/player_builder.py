@@ -740,11 +740,14 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
     # KS-12 D-09: backup-TE/WR exclusion at MIN_BACKUP_RECEIVING_SHARE=0.05.
     # Receivers with target_share below the floor are excluded from the
     # normalization pool, mirroring the MIN_QB_CARRY_SHARE pattern for rushers.
+    # The exclusion is gated on the KS-12 master flag so that when the flag is
+    # off (walk-back state), normalization is byte-identical to pre-Plan-08.
     eligible_receivers = [
         p for p in roster.players
         if p.usage.target_share > 0
         and (
-            p.position not in ("WR", "TE")
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
             or p.usage.target_share >= MIN_BACKUP_RECEIVING_SHARE
         )
     ]
@@ -755,7 +758,8 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         p for p in roster.players
         if p.usage.red_zone_target_share > 0
         and (
-            p.position not in ("WR", "TE")
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
             or p.usage.red_zone_target_share >= MIN_BACKUP_RECEIVING_SHARE
         )
     ]
@@ -766,7 +770,8 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         p for p in roster.players
         if p.usage.outer_rz_target_share > 0
         and (
-            p.position not in ("WR", "TE")
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
             or p.usage.outer_rz_target_share >= MIN_BACKUP_RECEIVING_SHARE
         )
     ]

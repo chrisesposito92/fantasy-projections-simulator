@@ -462,8 +462,8 @@ ensemble:
       RB: 2.0
       WR: 1.5
       TE: 0.8
-    stat_level:  # KS-09 D-03 (Plan 03 enables + uses) — SHIPPED-PARTIAL 2026-04-27
-      enabled: true
+    stat_level:  # KS-09 D-03 (Plan 03 enables + uses). WALKED-BACK 2026-04-27 with phase2_ks_flags.ks09. The OR gate at ensemble/config.py:95 means leaving this `true` while the master flag is `false` produces stat_level_enabled=True (silent walk-back leak). Flipped to false to match the walk-back. covered_stats list preserved as latent config.
+      enabled: false
       covered_stats:
         - pass_yards
         - pass_tds
