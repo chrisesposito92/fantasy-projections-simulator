@@ -1,0 +1,366 @@
+====================================================================
+  A/B VALIDATION
+====================================================================
+  baseline    : defaults
+  arm B       : defaults
+  sims        : 200
+  seasons     : [2022, 2023, 2024]
+  scoring     : ppr
+  comparison  : marginal_lift
+  seed mode   : deterministic_game_id_crc32_shared_between_arms
+  coverage   : availability=full(2022,2023,2024) | availability.depth_charts=full(2022,2023,2024) | availability.injuries=disabled | availability.usage_fallback=full(2022,2023,2024) | ensemble.ff_opportunity=full(2022,2023,2024) | goal_line_concentration=disabled | market_history=partial(2023,2024) | market_history.anytime_td=partial(2023,2024) | market_history.crosswalk=partial(2023,2024) | market_history.dispersion=partial(2023,2024) | market_history.pass_tds=partial(2023,2024) | market_history.pass_yards=partial(2023,2024) | market_history.receiving_yards=partial(2023,2024) | market_history.receptions=partial(2023,2024) | market_history.rush_yards=partial(2023,2024) | pff=full(2022,2023,2024) | pff.depth_role=disabled | pff.depth_role.efficiency=disabled | pff.depth_role.te=disabled | pff.depth_role.wr=disabled | pff.qb_split=disabled | pff.rb_scheme_fit=disabled | pff.team_context=full(2022,2023,2024) | play_call_model=disabled | props=none | qb_rushing.designed_runs=disabled | qb_rushing.scramble=disabled | role_trend=disabled | target_selection=disabled | td_tendency=full(2022,2023,2024) | td_tendency.i5=full(2022,2023,2024) | tracking=disabled | tracking.qb_context=disabled | tracking.rb_efficiency=disabled | tracking.receiver_participation=disabled | usage=full(2022,2023,2024) | usage.ngs=disabled | usage.route_rate=disabled | weather=full(2022,2023,2024)
+  coverage notes: market_history:partial player_markets_<season>_<snapshot_label>.parquet plus rosters_weekly cache to build the crosswalk | market_history.crosswalk:partial player_markets_<season>_<snapshot_label>.parquet plus rosters_weekly cache to resolve The Odds players to nflverse IDs | props:none Forward-only unless season parquet files exist in ~/.fantasy-sim/pff/props
+====================================================================
+  workers     : 4 per season
+
+Running 3 seasons in parallel...
+  [2022] Building 271 Arm A game contexts...
+  [2023] Building 272 Arm A game contexts...
+  [2024] Building 272 Arm A game contexts...
+Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+  [2024] Building 272 Arm B game contexts...
+  [2023] Building 272 Arm B game contexts...
+  [2022] Building 271 Arm B game contexts...
+Snap crosswalk: 1/632 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+Snap crosswalk: 1/634 skill players unmatched (0.2%). Unmatched: ['WillRo08']
+  [2024] Simulating 544 game-arms...
+  [2022] Simulating 542 game-arms...
+  [2023] Simulating 544 game-arms...
+                                                   Game Script Summary                                                    
+┏━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━┓
+┃ Team ┃ TrailPass ┃ TrailPace ┃     Rank1 ┃     Rank2 ┃    Rank3+ ┃  TrailN ┃       RB1 ┃       RB2 ┃      RB3+ ┃ LeadN ┃
+┡━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━┩
+│ ARI  │ 1.35/1.39 │ 1.20/1.48 │ 0.85/0.53 │ 0.95/0.92 │ 1.09/1.10 │ 523/761 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ ATL  │ 1.29/1.25 │ 1.20/1.31 │ 0.90/0.93 │ 0.97/0.99 │ 1.03/1.01 │ 362/610 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BAL  │ 1.35/1.57 │ 1.20/1.66 │ 0.85/0.81 │ 1.11/1.18 │ 1.04/1.03 │ 270/391 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BUF  │ 1.29/1.19 │ 1.20/1.37 │ 0.85/0.78 │ 1.03/1.10 │ 1.08/1.07 │ 165/252 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CAR  │ 1.35/1.43 │ 1.20/1.34 │ 0.85/0.84 │ 0.88/0.88 │ 1.07/1.06 │ 566/871 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CHI  │ 1.35/1.43 │ 1.20/1.39 │ 0.85/0.60 │ 1.03/1.05 │ 1.09/1.09 │ 506/781 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CIN  │ 1.24/1.16 │ 1.20/1.26 │ 0.85/0.76 │ 1.03/1.07 │ 1.06/1.06 │ 299/466 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CLE  │ 1.35/1.35 │ 1.20/1.42 │ 0.89/0.93 │ 0.87/0.84 │ 1.05/1.04 │ 420/659 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DAL  │ 1.35/1.35 │ 1.20/1.51 │ 0.85/0.71 │ 0.86/0.81 │ 1.14/1.15 │ 486/688 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DEN  │ 1.35/1.33 │ 1.20/1.34 │ 0.95/0.99 │ 0.99/1.01 │ 1.01/1.00 │ 468/693 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DET  │ 1.35/1.50 │ 1.20/1.47 │ 0.85/0.71 │ 1.15/1.20 │ 1.07/1.07 │ 516/684 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ GB   │ 1.35/1.41 │ 1.20/1.49 │ 0.85/0.46 │ 0.85/0.36 │ 1.18/1.21 │ 294/418 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ HOU  │ 1.35/1.41 │ 1.20/1.50 │ 1.00/1.04 │ 0.95/0.96 │ 1.01/1.00 │ 493/685 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ IND  │ 1.35/1.38 │ 1.20/1.40 │ 0.85/0.86 │ 0.85/0.29 │ 1.12/1.13 │ 398/581 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ JAX  │ 1.35/1.40 │ 1.20/1.52 │ 0.85/0.68 │ 0.85/0.63 │ 1.10/1.10 │ 625/836 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ KC   │ 1.35/1.38 │ 1.20/1.58 │ 0.86/0.90 │ 1.16/1.30 │ 1.02/0.99 │ 169/226 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LA   │ 1.35/1.39 │ 1.20/1.45 │ 0.85/0.79 │ 1.05/1.08 │ 1.07/1.06 │ 382/532 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LAC  │ 1.35/1.33 │ 1.20/1.38 │ 0.85/0.85 │ 1.24/1.35 │ 1.00/0.98 │ 344/454 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LV   │ 1.35/1.47 │ 1.20/1.47 │ 1.00/1.04 │ 1.02/1.04 │ 1.00/0.98 │ 547/732 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIA  │ 1.33/1.31 │ 1.20/1.30 │ 0.85/0.48 │ 0.85/0.69 │ 1.19/1.21 │ 361/514 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIN  │ 1.35/1.37 │ 1.20/1.46 │ 0.97/1.02 │ 1.00/1.02 │ 1.01/0.99 │ 353/486 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NE   │ 1.34/1.32 │ 1.20/1.38 │ 0.85/0.64 │ 0.92/0.92 │ 1.08/1.08 │ 457/730 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NO   │ 1.35/1.53 │ 1.20/1.48 │ 1.16/1.25 │ 1.01/1.04 │ 0.96/0.94 │ 423/595 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYG  │ 1.35/1.43 │ 1.20/1.40 │ 0.88/0.89 │ 0.86/0.75 │ 1.06/1.05 │ 582/861 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYJ  │ 1.35/1.42 │ 1.20/1.43 │ 0.85/0.78 │ 1.08/1.09 │ 1.04/1.04 │ 635/876 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PHI  │ 1.35/1.48 │ 1.20/1.47 │ 0.85/0.62 │ 0.85/0.38 │ 1.23/1.27 │ 310/482 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PIT  │ 1.35/1.43 │ 1.20/1.39 │ 0.85/0.70 │ 0.97/0.76 │ 1.13/1.14 │ 392/541 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SEA  │ 1.35/1.39 │ 1.20/1.56 │ 0.85/0.81 │ 0.94/0.95 │ 1.11/1.11 │ 375/536 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SF   │ 1.35/1.60 │ 1.20/1.62 │ 0.85/0.76 │ 0.88/0.88 │ 1.11/1.11 │ 359/480 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TB   │ 1.35/1.44 │ 1.20/1.59 │ 0.89/0.88 │ 0.88/0.82 │ 1.09/1.09 │ 442/551 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TEN  │ 1.32/1.28 │ 1.20/1.47 │ 0.85/0.38 │ 1.17/1.27 │ 1.07/1.06 │ 367/610 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ WAS  │ 1.35/1.40 │ 1.20/1.36 │ 0.85/0.80 │ 0.88/0.88 │ 1.10/1.10 │ 523/764 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+└──────┴───────────┴───────────┴───────────┴───────────┴───────────┴─────────┴───────────┴───────────┴───────────┴───────┘
+                                                   Game Script Summary                                                    
+┏━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━┓
+┃ Team ┃ TrailPass ┃ TrailPace ┃     Rank1 ┃     Rank2 ┃    Rank3+ ┃  TrailN ┃       RB1 ┃       RB2 ┃      RB3+ ┃ LeadN ┃
+┡━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━┩
+│ ARI  │ 1.32/1.29 │ 1.20/1.32 │ 0.95/0.97 │ 0.98/0.85 │ 1.04/1.03 │ 508/767 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ ATL  │ 1.35/1.36 │ 1.20/1.33 │ 0.85/0.85 │ 0.92/0.93 │ 1.05/1.05 │ 479/690 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BAL  │ 1.35/1.63 │ 1.20/1.67 │ 0.85/0.81 │ 1.00/1.03 │ 1.06/1.06 │ 293/407 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BUF  │ 1.35/1.36 │ 1.20/1.45 │ 0.85/0.43 │ 0.97/0.99 │ 1.13/1.15 │ 248/357 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CAR  │ 1.35/1.39 │ 1.20/1.42 │ 0.93/0.95 │ 0.89/0.89 │ 1.05/1.04 │ 544/778 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CHI  │ 1.35/1.48 │ 1.20/1.53 │ 0.85/0.82 │ 0.88/0.88 │ 1.07/1.08 │ 429/614 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CIN  │ 1.25/1.19 │ 1.20/1.29 │ 0.85/0.82 │ 0.86/0.82 │ 1.08/1.08 │ 406/627 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CLE  │ 1.35/1.38 │ 1.20/1.45 │ 0.98/1.01 │ 0.97/1.00 │ 1.01/1.00 │ 363/539 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DAL  │ 1.35/1.44 │ 1.20/1.64 │ 0.87/0.85 │ 0.86/0.85 │ 1.07/1.07 │ 428/570 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DEN  │ 1.35/1.36 │ 1.20/1.40 │ 0.90/0.91 │ 1.02/1.04 │ 1.02/1.01 │ 507/721 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DET  │ 1.35/1.49 │ 1.20/1.48 │ 0.94/0.95 │ 0.92/0.92 │ 1.02/1.02 │ 602/789 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ GB   │ 1.35/1.35 │ 1.20/1.37 │ 0.88/0.85 │ 0.85/0.51 │ 1.13/1.15 │ 309/422 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ HOU  │ 1.35/1.37 │ 1.20/1.41 │ 0.85/0.59 │ 1.15/1.20 │ 1.06/1.05 │ 501/708 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ IND  │ 1.35/1.43 │ 1.20/1.50 │ 0.85/0.84 │ 0.97/0.96 │ 1.04/1.04 │ 404/549 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ JAX  │ 1.35/1.42 │ 1.20/1.54 │ 1.02/1.04 │ 0.85/0.51 │ 1.05/1.05 │ 650/877 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ KC   │ 1.35/1.34 │ 1.20/1.50 │ 0.93/0.98 │ 1.20/1.36 │ 0.94/0.88 │ 163/218 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LA   │ 1.35/1.46 │ 1.20/1.55 │ 0.94/0.97 │ 0.85/0.73 │ 1.09/1.09 │ 404/527 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LAC  │ 1.35/1.46 │ 1.20/1.56 │ 0.85/0.72 │ 0.98/0.99 │ 1.10/1.11 │ 450/543 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LV   │ 1.35/1.36 │ 1.20/1.38 │ 1.05/1.09 │ 1.00/1.02 │ 0.99/0.98 │ 436/638 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIA  │ 1.31/1.27 │ 1.20/1.29 │ 1.03/1.06 │ 1.21/1.27 │ 0.96/0.94 │ 424/620 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIN  │ 1.35/1.50 │ 1.20/1.48 │ 0.95/0.97 │ 0.86/0.82 │ 1.05/1.05 │ 427/572 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NE   │ 1.33/1.29 │ 1.20/1.35 │ 0.86/0.81 │ 0.91/0.91 │ 1.06/1.05 │ 293/462 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NO   │ 1.35/1.45 │ 1.20/1.38 │ 0.90/0.91 │ 0.89/0.87 │ 1.06/1.06 │ 308/427 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYG  │ 1.35/1.41 │ 1.20/1.45 │ 0.85/0.82 │ 1.09/1.12 │ 1.02/1.02 │ 576/799 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYJ  │ 1.35/1.41 │ 1.20/1.43 │ 0.85/0.68 │ 0.90/0.90 │ 1.06/1.06 │ 595/869 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PHI  │ 1.35/1.37 │ 1.20/1.50 │ 0.99/1.02 │ 0.90/0.91 │ 1.02/1.01 │ 397/601 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PIT  │ 1.35/1.37 │ 1.20/1.42 │ 0.89/0.89 │ 0.91/0.92 │ 1.05/1.05 │ 391/508 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SEA  │ 1.35/1.41 │ 1.20/1.53 │ 0.92/0.95 │ 1.00/1.03 │ 1.02/1.01 │ 330/488 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SF   │ 1.35/1.57 │ 1.20/1.58 │ 0.85/0.72 │ 0.86/0.85 │ 1.11/1.12 │ 363/484 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TB   │ 1.35/1.35 │ 1.20/1.49 │ 0.93/0.96 │ 0.88/0.87 │ 1.05/1.05 │ 441/548 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TEN  │ 1.35/1.33 │ 1.20/1.40 │ 0.85/0.64 │ 1.06/1.11 │ 1.06/1.06 │ 314/520 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ WAS  │ 1.35/1.36 │ 1.20/1.32 │ 0.86/0.84 │ 1.12/1.17 │ 1.03/1.02 │ 545/784 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+└──────┴───────────┴───────────┴───────────┴───────────┴───────────┴─────────┴───────────┴───────────┴───────────┴───────┘
+                                                   Game Script Summary                                                    
+┏━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━┓
+┃ Team ┃ TrailPass ┃ TrailPace ┃     Rank1 ┃     Rank2 ┃    Rank3+ ┃  TrailN ┃       RB1 ┃       RB2 ┃      RB3+ ┃ LeadN ┃
+┡━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━┩
+│ ARI  │ 1.33/1.30 │ 1.20/1.37 │ 0.85/0.58 │ 0.99/1.01 │ 1.07/1.07 │ 527/778 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ ATL  │ 1.34/1.33 │ 1.20/1.33 │ 1.03/1.07 │ 1.18/1.26 │ 0.97/0.95 │ 450/684 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BAL  │ 1.35/1.62 │ 1.20/1.67 │ 0.85/0.81 │ 1.07/1.13 │ 1.05/1.04 │ 259/368 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ BUF  │ 1.31/1.24 │ 1.20/1.42 │ 0.85/0.66 │ 1.25/1.53 │ 1.03/1.02 │ 193/288 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CAR  │ 1.35/1.40 │ 1.20/1.44 │ 0.91/0.93 │ 0.92/0.93 │ 1.04/1.04 │ 581/870 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CHI  │ 1.35/1.44 │ 1.20/1.47 │ 0.85/0.80 │ 0.85/0.68 │ 1.11/1.12 │ 472/693 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CIN  │ 1.25/1.18 │ 1.20/1.29 │ 0.90/0.92 │ 0.85/0.72 │ 1.08/1.09 │ 387/605 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ CLE  │ 1.35/1.38 │ 1.20/1.46 │ 0.94/0.98 │ 0.94/0.95 │ 1.02/1.01 │ 345/543 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DAL  │ 1.35/1.41 │ 1.20/1.56 │ 0.85/0.61 │ 0.91/0.92 │ 1.12/1.13 │ 432/599 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DEN  │ 1.35/1.37 │ 1.20/1.39 │ 0.96/0.99 │ 0.92/0.92 │ 1.03/1.02 │ 472/699 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ DET  │ 1.35/1.48 │ 1.20/1.50 │ 0.86/0.78 │ 1.07/1.09 │ 1.03/1.03 │ 560/743 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ GB   │ 1.35/1.37 │ 1.20/1.43 │ 0.85/0.56 │ 0.85/0.46 │ 1.20/1.24 │ 294/416 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ HOU  │ 1.35/1.38 │ 1.20/1.47 │ 1.02/1.06 │ 0.93/0.73 │ 1.03/1.02 │ 534/746 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ IND  │ 1.35/1.39 │ 1.20/1.42 │ 0.90/0.93 │ 0.93/0.94 │ 1.03/1.03 │ 355/506 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ JAX  │ 1.35/1.40 │ 1.20/1.51 │ 0.93/0.74 │ 0.96/0.80 │ 1.05/1.05 │ 658/881 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ KC   │ 1.35/1.35 │ 1.20/1.58 │ 0.89/0.94 │ 1.24/1.51 │ 0.96/0.90 │ 172/233 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LA   │ 1.35/1.43 │ 1.20/1.53 │ 0.86/0.87 │ 1.04/1.04 │ 1.04/1.04 │ 407/541 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LAC  │ 1.35/1.40 │ 1.20/1.45 │ 0.85/0.77 │ 1.02/1.04 │ 1.08/1.08 │ 429/547 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ LV   │ 1.35/1.41 │ 1.20/1.41 │ 1.04/1.09 │ 1.06/1.09 │ 0.98/0.96 │ 462/647 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIA  │ 1.32/1.29 │ 1.20/1.34 │ 1.03/0.91 │ 0.96/0.70 │ 1.07/1.07 │ 391/564 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ MIN  │ 1.35/1.42 │ 1.20/1.47 │ 0.95/0.98 │ 0.99/1.01 │ 1.02/1.00 │ 389/528 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NE   │ 1.35/1.33 │ 1.20/1.34 │ 0.85/0.79 │ 0.85/0.71 │ 1.07/1.07 │ 361/559 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NO   │ 1.35/1.53 │ 1.20/1.45 │ 1.08/1.15 │ 0.87/0.86 │ 1.01/0.99 │ 359/486 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYG  │ 1.35/1.42 │ 1.20/1.39 │ 0.89/0.90 │ 0.86/0.85 │ 1.05/1.04 │ 607/875 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ NYJ  │ 1.35/1.39 │ 1.20/1.42 │ 0.85/0.70 │ 0.97/0.96 │ 1.06/1.06 │ 621/887 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PHI  │ 1.35/1.41 │ 1.20/1.48 │ 0.85/0.77 │ 0.85/0.55 │ 1.13/1.14 │ 367/566 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ PIT  │ 1.35/1.41 │ 1.20/1.45 │ 0.85/0.68 │ 1.14/1.19 │ 1.08/1.09 │ 397/529 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SEA  │ 1.35/1.40 │ 1.20/1.53 │ 0.90/0.93 │ 0.92/0.93 │ 1.07/1.06 │ 368/529 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ SF   │ 1.35/1.62 │ 1.20/1.63 │ 0.85/0.69 │ 0.89/0.88 │ 1.11/1.12 │ 307/404 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TB   │ 1.35/1.40 │ 1.20/1.65 │ 0.88/0.83 │ 0.98/0.99 │ 1.06/1.05 │ 436/536 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ TEN  │ 1.35/1.34 │ 1.20/1.47 │ 0.85/0.56 │ 1.20/1.27 │ 1.06/1.06 │ 341/560 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+│ WAS  │ 1.35/1.39 │ 1.20/1.36 │ 0.85/0.78 │ 0.86/0.84 │ 1.10/1.10 │ 586/846 │ 1.00/1.00 │ 1.00/1.00 │ 1.00/1.00 │   0/0 │
+└──────┴───────────┴───────────┴───────────┴───────────┴───────────┴─────────┴───────────┴───────────┴───────────┴───────┘
+  Season 2024 complete.
+  Season 2022 complete.
+  Season 2023 complete.
+
+Total time: 1635.7s
+
+====================================================================
+  SEASON-LEVEL RESULTS
+====================================================================
+
+  Season 2022:
+    rank_corr:  QB 0.948->0.946 (-0.002)  RB 0.899->0.896 (-0.003)
+                WR 0.922->0.922 (-0.001)  TE 0.834->0.835 (+0.001)
+    weekly_mae: 4.15 -> 4.15 (+0.00)
+    season_mae: 28.16 -> 28.26 (+0.10)
+
+  Season 2023:
+    rank_corr:  QB 0.949->0.948 (-0.001)  RB 0.893->0.891 (-0.002)
+                WR 0.912->0.912 (+0.000)  TE 0.888->0.889 (+0.001)
+    weekly_mae: 4.10 -> 4.10 (+0.00)
+    season_mae: 29.06 -> 29.11 (+0.05)
+
+  Season 2024:
+    rank_corr:  QB 0.955->0.956 (+0.002)  RB 0.959->0.958 (-0.001)
+                WR 0.949->0.948 (-0.000)  TE 0.908->0.909 (+0.001)
+    weekly_mae: 3.36 -> 3.36 (+0.00)
+    season_mae: 18.77 -> 18.81 (+0.04)
+
+  AVERAGES:
+    rank_corr delta:  -0.0004
+    weekly_mae delta: +0.002
+    season_mae delta: +0.063
+
+====================================================================
+  DISTRIBUTION KS
+====================================================================
+
+  Season 2022:
+    fpts KS 0.25 -> 0.25 (-0.00), n=5723
+    QB pass_yards KS 0.43 -> 0.42 (-0.01), mean proj B 177.0 vs actual 217.3 (-40.3), n=541
+    QB rush_yards KS 0.20 -> 0.21 (+0.00), mean proj B 13.0 vs actual 17.7 (-4.7), n=541
+    RB rush_yards KS 0.28 -> 0.28 (-0.00), mean proj B 30.4 vs actual 32.8 (-2.4), n=1585
+    RB receiving_yards KS 0.44 -> 0.44 (+0.00), mean proj B 10.1 vs actual 11.5 (-1.4), n=1585
+    WR receptions KS 0.26 -> 0.26 (+0.00), mean proj B 2.3 vs actual 2.7 (-0.5), n=2376
+    WR receiving_yards KS 0.25 -> 0.25 (+0.00), mean proj B 23.5 vs actual 34.4 (-10.9), n=2376
+    TE receptions KS 0.39 -> 0.39 (-0.00), mean proj B 2.0 vs actual 2.1 (-0.1), n=1221
+    TE receiving_yards KS 0.30 -> 0.30 (+0.00), mean proj B 17.1 vs actual 21.7 (-4.6), n=1221
+
+  Season 2023:
+    fpts KS 0.22 -> 0.23 (+0.00), n=5684
+    QB pass_yards KS 0.43 -> 0.43 (+0.00), mean proj B 181.2 vs actual 218.1 (-36.9), n=542
+    QB rush_yards KS 0.22 -> 0.22 (+0.00), mean proj B 15.0 vs actual 16.1 (-1.1), n=542
+    RB rush_yards KS 0.22 -> 0.22 (+0.00), mean proj B 32.6 vs actual 32.8 (-0.2), n=1482
+    RB receiving_yards KS 0.38 -> 0.38 (+0.00), mean proj B 9.4 vs actual 12.0 (-2.6), n=1482
+    WR receptions KS 0.27 -> 0.27 (+0.00), mean proj B 2.3 vs actual 2.7 (-0.4), n=2458
+    WR receiving_yards KS 0.25 -> 0.25 (-0.00), mean proj B 23.4 vs actual 33.7 (-10.3), n=2458
+    TE receptions KS 0.33 -> 0.33 (-0.00), mean proj B 2.0 vs actual 2.2 (-0.3), n=1202
+    TE receiving_yards KS 0.29 -> 0.28 (-0.00), mean proj B 17.3 vs actual 22.8 (-5.4), n=1202
+
+  Season 2024:
+    fpts KS 0.16 -> 0.16 (+0.00), n=5709
+    QB pass_yards KS 0.42 -> 0.43 (+0.01), mean proj B 182.5 vs actual 217.6 (-35.1), n=528
+    QB rush_yards KS 0.22 -> 0.21 (-0.00), mean proj B 14.3 vs actual 18.4 (-4.1), n=528
+    RB rush_yards KS 0.25 -> 0.25 (+0.00), mean proj B 32.1 vs actual 33.9 (-1.8), n=1521
+    RB receiving_yards KS 0.43 -> 0.43 (+0.00), mean proj B 9.0 vs actual 11.4 (-2.4), n=1521
+    WR receptions KS 0.30 -> 0.30 (-0.00), mean proj B 2.3 vs actual 2.7 (-0.4), n=2425
+    WR receiving_yards KS 0.27 -> 0.27 (-0.00), mean proj B 23.0 vs actual 33.5 (-10.4), n=2425
+    TE receptions KS 0.35 -> 0.34 (-0.00), mean proj B 2.0 vs actual 2.2 (-0.3), n=1235
+    TE receiving_yards KS 0.31 -> 0.30 (-0.00), mean proj B 17.2 vs actual 22.5 (-5.3), n=1235
+
+====================================================================
+  MARKET HISTORY COVERED-SEASON READOUT
+====================================================================
+  covered seasons   : 2023, 2024
+  uncovered seasons : 2022
+  promotion scope   : covered_only
+  rank_corr delta:  +0.0001
+  weekly_mae delta: +0.003
+  season_mae delta: +0.046
+
+====================================================================
+  WEEKLY RESULTS
+====================================================================
+
+  QB  (1611 player-weeks, 54 weeks)
+    rank_corr: 0.6153 -> 0.6073 (-0.0080)
+    weekly_mae: 5.249 -> 5.264 (+0.016)
+    mae_by_difficulty: strong=5.225  neutral=5.239  weak=5.334
+
+  RB  (4588 player-weeks, 54 weeks)
+    rank_corr: 0.7315 -> 0.7319 (+0.0004)
+    weekly_mae: 4.079 -> 4.073 (-0.005)
+    mae_by_difficulty: strong=3.135  neutral=4.517  weak=4.587
+
+  WR  (7259 player-weeks, 54 weeks)
+    rank_corr: 0.7436 -> 0.7429 (-0.0007)
+    weekly_mae: 3.857 -> 3.863 (+0.006)
+    mae_by_difficulty: strong=3.390  neutral=4.134  weak=4.061
+
+  TE  (3658 player-weeks, 54 weeks)
+    rank_corr: 0.6458 -> 0.6427 (-0.0031)
+    weekly_mae: 3.174 -> 3.177 (+0.003)
+    mae_by_difficulty: strong=2.953  neutral=3.348  weak=3.235
+
+  WR Directional Accuracy: 0/0 = 0.0%
+
+====================================================================
+
+  Appended to ledger as #113: p2.ks08.promoted
+=========================================================================================================================
+  #  Label                   baseline   mode         overrides                       rank_corr   wk_mae  szn_mae  fpts_ks
+-------------------------------------------------------------------------------------------------------------------------
+  1  baseline-new            bare       legacy       (none)                          +0.1502    -0.606  -10.525      n/a
+  2  snap-clamp-loose        bare       legacy       usage.snap.factor_clamp=[0....  +0.1493    -0.609  -10.386      n/a
+  3  td-tendency             bare       legacy       td_tendency.enabled=true        +0.1517    -0.612  -10.777      n/a
+  4  td-tendency             bare       legacy       td_tendency.prior_strength=10   +0.1517    -0.601  -10.753      n/a
+  5  td-tendency-strength-increase  bare       legacy       td_tendency.prior_strength=20   +0.1527    -0.602  -10.769      n/a
+  6  td-tendency-min-opp-inc  bare       legacy       td_tendency.min_opportuniti...  +0.1512    -0.604  -10.717      n/a
+  7  td-tendency-min-opp-dec  bare       legacy       td_tendency.min_opportuniti...  +0.1513    -0.613  -10.730      n/a
+  8  td-tendency-clamp-tighten  bare       legacy       td_tendency.factor_clamp=[0...  +0.1505    -0.590  -10.517      n/a
+  9  td-tendency-clamp-loosen  bare       legacy       td_tendency.factor_clamp=[0...  +0.1522    -0.600  -10.806      n/a
+ 10  td-tendency-final       bare       legacy       (none)                          +0.1519    -0.588  -10.862      n/a
+ 11  route-rate              bare       legacy       usage.route_rate.enabled=true   +0.1519    -0.607  -10.691      n/a
+ 12  i5-subfactor            bare       legacy       td_tendency.i5_enabled=true     +0.1520    -0.606  -10.655      n/a
+ 13  thread-pool             bare       legacy       (none)                          +0.1233    -0.415  -7.506      n/a
+ 14  thread-pool-v2          bare       legacy       (none)                          +0.1533    -0.615  -11.090      n/a
+ 15  thread-pool-v2          bare       legacy       (none)                          +0.1535    -0.619  -11.191      n/a
+ 16  i5-ps15                 bare       legacy       td_tendency.i5_prior_streng...  +0.1538    -0.613  -10.981      n/a
+ 17  i5-ps35                 bare       legacy       td_tendency.i5_prior_streng...  +0.1523    -0.601  -11.005      n/a
+ 18  game-script-trailing    bare       legacy       game_script.enabled=true, g...  +0.1522    -0.588  -11.243      n/a
+ 19  game-script-rb          bare       legacy       game_script.enabled=true, g...  +0.1531    -0.586  -11.140      n/a
+ 20  game-script-off         bare       legacy       game_script.enabled=false       +0.1532    -0.617  -11.120      n/a
+ 21  game-script-rb-only     bare       legacy       game_script.enabled=true, g...  +0.1533    -0.609  -11.056      n/a
+ 22  game-script-rb-baseline  bare       legacy       game_script.enabled=true, g...  +0.1535    -0.587  -11.214      n/a
+ 23  game-script-rb-clamp-tight  bare       legacy       game_script.enabled=true, g...  +0.1537    -0.606  -11.309      n/a
+ 24  game-script-rb-clamp-loose  bare       legacy       game_script.enabled=true, g...  +0.1534    -0.593  -11.288      n/a
+ 25  game-script-trailing-control  bare       legacy       game_script.enabled=true, g...  +0.1532    -0.602  -11.264      n/a
+ 26  game-script-trailing-control-200  bare       legacy       game_script.enabled=true, g...  +0.1542    -0.595  -11.072      n/a
+ 27  game-script-rb-clamp-tight-200  bare       legacy       game_script.enabled=true, g...  +0.1552    -0.597  -11.430      n/a
+ 28  game-script-trailing-control-400  bare       legacy       game_script.enabled=true, g...  +0.1534    -0.591  -10.997      n/a
+ 29  game-script-rb-clamp-tight-400  bare       legacy       game_script.enabled=true, g...  +0.1537    -0.593  -11.379      n/a
+ 30  goal-line-concentration-400  bare       legacy       goal_line_concentration.ena...  +0.1512    -0.598  -11.416      n/a
+ 31  phase-1-ff-opportunity-v1  defaults   marginal_lift  ensemble.enabled=true, ense...  +0.0172    -0.365  -2.520      n/a
+ 32  phase-1-ff-opportunity-v1-broadened  defaults   marginal_lift  ensemble.enabled=true, ense...  +0.0271    -0.548  -3.737      n/a
+ 33  phase0-total-lift-smoke  bare       total_lift   (none)                          +0.1854    -1.149  -15.221      n/a
+ 34  phase-2-availability-only  defaults   marginal_lift  availability.enabled=true       -0.0037    +0.027  +0.932      n/a
+ 35  phase-2-role-trend-only  defaults   marginal_lift  role_trend.enabled=true         -0.0009    +0.014  +0.140      n/a
+ 36  phase-2-combined        defaults   marginal_lift  availability.enabled=true, ...  -0.0035    +0.032  +0.885      n/a
+ 37  phase-2-availability-only-rerun  defaults   marginal_lift  availability.enabled=true       -0.0015    -0.017  -0.103      n/a
+ 38  phase-2-combined-rerun  defaults   marginal_lift  availability.enabled=true, ...  +0.0018    +0.001  -0.260      n/a
+ 39  phase-2-availability-explicit-only  defaults   marginal_lift  availability.enabled=true, ...  -0.0013    +0.009  +0.117      n/a
+ 40  phase-2-availability-no-injuries  defaults   marginal_lift  availability.enabled=true, ...  +0.0020    -0.022  -0.288      n/a
+ 41  phase-2-availability-no-depth  defaults   marginal_lift  availability.enabled=true, ...  +0.0008    -0.006  -0.156      n/a
+ 42  phase-2-availability-wr  defaults   marginal_lift  availability.enabled=true, ...  +0.0023    -0.001  -0.055      n/a
+ 43  phase-2-availability-te  defaults   marginal_lift  availability.enabled=true, ...  +0.0011    -0.007  -0.065      n/a
+ 44  phase-2-availability-qb  defaults   marginal_lift  availability.enabled=true, ...  +0.0009    +0.005  -0.093      n/a
+ 45  phase-2-availability-rb  defaults   marginal_lift  availability.enabled=true, ...  +0.0001    -0.007  -0.095      n/a
+ 46  phase-2-availability-usage-only  defaults   marginal_lift  availability.enabled=true, ...  +0.0015    -0.008  -0.189      n/a
+ 47  phase-2-availability-no-injuries-wr-te  defaults   marginal_lift  availability.enabled=true, ...  +0.0025    -0.010  -0.258      n/a
+ 48  phase-2-availability-usage-only-wr-te  defaults   marginal_lift  availability.enabled=true, ...  +0.0005    +0.001  -0.139      n/a
+ 49  phase-2-availability-no-injuries-wr  defaults   marginal_lift  availability.enabled=true, ...  -0.0004    +0.001  -0.055      n/a
+ 50  phase-2-availability-no-injuries-te  defaults   marginal_lift  availability.enabled=true, ...  +0.0001    -0.007  -0.032      n/a
+ 51  phase-2-availability-no-injuries-qb  defaults   marginal_lift  availability.enabled=true, ...  +0.0002    +0.003  +0.156      n/a
+ 52  phase-2-availability-no-injuries-rb  defaults   marginal_lift  availability.enabled=true, ...  +0.0008    +0.003  -0.107      n/a
+ 53  phase-2-availability-no-injuries-no-qb  defaults   marginal_lift  availability.enabled=true, ...  +0.0024    -0.014  -0.266      n/a
+ 54  phase-2-availability-no-injuries-confirm  defaults   marginal_lift  availability.enabled=true, ...  +0.0032    -0.016  -0.269      n/a
+ 55  phase-3-market-history-v1  defaults   marginal_lift  market_history.enabled=true     +0.0001    -0.008  +0.066      n/a
+ 56  phase-3-market-history-v2-real-schema  defaults   marginal_lift  market_history.enabled=true...  +0.0048    -0.041  -0.879      n/a
+ 57  phase-3-market-history-v2-real-schema-qb-wr  defaults   marginal_lift  market_history.enabled=true...  +0.0056    -0.042  -0.822      n/a
+ 58  phase-3-market-history-v2-total-lift  bare       total_lift   market_history.enabled=true...  +0.1894    -1.209  -16.145      n/a
+ 59  phase-4-receiver-participation-v1  defaults   marginal_lift  tracking.enabled=true, trac...  -0.0006    +0.007  +0.072      n/a
+ 60  phase-4-qb-context-v1   defaults   marginal_lift  tracking.enabled=true, trac...  +0.0002    +0.007  +0.047      n/a
+ 61  phase-4-rb-efficiency-v1  defaults   marginal_lift  tracking.enabled=true, trac...  -0.0003    +0.000  -0.063      n/a
+ 62  phase-5-depth-role-v1   defaults   marginal_lift  pff.depth_role.enabled=true     -0.0005    +0.002  +0.013      n/a
+ 63  phase-5-depth-role-efficiency-v2  defaults   marginal_lift  pff.depth_role.efficiency.e...  +0.0002    -0.002  -0.017      n/a
+ 64  phase-5-depth-role-efficiency-v2-activated  defaults   marginal_lift  pff.depth_role.enabled=true...  +0.0000    -0.002  +0.030      n/a
+ 65  phase-5-qb-split-v1     defaults   marginal_lift  pff.qb_split.enabled=true       +0.0005    -0.000  -0.028      n/a
+ 66  phase-5-qb-split-v1-postfix  defaults   marginal_lift  pff.qb_split.enabled=true       +0.0000    +0.006  +0.020      n/a
+ 67  phase-5-rb-scheme-fit-v1  defaults   marginal_lift  pff.rb_scheme_fit.enabled=true  +0.0018    -0.003  -0.040      n/a
+ 68  phase-6-pff-team-context-v1  defaults   marginal_lift  pff.team_context.enabled=true   -0.0000    -0.001  -0.082      n/a
+ 69  phase-6-usage-ngs-v1    defaults   marginal_lift  usage.ngs.enabled=true          -0.0001    -0.006  -0.037      n/a
+ 70  phase-6-goal-line-concentration-v1  defaults   marginal_lift  goal_line_concentration.ena...  -0.0019    -0.015  -0.041      n/a
+ 71  phase-6-usage-route-rate-v1  defaults   marginal_lift  usage.route_rate.enabled=true   +0.0000    -0.003  -0.064      n/a
+ 72  dynamic-blend-s50       defaults   marginal_lift  ensemble.dynamic_blend.enab...  +0.0055    -0.233  -2.349      n/a
+ 73  dynamic-blend-s200      defaults   marginal_lift  ensemble.dynamic_blend.enab...  +0.0062    -0.221  -2.393      n/a
+ 74  dynamic-blend-s200-postfix  defaults   marginal_lift  arm_a ensemble.dynamic_blen...  +0.0069    -0.226  -2.505      n/a
+ 75  residual-calibration-s50  defaults   marginal_lift  ensemble.residual_calibrati...  +0.0023    -0.037  -1.312      n/a
+ 76  residual-calibration-s200  defaults   marginal_lift  ensemble.residual_calibrati...  +0.0020    -0.043  -1.384      n/a
+ 77  defaults-smoke          bare       total_lift   (none)                          +0.2031    -1.469  -19.923      n/a
+ 78  defaults-smoke-200      bare       total_lift   (none)                          +0.2044    -1.472  -20.108      n/a
+ 79  target-selection-s50-capped  defaults   marginal_lift  target_selection.enabled=tr...  +0.0010    -0.005  -0.058   -0.001
+ 80  target-selection-s50-iter500  defaults   marginal_lift  target_selection.enabled=tr...  -0.0013    +0.000  +0.048   +0.001
+ 81  defaults-smoke-200-4-25-26  bare       total_lift   (none)                          +0.2051    -1.470  -20.043   +0.051
+ 82  phase0.baseline.full    bare       total_lift   (none)                          +0.2048    -1.474  -20.017   +0.052
+ 83  phase0.baseline.bare    bare       total_lift   (none)                          +0.0006    -0.005  -0.029   +0.001
+ 84  p1.ks01.bare            bare       total_lift   phase1_ks_flags.ks01_preser...  +0.0011    -0.002  -0.063   +0.000
+ 85  p1.ks01.full            defaults   marginal_lift  phase1_ks_flags.ks01_preser...  +0.0004    +0.003  +0.046   +0.000
+ 86  p1.ks04.bare            bare       total_lift   phase1_ks_flags.ks04_condit...  +0.0010    +0.167  +2.065   +0.001
+ 87  p1.ks04.full            defaults   marginal_lift  phase1_ks_flags.ks04_condit...  -0.0010    +0.001  +0.056   -0.000
+ 88  p1.ks03.bare            bare       total_lift   phase1_ks_flags.ks03_dynami...  +0.0016    +0.164  +2.041   +0.001
+ 89  p1.ks03.full            defaults   marginal_lift  phase1_ks_flags.ks03_dynami...  +0.0002    +0.001  +0.035   -0.002
+ 90  p1.ks05.bare            bare       total_lift   vegas.enabled=true, vegas.p...  +0.0014    +0.154  +1.992   +0.001
+ 91  p1.ks05.full            defaults   marginal_lift  phase1_ks_flags.ks05_props_...  +0.0001    -0.004  +0.068   +0.001
+ 92  p1.ks06.bare            bare       total_lift   phase1_ks_flags.ks06_backup...  +0.0017    +0.068  +0.657   +0.000
+ 93  p1.ks06.full            defaults   marginal_lift  phase1_ks_flags.ks06_backup...  +0.0008    -0.004  -0.046   +0.000
+ 94  p1.ks07.bare            bare       total_lift   phase1_ks_flags.ks07_positi...  +0.0013    +0.064  +0.662   +0.001
+ 95  p1.ks07.full            defaults   marginal_lift  phase1_ks_flags.ks07_positi...  -0.0012    +0.003  +0.074   +0.000
+ 96  p1.ks15.bare            bare       total_lift   phase1_ks_flags.ks15_unclam...  +0.0000    +0.056  +0.649   +0.001
+ 97  p1.ks15.full            defaults   marginal_lift  phase1_ks_flags.ks15_unclam...  -0.0006    -0.002  -0.029   -0.000
+ 98  p1.ks29.s003.bare       bare       total_lift   pff.enabled=true, pff.tier_...  +0.0508    -0.259  -3.457   +0.027
+ 99  p1.ks29.s003.full       defaults   marginal_lift  pff.team_context.enabled=tr...  -0.0007    -0.005  -0.014   -0.000
+100  p1.ks29.s005.bare       bare       total_lift   pff.enabled=true, pff.tier_...  +0.0510    -0.266  -3.491   +0.026
+101  p1.ks29.s005.full       defaults   marginal_lift  pff.team_context.enabled=tr...  -0.0013    +0.002  +0.044   -0.001
+102  p1.ks29.s008.bare       bare       total_lift   pff.enabled=true, pff.tier_...  +0.0513    -0.263  -3.562   +0.026
+103  p1.ks29.s008.full       defaults   marginal_lift  pff.team_context.enabled=tr...  -0.0010    -0.006  -0.075   +0.000
+104  p1.ks32.measure         bare       total_lift   (none)                          +0.2039    -1.460  -19.837   +0.049
+105  p1.aggregate.full       bare       total_lift   (none)                          +0.2044    -1.460  -19.847   +0.050
+106  p2.entry.full           bare       total_lift   (none)                          +0.2036    -1.459  -19.778   +0.050
+107  p2.ks08.s020.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0004    +0.063  +0.585   +0.000
+108  p2.ks08.s040.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0012    +0.064  +0.675   +0.000
+109  p2.ks08.s030.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0004    +0.059  +0.607   +0.001
+110  p2.ks08.s020.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0008    +0.004  +0.557   +0.004
+111  p2.ks08.s040.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0029    +0.051  +1.379   +0.006
+112  p2.ks08.s030.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0014    +0.021  +0.902   +0.006
+113  p2.ks08.promoted        defaults   marginal_lift  (none)                          -0.0004    +0.002  +0.063   +0.000
+=========================================================================================================================

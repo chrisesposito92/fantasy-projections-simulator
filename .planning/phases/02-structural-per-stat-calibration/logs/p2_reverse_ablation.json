@@ -1,0 +1,44 @@
+{
+  "ks08_dynamic_blend_simulator_floor": {
+    "harm_score": -0.004050328816065263,
+    "marginal_delta_rank_corr": -0.00018724520510382536,
+    "marginal_delta_weekly_mae": -0.004237574021169088,
+    "no_ki_mae": 3.8922514972055047,
+    "no_ki_rank_corr": 0.9140292633808139
+  },
+  "ks09_per_stat_residual_calibration": {
+    "harm_score": 0.007163837215128588,
+    "marginal_delta_rank_corr": -0.00040953145414768244,
+    "marginal_delta_weekly_mae": 0.006754305760980905,
+    "no_ki_mae": 3.8812596174233547,
+    "no_ki_rank_corr": 0.9142515496298578
+  },
+  "ks10_per_position_caps": {
+    "harm_score": -0.0024717207360339666,
+    "marginal_delta_rank_corr": -4.575222378855326e-05,
+    "marginal_delta_weekly_mae": -0.00251747295982252,
+    "no_ki_mae": 3.890531396144158,
+    "no_ki_rank_corr": 0.9138877703994986
+  },
+  "ks11_position_reliability": {
+    "harm_score": -0.0007783011874242796,
+    "marginal_delta_rank_corr": -0.00011060752256186746,
+    "marginal_delta_weekly_mae": -0.000888908709986147,
+    "no_ki_mae": 3.8889028318943217,
+    "no_ki_rank_corr": 0.913952625698272
+  },
+  "ks12_share_normalization_residual": {
+    "harm_score": -0.006285259998797366,
+    "marginal_delta_rank_corr": 0.0006349575148850706,
+    "marginal_delta_weekly_mae": -0.005650302483912295,
+    "no_ki_mae": 3.893664225668248,
+    "no_ki_rank_corr": 0.913207060660825
+  },
+  "ks14_thin_bucket_shrinkage": {
+    "harm_score": -0.0034558714164942828,
+    "marginal_delta_rank_corr": 0.0003871066007863355,
+    "marginal_delta_weekly_mae": -0.0030687648157079472,
+    "no_ki_mae": 3.8910826880000435,
+    "no_ki_rank_corr": 0.9134549115749238
+  }
+}

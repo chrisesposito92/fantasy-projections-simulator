@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "scoring": "ppr",
+  "test_season": 2023,
+  "source_seasons": [
+    2020,
+    2021,
+    2022
+  ],
+  "sims": 200,
+  "buckets": {
+    "QB": {
+      "std_fpts": 5.7219,
+      "empirical_std_fpts": 5.7525,
+      "league_std_fpts": 4.4857,
+      "n": 2015
+    },
+    "RB": {
+      "std_fpts": 4.2082,
+      "empirical_std_fpts": 4.2051,
+      "league_std_fpts": 4.4857,
+      "n": 4533
+    },
+    "WR": {
+      "std_fpts": 4.5768,
+      "empirical_std_fpts": 4.5774,
+      "league_std_fpts": 4.4857,
+      "n": 6685
+    },
+    "TE": {
+      "std_fpts": 3.6255,
+      "empirical_std_fpts": 3.6125,
+      "league_std_fpts": 4.4857,
+      "n": 3307
+    }
+  }
+}

@@ -7,6 +7,7 @@ from fantasy_sim.data.ensemble.models import (
     FfOpportunityConfig,
     FfRankingsConfig,
     ResidualCalibrationConfig,
+    StatLevelConfig,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "FfOpportunityConfig",
     "FfRankingsConfig",
     "ResidualCalibrationConfig",
+    "StatLevelConfig",
     "load_ensemble_config",
 ]

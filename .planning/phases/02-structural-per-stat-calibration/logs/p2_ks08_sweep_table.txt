@@ -1,0 +1,6 @@
+107  p2.ks08.s020.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0004    +0.063  +0.585   +0.000
+108  p2.ks08.s040.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0012    +0.064  +0.675   +0.000
+109  p2.ks08.s030.bare       bare       total_lift   ensemble.dynamic_blend.enab...  +0.0004    +0.059  +0.607   +0.001
+110  p2.ks08.s020.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0008    +0.004  +0.557   +0.004
+111  p2.ks08.s040.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0029    +0.051  +1.379   +0.006
+112  p2.ks08.s030.full       defaults   marginal_lift  phase2_ks_flags.ks08_dynami...  -0.0014    +0.021  +0.902   +0.006

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 01 closed (Plan 01-11 SHIPPED-NO-OP). Phase 2 entry baseline = ledger entry p1.aggregate.full (#105) Arm B.
-last_updated: "2026-04-26T23:07:33.362Z"
-last_activity: 2026-04-26
+status: ready_to_plan
+stopped_at: Completed 02-09-PLAN.md (Phase 2 WALKED-BACK at aggregate)
+last_updated: "2026-04-27T16:08:17Z"
+last_activity: 2026-04-27
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  completed_phases: 3
+  total_plans: 21
+  completed_plans: 21
+  percent: 60
 ---
 
 # Project State
@@ -21,22 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-26)
 
 **Core value:** Distribution shape (KS) on stat outputs that matters for season-long projections — without giving back the rank_corr / MAE wins we already shipped. Hard floor: any change must NOT regress rank_corr by >0.005 or MAE by >0.05.
-**Current focus:** Phase 01 closed (SHIPPED-NO-OP) — ready to begin Phase 02 (Structural Per-Stat Calibration)
+**Current focus:** Phase 02 complete (WALKED-BACK at aggregate); ready to advance to Phase 03
 
 ## Current Position
 
-Phase: 01 (bug-fixes-cheap-calibration-time-sensitive-scrape) — COMPLETE (SHIPPED-NO-OP)
-Plan: 12 of 12 (all Phase 01 plans complete; ready to transition to Phase 02)
-Status: Phase 01 closed — Phase 02 not yet planned
-Last activity: 2026-04-26
+Phase: 3
+Plan: Not started
+Status: Ready to plan
+Next: Phase 03 (KS-priority retune of off-by-default PFF slices) — entry baseline = Phase-1-final-stack
+Last activity: 2026-04-27
 
-Progress: [██████████] 100% (Phase 01 of 5)
+Progress: [██████████] 100% (Phase 2 complete; Phase 3 not yet started)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 9
 - Average duration: -
 - Total execution time: 0.0 hours
 
@@ -44,7 +45,7 @@ Progress: [██████████] 100% (Phase 01 of 5)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 02 | 9 | - | - |
 
 **Recent Trend:**
 
@@ -63,6 +64,14 @@ Progress: [██████████] 100% (Phase 01 of 5)
 | Phase 01 P08 | 1h 8m | 3 tasks | 2 files |
 | Phase 01 P10 | 13 min | 2 tasks | 3 files |
 | Phase 01 P11 | 19.4 min | 4 tasks | 5 files |
+| Phase 02 P01 | 30 | 4 tasks | 6 files |
+| Phase 02 P02 | 370min | 4 tasks | 10 files |
+| Phase 02 P03 | 61min | 5 tasks | 13 files |
+| Phase 02-structural-per-stat-calibration P04 | 90min | 3 tasks | 7 files |
+| Phase 02-structural-per-stat-calibration P06 | 40m | 3 tasks | 6 files |
+| Phase 02-structural-per-stat-calibration P07 | 120 | 4 tasks | 17 files |
+| Phase 02-structural-per-stat-calibration P08 | 95 min | 3 tasks | 4 files |
+| Phase 02-structural-per-stat-calibration P09 | ~95 min (incl. interrupted reverse-ablation; finalized inline) | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -105,6 +114,9 @@ Recent decisions affecting current work:
 - [Phase 01]: [Phase 01]: Plan 01-08 KS-29 PROMOTED — pff.team_context.enabled=true with pass_rate_sensitivity=0.03 (best of {0.03, 0.05, 0.08} sweep); full hard floor passes (Δ rank_corr -0.0007, Δ weekly_mae -0.005); WR/TE recv_yds non-regressive primary target; bare-mode QB pass_yards regression informational per Gate Relaxation Decision; D-22 honored via existing TestApplyTeamContext::test_qb_unchanged behavior test. 2,131 tests still green. Last per-KS code/config plan in Phase 1 before Plan 10 (KS-32 measure) and Plan 11 (aggregate).
 - [Phase ?]: Phase 01-10: KS-32 MEASURED-NO-CHANGE per D-24 — plays_per_team in target band and nfl_pass_attempts in band; reducing CLOCK_PASS_INCOMPLETE 5 to 3 contraindicated. p1.ks32.measure ledger #104 confirms post-Phase-1 stack matches phase0.baseline.full within noise. KS-32 satisfies REQUIREMENTS delivered definition with no source change.
 - [Phase ?]: Phase 01-11: Phase 1 SHIPPED-NO-OP — aggregate p1.aggregate.full (#105) vs phase0.baseline.full (#82): hard floor PASSES (rank_corr Δ -0.0004, weekly_mae Δ +0.0142) but headline criteria 1-3 (QB pass_yards bias / KS, RB rush_yards KS) MISS. Headline finding: QB pass_yards mean bias REGRESSED -10.99 yd/g (-28.30 → -39.29; target was within ±10). KS-01 mechanism is opposite-direction so reverting it would not restore baseline. Walk-back NOT executed in Plan 11 (D-32 trigger is hard-floor regression, not headline-criteria miss). Recommended posture: fold QB pass_yards mean-bias closure into Phase 2 KS-09 (per-stat residual_calibration). Phase 2 entry baseline = ledger entry p1.aggregate.full Arm B.
+- [Phase 02]: Plan 02-05 KS-10 SHIPPED — TE elite tier (>14 fpts) + per-position caps {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8} in residual_calibration; full hard floor PASSES (rank_corr +0.0001, weekly_mae -0.002); TE receptions KS -0.01 in 2024; Codex MEDIUM 7 TE|elite|market_medium n_rows=18 in 2024 artifact; TE min_bucket_rows=10 (deviation from plan's 100 — elite TEs rare ~20 rows/season); flag default flipped to enabled=true.
+- [Phase 02]: Plan 02-02 KS-08 SHIPPED — simulator-weight floor=0.20 applied post-normalize in dynamic_blend._artifact_weights(); bundled weights_2023.json (7 learned + 14 fallback) and weights_2024.json (17 learned + 55 fallback) re-fit with --simulator-weight-floor 0.20; sweep {0.20, 0.30, 0.40} × {bare, full} = 6 entries + 1 promoted (#107-#113); floor=0.20 selected via D-05 (smallest passing hard floor + non-zero KS improvement); TE recv_yds -0.01 all 3 seasons; promoted A/B rank_corr -0.0004 (within 1e-3 of sweep -0.0008); 2142 tests pass.
+- [Phase ?]: KS-13 SHIPPED-NO-OP: dual-gate conjunction; probe→Path B; hard floor passes but fpts KS Δ≈0 (symmetric noise does not close systematic KS gap)
 
 ### Pending Todos
 
@@ -122,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-26T23:07:28.590Z
-Stopped at: Phase 01 closed (Plan 01-11 SHIPPED-NO-OP — aggregate validation complete; headline QB pass_yards bias / KS regressed but hard floor passes). Phase 2 entry baseline = ledger entry p1.aggregate.full (#105) Arm B.
+Last session: 2026-04-27T12:43:38.758Z
+Stopped at: Completed 02-07-PLAN.md (KS-13 SHIPPED-NO-OP)
 Resume file: None

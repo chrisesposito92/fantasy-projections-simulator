@@ -680,3 +680,75 @@ class TestBareConfigDict:
                 f"phase1_ks_flags.{flag} should still be False, got "
                 f"{isolated['phase1_ks_flags'][flag]}"
             )
+
+
+# === Phase 2 KS feature flag tests (D-02 / D-44 pattern, Plan 01) ===
+
+
+def test_phase2_ks_flags_present_and_default_false():
+    """HARD GATE: every phase2_ks_flags entry must exist in defaults and default to enabled: false.
+
+    Per Phase 2 D-02: per-KS plans land their code path behind `phase2_ks_flags.ksXX_<name>.enabled`
+    with default false. The promotion commit per plan flips the default to true. This test
+    catches the case where someone adds a KS code change behind a flag that doesn't exist in
+    defaults (would silently behave as `False`, hiding the regression).
+
+    Phase 2 status (post-Plan-09 walk-back, 2026-04-27):
+      All 7 KS items WALKED-BACK at the aggregate level. Per-KS A/Bs each individually
+      passed hard floor in isolation (KS-08, KS-10, KS-11, KS-12, KS-14 SHIPPED;
+      KS-09 SHIPPED-PARTIAL; KS-13 SHIPPED-NO-OP), but the FULL-stack aggregate failed
+      Phase-2-vs-Phase-1 hard floor (Δ rank_corr = -0.00515 vs limit -0.005). Reverse-
+      ablation iter-1 marginals were all in [-0.0004, +0.0006] — "death by a thousand
+      cuts": cumulative deficit cannot be attributed to any single KS, so iterative
+      single-revert cannot clear the floor. Per-stat picture was unambiguously
+      regressive (6 of 8 priority stats KS up; QB pass_yards bias -39.29 → -41.11 yd/g).
+      All 7 flags reverted to enabled: false; code/architecture preserved in tree for
+      Phase 3+ levers.
+      See:
+        .planning/phases/02-structural-per-stat-calibration/09-phase2-aggregate-validation-SUMMARY.md
+        .planning/phases/02-structural-per-stat-calibration/logs/PROMOTION-NOTES.md
+        .planning/phases/02-structural-per-stat-calibration/logs/p2_walkback_complete.marker
+    """
+    from fantasy_sim.config.loader import get_phase2_ks_flags
+    flags = get_phase2_ks_flags()
+    expected_all = {
+        "ks08_dynamic_blend_simulator_floor",
+        "ks09_per_stat_residual_calibration",
+        "ks10_per_position_caps",
+        "ks11_position_reliability",
+        "ks12_share_normalization_residual",
+        "ks13_ff_opportunity_prior_width",
+        "ks14_thin_bucket_shrinkage",
+    }
+    # Phase 2 walked back 2026-04-27 — all flags currently enabled: false.
+    # promoted set is empty; if a future phase re-promotes any of these, add the
+    # name to `promoted` and the corresponding line below will assert True.
+    promoted: set[str] = set()
+    assert set(flags.keys()) >= expected_all, f"Missing phase2_ks_flags entries: {expected_all - set(flags.keys())}"
+    for name in expected_all - promoted:
+        assert flags[name].get("enabled") is False, f"phase2_ks_flags.{name}.enabled must default to False (got {flags[name].get('enabled')!r})"
+    for name in promoted:
+        assert flags[name].get("enabled") is True, f"phase2_ks_flags.{name}.enabled should be True (promoted flag)"
+
+
+def test_phase2_bare_config_disables_all_new_flags():
+    """HARD GATE: bare_config_dict() must enumerate every phase2_ks_flags.*.enabled key.
+
+    Mirrors the Phase 1 hard-gate test pattern (D-44). If a Phase 2 KS plan adds a flag
+    to defaults but forgets to add it to bare_config_dict(), the per-KS bare-isolation A/B
+    silently runs both arms with the same flag value and produces a no-op A/B (the Cycle-2
+    failure mode). This test refuses to merge a plan that does so.
+    """
+    from fantasy_sim.config.loader import load_defaults
+    from fantasy_sim.validation.config import bare_config_dict
+    bare = bare_config_dict(load_defaults())
+    assert bare["phase2_ks_flags"]["ks08_dynamic_blend_simulator_floor"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks09_per_stat_residual_calibration"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks10_per_position_caps"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks11_position_reliability"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks12_share_normalization_residual"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks13_ff_opportunity_prior_width"]["enabled"] is False
+    assert bare["phase2_ks_flags"]["ks14_thin_bucket_shrinkage"]["enabled"] is False
+    # Sub-engine gates from Plan 01 Task 1
+    assert bare["ensemble"]["residual_calibration"]["stat_level"]["enabled"] is False
+    assert bare["ensemble"]["ff_opportunity"]["prior_width"]["enabled"] is False

@@ -1,0 +1,6 @@
+Fitting prior_width_2023.json (source_seasons=[2020, 2021, 2022], scoring=ppr)
+  [2023] Fitted 4 buckets from 16540 residuals (league_std=4.486)
+  -> Wrote src/fantasy_sim/data/ensemble/artifacts/ff_opportunity_prior_width/decision_s200/prior_width_2023.json (n_buckets=4)
+Fitting prior_width_2024.json (source_seasons=[2020, 2021, 2022, 2023], scoring=ppr)
+  [2024] Fitted 4 buckets from 22150 residuals (league_std=4.463)
+  -> Wrote src/fantasy_sim/data/ensemble/artifacts/ff_opportunity_prior_width/decision_s200/prior_width_2024.json (n_buckets=4)

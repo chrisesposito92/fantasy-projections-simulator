@@ -2503,3 +2503,36 @@ def test_play_call_model_ignores_runtime_rejected_artifacts(tmp_path):
                 "prior-season PBP pass/run labels"
             ),
         ), name
+
+
+# === KS-14: buckets_below_min_plays_pct audit metric ===
+
+class TestKs14BucketsBelowMinPlaysPct:
+    """Tests for the KS-14 D-11 buckets_below_min_plays_pct audit metric."""
+
+    def test_ks14_buckets_below_min_plays_pct_default_threshold(self):
+        """When all buckets have >=10 plays, the metric returns 0.0."""
+        from fantasy_sim.validation.coverage import buckets_below_min_plays_pct
+        pbp_buckets = {
+            ("pass", "bucket1"): list(range(15)),
+            ("pass", "bucket2"): list(range(20)),
+            ("run", "bucket3"): list(range(12)),
+        }
+        assert buckets_below_min_plays_pct(pbp_buckets, "WR") == 0.0
+
+    def test_ks14_buckets_below_min_plays_pct_some_thin(self):
+        """When some buckets are thin (n<10), the metric returns the fraction."""
+        from fantasy_sim.validation.coverage import buckets_below_min_plays_pct
+        pbp_buckets = {
+            ("pass", "bucket1"): list(range(15)),  # robust
+            ("pass", "bucket2"): list(range(7)),   # thin (n=7)
+            ("run", "bucket3"): list(range(5)),    # thin (n=5)
+            ("run", "bucket4"): list(range(20)),   # robust
+        }
+        # 2 of 4 buckets are thin → 0.5
+        assert buckets_below_min_plays_pct(pbp_buckets, "WR") == 0.5
+
+    def test_ks14_buckets_below_min_plays_pct_empty_input(self):
+        """Empty input returns 0.0 gracefully."""
+        from fantasy_sim.validation.coverage import buckets_below_min_plays_pct
+        assert buckets_below_min_plays_pct({}, "WR") == 0.0

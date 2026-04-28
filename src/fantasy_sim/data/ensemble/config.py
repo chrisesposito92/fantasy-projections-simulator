@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fantasy_sim.data.ensemble.models import (
     DynamicBlendConfig,
     EnsembleConfig,
     FfOpportunityConfig,
     FfRankingsConfig,
+    PriorWidthConfig,
     ResidualCalibrationConfig,
+    StatLevelConfig,
 )
 
 
@@ -25,6 +29,15 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
     dynamic_blend_raw = raw.get("dynamic_blend", {})
     residual_calibration_raw = raw.get("residual_calibration", {})
 
+    # KS-13 D-10: prior_width config block
+    prior_width_raw = ff_opportunity_raw.get("prior_width", {})
+    prior_width_artifacts_dir_raw = prior_width_raw.get("artifacts_dir")
+    prior_width = PriorWidthConfig(
+        enabled=bool(prior_width_raw.get("enabled", False)),
+        path=str(prior_width_raw.get("path", "A")),
+        artifacts_dir=Path(prior_width_artifacts_dir_raw) if prior_width_artifacts_dir_raw else None,
+    )
+
     ff_opportunity = FfOpportunityConfig(
         enabled=ff_opportunity_raw.get("enabled", False),
         cache_dir=ff_opportunity_raw.get("cache_dir"),
@@ -35,10 +48,22 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
             "min_coverage_weeks",
             default_ff_opportunity.min_coverage_weeks,
         ),
+        prior_width=prior_width,
     )
     ff_rankings = FfRankingsConfig(
         enabled=ff_rankings_raw.get("enabled", False),
     )
+    # KS-08 D-06: the simulator_weight_floor is sourced from phase2_ks_flags.ks08 when
+    # enabled; falls back to ensemble.dynamic_blend.simulator_weight_floor (default 0.0).
+    phase2_flags = defaults.get("phase2_ks_flags", {})
+    ks08_block = phase2_flags.get("ks08_dynamic_blend_simulator_floor", {})
+    if ks08_block.get("enabled"):
+        simulator_weight_floor = float(ks08_block.get("floor", 0.0))
+    else:
+        simulator_weight_floor = float(
+            dynamic_blend_raw.get("simulator_weight_floor", default_dynamic_blend.simulator_weight_floor)
+        )
+
     dynamic_blend = DynamicBlendConfig(
         enabled=dynamic_blend_raw.get("enabled", default_dynamic_blend.enabled),
         weights_dir=dynamic_blend_raw.get("weights_dir", default_dynamic_blend.weights_dir),
@@ -61,7 +86,17 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
             dynamic_blend_raw.get("grid_step", default_dynamic_blend.grid_step)
         ),
         fallback=dynamic_blend_raw.get("fallback", default_dynamic_blend.fallback),
+        simulator_weight_floor=simulator_weight_floor,
     )
+    # KS-09 D-02: phase2_ks_flags.ks09_per_stat_residual_calibration.enabled is the master toggle.
+    # When the flag is true, stat_level.enabled is forced to True regardless of the YAML field.
+    ks09_block = phase2_flags.get("ks09_per_stat_residual_calibration", {})
+    stat_level_raw = residual_calibration_raw.get("stat_level", {})
+    stat_level_enabled = bool(ks09_block.get("enabled", False)) or bool(
+        stat_level_raw.get("enabled", False)
+    )
+    covered_stats = tuple(stat_level_raw.get("covered_stats", ()))
+
     residual_calibration = ResidualCalibrationConfig(
         enabled=residual_calibration_raw.get(
             "enabled",
@@ -110,6 +145,13 @@ def load_ensemble_config(defaults: dict) -> EnsembleConfig:
         fallback=residual_calibration_raw.get(
             "fallback",
             default_residual_calibration.fallback,
+        ),
+        stat_level=StatLevelConfig(
+            enabled=stat_level_enabled,
+            covered_stats=covered_stats,
+        ),
+        max_abs_adjustment_by_position=dict(
+            residual_calibration_raw.get("max_abs_adjustment_by_position", {})
         ),
     )
 

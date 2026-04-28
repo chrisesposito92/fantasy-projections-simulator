@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import polars as pl
 import numpy as np
-from fantasy_sim.config.loader import get_phase1_ks_flags
+from fantasy_sim.config.loader import get_phase1_ks_flags, get_phase2_ks_flags
 from fantasy_sim.models.player import PlayerModel, PlayerUsage, PlayerOutcomes, TeamRoster, MIN_QB_CARRY_SHARE
 from fantasy_sim.data.rookie_builder import POSITIONAL_ARCHETYPES, build_rookie_model
 from fantasy_sim.engine.play_resolver import RZ_CATCH_RATE_MODIFIERS, RZ_CATCH_RATE_MODIFIER
@@ -27,6 +27,25 @@ _KS06_BACKUP_RECEIVER_FIX = (
     .get("ks06_backup_receiver_fix", {})
     .get("enabled", False)
 )
+
+# KS-12 D-09: share-normalization residual — module-level flag read at import.
+# When enabled, _normalize_roster_shares scales share sums to
+# `clip(active / typical_roster_size, 0.5, 1.0)` instead of 1.0, creating a
+# "league-default" residual for weeks with multiple inactives.
+# Composes with the availability engine: when availability.engine zeros inactive
+# players' shares before calling _normalize_roster_shares, the active count
+# (players with snap_share > 0) naturally determines the factor.
+_KS12_SHARE_NORM_RESIDUAL = (
+    get_phase2_ks_flags()
+    .get("ks12_share_normalization_residual", {})
+    .get("enabled", False)
+)
+
+# KS-12 D-09: backup-TE/WR exclusion threshold (Claude's Discretion per
+# CONTEXT.md). Receivers with target_share below this floor are excluded from
+# the normalization pool. Mirrors MIN_QB_CARRY_SHARE = 0.10 for designed-run
+# rushers. Default 0.05 = backup must hold ≥ 5% target share to participate.
+MIN_BACKUP_RECEIVING_SHARE = 0.05
 
 MIN_RZ_TARGETS = 10  # Minimum RZ targets for per-player RZ catch rate
 FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}
@@ -659,20 +678,39 @@ def build_team_roster(team: str, models: dict[str, PlayerModel]) -> TeamRoster:
 
 
 def _normalize_roster_shares(roster: TeamRoster) -> None:
-    """Normalize carry/target shares to sum to 1.0 among eligible players.
+    """Normalize carry/target shares among eligible players.
 
     Without this, shares computed from multi-season PBP data don't sum to 1.0
     (former players had carries/targets but aren't on the current roster).
     The gap causes ``select_rusher``/``select_receiver`` to amplify each
     player's selection probability beyond the intended share value.
+
+    KS-12 D-09 (Plan 08): when ``_KS12_SHARE_NORM_RESIDUAL`` is enabled,
+    normalize to ``factor = clip(active/typical_roster_size, 0.5, 1.0)``
+    instead of 1.0.  "Active" = players with ``snap_share > 0`` (i.e., the
+    availability engine has not zeroed them out).  The (1 - factor) residual is
+    a "league-default" share not allocated to any roster player, preventing
+    artificial inflation of survivors' selection probabilities when multiple
+    players are out.  When flag is off, behavior is byte-identical to pre-Plan-08.
     """
+    # KS-12: compute active-share factor once per roster.
+    # When flag off, factor = 1.0 → _scale_shares path (legacy).
+    factor = _expected_active_share_factor(roster) if _KS12_SHARE_NORM_RESIDUAL else 1.0
+
+    def _scale(players, attr):
+        """Choose _scale_shares or _scale_shares_with_factor based on factor."""
+        if factor < 1.0:
+            _scale_shares_with_factor(players, attr, factor)
+        else:
+            _scale_shares(players, attr)
+
     # --- Carry shares ---
     eligible_rushers = [
         p for p in roster.players
         if p.usage.carry_share > 0
         and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
     ]
-    _scale_shares(eligible_rushers, "carry_share")
+    _scale(eligible_rushers, "carry_share")
 
     # --- Red zone carry shares ---
     eligible_rz_rushers = [
@@ -680,7 +718,7 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         if p.usage.red_zone_carry_share > 0
         and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
     ]
-    _scale_shares(eligible_rz_rushers, "red_zone_carry_share")
+    _scale(eligible_rz_rushers, "red_zone_carry_share")
 
     # --- Outer red zone carry shares ---
     eligible_outer_rz_rushers = [
@@ -688,7 +726,7 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         if p.usage.outer_rz_carry_share > 0
         and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
     ]
-    _scale_shares(eligible_outer_rz_rushers, "outer_rz_carry_share")
+    _scale(eligible_outer_rz_rushers, "outer_rz_carry_share")
 
     # --- Goal line carry shares ---
     eligible_goal_line_rushers = [
@@ -696,31 +734,54 @@ def _normalize_roster_shares(roster: TeamRoster) -> None:
         if p.usage.goal_line_carry_share > 0
         and (p.position != "QB" or p.usage.carry_share >= MIN_QB_CARRY_SHARE)
     ]
-    _scale_shares(eligible_goal_line_rushers, "goal_line_carry_share")
+    _scale(eligible_goal_line_rushers, "goal_line_carry_share")
 
     # --- Target shares ---
+    # KS-12 D-09: backup-TE/WR exclusion at MIN_BACKUP_RECEIVING_SHARE=0.05.
+    # Receivers with target_share below the floor are excluded from the
+    # normalization pool, mirroring the MIN_QB_CARRY_SHARE pattern for rushers.
+    # The exclusion is gated on the KS-12 master flag so that when the flag is
+    # off (walk-back state), normalization is byte-identical to pre-Plan-08.
     eligible_receivers = [
-        p for p in roster.players if p.usage.target_share > 0
+        p for p in roster.players
+        if p.usage.target_share > 0
+        and (
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
+            or p.usage.target_share >= MIN_BACKUP_RECEIVING_SHARE
+        )
     ]
-    _scale_shares(eligible_receivers, "target_share")
+    _scale(eligible_receivers, "target_share")
 
     # --- Red zone target shares ---
     eligible_rz_receivers = [
-        p for p in roster.players if p.usage.red_zone_target_share > 0
+        p for p in roster.players
+        if p.usage.red_zone_target_share > 0
+        and (
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
+            or p.usage.red_zone_target_share >= MIN_BACKUP_RECEIVING_SHARE
+        )
     ]
-    _scale_shares(eligible_rz_receivers, "red_zone_target_share")
+    _scale(eligible_rz_receivers, "red_zone_target_share")
 
     # --- Outer red zone target shares ---
     eligible_outer_rz_receivers = [
-        p for p in roster.players if p.usage.outer_rz_target_share > 0
+        p for p in roster.players
+        if p.usage.outer_rz_target_share > 0
+        and (
+            not _KS12_SHARE_NORM_RESIDUAL
+            or p.position not in ("WR", "TE")
+            or p.usage.outer_rz_target_share >= MIN_BACKUP_RECEIVING_SHARE
+        )
     ]
-    _scale_shares(eligible_outer_rz_receivers, "outer_rz_target_share")
+    _scale(eligible_outer_rz_receivers, "outer_rz_target_share")
 
     # --- Goal line target shares ---
     eligible_goal_line_receivers = [
         p for p in roster.players if p.usage.goal_line_target_share > 0
     ]
-    _scale_shares(eligible_goal_line_receivers, "goal_line_target_share")
+    _scale(eligible_goal_line_receivers, "goal_line_target_share")
 
 
 def _scale_shares(players: list[PlayerModel], attr: str) -> None:
@@ -733,3 +794,60 @@ def _scale_shares(players: list[PlayerModel], attr: str) -> None:
     factor = 1.0 / total
     for p in players:
         setattr(p.usage, attr, getattr(p.usage, attr) * factor)
+
+
+def _expected_active_share_factor(
+    roster,
+    typical_roster_size: int = 22,
+    min_fraction: float = 0.5,
+) -> float:
+    """KS-12 D-09: compute the share-normalization target for the active roster.
+
+    Returns ``clip(active_players / typical_roster_size, min_fraction, 1.0)``.
+
+    "Active" is defined as any player with ``snap_share > 0``. When the
+    availability engine has not run (or all players are available), every player
+    has ``snap_share > 0`` and the factor is ~1.0 (legacy behavior). When
+    availability zeros a hard-inactive player's ``snap_share``, that player is
+    excluded from the active count, lowering the factor and creating a
+    "league-default" residual that is not redistributed to surviving starters.
+
+    Pitfall 5 clamping:
+    - Lower bound (``min_fraction=0.5``) prevents multi-inactive weeks from
+      collapsing carry/target totals toward zero.
+    - Upper bound (1.0) preserves the share-sums-to-≤-1.0 invariant.
+
+    Args:
+        roster: Object with a ``players`` iterable; each player has
+            ``usage.snap_share``.
+        typical_roster_size: Expected number of active players on a full roster
+            (default 22 — matches 22-player active NFL game-day roster).
+        min_fraction: Lower clamp bound (default 0.5).
+
+    Returns:
+        float in [min_fraction, 1.0].
+    """
+    active = sum(
+        1 for p in roster.players
+        if getattr(p.usage, "snap_share", 1.0) > 0
+    )
+    if typical_roster_size <= 0 or active == 0:
+        return 1.0
+    return float(np.clip(active / typical_roster_size, min_fraction, 1.0))
+
+
+def _scale_shares_with_factor(players: list, attr: str, factor: float) -> None:
+    """KS-12 D-09: scale a usage share attribute so values sum to ``factor``.
+
+    Analogous to ``_scale_shares`` but normalizes to ``factor`` instead of 1.0,
+    leaving a (1 - factor) residual unallocated — the "league-default" share
+    for weeks with multiple inactive players.
+    """
+    if not players:
+        return
+    total = sum(getattr(p.usage, attr) for p in players)
+    if total <= 0:
+        return
+    scale = factor / total
+    for p in players:
+        setattr(p.usage, attr, getattr(p.usage, attr) * scale)

@@ -1,12 +1,18 @@
 import polars as pl
 import numpy as np
-from fantasy_sim.config.loader import get_phase1_ks_flags
+from fantasy_sim.config.loader import get_phase1_ks_flags, get_phase2_ks_flags
 from fantasy_sim.models.game_state import GameStateBucket, bucket_play
 from fantasy_sim.models.distributions import (
     PlayCallingDist, PlayOutcomeDist, TurnoverRates, KickingModel, DriveStartModel,
     PenaltyRates,
 )
 
+# Legacy bucket-size threshold. KS-14 (Phase 2 D-11) lowers the EFFECTIVE threshold
+# to 5 when `phase2_ks_flags.ks14_thin_bucket_shrinkage.enabled=true` via the
+# `_effective_min_bucket_plays()` helper below. The MIN_BUCKET_PLAYS constant
+# itself stays at 10 so that flag-off behavior is byte-identical to pre-KS-14.
+# Codex review HIGH 2 (2026-04-27): we MUST NOT lower the constant globally; the
+# threshold change MUST flip with the flag.
 MIN_BUCKET_PLAYS = 10
 
 # Phase 1 KS-06 feature flag (Cycle 3 D-45). When enabled, the team-bucket
@@ -22,6 +28,71 @@ _KS06_BACKUP_RECEIVER_FIX = (
     .get("ks06_backup_receiver_fix", {})
     .get("enabled", False)
 )
+
+# Phase 2 KS-14 feature flag (D-11 / D-45 pattern, codex HIGH 2 fix). When the
+# flag is true, the EFFECTIVE bucket-size threshold drops from 10 to 5 AND
+# n∈[5,9] buckets get Bayesian shrinkage toward team default. When the flag is
+# false, the legacy threshold of 10 applies AND the shrinkage branch is
+# unreachable. Read once at module import time.
+_KS14_THIN_BUCKET_SHRINKAGE = (
+    get_phase2_ks_flags()
+    .get("ks14_thin_bucket_shrinkage", {})
+    .get("enabled", False)
+)
+
+
+def _effective_min_bucket_plays() -> int:
+    """Return the active bucket-size threshold based on the KS-14 flag.
+
+    Codex review HIGH 2 (2026-04-27): the threshold change MUST be flag-gated.
+    When `_KS14_THIN_BUCKET_SHRINKAGE` is False (default, legacy), returns 10
+    (matches pre-KS-14 behavior byte-identically). When True (KS-14 SHIPPED),
+    returns 5 — and `compute_play_outcomes` additionally routes n∈[5,9]
+    buckets through `_apply_bayesian_shrinkage`.
+    """
+    return 5 if _KS14_THIN_BUCKET_SHRINKAGE else MIN_BUCKET_PLAYS  # 10 by default
+
+
+def _apply_bayesian_shrinkage(
+    personal: list | np.ndarray,
+    team_default: np.ndarray | list | None,
+) -> np.ndarray:
+    """Apply Bayesian shrinkage to a thin per-bucket yards array.
+
+    KS-14 D-11 + Pattern 5 (project-wide Bayesian formula):
+        adjusted_mean = (n * observed_mean + prior_strength * prior_mean) / (n + prior_strength)
+
+    Where n = len(personal); observed_mean = np.mean(personal); prior_strength =
+    5 * len(team_default); prior_mean = np.mean(team_default). The output array
+    is constructed as `personal - observed_mean + adjusted_mean` so the SHAPE of
+    the personal distribution is preserved (variance, skew) but the LOCATION is
+    pulled toward the team default proportional to data thinness.
+
+    When team_default is None or empty, falls back to returning personal unchanged
+    (graceful degradation; matches the legacy fallback for buckets with no team data).
+    """
+    personal_arr = (
+        np.array(personal, dtype=np.float64)
+        if not isinstance(personal, np.ndarray)
+        else personal.astype(np.float64)
+    )
+    if team_default is None or (hasattr(team_default, "__len__") and len(team_default) == 0):
+        return personal_arr
+    team_arr = (
+        np.array(team_default, dtype=np.float64)
+        if not isinstance(team_default, np.ndarray)
+        else team_default.astype(np.float64)
+    )
+    n = len(personal_arr)
+    if n == 0:
+        return personal_arr
+    observed_mean = float(np.mean(personal_arr))
+    prior_mean = float(np.mean(team_arr))
+    prior_strength = 5.0 * len(team_arr)
+    if (n + prior_strength) <= 0:
+        return personal_arr
+    adjusted_mean = (n * observed_mean + prior_strength * prior_mean) / (n + prior_strength)
+    return personal_arr - observed_mean + adjusted_mean
 
 # League-average fallback constants for penalty rates
 _LEAGUE_AVG_PENALTY_RATE = 0.07
@@ -110,9 +181,10 @@ class Preprocessor:
                 bucket_counts[bucket][row["play_type"]] += 1
 
             distributions: dict[GameStateBucket, dict[str, float]] = {}
+            _threshold = _effective_min_bucket_plays()
             for bucket, counts in bucket_counts.items():
                 total_bucket = counts["pass"] + counts["run"]
-                if total_bucket >= MIN_BUCKET_PLAYS:
+                if total_bucket >= _threshold:
                     distributions[bucket] = {
                         "pass": counts["pass"] / total_bucket,
                         "run": counts["run"] / total_bucket,
@@ -177,12 +249,26 @@ class Preprocessor:
                 bucket_yards[key] = []
             bucket_yards[key].append(yards)
 
+        # Build final_defaults BEFORE the bucket loop so the shrinkage helper
+        # can reference team defaults when the KS-14 flag is on.
+        final_defaults = {k: np.array(v) for k, v in defaults.items() if v}
+
         distributions = {}
         for key, yards_list in bucket_yards.items():
-            if len(yards_list) >= MIN_BUCKET_PLAYS:
+            n_personal = len(yards_list)
+            # Codex HIGH 2 fix: when the KS-14 flag is OFF, _effective_min_bucket_plays()
+            # returns 10 (legacy) so the n∈[5,9] subrange is dropped exactly as pre-KS-14.
+            # When the flag is ON, the threshold drops to 5 AND n∈[5,9] gets shrinkage.
+            if n_personal >= 10:
+                # Robust bucket — no shrinkage needed (always retained, both modes)
                 distributions[key] = np.array(yards_list)
-
-        final_defaults = {k: np.array(v) for k, v in defaults.items() if v}
+            elif _KS14_THIN_BUCKET_SHRINKAGE and n_personal >= 5:
+                # KS-14 D-11: thin bucket — apply Bayesian shrinkage toward team default
+                play_type, _bucket = key
+                team_default = final_defaults.get(play_type)
+                distributions[key] = _apply_bayesian_shrinkage(yards_list, team_default)
+            # else: drop the bucket. With flag OFF, this drops everything < 10 (legacy).
+            # With flag ON, the shrinkage branch above caught n∈[5,9]; this drops n<5.
 
         return PlayOutcomeDist(distributions=distributions, defaults=final_defaults)
 

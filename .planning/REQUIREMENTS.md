@@ -23,13 +23,13 @@ Confirmed code defects causing measurable bias. Bug-fix-class changes — should
 
 Architectural changes — most leverage on stat-level KS regressions. Sequenced after bugs so measurements aren't contaminated by bug-driven noise.
 
-- [ ] **KS-08**: Add `dynamic_blend` simulator-weight floor (recommendation: grid-search 0.20/0.30/0.40 around current near-zero values in `weights_2024.json`). Restores Monte Carlo variance contribution to the post-sim ensemble. → Impacts TGT-08, TGT-04, TGT-05
-- [ ] **KS-09**: Extend `residual_calibration` to operate at the stat-column level, not just `fpts`. THE structural blocker for stat-level KS work. Files: `src/fantasy_sim/scoring/residual_calibration.py:422` (and surrounding artifact-loading code). → Impacts every TGT
-- [ ] **KS-10**: Add per-position `max_abs_adjustment` clamp + a TE-specific elite-tier override that prevents `_merge_thin_tiers` from collapsing the `TE|high|*` calibration bucket. → Impacts TGT-04, TGT-05, TGT-08
-- [ ] **KS-11**: Raise `tier_engine` `reliability_cap` from 0.80 to ~0.90 for high-touch players (PFF tier 1+2). Currently the cap shrinks elite-player distributions toward fat-middle pools. → Impacts TGT-02, TGT-05, TGT-06
-- [ ] **KS-12**: Address share-normalization residual that re-distributes target/carry shares to sum to 1.0 weekly, removing legitimate cross-player variance. → Impacts TGT-03, TGT-04, TGT-06
-- [ ] **KS-13**: Fix `ff_opportunity` prior to carry width (currently used as a point estimate by `dynamic_blend`). → Impacts TGT-04, TGT-05, TGT-08
-- [ ] **KS-14**: Bayesian shrinkage tuning for thin (`MIN_BUCKET_PLAYS=10` fallback) buckets. → Impacts every yards TGT (small but additive)
+- [x] **KS-08** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Add `dynamic_blend` simulator-weight floor (grid-searched 0.20/0.30/0.40; selected 0.20). Restores Monte Carlo variance contribution to the post-sim ensemble. SHIPPED in isolation, reverted at full-stack aggregate (iter-1 marginal_delta_rank_corr = -0.000187 — net positive contributor but couldn't carry the stack). Architecture preserved: `apply_simulator_weight_floor()` + CLI flag in `fit_dynamic_blend_weights.py`. → Impacts TGT-08, TGT-04, TGT-05
+- [x] **KS-09** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Extend `residual_calibration` to operate at the stat-column level via `corrected_<stat>` columns + ±2σ clamp + schema_v2 artifacts. SHIPPED-PARTIAL in isolation, reverted at aggregate (highest harm_score in iter-1 reverse-ablation: +0.00716; per-stat bias delta too small at 200 sims to outweigh stack regression). **Architecture preserved as a Phase 3+ lever:** corrected_<stat> infrastructure + schema_v2 loader + validate.py routing remain in tree — Phase 3 can re-fit with different methods (more sims, stratified sampling, alt clamp, hierarchical priors). The headline mean-bias miss (TGT-09 QB pass_yards) is now Phase 3+'s top priority. → Impacts every TGT
+- [x] **KS-10** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Add per-position `max_abs_adjustment` clamp (D-07 values: QB 2.5 / RB 2.0 / WR 1.5 / TE 0.8) + TE-specific elite-tier override (≥14 fpts threshold, 4-tier classification). SHIPPED in isolation, reverted at aggregate. Architecture preserved: `USAGE_TIER_THRESHOLDS_4`, per-position cap config, TE elite tier in `usage_tier()`. → Impacts TGT-04, TGT-05, TGT-08
+- [x] **KS-11** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Raise `tier_engine` reliability cap via per-position config (WR/TE 0.30/0.95, RB 0.25/0.92; QB stays at global 0.20/0.80 per QB-untouched invariant). SHIPPED in isolation, reverted at aggregate (essentially neutral in iter-1 ablation). Architecture preserved: `pff.tier_engine.position_reliability` config block + flag-gated loader. → Impacts TGT-02, TGT-05, TGT-06
+- [x] **KS-12** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Share-normalization residual via `clip(active/typical, 0.5, 1.0)` factor + 0.05 backup TE/WR threshold. SHIPPED in isolation, reverted at aggregate (net positive contributor in iter-1 ablation but couldn't carry the stack). Architecture preserved: `_expected_active_share_factor()` + `_scale_shares_with_factor()` + `MIN_BACKUP_RECEIVING_SHARE` constant. → Impacts TGT-03, TGT-04, TGT-06
+- [x] **KS-13** (NO-OP — Phase 2 walked back 2026-04-27): `ff_opportunity` prior width via Path B Gaussian (Path A unavailable: nflverse FF Opportunity has no quantile columns). SHIPPED-NO-OP — sampling adds symmetric noise around prior_fpts but distribution gap is from systematic bias, not insufficient prior width. Architecture preserved: probe + fitter + lazy artifact loader + dual-gate (master flag + sub-flag conjunction). → Impacts TGT-04, TGT-05, TGT-08
+- [x] **KS-14** (INVALIDATED-AT-AGGREGATE — Phase 2 walked back 2026-04-27): Effective `MIN_BUCKET_PLAYS` 10→5 via flag-gated helper + Bayesian shrinkage at strength `5 * len(team_default)` for buckets with 5-9 plays. SHIPPED in isolation, reverted at aggregate. Architecture preserved: `_effective_min_bucket_plays()` + `_apply_bayesian_shrinkage()` + audit metric. → Impacts every yards TGT (small but additive)
 
 ### C. Phase 5 Slice Activation (KS-priority retune)
 
@@ -100,13 +100,13 @@ Phase mapping set by `gsd-roadmapper` during ROADMAP.md creation (2026-04-25). T
 | KS-05 | Phase 1 | Complete |
 | KS-06 | Phase 1 | Complete |
 | KS-07 | Phase 1 | Complete |
-| KS-08 | Phase 2 | Pending |
-| KS-09 | Phase 2 | Pending |
-| KS-10 | Phase 2 | Pending |
-| KS-11 | Phase 2 | Pending |
-| KS-12 | Phase 2 | Pending |
-| KS-13 | Phase 2 | Pending |
-| KS-14 | Phase 2 | Pending |
+| KS-08 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved) |
+| KS-09 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved as Phase 3+ lever) |
+| KS-10 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved) |
+| KS-11 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved) |
+| KS-12 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved) |
+| KS-13 | Phase 2 | Tested — NO-OP (architecture preserved) |
+| KS-14 | Phase 2 | Tested — INVALIDATED at aggregate (architecture preserved) |
 | KS-15 | Phase 1 | Complete |
 | KS-16 | Phase 3 | Pending |
 | KS-17 | Phase 3 | Pending |
@@ -152,4 +152,4 @@ For convenience — full text in `PROJECT.md`. Each requirement above lists whic
 
 ---
 *Requirements defined: 2026-04-26*
-*Last updated: 2026-04-25 — phase mappings populated by `gsd-roadmapper`*
+*Last updated: 2026-04-27 — Phase 2 closure: KS-08 through KS-14 marked INVALIDATED-AT-AGGREGATE / NO-OP (architecture preserved in tree as Phase 3+ levers). See `.planning/phases/02-structural-per-stat-calibration/09-phase2-aggregate-validation-SUMMARY.md`.*

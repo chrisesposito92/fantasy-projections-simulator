@@ -384,3 +384,127 @@ def test_fit_dynamic_blend_artifact_falls_back_on_sparse_bucket(tmp_path):
 
     assert artifact["buckets"] == {}
     assert artifact["fallback_buckets"]["QB|1-4|simulator+ff_opportunity|none"]["reason"] == "sparse_bucket"
+
+
+# === KS-08: dynamic_blend simulator-weight floor ===
+
+import math
+import importlib
+import importlib.util
+
+from hypothesis import given, settings, strategies as st
+from fantasy_sim.scoring.dynamic_blend import (
+    SIMULATOR_SOURCE,
+    FF_OPPORTUNITY_SOURCE,
+    MARKET_HISTORY_SOURCE,
+)
+# After Task 2, the helper exists. Until then RED.
+from fantasy_sim.scoring.dynamic_blend import apply_simulator_weight_floor  # KS-08 new helper
+
+
+def test_ks08_floor_unchanged_when_sim_above_floor():
+    """When simulator weight >= floor, the output is identical to the input."""
+    weights = {SIMULATOR_SOURCE: 0.40, FF_OPPORTUNITY_SOURCE: 0.30, MARKET_HISTORY_SOURCE: 0.30}
+    out = apply_simulator_weight_floor(weights, floor=0.20)
+    assert math.isclose(out[SIMULATOR_SOURCE], 0.40, abs_tol=1e-9)
+    assert math.isclose(out[FF_OPPORTUNITY_SOURCE], 0.30, abs_tol=1e-9)
+    assert math.isclose(out[MARKET_HISTORY_SOURCE], 0.30, abs_tol=1e-9)
+
+
+def test_ks08_floor_lifts_when_sim_below_floor():
+    """When simulator weight < floor, simulator is lifted to floor and others scale down proportionally."""
+    weights = {SIMULATOR_SOURCE: 0.05, FF_OPPORTUNITY_SOURCE: 0.65, MARKET_HISTORY_SOURCE: 0.30}
+    out = apply_simulator_weight_floor(weights, floor=0.20)
+    assert math.isclose(out[SIMULATOR_SOURCE], 0.20, abs_tol=1e-9)
+    # slack = 0.15; other_total = 0.95; scale = 0.80/0.95 ≈ 0.8421
+    expected_ff = 0.65 * (0.80 / 0.95)
+    expected_market = 0.30 * (0.80 / 0.95)
+    assert math.isclose(out[FF_OPPORTUNITY_SOURCE], expected_ff, abs_tol=1e-9)
+    assert math.isclose(out[MARKET_HISTORY_SOURCE], expected_market, abs_tol=1e-9)
+    # Sum-to-one preserved
+    assert math.isclose(sum(out.values()), 1.0, abs_tol=1e-9)
+
+
+@given(
+    raw_sim=st.floats(min_value=0.0, max_value=1.0),
+    raw_ff=st.floats(min_value=0.0, max_value=1.0),
+    raw_market=st.floats(min_value=0.0, max_value=1.0),
+    floor=st.floats(min_value=0.0, max_value=0.5),
+)
+@settings(max_examples=200, deadline=None)
+def test_ks08_floor_preserves_sum_to_one(raw_sim, raw_ff, raw_market, floor):
+    """For any normalized weights and floor in [0, 0.5], the floored output sums to 1.0."""
+    total = raw_sim + raw_ff + raw_market
+    if total <= 1e-9:
+        return  # skip degenerate (caller would have hit normalize_weights' total <= 0 guard)
+    weights = {
+        SIMULATOR_SOURCE: raw_sim / total,
+        FF_OPPORTUNITY_SOURCE: raw_ff / total,
+        MARKET_HISTORY_SOURCE: raw_market / total,
+    }
+    out = apply_simulator_weight_floor(weights, floor=floor)
+    assert math.isclose(sum(out.values()), 1.0, abs_tol=1e-6)
+    # Floor is enforced (allowing for the case where other_total = 0 — degenerate)
+    if weights[SIMULATOR_SOURCE] + sum(w for s, w in weights.items() if s != SIMULATOR_SOURCE) > 0:
+        assert out[SIMULATOR_SOURCE] >= floor - 1e-6 or out[SIMULATOR_SOURCE] >= weights[SIMULATOR_SOURCE] - 1e-6
+
+
+def test_ks08_floor_zero_is_no_op():
+    """When floor = 0.0, the output equals the input."""
+    weights = {SIMULATOR_SOURCE: 0.05, FF_OPPORTUNITY_SOURCE: 0.65, MARKET_HISTORY_SOURCE: 0.30}
+    out = apply_simulator_weight_floor(weights, floor=0.0)
+    assert math.isclose(out[SIMULATOR_SOURCE], 0.05, abs_tol=1e-9)
+    assert math.isclose(out[FF_OPPORTUNITY_SOURCE], 0.65, abs_tol=1e-9)
+    assert math.isclose(out[MARKET_HISTORY_SOURCE], 0.30, abs_tol=1e-9)
+
+
+def test_ks08_artifact_metadata_records_floor(tmp_path):
+    """Re-fit artifact records the simulator_weight_floor in metadata for auditability."""
+    from fantasy_sim.data.ensemble import load_ensemble_config
+    from fantasy_sim.config.loader import load_defaults
+    defaults = load_defaults()
+    ensemble_config = load_ensemble_config(defaults)
+    # Use tmp_path so we don't accidentally write to the bundled artifacts
+    ensemble_config_for_fit = _ensemble_config(tmp_path)
+    # Empty source rows → no buckets fit, but the artifact metadata still records the floor
+    artifact = fit_dynamic_blend_artifact(
+        [],
+        test_season=2024,
+        source_seasons=[2022, 2023],
+        sims=200,
+        scoring="ppr",
+        ensemble_config=ensemble_config_for_fit,
+        market_history_config=None,
+        simulator_weight_floor=0.30,  # NEW kw-arg in Plan 02 Task 2
+    )
+    assert artifact.get("simulator_weight_floor") == 0.30
+
+
+def test_ks08_cli_flag_wired():
+    """fit_dynamic_blend_weights.py CLI accepts --simulator-weight-floor."""
+    import os
+    script_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "scripts",
+        "fit_dynamic_blend_weights.py",
+    )
+    spec = importlib.util.spec_from_file_location(
+        "fit_dyn_blend",
+        script_path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    parser = module.build_cli()
+    args = parser.parse_args(
+        [
+            "--test-seasons", "2024",
+            "--min-source-season", "2022",
+            "--sims", "10",
+            "--training-years", "4",
+            "--scoring", "ppr",
+            "--output-dir", "/tmp/test_output",
+            "--simulator-weight-floor", "0.25",
+        ]
+    )
+    assert hasattr(args, "simulator_weight_floor")
+    assert args.simulator_weight_floor == 0.25

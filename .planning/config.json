@@ -92,5 +92,10 @@
     "enabled": false
   },
   "claude_md_path": "./CLAUDE.md",
-  "resolve_model_ids": "omit"
+  "resolve_model_ids": "omit",
+  "review": {
+    "models": {
+      "codex": "gpt-5.4"
+    }
+  }
 }

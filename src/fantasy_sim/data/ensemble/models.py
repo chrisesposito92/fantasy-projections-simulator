@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class PriorWidthConfig:
+    """KS-13 D-10: ff_opportunity prior-width config.
+
+    enabled: bool — master sub-flag (conjunction with phase2_ks_flags.ks13 master).
+    path: str — "A" = quantile-derived sigma; "B" = fitted residual std per bucket.
+    artifacts_dir: Path | None — Path B override directory; None -> bundled dir.
+    """
+
+    enabled: bool = False
+    path: str = "A"  # "A" = quantile-derived; "B" = fitted residual std
+    artifacts_dir: Path | None = None  # codex cycle-2 HIGH 3: Path B override
 
 
 @dataclass
@@ -22,6 +37,7 @@ class FfOpportunityConfig:
         }
     )
     min_coverage_weeks: int = 1
+    prior_width: PriorWidthConfig = field(default_factory=PriorWidthConfig)  # KS-13 D-10
 
 
 @dataclass
@@ -42,6 +58,15 @@ class DynamicBlendConfig:
     min_bucket_weeks: int = 6
     grid_step: float = 0.05
     fallback: str = "fixed_defaults"
+    simulator_weight_floor: float = 0.0  # KS-08 D-06 — Plan 02
+
+
+@dataclass
+class StatLevelConfig:
+    """Per-stat residual_calibration config block for KS-09 (Plan 03)."""
+
+    enabled: bool = False
+    covered_stats: tuple[str, ...] = ()
 
 
 @dataclass
@@ -57,6 +82,8 @@ class ResidualCalibrationConfig:
     max_abs_adjustment: float = 1.5
     min_training_mae_delta: float = -0.01
     fallback: str = "zero"
+    stat_level: StatLevelConfig = field(default_factory=StatLevelConfig)
+    max_abs_adjustment_by_position: dict[str, float] = field(default_factory=dict)  # placeholder for KS-10 — Plan 05
 
 
 @dataclass

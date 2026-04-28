@@ -225,6 +225,42 @@ def normalize_weights(
     return {source: weight / total for source, weight in weights.items()}
 
 
+def apply_simulator_weight_floor(
+    weights: Mapping[str, float],
+    floor: float,
+) -> dict[str, float]:
+    """Apply a simulator-weight floor to a normalized weight dict.
+
+    KS-08 D-06: when ``floor > 0`` and the input simulator weight is below floor,
+    lift simulator to floor and proportionally scale down ff_opportunity +
+    market_history so the result still sums to 1.0. When the input simulator
+    weight is already >= floor, returns a copy unchanged. When ``floor == 0`` or
+    the input dict has only the simulator source, returns a copy unchanged.
+
+    Pre-condition: ``weights`` must be normalized (sum to 1.0, all non-negative)
+    — this is the post-state of ``normalize_weights(...)``.
+    """
+    out = dict(weights)
+    if floor <= 0 or SIMULATOR_SOURCE not in out:
+        return out
+    sim = float(out[SIMULATOR_SOURCE])
+    if sim >= floor:
+        return out
+    # Lift simulator to floor; pull others down proportionally
+    slack = floor - sim
+    other_total = sum(float(w) for s, w in out.items() if s != SIMULATOR_SOURCE)
+    if other_total <= 0:
+        # Degenerate: only the simulator has weight; can't redistribute
+        out[SIMULATOR_SOURCE] = 1.0  # fallback: everything to simulator
+        return out
+    scale = max(0.0, (other_total - slack) / other_total)
+    for source in list(out.keys()):
+        if source != SIMULATOR_SOURCE:
+            out[source] = float(out[source]) * scale
+    out[SIMULATOR_SOURCE] = floor
+    return out
+
+
 def source_values_from_training_row(row: Mapping[str, object]) -> dict[str, float]:
     """Extract available blend-source values from a training row."""
     sources = {SIMULATOR_SOURCE: float(row["simulator_fpts"])}
@@ -331,9 +367,22 @@ def fit_dynamic_blend_artifact(
     scoring: str,
     ensemble_config: EnsembleConfig,
     market_history_config: MarketHistoryConfig | None,
+    simulator_weight_floor: float = 0.0,  # KS-08 D-06 — Plan 02
 ) -> dict:
     """Fit coarse learned blend weights against historical source rows."""
     config = ensemble_config.dynamic_blend
+
+    # KS-08 D-06: filter the candidate weight grid to compositions that satisfy
+    # simulator >= floor. The grid is generated per-bucket inside the loop, so we
+    # define a closure that filters it at use-time.
+    def _filter_grid(candidates: list[dict[str, float]]) -> list[dict[str, float]]:
+        if simulator_weight_floor <= 0:
+            return candidates
+        return [
+            c for c in candidates
+            if c.get(SIMULATOR_SOURCE, 0.0) >= simulator_weight_floor - 1e-9
+        ]
+
     grouped: dict[str, list[Mapping[str, object]]] = {}
     for row in source_rows:
         if not isinstance(row.get("actual_fpts"), (int, float)):
@@ -383,7 +432,7 @@ def fit_dynamic_blend_artifact(
 
         best_weights: dict[str, float] | None = None
         best_mae = 99.0
-        for candidate in candidate_weight_grid(sources, config.grid_step):
+        for candidate in _filter_grid(candidate_weight_grid(sources, config.grid_step)):
             mae = _prediction_mae(rows, candidate)
             if mae < best_mae:
                 best_mae = mae
@@ -423,6 +472,7 @@ def fit_dynamic_blend_artifact(
         "min_bucket_rows": config.min_bucket_rows,
         "min_bucket_weeks": config.min_bucket_weeks,
         "fallback": config.fallback,
+        "simulator_weight_floor": simulator_weight_floor,  # KS-08 D-06 — Plan 02
         "buckets": buckets,
         "fallback_buckets": fallback_buckets,
     }
@@ -539,7 +589,16 @@ class DynamicBlendProjectionBlender:
         raw_weights = bucket.get("weights")
         if not isinstance(raw_weights, dict):
             return None
-        return normalize_weights(raw_weights, context.sources)
+        normalized = normalize_weights(raw_weights, context.sources)
+        if normalized is None:
+            return None
+        # KS-08 D-06: apply simulator-weight floor when phase2_ks_flags is enabled.
+        # The floor value is read from DynamicBlendConfig.simulator_weight_floor which
+        # is loaded at construction time from defaults.yaml (flag block takes precedence).
+        floor = float(self.config.simulator_weight_floor or 0.0)
+        if floor > 0:
+            normalized = apply_simulator_weight_floor(normalized, floor)
+        return normalized
 
     def source_contexts_for_week(
         self,

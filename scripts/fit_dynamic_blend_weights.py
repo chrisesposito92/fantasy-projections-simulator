@@ -49,6 +49,15 @@ def build_cli() -> argparse.ArgumentParser:
     parser.add_argument("--scoring", default="ppr", choices=["ppr", "half_ppr", "standard"])
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=0)
+    parser.add_argument(
+        "--simulator-weight-floor",
+        type=float,
+        default=0.0,
+        help=(
+            "KS-08 D-06: lift simulator weight to at least this value during fit; "
+            "defaults.yaml ks08 flag block respected at runtime."
+        ),
+    )
     return parser
 
 
@@ -254,6 +263,7 @@ def main() -> int:
             scoring=args.scoring,
             ensemble_config=ensemble_config,
             market_history_config=market_history_config,
+            simulator_weight_floor=args.simulator_weight_floor,
         )
         path = args.output_dir / f"weights_{test_season}.json"
         with path.open("w") as f:

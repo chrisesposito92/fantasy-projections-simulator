@@ -2071,3 +2071,85 @@ class TestApplyTiersCpoeMap:
         assert config.cpoe_sensitivity == 0.30
         assert config.cpoe_league_avg == 1.0
         assert config.cpoe_league_std == 4.0
+
+
+# === KS-11: tier_engine per-position reliability cap raise ===
+
+
+def _build_engine_with_position_reliability(position_reliability_values: dict):
+    """Build a TierEngine with the given position_reliability config injected."""
+    from fantasy_sim.data.pff.tier_engine import TierEngine
+    from fantasy_sim.data.pff.models import TierConfig
+    config = TierConfig(
+        cutoffs=(0.85, 0.65, 0.40, 0.20),
+        position_grades={
+            "QB": PositionGradeConfig(primary="grades_pass", secondary="accuracy_percent"),
+            "WR": PositionGradeConfig(primary="grades_pass_route", secondary="_disabled"),
+        },
+        reliability_max_games=32,
+        reliability_team_change_penalty=0.5,
+        reliability_variance_weight=0.3,
+        reliability_floor=0.20,
+        reliability_cap=0.80,
+        position_reliability=position_reliability_values,
+        blend_pool_size=250,
+    )
+    return TierEngine(config, pff_loader=None)
+
+
+def test_ks11_wr_position_reliability_uses_per_position_floor_cap():
+    """WR config {floor: 0.30, cap: 0.95} overrides the global {0.20, 0.80}."""
+    engine = _build_engine_with_position_reliability({
+        "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+    })
+    # High games_played → reliability would naturally be high; verify cap = 0.95
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position="WR")
+    assert rel == pytest.approx(0.95, abs=1e-6)
+    # Low games_played → reliability would naturally be low; verify floor = 0.30
+    rel_low = engine.compute_reliability(games_played=0, changed_teams=False, weekly_shares=None, position="WR")
+    assert rel_low == pytest.approx(0.30, abs=1e-6)
+
+
+def test_ks11_te_position_reliability_uses_per_position_floor_cap():
+    """TE config {floor: 0.30, cap: 0.95} overrides the global {0.20, 0.80}."""
+    engine = _build_engine_with_position_reliability({
+        "TE": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+    })
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position="TE")
+    assert rel == pytest.approx(0.95, abs=1e-6)
+
+
+def test_ks11_rb_position_reliability_uses_per_position_floor_cap():
+    """RB config {floor: 0.25, cap: 0.92} overrides the global {0.20, 0.80}."""
+    engine = _build_engine_with_position_reliability({
+        "RB": {"floor": 0.25, "cap": 0.92, "min_carries": 50},
+    })
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position="RB")
+    assert rel == pytest.approx(0.92, abs=1e-6)
+    rel_low = engine.compute_reliability(games_played=0, changed_teams=False, weekly_shares=None, position="RB")
+    assert rel_low == pytest.approx(0.25, abs=1e-6)
+
+
+def test_ks11_qb_unchanged_at_global_values():
+    """QB stays at global {floor: 0.20, cap: 0.80} per C-10 (feedback_qb_calibration.md)."""
+    engine = _build_engine_with_position_reliability({
+        "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+        "TE": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+        "RB": {"floor": 0.25, "cap": 0.92, "min_carries": 50},
+    })
+    # QB has NO entry in position_reliability → falls back to global
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position="QB")
+    assert rel == pytest.approx(0.80, abs=1e-6)  # global cap
+    rel_low = engine.compute_reliability(games_played=0, changed_teams=False, weekly_shares=None, position="QB")
+    assert rel_low == pytest.approx(0.20, abs=1e-6)  # global floor
+
+
+def test_ks11_position_reliability_unknown_position_uses_global():
+    """A position not in the dict (e.g., K, DST) uses global floor/cap."""
+    engine = _build_engine_with_position_reliability({
+        "WR": {"floor": 0.30, "cap": 0.95, "min_targets": 30},
+    })
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position="K")
+    assert rel == pytest.approx(0.80, abs=1e-6)  # global cap fallback
+    rel = engine.compute_reliability(games_played=32, changed_teams=False, weekly_shares=None, position=None)
+    assert rel == pytest.approx(0.80, abs=1e-6)  # None position fallback

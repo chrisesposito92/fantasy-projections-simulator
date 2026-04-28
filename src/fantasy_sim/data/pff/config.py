@@ -27,6 +27,21 @@ from fantasy_sim.data.pff.models import (
 _SUPPORTED_DEPTH_ROLE_POSITIONS = {"WR", "TE"}
 
 
+def _ks11_position_reliability_enabled() -> bool:
+    """Return True iff `phase2_ks_flags.ks11_position_reliability.enabled=true`.
+
+    Codex MEDIUM 6 (Phase 2 / 2026-04-27): this gate replaces the legacy
+    'unconditional read' behavior at config.py so per-KS A/B isolation is
+    real even when defaults.yaml has the position_reliability dict populated.
+    """
+    from fantasy_sim.config.loader import get_phase2_ks_flags
+    return bool(
+        get_phase2_ks_flags()
+        .get("ks11_position_reliability", {})
+        .get("enabled", False)
+    )
+
+
 def load_pff_config(config: dict) -> PffConfig:
     """Extract PFF config from the full defaults config dict.
 
@@ -135,7 +150,15 @@ def load_pff_config(config: dict) -> PffConfig:
         reliability_floor=tier_raw.get("reliability_floor", 0.15),
         reliability_cap=tier_raw.get("reliability_cap", 0.85),
         blend_pool_size=tier_raw.get("blend_pool_size", 500),
-        position_reliability=tier_raw.get("position_reliability", {}),
+        # Codex MEDIUM 6 fix (Phase 2 D-08 / 2026-04-27 revision): the
+        # position_reliability dict is read ONLY when the KS-11 flag is on.
+        # Otherwise the loader passes {} so per-KS A/B isolation is real
+        # (defaults.yaml may have a populated dict pre-promotion).
+        position_reliability=(
+            tier_raw.get("position_reliability", {})
+            if _ks11_position_reliability_enabled()
+            else {}
+        ),
     )
 
     ncaa_raw = tier_raw.get("ncaa_rookie", {})

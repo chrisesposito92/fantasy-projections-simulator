@@ -32,6 +32,38 @@ phase1_ks_flags:
   ks32_clock_pass_incomplete_3s:
     enabled: false   # KS-32 — CLOCK_PASS_INCOMPLETE = 3 (only set if measurement motivates)
 
+# Phase 2 KS code-change feature flags (continues Phase 1 D-45 pattern — see 02-CONTEXT.md
+# D-02). Each flag gates one per-KS code change so per-KS A/B can perform a real (legacy)
+# vs (new) two-arm comparison via `--set phase2_ks_flags.ksXX_<name>.enabled=true`. Default
+# false everywhere; per-KS promotion commits flip the flag to `true` after the A/B passes
+# hard floor + promotion bar.
+phase2_ks_flags:
+  # ALL Phase-2 flags WALKED-BACK 2026-04-27 after Plan 09 aggregate validation.
+  # Per-KS A/Bs each individually passed hard floor in isolation, but the FULL stack
+  # (all 6 promoted ON) failed Phase-2-vs-Phase-1 hard floor: Δ rank_corr = -0.00515
+  # (limit -0.005). Reverse-ablation iteration 1 (codex HIGH 3) showed all marginal
+  # deltas in [-0.0004, +0.0006] — "death by a thousand cuts": the cumulative deficit
+  # cannot be attributed to any single KS, so iterative single-revert cannot clear the
+  # floor. Per-stat picture was unambiguously regressive (6 of 8 priority stats KS up,
+  # QB pass_yards bias -39.29 → -41.11 yd/g). Code/architecture preserved in tree for
+  # Phase 3+ levers. See logs/PROMOTION-NOTES.md ## Phase 2 Aggregate and
+  # 09-phase2-aggregate-validation-SUMMARY.md.
+  ks08_dynamic_blend_simulator_floor:
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+    floor: 0.20    # Retained for re-test; effective only when enabled flips back on
+  ks09_per_stat_residual_calibration:
+    enabled: false  # WALKED-BACK 2026-04-27 (highest harm_score +0.0072 in iter-1 ablation)
+  ks10_per_position_caps:
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+  ks11_position_reliability:
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+  ks12_share_normalization_residual:
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+  ks13_ff_opportunity_prior_width:
+    enabled: false  # NO-OP 2026-04-27 (Path B; never moved fpts KS; consistent with walk-back)
+  ks14_thin_bucket_shrinkage:
+    enabled: false  # WALKED-BACK 2026-04-27 (was SHIPPED in isolation; reverted at aggregate)
+
 simulation:
   num_sims: 1000
   training_years: 4
@@ -114,6 +146,19 @@ pff:
     reliability_variance_weight: 0.3
     reliability_floor: 0.20
     reliability_cap: 0.80
+    position_reliability:     # KS-11 D-08 (Plan 06) — gated by phase2_ks_flags.ks11_position_reliability.enabled
+      WR:
+        floor: 0.30
+        cap: 0.95
+        min_targets: 30
+      TE:
+        floor: 0.30
+        cap: 0.95
+        min_targets: 30
+      RB:
+        floor: 0.25
+        cap: 0.92
+        min_carries: 50
     blend_pool_size: 250
     ncaa_rookie:
       enabled: true
@@ -387,6 +432,10 @@ ensemble:
       WR: 0.25
       TE: 0.15
     min_coverage_weeks: 1
+    prior_width:  # KS-13 D-10 (Plan 07 enables; Path A or Path B per probe)
+      enabled: false
+      path: B    # "A" = quantile-derived (lo/hi absent from nflverse); "B" = fitted residual std (probe 2026-04-27)
+      artifacts_dir: null  # null -> bundled decision_s200 dir
   ff_rankings:
     enabled: false
   dynamic_blend:
@@ -397,6 +446,7 @@ ensemble:
     min_bucket_weeks: 6
     grid_step: 0.05
     fallback: fixed_defaults
+    simulator_weight_floor: 0.0  # KS-08 D-06 placeholder (Plan 02 retunes to smallest-passing value from sweep {0.20, 0.30, 0.40})
   residual_calibration:
     enabled: true
     artifacts_dir: null
@@ -407,6 +457,23 @@ ensemble:
     max_abs_adjustment: 1.5
     min_training_mae_delta: -0.01
     fallback: zero
+    max_abs_adjustment_by_position:  # KS-10 D-07 per-position caps — {QB: 2.5, RB: 2.0, WR: 1.5, TE: 0.8}
+      QB: 2.5
+      RB: 2.0
+      WR: 1.5
+      TE: 0.8
+    stat_level:  # KS-09 D-03 (Plan 03 enables + uses). WALKED-BACK 2026-04-27 with phase2_ks_flags.ks09. The OR gate at ensemble/config.py:95 means leaving this `true` while the master flag is `false` produces stat_level_enabled=True (silent walk-back leak). Flipped to false to match the walk-back. covered_stats list preserved as latent config.
+      enabled: false
+      covered_stats:
+        - pass_yards
+        - pass_tds
+        - interceptions
+        - rush_yards
+        - rush_tds
+        - receiving_yards
+        - receptions
+        - receiving_tds
+        - fumbles_lost
 
 market_history:
   enabled: true
