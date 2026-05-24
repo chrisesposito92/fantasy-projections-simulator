@@ -221,7 +221,7 @@ fantasy-sim backtest [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--season YEAR` | 2024 | Season to backtest against |
+| `--season YEAR` | 2024 | Season to backtest against. Explicit 2025 validation is allowed; 2026+ is blocked until data is complete. |
 | `--sims N` | 100 | Sims per game (lower = faster, 50-100 recommended) |
 | `--scoring FORMAT` | ppr | Scoring format |
 | `--training-years N` | 3 | Number of prior seasons for model fitting |
@@ -243,6 +243,7 @@ fantasy-sim backtest --season 2024 --training-years 5
 - Season Total MAE (target: < 25.0)
 - Rank Correlation per position (target: > 0.80)
 - Boom/Bust Calibration (target: < 0.10)
+- Distribution KS for weekly fantasy points and high-signal QB/RB/WR/TE stat rows
 
 ---
 
@@ -279,7 +280,7 @@ uv run python scripts/validate.py --show-ledger
 | `--baseline bare|defaults` | `bare` | Arm A baseline. Use `defaults` for marginal promotion decisions. |
 | `--set KEY=VALUE` | none | Dot-path config override for Arm B. Repeatable. |
 | `--sims N` | 50 | Simulations per game. |
-| `--seasons YEAR [YEAR...]` | 2022 2023 2024 | Test seasons to backtest. |
+| `--seasons YEAR [YEAR...]` | 2022 2023 2024 | Test seasons to backtest. Explicit 2025 A/B validation is allowed; 2026+ is blocked until data is complete. |
 | `--training-years N` | 4 | Number of prior seasons for model fitting. |
 | `--scoring FORMAT` | ppr | Scoring format. |
 | `--positions POS [POS...]` | QB RB WR TE | Positions to evaluate. |

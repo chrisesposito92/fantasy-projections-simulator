@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from collections import defaultdict
 import math
 from pathlib import Path
@@ -29,8 +30,56 @@ from fantasy_sim.scoring.role_trend import RoleTrendProjectionAdjuster
 from fantasy_sim.validation.metrics import (
     spearman_rank_correlation,
     boom_bust_calibration,
+    ks_distribution_summary,
 )
 from fantasy_sim.validation.parallel import GameSpec, simulate_games_parallel, build_games_parallel
+
+
+POSITIONS = ("QB", "RB", "WR", "TE")
+
+STAT_KS_BY_POSITION: dict[str, tuple[str, ...]] = {
+    "QB": (
+        "pass_yards",
+        "pass_tds",
+        "interceptions",
+        "rush_yards",
+        "rush_tds",
+        "fumbles_lost",
+    ),
+    "RB": (
+        "rush_yards",
+        "rush_tds",
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "fumbles_lost",
+    ),
+    "WR": (
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "rush_yards",
+        "rush_tds",
+        "fumbles_lost",
+    ),
+    "TE": (
+        "receptions",
+        "receiving_yards",
+        "receiving_tds",
+        "fumbles_lost",
+    ),
+}
+
+STAT_KS_DISPLAY_ROWS: tuple[tuple[str, str], ...] = (
+    ("QB", "pass_yards"),
+    ("QB", "rush_yards"),
+    ("RB", "rush_yards"),
+    ("RB", "receiving_yards"),
+    ("WR", "receptions"),
+    ("WR", "receiving_yards"),
+    ("TE", "receptions"),
+    ("TE", "receiving_yards"),
+)
 
 
 @dataclass
@@ -43,6 +92,8 @@ class BacktestResult:
     boom_bust_calibration: float
     total_players_evaluated: int
     total_weeks_evaluated: int
+    weekly_fpts_ks: dict[str, float | int] = field(default_factory=dict)
+    stat_ks: dict[str, dict[str, dict[str, float | int]]] = field(default_factory=dict)
 
     WEEKLY_MAE_TARGET = 6.0
     SEASON_MAE_TARGET = 25.0
@@ -63,11 +114,93 @@ class BacktestResult:
         return True
 
 
-_HOLDOUT_SEASON = 2025
+_FUTURE_VALIDATION_SEASON = 2026
+
+
+def _numeric_value(value: object) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(result):
+        return None
+    return result
+
+
+def _single_arm_ks_summary(
+    projected: Sequence[float],
+    actual: Sequence[float],
+) -> dict[str, float | int]:
+    summary = ks_distribution_summary(projected, projected, actual)
+    if not summary:
+        return {}
+    return {
+        "ks": float(summary["arm_a_ks"]),
+        "projected_mean": float(summary["arm_a_mean"]),
+        "actual_mean": float(summary["actual_mean"]),
+        "mean_delta": float(summary["mean_delta_a"]),
+        "n": int(summary["n"]),
+    }
+
+
+def _compute_single_arm_distribution_ks(
+    projection_rows: Mapping[str, Mapping[int, Mapping[str, object]]],
+    actual_rows: Mapping[str, Mapping[int, object]],
+    actual_pos: Mapping[str, str],
+) -> tuple[
+    dict[str, float | int],
+    dict[str, dict[str, dict[str, float | int]]],
+]:
+    fpts_projected: list[float] = []
+    fpts_actual: list[float] = []
+    stat_samples: dict[str, dict[str, dict[str, list[float]]]] = {
+        pos: {
+            stat: {"projected": [], "actual": []}
+            for stat in STAT_KS_BY_POSITION.get(pos, ())
+        }
+        for pos in POSITIONS
+    }
+
+    for pid in set(projection_rows) & set(actual_rows):
+        pos = actual_pos.get(pid, "")
+        if pos not in POSITIONS:
+            continue
+        for week in set(projection_rows[pid]) & set(actual_rows[pid]):
+            projection = projection_rows[pid][week]
+            actual = actual_rows[pid][week]
+            projected_fpts = _numeric_value(projection.get("fpts"))
+            actual_fpts = _numeric_value(getattr(actual, "fpts", None))
+            if projected_fpts is not None and actual_fpts is not None:
+                fpts_projected.append(projected_fpts)
+                fpts_actual.append(actual_fpts)
+
+            for stat in STAT_KS_BY_POSITION.get(pos, ()):
+                if stat not in projection or not hasattr(actual, stat):
+                    continue
+                projected_value = _numeric_value(projection.get(stat))
+                actual_value = _numeric_value(getattr(actual, stat))
+                if projected_value is None or actual_value is None:
+                    continue
+                samples = stat_samples[pos][stat]
+                samples["projected"].append(projected_value)
+                samples["actual"].append(actual_value)
+
+    weekly_fpts_ks = _single_arm_ks_summary(fpts_projected, fpts_actual)
+    stat_ks: dict[str, dict[str, dict[str, float | int]]] = {}
+    for pos, stat_map in stat_samples.items():
+        for stat, samples in stat_map.items():
+            summary = _single_arm_ks_summary(
+                samples["projected"],
+                samples["actual"],
+            )
+            if summary:
+                stat_ks.setdefault(pos, {})[stat] = summary
+
+    return weekly_fpts_ks, stat_ks
 
 
 class Backtester:
-    """Run hold-out backtests against historical seasons."""
+    """Run backtests against historical seasons."""
 
     def __init__(
         self,
@@ -90,10 +223,10 @@ class Backtester:
         qb_rushing_config: QbRushingConfig | None = None,
         max_workers: int = 1,
     ):
-        if test_season >= _HOLDOUT_SEASON:
+        if test_season >= _FUTURE_VALIDATION_SEASON:
             raise ValueError(
-                f"Season {test_season} is reserved as hold-out until milestone completion. "
-                f"Use seasons 2022-2024 for A/B validation."
+                f"Season {test_season} is not yet available for validation. "
+                f"Use seasons through {_FUTURE_VALIDATION_SEASON - 1}."
             )
         self.test_season = test_season
         self.n_sims = n_sims
@@ -127,8 +260,12 @@ class Backtester:
 
         actuals = load_actual_scores(player_stats, scoring_config, self.test_season)
         actual_by_player_week = defaultdict(dict)
+        actual_rows_by_player_week = defaultdict(dict)
+        actual_pos: dict[str, str] = {}
         for a in actuals:
             actual_by_player_week[a.player_id][a.week] = a.fpts
+            actual_rows_by_player_week[a.player_id][a.week] = a
+            actual_pos[a.player_id] = a.position
 
         weeks = sorted(
             schedules.filter(pl.col("season") == self.test_season)["week"]
@@ -204,6 +341,7 @@ class Backtester:
 
         # --- Phase 3: Aggregate results ---
         projected_by_player_week = defaultdict(dict)
+        projection_rows_by_player_week = defaultdict(dict)
         all_weekly_errors = []
         dynamic_blender = None
         if (
@@ -265,8 +403,9 @@ class Backtester:
                 residual_calibrator=residual_calibrator,
             )
             for proj in projections:
-                pid = proj["player_id"]
+                pid = str(proj["player_id"])
                 projected_by_player_week[pid][wk] = proj["fpts"]
+                projection_rows_by_player_week[pid][wk] = dict(proj)
                 if pid in actual_by_player_week and wk in actual_by_player_week[pid]:
                     error = abs(proj["fpts"] - actual_by_player_week[pid][wk])
                     all_weekly_errors.append(error)
@@ -311,6 +450,11 @@ class Backtester:
                 ) / len(act_weeks)
 
         cal = boom_bust_calibration(predicted_boom, actual_boom) if predicted_boom else 0.5
+        weekly_fpts_ks, stat_ks = _compute_single_arm_distribution_ks(
+            projection_rows_by_player_week,
+            actual_rows_by_player_week,
+            actual_pos,
+        )
 
         return BacktestResult(
             test_season=self.test_season,
@@ -320,4 +464,6 @@ class Backtester:
             boom_bust_calibration=cal,
             total_players_evaluated=len(common),
             total_weeks_evaluated=len(weeks),
+            weekly_fpts_ks=weekly_fpts_ks,
+            stat_ks=stat_ks,
         )

@@ -1,6 +1,7 @@
 # tests/test_validation/test_backtester.py
 import io
 import sys
+from types import SimpleNamespace
 
 import polars as pl
 import pytest
@@ -324,6 +325,78 @@ class TestBacktesterParallelBuild:
         assert result.weekly_mae == 0.0
         assert result.season_mae == 0.0
 
+    @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
+    @patch("fantasy_sim.validation.backtester.build_games_parallel")
+    @patch("fantasy_sim.validation.backtester.load_actual_scores")
+    @patch("fantasy_sim.validation.backtester.DataLoader")
+    def test_run_populates_distribution_ks_from_matched_rows(
+        self,
+        mock_loader_cls,
+        mock_load_actual_scores,
+        mock_build_parallel,
+        mock_simulate_parallel,
+    ):
+        from pathlib import Path
+
+        mock_loader = MagicMock()
+        mock_loader_cls.return_value = mock_loader
+        mock_loader.cache_dir = Path("/tmp/test")
+        mock_loader.load_schedules.return_value = pl.DataFrame([
+            {
+                "season": 2024,
+                "week": 1,
+                "game_id": "2024_01_KC_BUF",
+                "home_team": "KC",
+                "away_team": "BUF",
+            }
+        ])
+        mock_loader.load_player_stats.return_value = pl.DataFrame(
+            {"season": pl.Series([], dtype=pl.Int32)}
+        )
+        mock_build_parallel.return_value = [_make_ok_result("2024_01_KC_BUF")]
+        mock_simulate_parallel.return_value = [
+            SimpleNamespace(
+                game_id="2024_01_KC_BUF",
+                projections=[
+                    {
+                        "player_id": "player-1",
+                        "fpts": 10.0,
+                        "position": "QB",
+                        "team": "KC",
+                        "name": "Patrick Example",
+                        "pass_yards": 240.0,
+                        "rush_yards": 12.0,
+                    }
+                ],
+            )
+        ]
+        mock_load_actual_scores.return_value = [
+            SimpleNamespace(
+                player_id="player-1",
+                week=1,
+                fpts=14.0,
+                position="QB",
+                team="KC",
+                name="Patrick Example",
+                pass_yards=300.0,
+                rush_yards=18.0,
+            )
+        ]
+
+        bt = Backtester(test_season=2024, n_sims=10)
+        bt.loader = mock_loader
+        result = bt.run({})
+
+        assert result.weekly_fpts_ks["ks"] == 1.0
+        assert result.weekly_fpts_ks["projected_mean"] == 10.0
+        assert result.weekly_fpts_ks["actual_mean"] == 14.0
+        assert result.weekly_fpts_ks["mean_delta"] == -4.0
+        assert result.weekly_fpts_ks["n"] == 1
+        assert result.stat_ks["QB"]["pass_yards"]["ks"] == 1.0
+        assert result.stat_ks["QB"]["pass_yards"]["projected_mean"] == 240.0
+        assert result.stat_ks["QB"]["pass_yards"]["actual_mean"] == 300.0
+        assert result.stat_ks["QB"]["pass_yards"]["mean_delta"] == -60.0
+
     @patch("fantasy_sim.validation.backtester.FfOpportunityProjectionEnsembler")
     @patch("fantasy_sim.validation.backtester.simulate_games_parallel")
     @patch("fantasy_sim.validation.backtester.build_games_parallel")
@@ -421,21 +494,21 @@ def _mock_loader():
 
 
 class TestBacktesterFailureSurfacing:
-    """Tests for FIX-01 (failure counting) and FIX-03 (hold-out gate)."""
+    """Tests for FIX-01 (failure counting) and future-season gate."""
 
-    def test_holdout_season_raises(self):
-        """Backtester(test_season=2025) must raise ValueError with 'hold-out'."""
-        with pytest.raises(ValueError, match="hold-out"):
-            Backtester(test_season=2025)
+    def test_2025_season_allowed(self):
+        """Backtester(test_season=2025) must NOT raise."""
+        bt = Backtester(test_season=2025, n_sims=10)
+        assert bt.test_season == 2025
 
-    def test_holdout_season_2024_allowed(self):
+    def test_2024_season_allowed(self):
         """Backtester(test_season=2024) must NOT raise."""
         bt = Backtester(test_season=2024, n_sims=10)
         assert bt.test_season == 2024
 
-    def test_holdout_season_2026_raises(self):
-        """Backtester(test_season=2026) must also raise (>= check)."""
-        with pytest.raises(ValueError, match="hold-out"):
+    def test_2026_season_raises(self):
+        """Backtester(test_season=2026) must raise."""
+        with pytest.raises(ValueError, match="not yet available"):
             Backtester(test_season=2026)
 
     @patch("fantasy_sim.validation.backtester.simulate_games_parallel")

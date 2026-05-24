@@ -1,11 +1,23 @@
 from rich.console import Console
 from rich.table import Table
-from fantasy_sim.validation.backtester import BacktestResult
+from fantasy_sim.validation.backtester import BacktestResult, STAT_KS_DISPLAY_ROWS
+
+
+def _add_ks_row(table: Table, position: str, stat: str, row: dict[str, float | int]) -> None:
+    table.add_row(
+        position,
+        stat,
+        f"{float(row['ks']):.2f}",
+        f"{float(row['projected_mean']):.1f}",
+        f"{float(row['actual_mean']):.1f}",
+        f"{float(row['mean_delta']):+.1f}",
+        str(int(row["n"])),
+    )
 
 
 def format_backtest_report(result: BacktestResult) -> str:
     """Format a BacktestResult as a readable report string."""
-    console = Console(width=80, force_terminal=True)
+    console = Console(width=160, force_terminal=True)
 
     with console.capture() as capture:
         console.print(f"\n[bold]Backtest Report — {result.test_season} Season[/bold]")
@@ -61,6 +73,26 @@ def format_backtest_report(result: BacktestResult) -> str:
         )
 
         console.print(table)
+
+        if result.weekly_fpts_ks or result.stat_ks:
+            ks_table = Table(title="Distribution KS")
+            ks_table.add_column("Position", style="cyan")
+            ks_table.add_column("Stat", no_wrap=True)
+            ks_table.add_column("KS", justify="right")
+            ks_table.add_column("Projected Mean", justify="right")
+            ks_table.add_column("Actual Mean", justify="right")
+            ks_table.add_column("Mean Delta", justify="right")
+            ks_table.add_column("N", justify="right")
+
+            if result.weekly_fpts_ks:
+                _add_ks_row(ks_table, "ALL", "fpts", result.weekly_fpts_ks)
+
+            for pos, stat in STAT_KS_DISPLAY_ROWS:
+                row = result.stat_ks.get(pos, {}).get(stat)
+                if row:
+                    _add_ks_row(ks_table, pos, stat, row)
+
+            console.print(ks_table)
 
         overall = "PASS" if result.passes_targets() else "FAIL"
         overall_style = "green bold" if overall == "PASS" else "red bold"

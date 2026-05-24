@@ -81,7 +81,7 @@ from fantasy_sim.validation.weekly import (
 )
 
 POSITIONS = ("QB", "RB", "WR", "TE")
-_HOLDOUT_SEASON = 2025
+_FUTURE_VALIDATION_SEASON = 2026
 SEED_MODE = "deterministic_game_id_crc32_shared_between_arms"
 
 # Position -> applicable MatchupContext fields (same as old weekly script)
@@ -1107,11 +1107,11 @@ def main() -> int:
         print(format_ledger_table(entries))
         return 0
 
-    # Hold-out gate
-    if any(s >= _HOLDOUT_SEASON for s in args.seasons):
+    # Future-season gate
+    if any(s >= _FUTURE_VALIDATION_SEASON for s in args.seasons):
         print(
-            f"ERROR: Season {_HOLDOUT_SEASON}+ is reserved as hold-out. "
-            "Use --seasons 2022 2023 2024.",
+            f"ERROR: Season {_FUTURE_VALIDATION_SEASON}+ is not yet available for validation. "
+            "Use --seasons 2022 2023 2024 2025.",
             file=sys.stderr,
         )
         return 1

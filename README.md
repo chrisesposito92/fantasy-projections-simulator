@@ -60,8 +60,8 @@ Simulate NFL games play-by-play to project fantasy points for every player, ever
 - New CLI commands: `fantasy-sim week 1 --season 2024` and `fantasy-sim season --season 2024`
 - Actual results loader: scores real player stats with config for backtest comparisons
 - Accuracy metrics: Spearman rank correlation, MAE (weekly + season total), boom/bust calibration, and KS distribution diagnostics
-- Backtesting framework: hold-out validation using only prior-season data (no leakage)
-- Validation report with pass/fail indicators per metric against spec targets
+- Backtesting framework: historical validation using only prior-season data (no leakage)
+- Validation report with pass/fail indicators plus distribution KS diagnostics against actuals
 - CLI: `fantasy-sim backtest --season 2024` runs full historical validation
 
 **Phase 6: Overrides + Polish** — Complete (38 tests, 329 total)

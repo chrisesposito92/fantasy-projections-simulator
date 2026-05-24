@@ -68,7 +68,7 @@ It also prints:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--seasons YEAR...` | 2022 2023 2024 | Test seasons to backtest. |
+| `--seasons YEAR...` | 2022 2023 2024 | Test seasons to backtest. Explicit 2025 A/B validation is allowed; 2026+ is blocked until data is complete. |
 | `--training-years N` | 4 | Training seasons before each test season. |
 | `--scoring FORMAT` | ppr | Scoring format (ppr/half_ppr/standard). |
 | `--positions POS...` | QB RB WR TE | Positions to evaluate. |
@@ -117,7 +117,7 @@ When `--baseline defaults`, both arms are full feature-rich builds, so those run
 - **calibration**: Boom/bust prediction accuracy
 - **distribution KS**: Kolmogorov-Smirnov distance between projected and actual weekly distributions. Lower is better; negative delta means Arm B is closer to actuals.
 
-Distribution KS is a shape metric, not an error-size metric. It catches cases where rank correlation and MAE look acceptable while the simulated stat distribution is compressed or deflated, such as WR receiving yards clustering below actual weekly outcomes. The validation output prints aggregate weekly fantasy-points KS plus a concise set of high-signal position/stat rows with projected and actual means.
+Distribution KS is a shape metric, not an error-size metric. It catches cases where rank correlation and MAE look acceptable while the simulated stat distribution is compressed or deflated, such as WR receiving yards clustering below actual weekly outcomes. The A/B validation output prints aggregate weekly fantasy-points KS plus a concise set of high-signal position/stat rows with projected and actual means. The `fantasy-sim backtest` report prints the same single-arm KS rows against actuals.
 
 ### Weekly
 

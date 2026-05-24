@@ -22,6 +22,78 @@ def _load_validate_module():
     return module
 
 
+def test_main_allows_2025_validation_season():
+    validate = _load_validate_module()
+    args = SimpleNamespace(
+        baseline="bare",
+        arm_b_base="defaults",
+        overrides=[],
+        sims=1,
+        seasons=[2025],
+        scoring="ppr",
+        training_years=4,
+        positions=["QB"],
+        label=None,
+        show_ledger=False,
+        workers=1,
+        no_cache=True,
+    )
+    disabled_ensemble = SimpleNamespace(
+        enabled=False,
+        ff_opportunity=SimpleNamespace(enabled=False),
+        dynamic_blend=SimpleNamespace(enabled=False),
+        residual_calibration=SimpleNamespace(enabled=False),
+    )
+    season_result = validate.SeasonMetrics(
+        test_season=2025,
+        arm_a_rank_corr={"QB": 0.40, "RB": 0.40, "WR": 0.40, "TE": 0.40},
+        arm_b_rank_corr={"QB": 0.50, "RB": 0.50, "WR": 0.50, "TE": 0.50},
+        arm_a_weekly_mae=7.0,
+        arm_b_weekly_mae=6.5,
+        arm_a_season_mae=30.0,
+        arm_b_season_mae=29.0,
+        arm_a_calibration=0.1,
+        arm_b_calibration=0.1,
+    )
+
+    with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
+         patch.object(validate, "load_defaults", return_value={"scoring": {}}), \
+         patch.object(validate, "resolve_scoring", return_value={}), \
+         patch.object(validate, "build_bare_engine_configs", return_value={}), \
+         patch.object(validate, "build_engine_configs", return_value={}), \
+         patch.object(validate, "load_ensemble_config", return_value=disabled_ensemble), \
+         patch.object(validate, "collect_signal_coverage", return_value={}), \
+         patch.object(validate, "print_header"), \
+         patch.object(validate, "run_season", return_value={
+             "season_metrics": season_result,
+             "weekly_records": [],
+             "arm_a_projections": None,
+             "arm_a_meta": None,
+         }) as mock_run_season, \
+         patch.object(validate, "print_season_results"), \
+         patch.object(validate, "print_distribution_ks_results"), \
+         patch.object(validate, "print_market_history_results"), \
+         patch.object(validate, "print_weekly_results", return_value=(None, None)), \
+         patch.object(validate, "print"):
+        assert validate.main() == 0
+
+    assert mock_run_season.call_args.kwargs["test_season"] == 2025
+
+
+def test_main_rejects_2026_validation_season():
+    validate = _load_validate_module()
+    args = SimpleNamespace(show_ledger=False, seasons=[2026])
+
+    with patch.object(validate, "build_cli", return_value=SimpleNamespace(parse_args=lambda: args)), \
+         patch.object(validate, "load_defaults") as mock_load_defaults, \
+         patch.object(validate, "print") as mock_print:
+        assert validate.main() == 1
+
+    mock_load_defaults.assert_not_called()
+    printed = "\n".join(call.args[0] for call in mock_print.call_args_list)
+    assert "Season 2026+ is not yet available" in printed
+
+
 def test_run_season_threads_game_script_config_into_dual_arm_build():
     validate = _load_validate_module()
 
